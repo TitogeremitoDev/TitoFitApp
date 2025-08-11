@@ -1,50 +1,150 @@
-# Welcome to your Expo app 👋
+<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+  <h1>💪 TitoFitApp</h1>
+  <p>
+    App móvil de <strong>entrenamiento y seguimiento</strong> construida con <strong>Expo + React Native</strong>.<br>
+    Permite registrar entrenos diarios, visualizar rutinas por semanas/días y gestionar ejercicios con series/peso.
+  </p>
+  <hr>
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+  <h2>🚀 Stack Tecnológico</h2>
+  <ul>
+    <li>Expo / React Native</li>
+    <li>TypeScript / JavaScript</li>
+    <li>EAS (Expo Application Services) para builds</li>
+    <li>Android nativo mínimo (Kotlin/Gradle) generado por Expo</li>
+  </ul>
+  <hr>
 
-## Get started
+  <h2>📁 Estructura del Proyecto</h2>
+  <pre>
+root
+├─ app/                         # Pantallas y layouts (Expo Router)
+│  ├─ _layout.tsx               # Layout raíz
+│  └─ (tabs)/
+│     ├─ _layout.tsx            # Tabs (Home, Explore, etc.)
+│     ├─ home.tsx               # Pantalla principal
+│     └─ explore.tsx            # Pantalla secundaria
+├─ components/                  # Componentes reutilizables (UI/UX)
+│  ├─ Collapsible.tsx
+│  ├─ ParallaxScrollView.tsx
+│  ├─ ThemedText.tsx / ThemedView.tsx
+│  └─ ui/...
+├─ constants/Colors.ts          # Paleta de colores / tema
+├─ hooks/                       # Hooks de tema y utilidades
+├─ android/                     # Proyecto nativo Android (auto-generado)
+├─ index.js                     # Entry point
+├─ app.json                     # Config Expo (name, icon, splash, etc.)
+├─ eas.json                     # Perfiles de build (EAS)
+├─ eslint.config.js             # Linter
+├─ package.json                 # Dependencias y scripts
+└─ tsconfig.json                # TS config
+  </pre>
+  <hr>
 
-1. Install dependencies
+  <h2>▶️ Arranque Rápido en Local</h2>
+  <ol>
+    <li><strong>Instalar dependencias</strong>
+      <pre>npm install</pre>
+    </li>
+    <li><strong>Iniciar el proyecto</strong>
+      <pre>npx expo start</pre>
+      <p>Pulsa <code>a</code> para abrir el emulador Android o escanea el QR con Expo Go.</p>
+    </li>
+  </ol>
+  <blockquote><strong>Requisitos:</strong> Node LTS, Android Studio (si usas emulador), Expo CLI.</blockquote>
+  <hr>
 
-   ```bash
-   npm install
-   ```
+  <h2>🧱 Scripts Útiles</h2>
+  <pre>
+"scripts": {
+  "start": "expo start",
+  "android": "expo run:android",
+  "lint": "eslint .",
+  "typecheck": "tsc --noEmit",
+  "reset": "node scripts/reset-project.js"
+}
+  </pre>
+  <ul>
+    <li><code>npm run android</code> → Compila y lanza app nativa</li>
+    <li><code>npm run lint</code> → Pasa el linter</li>
+    <li><code>npm run typecheck</code> → Verifica tipos de TypeScript</li>
+  </ul>
+  <hr>
 
-2. Start the app
+  <h2>📦 Builds con EAS</h2>
+  <ol>
+    <li>Login en Expo
+      <pre>npx expo login</pre>
+    </li>
+    <li>Configurar EAS (solo la 1ª vez)
+      <pre>npx eas login
+npx eas build:configure</pre>
+    </li>
+    <li>Build de preview (Android)
+      <pre>npx eas build --platform android --profile preview</pre>
+    </li>
+    <li>Build de producción (Android)
+      <pre>npx eas build --platform android --profile production</pre>
+    </li>
+  </ol>
+  <blockquote>Perfiles definidos en <code>eas.json</code>. Añadir credenciales si publicas en Google Play.</blockquote>
+  <hr>
 
-   ```bash
-   npx expo start
-   ```
+  <h2>🧭 Navegación y Flujo</h2>
+  <ul>
+    <li><strong>app/_layout.tsx</strong> → Layout raíz</li>
+    <li><strong>app/(tabs)/_layout.tsx</strong> → Pestañas inferiores</li>
+    <li><strong>app/(tabs)/home.tsx</strong> → Pantalla principal</li>
+    <li><strong>components/*</strong> → UI reutilizable</li>
+  </ul>
+  <hr>
 
-In the output, you'll find options to open the app in a
+  <h2>🎯 Roadmap</h2>
+  <ul>
+    <li>Selector <strong>Rutina → Semana → Día</strong> con carrusel</li>
+    <li>Registro de series/peso con flechas</li>
+    <li>Estados especiales: NC / OJ</li>
+    <li>Persistencia local y futura sync backend</li>
+    <li>Theming claro/oscuro + accesibilidad</li>
+  </ul>
+  <hr>
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+  <h2>🧹 Calidad del Código</h2>
+  <ul>
+    <li>Lint: <pre>npm run lint</pre></li>
+    <li>Types: <pre>npm run typecheck</pre></li>
+  </ul>
+  <blockquote>Recomendado: usar Conventional Commits para historial limpio.</blockquote>
+  <hr>
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+  <h2>🛠️ Problemas Comunes (Windows/Android)</h2>
+  <ul>
+    <li>Metro atascado:
+      <pre>npx expo start -c</pre>
+    </li>
+    <li>ADB no detecta dispositivo:
+      <ul>
+        <li>Abrir Android Studio → Device Manager → Iniciar emulador</li>
+        <li>O conectar físico con Depuración USB activada</li>
+      </ul>
+    </li>
+    <li>Error dependencias nativas:
+      <pre>npm install
+npx expo prebuild --platform android
+npx expo run:android</pre>
+    </li>
+  </ul>
+  <hr>
 
-## Get a fresh project
+  <h2>📜 Licencia</h2>
+  <p> 📜 Derechos y Propiedad
 
-When you're ready, run:
+Este proyecto, incluyendo todo su código fuente, recursos gráficos, textos y
+elementos asociados, es propiedad exclusiva de **Titogeremito**.
 
-```bash
-npm run reset-project
-```
+Queda prohibida la copia, distribución, modificación, publicación o cualquier
+uso no autorizado del contenido total o parcial de este software sin el
+consentimiento previo y por escrito de su propietario.
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+© 2025 Titogeremito — Todos los derechos reservados.</p>
+</div>
