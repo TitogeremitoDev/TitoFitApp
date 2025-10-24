@@ -4,12 +4,11 @@
    ▸ Guardar en AsyncStorage
    ▸ Botón “IMPORTAR CSV”  →  abre selector y genera rutina
    ▸ Compatible con CSV delimitado por ,  ó  ;
-   
 */
 import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet,
-  TouchableOpacity, FlatList, Alert, Pressable,Button, Platform
+  TouchableOpacity, FlatList, Alert, Pressable, Button, Platform
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,7 +42,6 @@ export default function RutinasHome() {
   const saveList = (list) =>
     AsyncStorage.setItem('rutinas', JSON.stringify(list));
 
-
   /* ─────────── CREAR ─────────── */
   const crearRutina = () => {
     if (!nombre.trim()) return setError('Introduce un nombre');
@@ -62,133 +60,128 @@ export default function RutinasHome() {
     setNombre(''); setDias(''); setError('');
   };
 
-  /* ─────────── ELIMINAR ─────────── */
-const eliminarRutina = (id) => {
-  if (confirm('¿Eliminar rutina?')) {           // `confirm` funciona en web y móvil (JS runtime)
-    const nueva = rutinas.filter(r => r.id !== id);
-    setRutinas(nueva);
-    AsyncStorage.setItem('rutinas', JSON.stringify(nueva));
-    AsyncStorage.removeItem(`routine_${id}`);
-    if (selectedId === id) {
-      setSelected(null);
-      AsyncStorage.multiRemove(['active_routine','active_routine_name']);
-    }
-  }
-};
-  /* ─────────── IMPORTAR CSV ─────────── */
-const importarRutina = async () => {
-  try {
-    console.log("HOLIWI");
-    /* ─── Seleccionar ─── */
-    const picked = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      type: 'text/*',
-    });
-if (picked.canceled || picked.type === 'cancel') return
-console.log('Archivo seleccionado:', picked);
+  /* ─────────── ELIMINAR (con confirm nativo) ─────────── */
+  const confirmarEliminar = (item) => {
+    Alert.alert(
+      'Eliminar rutina',
+      `¿Seguro que quieres borrar "${item.nombre}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar', style: 'destructive', onPress: () => eliminarRutina(item.id) },
+      ],
+      { cancelable: true }
+    );
+  };
 
-    /* ─── Leer CSV a texto ─── */
-   let csvRaw = '';
+  const eliminarRutina = async (id) => {
+    try {
+      const nueva = rutinas.filter(r => r.id !== id);
 
-if (Platform.OS === 'web') {
-  /* ── 1. FileList (picked.output[0]) ── */
-  if (picked.output?.[0]) {
-    csvRaw = await picked.output[0].text();
-  }
-  /* ── 2. assets[0].file (otros navegadores) ── */
-  else if (picked.assets?.[0]?.file) {
-    csvRaw = await picked.assets[0].file.text();
-  }
-  /* ── 3. data:text/csv;base64,…  (Expo Web) ── */
-  else if (picked.assets?.[0]?.uri?.startsWith('data:text')) {
-    const base64 = picked.assets[0].uri.split(',')[1];
-    csvRaw = atob(base64);            // ← decodificamos aquí
-  } else {
-    alert('No se pudo leer el archivo'); return;
-  }
-} else {
-  /* ── Android / iOS ── */
-  const uri = picked.assets?.[0]?.uri ?? picked.uri;
-  csvRaw = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-}
+      // Actualiza estado primero para que la UI responda rápido
+      setRutinas(nueva);
 
-alert('Paso 2: longitud CSV = ' + csvRaw.length);   // ← ahora verás > 0
+      // Persiste cambios
+      await AsyncStorage.setItem('rutinas', JSON.stringify(nueva));
+      await AsyncStorage.removeItem(`routine_${id}`);
 
-    console.log('CSV RAW >>>', csvRaw.slice(0, 120));
-
-    /* ─── Normaliza separador ─── */
-    // if (!csvRaw.includes(',') && csvRaw.includes(';'))
-    //   csvRaw = csvRaw.replace(/;/g, ',');
-
-    /* ─── Parsear ─── */
-
-if (csvRaw.startsWith('"') && csvRaw.endsWith('"')) {
-  csvRaw = csvRaw.slice(1, -1).replace(/""/g, '"');
-}
-csvRaw = csvRaw.replace(/\r\n|\r/g, '\n');
-    
-
-const { data } = Papa.parse(csvRaw, {
-  header: true,
-  skipEmptyLines: true,
-  delimiter: ',',   // ← tu archivo usa comas
-});
-console.log('Filas OK:', data.length, data[0]);
-
-    console.log('Filas parseadas:', data.length, data[0]);
-    if (!data.length) return alert('CSV vacío o cabeceras incorrectas');
-
-    /* ─── Validar columnas principales ─── */
-    const nombreRut = data[0].rutinaNombre?.trim?.();
-    const diasRut   = Number(data[0].dias);
-    if (!nombreRut || !diasRut)
-      return alert('rutinaNombre o dias ausentes');
-
-    /* ─── Construir estructura ejercicios ─── */
-    const idRut  = Date.now().toString();
-    const diasArr = Array.from({ length: diasRut }, () => []);
-
-    data.forEach(f => {
-      const d = Number(f.dia) - 1;
-      if (d < 0 || d >= diasRut) return;
-
-      let ej = diasArr[d].find(
-        e => e.musculo === f.musculo && e.nombre === f.ejercicio
-      );
-      if (!ej) {
-        ej = { id:`${idRut}_${d}_${diasArr[d].length}`,
-               musculo:f.musculo, nombre:f.ejercicio, series:[] };
-        diasArr[d].push(ej);
+      if (selectedId === id) {
+        setSelected(null);
+        await AsyncStorage.multiRemove(['active_routine','active_routine_name']);
       }
-      ej.series.push({
-        repMin:f.repMin, repMax:f.repMax, extra:f.extra || 'Ninguno',
+    } catch (e) {
+      console.warn('Eliminar rutina error', e);
+      Alert.alert('Error', 'No se pudo eliminar la rutina');
+    }
+  };
+
+  /* ─────────── IMPORTAR CSV ─────────── */
+  const importarRutina = async () => {
+    try {
+      /* ─── Seleccionar ─── */
+      const picked = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        type: 'text/*',
       });
-    });
+      if (picked.canceled || picked.type === 'cancel') return;
 
-    /* ─── Añadir a lista + persistir ─── */
-    const nuevaRut = {
-      id:idRut, nombre:nombreRut, dias:diasRut,
-      fecha:new Date().toLocaleDateString(),
-    };
-    setRutinas(prev => {
-      const lista = [...prev, nuevaRut];
-      AsyncStorage.multiSet([
-        ['rutinas', JSON.stringify(lista)],
-        [`routine_${idRut}`, JSON.stringify(diasArr)],
-      ]);
-      console.log('Rutina añadida, total:', lista.length);
-      return lista;
-    });
+      /* ─── Leer CSV a texto ─── */
+      let csvRaw = '';
 
-    alert('Rutina importada ✅');
-  } catch (err) {
-    console.error('ERROR IMPORTANDO', err);
-    alert('Fallo al importar CSV');
-  }
-};
+      if (Platform.OS === 'web') {
+        if (picked.output?.[0]) {
+          csvRaw = await picked.output[0].text();
+        } else if (picked.assets?.[0]?.file) {
+          csvRaw = await picked.assets[0].file.text();
+        } else if (picked.assets?.[0]?.uri?.startsWith('data:text')) {
+          const base64 = picked.assets[0].uri.split(',')[1];
+          csvRaw = atob(base64);
+        } else {
+          alert('No se pudo leer el archivo'); return;
+        }
+      } else {
+        const uri = picked.assets?.[0]?.uri ?? picked.uri;
+        csvRaw = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+      }
 
+      // Normalizaciones simples
+      if (csvRaw.startsWith('"') && csvRaw.endsWith('"')) {
+        csvRaw = csvRaw.slice(1, -1).replace(/""/g, '"');
+      }
+      csvRaw = csvRaw.replace(/\r\n|\r/g, '\n');
+
+      const { data } = Papa.parse(csvRaw, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: ',',   // tu archivo usa comas
+      });
+      if (!data.length) return alert('CSV vacío o cabeceras incorrectas');
+
+      const nombreRut = data[0].rutinaNombre?.trim?.();
+      const diasRut   = Number(data[0].dias);
+      if (!nombreRut || !diasRut)
+        return alert('rutinaNombre o dias ausentes');
+
+      const idRut  = Date.now().toString();
+      const diasArr = Array.from({ length: diasRut }, () => []);
+
+      data.forEach(f => {
+        const d = Number(f.dia) - 1;
+        if (d < 0 || d >= diasRut) return;
+
+        let ej = diasArr[d].find(
+          e => e.musculo === f.musculo && e.nombre === f.ejercicio
+        );
+        if (!ej) {
+          ej = { id:`${idRut}_${d}_${diasArr[d].length}`,
+                 musculo:f.musculo, nombre:f.ejercicio, series:[] };
+          diasArr[d].push(ej);
+        }
+        ej.series.push({
+          repMin:f.repMin, repMax:f.repMax, extra:f.extra || 'Ninguno',
+        });
+      });
+
+      const nuevaRut = {
+        id:idRut, nombre:nombreRut, dias:diasRut,
+        fecha:new Date().toLocaleDateString(),
+      };
+      setRutinas(prev => {
+        const lista = [...prev, nuevaRut];
+        AsyncStorage.multiSet([
+          ['rutinas', JSON.stringify(lista)],
+          [`routine_${idRut}`, JSON.stringify(diasArr)],
+        ]);
+        return lista;
+      });
+
+      alert('Rutina importada ✅');
+    } catch (err) {
+      console.error('ERROR IMPORTANDO', err);
+      alert('Fallo al importar CSV');
+    }
+  };
 
   /* ─────────── TARJETA ─────────── */
   const Card = ({ item }) => {
@@ -215,18 +208,27 @@ console.log('Filas OK:', data.length, data[0]);
 
         <TouchableOpacity
           style={styles.modBtn}
-          onPress={(e)=>{e.stopPropagation(); router.push(`/rutinas/${item.id}?dias=${item.dias}`);}}
-        ><Text style={styles.btnText}>Mod</Text></TouchableOpacity>
+          onPress={(e)=>{
+            // Evita que la tarjeta se seleccione en web; en móvil no pasa nada
+            e?.stopPropagation?.();
+            router.push(`/rutinas/${item.id}?dias=${item.dias}`);
+          }}
+        >
+          <Text style={styles.btnText}>Mod</Text>
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.delBtn}
-            onPress={() => eliminarRutina(item.id)}
-          >
-            <Text style={styles.btnText}>Del</Text>
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.delBtn}
+          onPress={(e)=>{
+            e?.stopPropagation?.();
+            confirmarEliminar(item);
+          }}
+        >
+          <Text style={styles.btnText}>Del</Text>
+        </TouchableOpacity>
       </Pressable>
     );
-  };    
+  };
 
   /* ─────────── UI ─────────── */
   return (
@@ -256,7 +258,7 @@ console.log('Filas OK:', data.length, data[0]);
         style={{marginTop:24}}
         data={rutinas}
         keyExtractor={it=>it.id}
-        renderItem={Card}
+        renderItem={({item}) => <Card item={item} />}
         ListEmptyComponent={<Text style={{textAlign:'center',marginTop:40}}>Sin rutinas</Text>}
       />
     </View>

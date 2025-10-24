@@ -1,5 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useState, useLayoutEffect, useEffect } from 'react';
+// <--- Importaciones optimizadas
+import { useState, useLayoutEffect, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -19,23 +20,74 @@ const MUSCULOS = [
 ];
 const EXTRAS = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales'];
 
+
+// <--- Componente RenderItem movido fuera y "memoizado"
+const RenderItem = memo(({ item, isOpen, onToggle, onUpdateSerie }) => {
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity onPress={onToggle}>
+        <Text style={styles.cardHeader}>
+          {item.musculo} — {item.nombre}
+        </Text>
+      </TouchableOpacity>
+
+      {isOpen && (
+        <View style={styles.seriesBox}>
+          {item.series.map((s, i) => (
+            <View key={i} style={styles.serieRow}>
+              <Text style={styles.serieLabel}>Serie {i + 1}</Text>
+
+              <TextInput
+                placeholder="min"
+                keyboardType="numeric"
+                style={styles.repInput}
+                value={s.repMin}
+                onChangeText={(v) => onUpdateSerie(item.id, i, { repMin: v })}
+              />
+              <TextInput
+                placeholder="max"
+                keyboardType="numeric"
+                style={styles.repInput}
+                value={s.repMax}
+                onChangeText={(v) => onUpdateSerie(item.id, i, { repMax: v })}
+              />
+
+              <Picker
+                selectedValue={s.extra}
+                onValueChange={(v) => onUpdateSerie(item.id, i, { extra: v })}
+                style={styles.extraPicker}
+              >
+                {EXTRAS.map(e => <Picker.Item key={e} label={e} value={e} />)}
+              </Picker>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
+// <--- Corrección del error 'display name'
+RenderItem.displayName = 'RenderItem';
+
+
 /* ─── Componente ─────────────────────── */
 export default function EditarRutina() {
   /* 1. Parámetros */
-  const { id, dias } = useLocalSearchParams();          // …/rutinas/xyz?dias=3
-  const diasTotales   = Number(dias) > 0 ? Number(dias) : 1;
-  const navigation    = useNavigation();
+  const { id, dias } = useLocalSearchParams();
+  const diasTotales = Number(dias) > 0 ? Number(dias) : 1;
+  const navigation = useNavigation();
 
   /* 2. Estado principal */
   const [ejerciciosPorDia, setEjerciciosPorDia] = useState(
     () => Array.from({ length: diasTotales }, () => [])
   );
   const [diaSel, setDiaSel] = useState(1);
-  const [openId, setOpenId] = useState(null);
+  const [openId, setOpenId] = useState(null); // Qué item está abierto
 
   /* 3. Formulario */
   const [musculo, setMusculo] = useState('');
-  const [nombre,  setNombre]  = useState('');
+  const [nombre, setNombre] = useState('');
   const [nSeries, setNSeries] = useState('');
 
   /* 4. Cargar rutina si existe */
@@ -72,7 +124,7 @@ export default function EditarRutina() {
   }, [ejerciciosPorDia, id]);
 
   /* 6. Añadir ejercicio */
-  const addEjercicio = () => {
+  const addEjercicio = useCallback(() => {
     if (!musculo || !nombre || !nSeries) return;
     const nuevo = {
       id: Date.now().toString(),
@@ -88,10 +140,10 @@ export default function EditarRutina() {
       return copia;
     });
     setMusculo(''); setNombre(''); setNSeries('');
-  };
+  }, [musculo, nombre, nSeries, diaSel]); // <--- Dependencias
 
   /* 7. Editar serie */
-  const updateSerie = (ejId, serieIdx, changes) =>
+  const updateSerie = useCallback((ejId, serieIdx, changes) =>
     setEjerciciosPorDia(prev => prev.map(dia =>
       dia.map(ej => {
         if (ej.id !== ejId) return ej;
@@ -100,17 +152,18 @@ export default function EditarRutina() {
         );
         return { ...ej, series: nuevas };
       })
-    ));
+    )),
+  []); // <--- Array vacío (no usa nada de fuera)
 
   /* 8. Botón Guardar manual (por si el usuario prefiere) */
-  const guardarRutinaManual = async () => {
+  const guardarRutinaManual = useCallback(async () => {
     try {
       await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(ejerciciosPorDia));
       alert('Rutina guardada ✅');
     } catch {
       alert('No se pudo guardar');
     }
-  };
+  }, [id, ejerciciosPorDia]); // <--- Dependencias
 
   /* 9. Cabecera con botón Guardar */
   useLayoutEffect(() => {
@@ -121,59 +174,18 @@ export default function EditarRutina() {
         </TouchableOpacity>
       ),
     });
-  }, [ejerciciosPorDia]);
+  }, [navigation, guardarRutinaManual]); // <--- Array limpio
+
 
   /* 10. SectionList */
-  const sections = ejerciciosPorDia.map((ej, i) => ({
+  const sections = useMemo(() => ejerciciosPorDia.map((ej, i) => ({
     title: `Día ${i + 1}`,
     data: ej,
-  }));
+  })), [ejerciciosPorDia]); // <--- Dependencia
 
-  const RenderItem = ({ item }) => {
-    const abierto = item.id === openId;
-    return (
-      <View style={styles.card}>
-        <TouchableOpacity onPress={() => setOpenId(abierto ? null : item.id)}>
-          <Text style={styles.cardHeader}>
-            {item.musculo} — {item.nombre}
-          </Text>
-        </TouchableOpacity>
-
-        {abierto && (
-          <View style={styles.seriesBox}>
-            {item.series.map((s, i) => (
-              <View key={i} style={styles.serieRow}>
-                <Text style={styles.serieLabel}>Serie {i + 1}</Text>
-
-                <TextInput
-                  placeholder="min"
-                  keyboardType="numeric"
-                  style={styles.repInput}
-                  value={s.repMin}
-                  onChangeText={(v) => updateSerie(item.id, i, { repMin: v })}
-                />
-                <TextInput
-                  placeholder="max"
-                  keyboardType="numeric"
-                  style={styles.repInput}
-                  value={s.repMax}
-                  onChangeText={(v) => updateSerie(item.id, i, { repMax: v })}
-                />
-
-                <Picker
-                  selectedValue={s.extra}
-                  onValueChange={(v) => updateSerie(item.id, i, { extra: v })}
-                  style={styles.extraPicker}
-                >
-                  {EXTRAS.map(e => <Picker.Item key={e} label={e} value={e} />)}
-                </Picker>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-    );
-  };
+  const handleToggleItem = useCallback((itemId) => {
+    setOpenId(prevId => (prevId === itemId ? null : itemId));
+  }, []);
 
   /* ─────────── UI ─────────── */
   return (
@@ -218,7 +230,14 @@ export default function EditarRutina() {
         style={{ marginTop: 24 }}
         sections={sections}
         keyExtractor={it => it.id}
-        renderItem={RenderItem}
+        renderItem={({ item }) => (
+          <RenderItem
+            item={item}
+            isOpen={item.id === openId}
+            onToggle={() => handleToggleItem(item.id)}
+            onUpdateSerie={updateSerie}
+          />
+        )}
         renderSectionHeader={({ section: { title } }) => (
           <Text style={styles.sectionHeader}>{title}</Text>
         )}
@@ -228,6 +247,7 @@ export default function EditarRutina() {
           </Text>
         }
         stickySectionHeadersEnabled={false}
+        extraData={openId} // <--- Importante para que sepa cuándo re-renderizar
       />
     </View>
   );
@@ -236,22 +256,22 @@ export default function EditarRutina() {
 /* ─── Estilos ─── */
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#f4f4f4' },
-  header:    { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  label:     { marginTop: 12, fontWeight: 'bold' },
-  picker:    { borderWidth:1, borderColor:'#ccc', borderRadius:8, backgroundColor:'#fff' },
-  input:     { borderWidth:1, borderColor:'#ccc', borderRadius:8, padding:8, marginTop:4, backgroundColor:'#fff' },
-  addBtn:    { marginTop:16, backgroundColor:'#10b981', padding:12, borderRadius:8, alignItems:'center' },
-  addTxt:    { color:'#fff', fontWeight:'bold' },
+  header: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  label: { marginTop: 12, fontWeight: 'bold' },
+  picker: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, backgroundColor: '#fff' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 8, marginTop: 4, backgroundColor: '#fff' },
+  addBtn: { marginTop: 16, backgroundColor: '#10b981', padding: 12, borderRadius: 8, alignItems: 'center' },
+  addTxt: { color: '#fff', fontWeight: 'bold' },
 
-  sectionHeader:{ fontWeight:'bold', fontSize:16, marginTop:20, marginBottom:8 },
-  card:      { backgroundColor:'#fff', borderRadius:10, marginBottom:12, elevation:2 },
-  cardHeader:{ padding:12, fontWeight:'600', fontSize:15 },
-  seriesBox: { paddingHorizontal:12, paddingBottom:10 },
-  serieRow:  { flexDirection:'row', alignItems:'center', marginBottom:8 },
-  serieLabel:{ width:60 },
-  repInput:  { width:60, borderWidth:1, borderColor:'#ccc', borderRadius:6, padding:6, marginHorizontal:4 },
-  extraPicker:{ flex:1, borderWidth:1, borderColor:'#ccc', borderRadius:6 },
+  sectionHeader: { fontWeight: 'bold', fontSize: 16, marginTop: 20, marginBottom: 8 },
+  card: { backgroundColor: '#fff', borderRadius: 10, marginBottom: 12, elevation: 2 },
+  cardHeader: { padding: 12, fontWeight: '600', fontSize: 15 },
+  seriesBox: { paddingHorizontal: 12, paddingBottom: 10 },
+  serieRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  serieLabel: { width: 60 },
+  repInput: { width: 60, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 6, marginHorizontal: 4 },
+  extraPicker: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6 },
 
-  saveBtn:   { backgroundColor:'#10b981', paddingHorizontal:16, paddingVertical:6, borderRadius:8, marginRight:8 },
-  saveTxt:   { color:'#fff', fontWeight:'bold' },
+  saveBtn: { backgroundColor: '#10b981', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, marginRight: 8 },
+  saveTxt: { color: '#fff', fontWeight: 'bold' },
 });

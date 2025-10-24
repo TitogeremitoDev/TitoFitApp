@@ -2,22 +2,35 @@
   "expo": {
     "name": "TitoFitApp",
     "slug": "TitoFitApp",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/mi-logo-icono.png",
     "scheme": "titofitapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/wait.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/mi-logo-icono-foreground.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.german92.TitoFitApp"
+      "package": "com.german92.titofitapp",
+      "softwareKeyboardLayoutMode": "resize",
+
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": { "scheme": "titofitapp" },
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,7 +42,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/wait.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
