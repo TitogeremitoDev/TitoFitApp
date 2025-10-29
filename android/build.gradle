@@ -3,7 +3,7 @@
 buildscript {
     ext {
         // Mantenemos todas las versiones aquí para fácil acceso
-        kotlinVersion = "1.9.22"
+        kotlinVersion = "1.8.20"
         agpVersion = "8.3.2" // Esta es la versión de AGP que fijamos
     }
     repositories {
