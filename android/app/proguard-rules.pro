@@ -12,3 +12,26 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# Reglas básicas para React Native
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.react.devsupport.** { *; }
+
+# Mantener los módulos nativos (¡Muy importante!)
+-keep public class * extends com.facebook.react.bridge.BaseActivityEventListener { *; }
+-keep public class * extends com.facebook.react.bridge.ReactContextBaseJavaModule { *; }
+-keep public class * implements com.facebook.react.bridge.NativeModule { *; }
+
+# Esto es para evitar crashes con la serialización (común en ProGuard)
+-keepclassmembers class * {
+    @com.facebook.react.uimanager.UIProp
+    public void set*(...);
+}
+-keepclassmembers class * {
+    @com.facebook.react.uimanager.annotations.ReactProp
+    public void set*(...);
+}
+-keepclassmembers class * {
+    @com.facebook.react.uimanager.annotations.ReactPropGroup
+    public void set*(...);
+}
