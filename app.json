@@ -3,6 +3,7 @@
     "name": "TitoFitApp",
     "slug": "TitoFitApp",
     "version": "1.2.0",
+    "sdkVersion": "53.0.0", 
     "orientation": "portrait",
     "icon": "./assets/images/mi-logo-icono.png",
     "scheme": "titofitapp",
