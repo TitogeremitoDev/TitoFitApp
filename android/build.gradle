@@ -1,36 +1,45 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-  repositories {
-    google()
-    mavenCentral()
-  }
-  dependencies {
-    classpath('com.android.tools.build:gradle:8.3.2')
-    classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-  }
+    ext {
+        // Mantenemos todas las versiones aquí para fácil acceso
+        kotlinVersion = "1.9.22"
+        agpVersion = "8.3.2" // Esta es la versión de AGP que fijamos
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Usamos las variables definidas arriba
+        classpath("com.android.tools.build:gradle:$agpVersion")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        
+        // --- ESTE ES EL ARREGLO CRÍTICO ---
+        // Ahora sí estamos usando la kotlinVersion que definiste
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+    }
 }
 
 def reactNativeAndroidDir = new File(
-  providers.exec {
-    workingDir(rootDir)
-    commandLine("node", "--print", "require.resolve('react-native/package.json')")
-  }.standardOutput.asText.get().trim(),
-  "../android"
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("node", "--print", "require.resolve('react-native/package.json')")
+    }.standardOutput.asText.get().trim(),
+    "../android"
 )
 
 allprojects {
-  repositories {
-    maven {
-      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-      url(reactNativeAndroidDir)
-    }
+    repositories {
+        maven {
+            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+            url(reactNativeAndroidDir)
+        }
 
-    google()
-    mavenCentral()
-    maven { url 'https://www.jitpack.io' }
-  }
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
 }
 
 apply plugin: "expo-root-project"
