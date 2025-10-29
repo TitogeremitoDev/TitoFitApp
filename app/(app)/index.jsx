@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 
 // <--- Importamos el botón reutilizable
-import ActionButton from '../components/ActionButton';
+import ActionButton from '../../components/ActionButton';
 
 // --- FRASES MOTIVADORAS ---
 const FRASES = [
@@ -64,7 +64,7 @@ export default function HomeScreen() {
           {/* Tarjeta “glass” central */}
           <View style={styles.card}>
             <Image
-              source={require('../assets/logo.png')}
+              source={require('../../assets/logo.png')}
               resizeMode="contain"
               style={styles.logo}
             />

@@ -1,0 +1,2016 @@
+[
+  {
+    "musculo": "PECTORAL",
+    "ejercicios": [
+      {
+        "id": "pec_press_manc_muy_inc",
+        "nombre": "Press Muy Inclinado con Mancuernas",
+        "videoId": "a64mtMHyPfY",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular y hombros pegados al banco.",
+          "Agarre ancho hombros.",
+          "Buena estabilidad en banco.",
+          "Extensión completa de codos.",
+          "Bajar mancuernas hacia hombros.",
+          "Rotar mancuernas ligeramente hacia adentro."
+        ]
+      },
+      {
+        "id": "pec_press_maq_muy_inc",
+        "nombre": "Press Muy Inclinado Máquina",
+        "videoId": "PqQ4AhX_WDI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Apoyar axilas contra banco/respaldo.",
+          "Bajar lo máximo posible.",
+          "Hombros atrás pegados al banco.",
+          "Extensión completa de codos.",
+          "Alinear codo y muñeca con trayectoria."
+        ]
+      },
+      {
+        "id": "pec_press_banca_barra",
+        "nombre": "Press Banca con Barra",
+        "videoId": "RCxikBS5Qy8",
+        "aproximaciones": "3x 50%/75%/85% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Bajar barra hacia pezones.",
+          "Espalda completamente apoyada.",
+          "Empujar pies contra el suelo."
+        ]
+      },
+      {
+        "id": "pec_press_banca_plano_poco_inc",
+        "nombre": "Press Banca Plano/Poco Inclinado",
+        "videoId": "RCxikBS5Qy8",
+        "aproximaciones": "N/A",
+        "tecnicaCorrecta": [
+          "Retracción escapular.",
+          "Bajar todo lo posible.",
+          "Hombros atrás, pegados al banco.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "No separar codos al subir.",
+          "Pausa breve en cambio de fase.",
+          "No rebotar abajo.",
+          "Empujar pies contra suelo (si es barra)."
+        ]
+      },
+      {
+        "id": "pec_press_inc_multi",
+        "nombre": "Press Inclinado Multipower",
+        "videoId": "PqQ4AhX_WDI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco inclinado (no recto).",
+          "Bajar barra a parte alta del pecho/pezones.",
+          "Retracción escapular y hombros pegados al banco.",
+          "Extensión completa de codos.",
+          "Empujar pies contra el suelo.",
+          "Buena estabilidad."
+        ]
+      },
+      {
+        "id": "pec_press_banca_multi",
+        "nombre": "Press Banca en Multipower",
+        "videoId": "2lqZKSkmJbo",
+        "aproximaciones": "3x 50%/75%/85% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Bajar barra hacia pezones.",
+          "Hombros pegados al banco.",
+          "Extensión completa de codos.",
+          "Empujar pies contra el suelo.",
+          "Buena estabilidad.",
+          "No separar codos al subir.",
+          "No rebotar abajo.",
+          "Respirar en excéntrica."
+        ]
+      },
+      {
+        "id": "pec_press_inc_manc",
+        "nombre": "Press Inclinado Mancuernas",
+        "videoId": "a64mtMHyPfY",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Bajar mancuernas hasta el pecho.",
+          "Hombros pegados al banco.",
+          "Extensión completa de codos.",
+          "No separar codos al subir.",
+          "Rotar mancuernas ligeramente hacia adentro.",
+          "No rebotar abajo."
+        ]
+      },
+      {
+        "id": "pec_press_sup_maq",
+        "nombre": "Press Superior Maquina",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Bajar lo máximo posible.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "No juntar agarre excesivamente.",
+          "Pausa breve en cambio de fase."
+        ]
+      },
+      {
+        "id": "pec_press_inc_maq",
+        "nombre": "Press Inclinado Máquina",
+        "videoId": "PqQ4AhX_WDI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco casi recto.",
+          "Retracción escapular.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "No rebotar abajo.",
+          "No llevar codos adelante.",
+          "Pausa breve en cambio de fase.",
+          "Sacar pecho al final."
+        ]
+      },
+      {
+        "id": "pec_fondos_maq",
+        "nombre": "Fondos Máquina",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Inclinar torso adelante (para pecho).",
+          "Bajar lo máximo posible.",
+          "Extensión completa de codos.",
+          "Estirar pectoral arriba.",
+          "Sacar pecho al final.",
+          "Empujar con el pecho."
+        ]
+      },
+      {
+        "id": "pec_fondos_libres",
+        "nombre": "Fondos Libres",
+        "videoId": "7dgoc3GlpYI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Inclinar torso adelante.",
+          "Estirar pectoral arriba.",
+          "Empujar con el pecho.",
+          "Extensión completa de codos.",
+          "Agarre un poco abierto.",
+          "No llevar codos adelante excesivamente."
+        ]
+      },
+      {
+        "id": "pec_press_banca_maq",
+        "nombre": "Press Banca Maquina",
+        "videoId": "RCxikBS5Qy8",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Apoyar axilas contra banco/agarres.",
+          "Bajar todo lo posible.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "No separar codos al subir.",
+          "Pausa breve en cambio de fase.",
+          "No rebotar abajo."
+        ]
+      },
+      {
+        "id": "pec_press_maq_poco_inc",
+        "nombre": "Press Máquina Poco Inclinado",
+        "videoId": "PqQ4AhX_WDI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "Pausa breve en cambio de fase."
+        ]
+      },
+      {
+        "id": "pec_press_abierto_etenon",
+        "nombre": "Press Abierto Etenon",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "No llevar codos adelante.",
+          "Pausa breve en cambio de fase.",
+          "Codo queda por detrás del torso."
+        ]
+      },
+      {
+        "id": "pec_press_declinado_etenon",
+        "nombre": "Press Declinado Etenon",
+        "videoId": "EEPpGxCMD-g",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "Controlar cambio de fase."
+        ]
+      },
+      {
+        "id": "pec_press_plano_maq",
+        "nombre": "Press Plano Maquina",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Bajar todo lo posible.",
+          "Hombros pegados al respaldo.",
+          "Extensión completa de codos.",
+          "Alinear codo/muñeca con trayectoria.",
+          "No rebotar abajo.",
+          "Pausa breve en cambio de fase."
+        ]
+      },
+      {
+        "id": "pec_aperturas_maq_tumbado",
+        "nombre": "Aperturas Máquina Tumbado",
+        "videoId": "iXWbc8SF9KA",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_bayesian_flyes",
+        "nombre": "Bayesian Flyes",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_cruce_poleas",
+        "nombre": "Cruce Poleas",
+        "videoId": "BuSKYdK8HR8",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_cruce_banco",
+        "nombre": "Cruce con Banco",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_aperturas_pecdek",
+        "nombre": "Aperturas Pec Dek",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_aperturas_munequera",
+        "nombre": "Aperturas Muñequera",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_aperturas_polea",
+        "nombre": "Aperturas Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      },
+      {
+        "id": "pec_cruce_poleas_estrecho",
+        "nombre": "Cruce Poleas Estrechas",
+        "videoId": "BuSKYdK8HR8",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Retracción escapular.",
+          "Estirar pectoral al final de excéntrica.",
+          "Pensar en juntar bíceps.",
+          "Mantener posición estable."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "BICEPS",
+    "ejercicios": [
+      {
+        "id": "bic_curl_barra",
+        "nombre": "Curl con Barra",
+        "videoId": "dpmDd5D_tCI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "No balancear espalda.",
+          "Codos fijos, no moverlos.",
+          "Parada en contracción máxima."
+        ]
+      },
+      {
+        "id": "bic_curl_scott_barra",
+        "nombre": "Curl Scott Barra",
+        "videoId": "dpmDd5D_tCI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar axilas contra banco.",
+          "Extensión completa de codos (controlada).",
+          "No mover codos durante subida."
+        ]
+      },
+      {
+        "id": "bic_curl_sentado_manc",
+        "nombre": "Curl Sentado con Mancuernas",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco inclinado (no recto).",
+          "Extensión completa de codos.",
+          "No balancear.",
+          "Rotar muñecas si es supino."
+        ]
+      },
+      {
+        "id": "bic_martillo_sentado",
+        "nombre": "Martillo Sentado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre neutro (martillo).",
+          "Codos fijos.",
+          "No balancear."
+        ]
+      },
+      {
+        "id": "bic_curl_scott_uni",
+        "nombre": "Curl Scott Unilateral",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar axila contra banco.",
+          "Extensión completa controlada.",
+          "Codo fijo."
+        ]
+      },
+      {
+        "id": "bic_curl_scott_polea_baja",
+        "nombre": "Curl Scott en Polea Baja",
+        "videoId": "dMkY7nwrQpc",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar axila.",
+          "Extensión completa.",
+          "Codo fijo."
+        ]
+      },
+      {
+        "id": "bic_martillo_cuerda",
+        "nombre": "Martillo Cuerda",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre neutro.",
+          "Codos fijos.",
+          "Extensión completa."
+        ]
+      },
+      {
+        "id": "bic_curl_bayesian_sentado",
+        "nombre": "Curl Bayesian Sentado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco inclinado.",
+          "Máximo estiramiento abajo.",
+          "Codos fijos."
+        ]
+      },
+      {
+        "id": "bic_curl_bayesian",
+        "nombre": "Curl Bayesian",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Máximo estiramiento.",
+          "Codos fijos."
+        ]
+      },
+      {
+        "id": "bic_curl_deadstop",
+        "nombre": "Curl Dead Stop",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar barra en cada repetición (parada completa).",
+          "No rebotar contra soporte.",
+          "Codos fijos."
+        ]
+      },
+      {
+        "id": "bic_curl_scott_maq",
+        "nombre": "Curl Scott Máquina",
+        "videoId": "dMkY7nwrQpc",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar axilas.",
+          "Extensión completa.",
+          "Codo fijo."
+        ]
+      },
+      {
+        "id": "bic_curl_polea_alta",
+        "nombre": "Curl Polea Alta",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codo alineado con polea (o ligeramente por delante).",
+          "No mover el codo.",
+          "Máxima contracción."
+        ]
+      },
+      {
+        "id": "bic_curl_sentado_reves_scott",
+        "nombre": "Curl Sentado Del Reves Scott",
+        "videoId": "dMkY7nwrQpc",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar parte posterior del brazo.",
+          "Codo fijo."
+        ]
+      },
+      {
+        "id": "bic_curl_sentado_polea",
+        "nombre": "Curl Sentado en Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Espalda apoyada.",
+          "Codos fijos.",
+          "Extensión completa."
+        ]
+      },
+      {
+        "id": "bic_curl_polea_baja",
+        "nombre": "Curl Polea Baja",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "No balancear.",
+          "Codos fijos.",
+          "Extensión completa."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "TRICEPS",
+    "ejercicios": [
+      {
+        "id": "tri_ext_codo_barra",
+        "nombre": "Extensión codo barra (Polea)",
+        "videoId": "",
+        "aproximaciones": "N/A",
+        "tecnicaCorrecta": [
+          "Codos pegados al torso.",
+          "No mover codos (solo antebrazo).",
+          "Extensión completa abajo.",
+          "No balancear."
+        ]
+      },
+      {
+        "id": "tri_press_frances",
+        "nombre": "Press Francés",
+        "videoId": "IDwCYx7YvYQ",
+        "aproximaciones": "N/A",
+        "tecnicaCorrecta": [
+          "Codos apuntando al techo (o ligeramente atrás).",
+          "No abrir codos excesivamente.",
+          "Bajar barra hacia frente/coronilla.",
+          "Extensión completa arriba.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "tri_katana",
+        "nombre": "Katana",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codos apuntando arriba.",
+          "Extensión completa.",
+          "No mover codos.",
+          "Mantener brazos cerca de la cabeza."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_maq",
+        "nombre": "Extensión Codo Máquina",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar asiento/agarre.",
+          "Codos fijos.",
+          "Extensión completa.",
+          "Anclarse bien."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_munequera",
+        "nombre": "Extensión Codo Muñequera",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codo fijo.",
+          "Extensión completa.",
+          "Agarre firme (si aplica)."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_cuerda",
+        "nombre": "Extensión Codo Cuerda",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codos pegados al torso.",
+          "Extensión completa.",
+          "Separar manos al final (opcional).",
+          "No mover codos."
+        ]
+      },
+      {
+        "id": "tri_press_frances_polea",
+        "nombre": "Press Francés Polea",
+        "videoId": "IDwCYx7YvYQ",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea baja.",
+          "Codos fijos (90 grados con torso).",
+          "Extensión completa.",
+          "No rebotar."
+        ]
+      },
+      {
+        "id": "tri_patada_polea",
+        "nombre": "Patada de Tríceps Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codo fijo, pegado al torso.",
+          "Extensión completa atrás.",
+          "Torso inclinado."
+        ]
+      },
+      {
+        "id": "tri_press_frances_manc",
+        "nombre": "Press Frances Mancuernas",
+        "videoId": "IDwCYx7YvYQ",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codos apuntando arriba.",
+          "No abrir codos.",
+          "Bajar mancuernas controladamente.",
+          "Extensión completa.",
+          "Estirar tríceps abajo."
+        ]
+      },
+      {
+        "id": "tri_press_cerrado",
+        "nombre": "Press Cerrado",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre ancho hombros (o poco menos).",
+          "Codos pegados al torso.",
+          "Bajar barra a parte baja pectoral/abdomen.",
+          "Extensión completa."
+        ]
+      },
+      {
+        "id": "tri_kaz_press",
+        "nombre": "Kaz Press",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Bajar mancuernas flexionando codo.",
+          "Codos relativamente fijos.",
+          "Extensión completa."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_tras_nuca",
+        "nombre": "Extensión Codo Tras Nuca (Polea)",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea altura media.",
+          "Codos apuntando arriba/adelante.",
+          "Extensión completa.",
+          "No mover codos.",
+          "Usar muñequera si es unilateral.",
+          "Agarrar soporte para estabilidad."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_uni",
+        "nombre": "Extensión Codo Unilateral (Polea)",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codo fijo, pegado al torso.",
+          "Extensión completa.",
+          "No mover codo.",
+          "Estirar tríceps.",
+          "Peso al lado que empuja."
+        ]
+      },
+      {
+        "id": "tri_ext_codo_x",
+        "nombre": "Extensión Codo en X",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco en medio.",
+          "Muñequeras en poleas.",
+          "Codos fijos, pegados al torso.",
+          "Extensión completa.",
+          "Estirar tríceps."
+        ]
+      },
+      {
+        "id": "tri_ext_overhead_poleas",
+        "nombre": "Extensión Overhead Poleas",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco recto en medio.",
+          "Muñequeras.",
+          "Codos por encima de la cabeza.",
+          "No mover codos.",
+          "Extensión completa."
+        ]
+      },
+      {
+        "id": "tri_fondos_maq",
+        "nombre": "Fondos Maquina (Énfasis Tríceps)",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Mantener torso vertical.",
+          "Espalda pegada al banco.",
+          "Extensión completa arriba.",
+          "Codos siguen trayectoria agarre."
+        ]
+      },
+      {
+        "id": "tri_katana_manc",
+        "nombre": "Katana con Mancuerna",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Codo apuntando arriba.",
+          "Extensión completa.",
+          "No mover codo.",
+          "Mantener brazo cerca cabeza."
+        ]
+      },
+      {
+        "id": "tri_ext_tras_nuca_sentado",
+        "nombre": "Extensión Codo Tras Nuca Sentado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco casi recto.",
+          "Codos apuntando arriba.",
+          "Extensión completa.",
+          "No mover codos."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "CUADRICEPS",
+    "ejercicios": [
+      {
+        "id": "cua_ext_rodilla",
+        "nombre": "Extensión Rodilla",
+        "videoId": "WY92LlxaUiU",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Rodilla alineada con eje máquina.",
+          "Recorrido completo.",
+          "Parada breve en contracción."
+        ]
+      },
+      {
+        "id": "cua_hack_squat",
+        "nombre": "Hack Squat",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pies abajo en plataforma (énfasis cuádriceps).",
+          "No rebotar abajo.",
+          "Pausa breve en cambio de fase.",
+          "Llenar aire al bajar."
+        ]
+      },
+      {
+        "id": "cua_prensa",
+        "nombre": "Prensa",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pies en posición media/baja.",
+          "Bajar controladamente.",
+          "No despegar lumbar.",
+          "No bloquear rodillas arriba."
+        ]
+      },
+      {
+        "id": "cua_prensa_horiz_placas",
+        "nombre": "Prensa Horizontal de Placas",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Espalda completamente apoyada.",
+          "Empujar con toda la planta del pie."
+        ]
+      },
+      {
+        "id": "cua_prensa_horizontal",
+        "nombre": "Prensa Horizontal",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Espalda apoyada.",
+          "Controlar bajada."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_libre",
+        "nombre": "Sentadilla Libre",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "3x 85%/75%/50% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Barra bien apoyada (alta o baja).",
+          "Espalda recta/neutra.",
+          "Romper paralelo (bajar profundo).",
+          "Torso vertical al bajar.",
+          "No rebotar abajo."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_multi",
+        "nombre": "Sentadilla Multipower",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "3x 85%/75%/50% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pies ligeramente adelantados.",
+          "Espalda recta.",
+          "Bajar profundo.",
+          "Torso vertical."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_frontal_multi",
+        "nombre": "Sentadilla Frontal Multipower",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Barra apoyada en hombros/clavículas.",
+          "Codos altos.",
+          "Torso muy vertical.",
+          "Bajar profundo."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_pendular",
+        "nombre": "Sentadilla Pendular",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar lumbar en respaldo.",
+          "Bajar profundo.",
+          "No rebotar abajo."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_bulgara_manc",
+        "nombre": "Sentadilla Bulgara Mancuernas (Cuád)",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Paso corto para énfasis cuádriceps.",
+          "Rodilla delantera sobrepasa tobillo.",
+          "Torso vertical.",
+          "Mancuerna en mano contraria a pierna adelantada (o ambas)."
+        ]
+      },
+      {
+        "id": "cua_squat_bulgara_multi_cuad",
+        "nombre": "Squat Búlgara Multipower (Cuád)",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Paso corto.",
+          "Torso vertical.",
+          "Bajar profundo."
+        ]
+      },
+      {
+        "id": "cua_prensa_unilateral",
+        "nombre": "Prensa Unilateral",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pie centrado o bajo en plataforma.",
+          "Controlar bajada.",
+          "No despegar cadera."
+        ]
+      },
+      {
+        "id": "cua_belt_squat",
+        "nombre": "Belt Squat",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Cinturón bien ajustado.",
+          "Espalda recta.",
+          "Bajar profundo."
+        ]
+      },
+      {
+        "id": "cua_hack_reversa",
+        "nombre": "Hack Reversa",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "De cara a la máquina.",
+          "Pies en posición cómoda.",
+          "Bajar flexionando cadera y rodillas."
+        ]
+      },
+      {
+        "id": "cua_sentadilla_isometrica",
+        "nombre": "Sentadilla Isometrica",
+        "videoId": "nEnby2XvWQo",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Mantener posición isométrica.",
+          "Espalda recta.",
+          "Ángulo rodillas ~90 grados."
+        ]
+      },
+      {
+        "id": "cua_curl_nordico_reverso",
+        "nombre": "Curl Nordico Reverso",
+        "videoId": "",
+        "aproximaciones": "Ninguna",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Rodillas apoyadas.",
+          "Cuerpo recto desde rodillas.",
+          "Bajar hacia adelante controladamente."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "GLUTEO",
+    "ejercicios": [
+      {
+        "id": "glu_squat_bulgara_mp_gluteo",
+        "nombre": "Squat Búlgara MP Glúteo",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Paso más largo que para cuádriceps.",
+          "Inclinar torso ligeramente adelante.",
+          "Bajar profundo."
+        ]
+      },
+      {
+        "id": "glu_squat_bulgara_manc_gluteo",
+        "nombre": "Squat Bulgara Mancuerna (Glúteo)",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Paso largo.",
+          "Inclinar torso adelante.",
+          "Bajar profundo.",
+          "Mancuerna en mano de pierna adelantada (o ambas)."
+        ]
+      },
+      {
+        "id": "glu_hip_thrust_barra",
+        "nombre": "Hip Thrust",
+        "videoId": "dya_-d3bxnk",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Espalda alta apoyada en banco.",
+          "Pies firmes en suelo.",
+          "Subir cadera hasta extensión completa.",
+          "Apretar glúteos arriba."
+        ]
+      },
+      {
+        "id": "glu_patada_banco",
+        "nombre": "Patada de Glúteo en Banco",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyar rodilla y mano en banco.",
+          "Espalda recta.",
+          "Patear hacia atrás y arriba.",
+          "Apretar glúteo."
+        ]
+      },
+      {
+        "id": "glu_puente_gluteo",
+        "nombre": "Puente de Gluteo",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tumbado boca arriba, rodillas flexionadas.",
+          "Elevar cadera apretando glúteos.",
+          "Pausa arriba."
+        ]
+      },
+      {
+        "id": "glu_abduccion_cadera_maq",
+        "nombre": "Abducción de Cadera Máquina",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Espalda apoyada.",
+          "Abrir piernas controladamente.",
+          "Pausa en máxima abducción."
+        ]
+      },
+      {
+        "id": "glu_patada_polea",
+        "nombre": "Patada de Glúteo en Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tobillera conectada a polea baja.",
+          "Mantener equilibrio.",
+          "Patear hacia atrás controladamente.",
+          "Apretar glúteo."
+        ]
+      },
+      {
+        "id": "glu_patada_polea_alta",
+        "nombre": "Patada de Glúteo en Polea Alta",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea alta, tirar hacia abajo/atrás.",
+          "Apretar glúteo."
+        ]
+      },
+      {
+        "id": "glu_pull_through",
+        "nombre": "Pull Through",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "De espaldas a polea baja.",
+          "Cuerda entre las piernas.",
+          "Bisagra de cadera (empujar cadera atrás).",
+          "Extender cadera apretando glúteos."
+        ]
+      },
+      {
+        "id": "glu_abduccion_cadera_polea",
+        "nombre": "Abducción de Cadera en Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tobillera en polea baja.",
+          "De pie, lateral a la polea.",
+          "Separar pierna lateralmente."
+        ]
+      },
+      {
+        "id": "glu_hip_thrust_maq",
+        "nombre": "Hip Thrust Maquina",
+        "videoId": "dya_-d3bxnk",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Empujar con glúteos.",
+          "Extensión completa de cadera."
+        ]
+      },
+      {
+        "id": "glu_prensa_uni_pie_arriba",
+        "nombre": "Prensa Unilateral Pie Arriba",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pie alto en la plataforma.",
+          "Bajar profundo.",
+          "Empujar con talón/glúteo."
+        ]
+      },
+      {
+        "id": "glu_hip_thrust_una_pierna",
+        "nombre": "Hip Thrust Una Pierna",
+        "videoId": "dya_-d3bxnk",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Igual que Hip Thrust, pero con una pierna.",
+          "Mantener cadera nivelada."
+        ]
+      },
+      {
+        "id": "glu_hiperextensiones_gluteo",
+        "nombre": "Hiperextensiones (para Glúteo)",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar banco (más bajo que para lumbar).",
+          "Redondear espalda alta ligeramente.",
+          "Subir apretando glúteos.",
+          "No hiperextender lumbar."
+        ]
+      },
+      {
+        "id": "glu_patada_banco_alt",
+        "nombre": "Patada de Gluteo con Banco",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Verificar si es igual a 'Patada de Glúteo en Banco'."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "DELTOIDES",
+    "ejercicios": [
+      {
+        "id": "del_face_pulls",
+        "nombre": "Face Pulls",
+        "videoId": "sV8TRvwGv60",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea alta, usar cuerda.",
+          "Tirar hacia la cara/boca.",
+          "Codos altos y atrás.",
+          "Rotación externa al final."
+        ]
+      },
+      {
+        "id": "del_post_tumbado",
+        "nombre": "Posterior Tumbado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tumbado en banco inclinado/plano.",
+          "Elevar mancuernas lateralmente.",
+          "Codos ligeramente flexionados."
+        ]
+      },
+      {
+        "id": "del_press_militar_barra",
+        "nombre": "Press Militar",
+        "videoId": "UXDVe8w9s9g",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Barra baja hasta clavícula/pecho alto.",
+          "Codos ligeramente adelantados.",
+          "Empujar verticalmente.",
+          "No arquear lumbar en exceso.",
+          "Extensión completa arriba."
+        ]
+      },
+      {
+        "id": "del_remo_menton",
+        "nombre": "Remo al Mentón",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre cerrado/medio.",
+          "Tirar codos hacia arriba y afuera.",
+          "Barra sube cerca del cuerpo.",
+          "No elevar hombros excesivamente."
+        ]
+      },
+      {
+        "id": "del_press_militar_manc",
+        "nombre": "Press Militar Mancuernas",
+        "videoId": "Hbt2fEa2cTU",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Bajar mancuernas hasta hombros.",
+          "Rotar ligeramente hacia adentro.",
+          "Controlar movimiento."
+        ]
+      },
+      {
+        "id": "del_press_militar_multi",
+        "nombre": "Press Militar Multipower",
+        "videoId": "UXDVe8w9s9g",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco vertical o ligeramente inclinado.",
+          "Bajar barra controladamente.",
+          "Codos debajo de muñecas.",
+          "Agarre correcto."
+        ]
+      },
+      {
+        "id": "del_press_militar_tumb_maq",
+        "nombre": "Press Militar Tumbado Maquina",
+        "videoId": "UXDVe8w9s9g",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar asiento.",
+          "Espalda apoyada.",
+          "Empujar hacia arriba.",
+          "Codos siguen trayectoria."
+        ]
+      },
+      {
+        "id": "del_press_militar_maq",
+        "nombre": "Press Militar Máquina",
+        "videoId": "UXDVe8w9s9g",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Espalda apoyada.",
+          "Codos debajo de trayectoria.",
+          "Controlar movimiento."
+        ]
+      },
+      {
+        "id": "del_post_maq",
+        "nombre": "Posterior en Máquina",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Pecho apoyado.",
+          "Escápulas estiradas/protraídas.",
+          "Agarre por debajo de hombros.",
+          "No pasar línea del torso."
+        ]
+      },
+      {
+        "id": "del_post_polea_bi",
+        "nombre": "Posterior en Polea Bilateral",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Poleas altas.",
+          "Cruzar cables.",
+          "Abrir brazos hacia atrás.",
+          "Escápulas estiradas."
+        ]
+      },
+      {
+        "id": "del_post_polea_uni",
+        "nombre": "Posterior en Polea Unilateral",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea altura media.",
+          "De lado a la polea.",
+          "Tirar brazo recto hacia atrás/lateral.",
+          "Escápulas estiradas.",
+          "Agarrar soporte."
+        ]
+      },
+      {
+        "id": "del_pajaros_manc",
+        "nombre": "Pájaros Mancuerna",
+        "videoId": "dnUpZK26C4A",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Torso inclinado (apoyado o no).",
+          "Elevar brazos lateralmente.",
+          "Codos ligeramente flexionados.",
+          "Escápulas estiradas."
+        ]
+      },
+      {
+        "id": "del_lat_crucyfix",
+        "nombre": "Elevación Lateral Crucyfix",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea baja.",
+          "Cable pasa por delante/detrás del cuerpo.",
+          "Elevar brazo lateralmente.",
+          "Codo ligeramente flexionado."
+        ]
+      },
+      {
+        "id": "del_lat_banco_tumb",
+        "nombre": "Elevación Lateral en Banco Tumbado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tumbado de lado en banco.",
+          "Elevar mancuerna superior.",
+          "Codo ligero flexionado."
+        ]
+      },
+      {
+        "id": "del_lat_polea",
+        "nombre": "Elevaciones Laterales Polea",
+        "videoId": "lvUvnvXgh-Y",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Muñequera en polea baja.",
+          "Agarrar soporte.",
+          "Elevar brazo lateralmente.",
+          "Alejar mano del torso."
+        ]
+      },
+      {
+        "id": "del_lat_maq_una_mano",
+        "nombre": "Elevación Lateral Máquina Una Mano",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Elevar brazo lateralmente.",
+          "Alejar mano del torso."
+        ]
+      },
+      {
+        "id": "del_lat_maq_sentado",
+        "nombre": "Elevación Lateral Máquina Sentado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar.",
+          "Alejar manos del torso.",
+          "No mover escápulas (aislar deltoides)."
+        ]
+      },
+      {
+        "id": "del_lat_maq",
+        "nombre": "Elevación Lateral Máquina",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Verificar si es igual a la versión sentado/una mano."
+        ]
+      },
+      {
+        "id": "del_lat_pecho_apoyado",
+        "nombre": "Elevaciones Laterales Pecho Apoyado",
+        "videoId": "lvUvnvXgh-Y",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Banco inclinado, pecho apoyado.",
+          "Elevar brazos lateralmente.",
+          "Alejar manos del torso.",
+          "No mover escápulas."
+        ]
+      },
+      {
+        "id": "del_lat_manc",
+        "nombre": "Elevación Lateral Mancuerna",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "De pie o sentado.",
+          "Elevar brazos lateralmente (hasta altura hombro).",
+          "Codos ligeramente flexionados.",
+          "Alejar manos del torso.",
+          "No balancear."
+        ]
+      },
+      {
+        "id": "del_frontal_una_mano_polea",
+        "nombre": "Elevación Frontal a Una Mano (Polea)",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea baja.",
+          "Unos pasos adelante, de perfil.",
+          "Estirar brazo por detrás del torso al bajar.",
+          "Elevar brazo hacia adelante."
+        ]
+      },
+      {
+        "id": "del_frontal_cuerda",
+        "nombre": "Elevación Frontal Cuerda",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Polea baja.",
+          "Subir hasta ~90 grados (o más).",
+          "Bajar hasta extensión completa."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "ESPALDA",
+    "ejercicios": [
+      {
+        "id": "esp_remo_barra",
+        "nombre": "Remo con Barra",
+        "videoId": "2J61UenaFRw",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Torso casi horizontal.",
+          "Ligero movimiento del torso permitido.",
+          "Traccionar hacia ombligo/cadera.",
+          "Agarre prono, ancho hombros o más.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_remo_multi",
+        "nombre": "Remo en Multipower",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Torso casi horizontal.",
+          "Traccionar hacia ombligo/cadera.",
+          "Agarre prono, ancho.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_remo_manc",
+        "nombre": "Remo Mancuerna",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Torso casi horizontal.",
+          "Buscar set up estable (mano/rodilla en banco).",
+          "Llevar mancuerna hacia cadera.",
+          "Permitir ligero movimiento torso.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_remo_landmine",
+        "nombre": "Remo en Landmine",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Torso casi horizontal.",
+          "Mano apoyada en pierna.",
+          "Llevar barra hacia cadera.",
+          "Set up estable.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_remo_dual_manc",
+        "nombre": "Remo Dual Mancuernas",
+        "videoId": "yno5SR7LPJI",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Iniciar con PMR para posición.",
+          "Torso casi horizontal.",
+          "Llevar mancuernas hacia cadera.",
+          "Set up estable.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_remo_t_pie",
+        "nombre": "Remo T de Pie",
+        "videoId": "SI_Z4zhqniE",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Torso casi horizontal.",
+          "Agarre prono.",
+          "Estirar/protraer escápulas abajo.",
+          "Traccionar.",
+          "No mover piernas/cadera."
+        ]
+      },
+      {
+        "id": "esp_remo_t_apoyado",
+        "nombre": "Remo en T (con apoyo)",
+        "videoId": "SI_Z4zhqniE",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Pecho apoyado.",
+          "Estirar/protraer escápulas.",
+          "Recorrido completo.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_dominadas",
+        "nombre": "Dominadas",
+        "videoId": "8mhDd9Ahl1M",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre prono, ancho hombros o más.",
+          "Subir sacando pectoral.",
+          "Abdomen y glúteo apretados.",
+          "No balancear ni usar piernas.",
+          "Controlar bajada."
+        ]
+      },
+      {
+        "id": "esp_jalon_pecho",
+        "nombre": "Jalón al Pecho",
+        "videoId": "oRV4VSZq4-8",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre ancho (fuera hombros).",
+          "Pensar en bajar codos.",
+          "No descolgar hombros/escápulas arriba.",
+          "Torso estable.",
+          "Retroversión pélvica.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_agarre_afw",
+        "nombre": "Jalón Agarre AFW",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Estirar escápulas arriba.",
+          "Pensar en bajar codos.",
+          "Torso estable (no mover adelante/atrás).",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_una_mano",
+        "nombre": "Jalón a Una Mano",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre semisupino o neutro.",
+          "Brazo perpendicular al suelo.",
+          "No descolgar hombro/escápula.",
+          "Agarrarse con mano libre.",
+          "Retroversión pélvica.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_neutro",
+        "nombre": "Jalón Agarre Neutro",
+        "videoId": "eSlKErmf5WU",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre ancho hombros.",
+          "Pensar en bajar codos.",
+          "No descolgar hombros/escápulas.",
+          "Torso estable.",
+          "Retroversión pélvica.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_espalda_alta",
+        "nombre": "Jalón Espalda Alta",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Permitir movilidad escápulas (retracción/protracción).",
+          "Descolgar hombros al inicio.",
+          "Sacar pecho al final.",
+          "Torso relativamente estable.",
+          "Codo pasa línea del torso al final.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_maq_bi",
+        "nombre": "Jalon en Maquina Bilateral",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre ancho.",
+          "Pensar en bajar codos.",
+          "No descolgar hombros/escápulas.",
+          "Torso estable.",
+          "Retroversión pélvica.",
+          "Controlar excéntrica."
+        ]
+      },
+      {
+        "id": "esp_jalon_supino_etenon",
+        "nombre": "Jalón Supino Etenon",
+        "videoId": "eSlKErmf5WU",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Agarre supino.",
+          "Torso estable.",
+          "Controlar excéntrica."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "ISQUIOS",
+    "ejercicios": [
+      {
+        "id": "isq_femoral_sentado",
+        "nombre": "Femoral Sentado",
+        "videoId": "ftmElAFFezA",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Recorrido completo.",
+          "Controlar movimiento."
+        ]
+      },
+      {
+        "id": "isq_femoral_pie",
+        "nombre": "Femoral de Pie",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Estabilizarse.",
+          "Flexionar rodilla.",
+          "Recorrido completo."
+        ]
+      },
+      {
+        "id": "isq_femoral_tumbado",
+        "nombre": "Femoral Tumbado",
+        "videoId": "xUIQouFcbio",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Cadera pegada al banco.",
+          "Flexionar rodillas.",
+          "Recorrido completo."
+        ]
+      },
+      {
+        "id": "isq_pmr",
+        "nombre": "Peso Muerto Rumano",
+        "videoId": "egWHdYvXkYs",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Bisagra de cadera (cadera atrás).",
+          "Espalda recta/neutra.",
+          "Rodillas semi-flexionadas.",
+          "Bajar barra cerca de piernas.",
+          "Sentir estiramiento isquios."
+        ]
+      },
+      {
+        "id": "isq_sldl",
+        "nombre": "SLDL",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Similar a PMR pero con rodillas casi rectas.",
+          "Más énfasis en estiramiento.",
+          "Espalda recta."
+        ]
+      },
+      {
+        "id": "isq_pmr_una_pierna",
+        "nombre": "Rumano a Una Pierna",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Equilibrio.",
+          "Bisagra de cadera.",
+          "Pierna trasera se eleva.",
+          "Espalda recta."
+        ]
+      },
+      {
+        "id": "isq_pmr_manc",
+        "nombre": "Rumano con Mancuernas",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Igual que PMR con barra, pero con mancuernas.",
+          "Mancuernas cerca del cuerpo."
+        ]
+      },
+      {
+        "id": "isq_pmr_belt",
+        "nombre": "Rumano en Belt",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Similar a PMR, carga en cadera.",
+          "Espalda recta.",
+          "Bisagra de cadera."
+        ]
+      },
+      {
+        "id": "isq_buenos_dias_multi",
+        "nombre": "Buenos Días en Multi",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Barra en espalda (como sentadilla).",
+          "Bisagra de cadera.",
+          "Espalda recta.",
+          "Rodillas semi-flexionadas.",
+          "Bajar torso hacia horizontal."
+        ]
+      },
+      {
+        "id": "isq_buenos_dias_maq",
+        "nombre": "Buenos Días en Maquina",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Bisagra de cadera.",
+          "Espalda recta."
+        ]
+      },
+      {
+        "id": "isq_curl_nordico",
+        "nombre": "Curl Nordico",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Sujetar tobillos.",
+          "Cuerpo recto desde rodillas.",
+          "Bajar lentamente hacia adelante.",
+          "Usar manos para volver si es necesario."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "GEMELOS",
+    "ejercicios": [
+      {
+        "id": "gem_elev_talon_multi",
+        "nombre": "Elevación de Talón Multipower",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Puntas de los pies en step/disco.",
+          "Bajar talones (estiramiento).",
+          "Subir sobre puntas (contracción).",
+          "Pausa arriba y abajo."
+        ]
+      },
+      {
+        "id": "gem_elev_talon_sentado",
+        "nombre": "Elevación de Talón Sentado",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Rodillas flexionadas 90 grados.",
+          "Bajar y subir talones.",
+          "Pausa arriba y abajo."
+        ]
+      },
+      {
+        "id": "gem_gemelo_prensa",
+        "nombre": "Gemelo en Prensa",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Puntas pies en borde inferior plataforma.",
+          "Piernas casi estiradas.",
+          "Bajar y subir talones (mover plataforma).",
+          "Pausa arriba y abajo."
+        ]
+      },
+      {
+        "id": "gem_elev_talon_maq",
+        "nombre": "Elevación de Talón en Máquina",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Puntas pies en plataforma.",
+          "Hombros bajo almohadillas.",
+          "Bajar y subir talones.",
+          "Pausa arriba y abajo."
+        ]
+      },
+      {
+        "id": "gem_elev_talon_una_pierna",
+        "nombre": "Elevación de Talón Una Pierna",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Apoyarse para equilibrio.",
+          "Punta pie en step/disco.",
+          "Bajar y subir talón.",
+          "Pausa arriba y abajo."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "ADUCTORES",
+    "ejercicios": [
+      {
+        "id": "adu_aductor_maq",
+        "nombre": "Aductor Máquina",
+        "videoId": "ffvx5M5uSG0",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Juntar piernas controladamente.",
+          "Pausa en contracción."
+        ]
+      },
+      {
+        "id": "adu_aductor_polea",
+        "nombre": "Aductor en Polea",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Tobillera en polea baja.",
+          "De pie, lateral a polea.",
+          "Cruzar pierna por delante del cuerpo.",
+          "Controlar movimiento."
+        ]
+      },
+      {
+        "id": "adu_copenhague",
+        "nombre": "Copenhague Aducción",
+        "videoId": "",
+        "aproximaciones": "2x 60%/80% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Lateral, pierna superior en banco.",
+          "Elevar cuerpo/pierna inferior.",
+          "Apretar aductor."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "ABDOMEN",
+    "ejercicios": [
+      {
+        "id": "abd_crunch_polea",
+        "nombre": "Crunch en Polea",
+        "videoId": "MBGe6ncD2KI",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "De rodillas frente a polea alta con cuerda.",
+          "Cuerda a los lados de la cabeza.",
+          "Flexionar columna (encoger abdomen).",
+          "Cadera fija.",
+          "Controlar subida."
+        ]
+      },
+      {
+        "id": "abd_encog_maq",
+        "nombre": "Encogimientos en Máquina",
+        "videoId": "J1qkB4n6Q1M",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Ajustar máquina.",
+          "Flexionar columna.",
+          "Controlar movimiento."
+        ]
+      },
+      {
+        "id": "abd_plancha",
+        "nombre": "Plancha Abdominal",
+        "videoId": "cN9WZAnf6Xo",
+        "aproximaciones": "Sin peso antes de serie efectiva (si aplica)",
+        "tecnicaCorrecta": [
+          "Mantener cuerpo recto (tabla).",
+          "Codos bajo hombros.",
+          "Abdomen y glúteos apretados.",
+          "No dejar caer cadera.",
+          "No elevar cadera."
+        ]
+      },
+      {
+        "id": "abd_elev_piernas_colgado",
+        "nombre": "Elevacion de Piernas Colgado",
+        "videoId": "avBTqxnboRo",
+        "aproximaciones": "Ninguna",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Colgado de barra.",
+          "Elevar piernas (rectas o flexionadas).",
+          "Enfocar en abdomen inferior.",
+          "No balancear."
+        ]
+      },
+      {
+        "id": "abd_elev_rodillas_colgado",
+        "nombre": "Elevacion de Rodillas Colgado",
+        "videoId": "",
+        "aproximaciones": "Ninguna",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Colgado de barra.",
+          "Elevar rodillas hacia pecho.",
+          "Controlar bajada.",
+          "No balancear."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "ANTEBRAZO",
+    "ejercicios": [
+      {
+        "id": "ant_curl_inv_polea",
+        "nombre": "Curl Invertido Polea",
+        "videoId": "",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre prono (palmas hacia abajo).",
+          "Codos fijos.",
+          "Flexionar muñeca hacia arriba (si es curl muñeca) o codo (si es curl bíceps prono)."
+        ]
+      },
+      {
+        "id": "ant_curl_inv_barra",
+        "nombre": "Curl Invertido Barra",
+        "videoId": "vfc4NQ87gVM",
+        "aproximaciones": "1x 75% carga 1ª serie",
+        "tecnicaCorrecta": [
+          "Excéntrica controlada (3 seg).",
+          "Agarre prono.",
+          "Codos fijos.",
+          "No usar straps.",
+          "No separar codos del torso.",
+          "Agarre falso."
+        ]
+      }
+    ]
+  },
+  {
+    "musculo": "OTROS",
+    "ejercicios": []
+  }
+]

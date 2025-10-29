@@ -5,6 +5,7 @@
     >>> - 'VIDEO_DATA' ahora incluye el 'formato' (16:9 o 9:16).
     >>> - El modal calcula la altura dinámicamente.
     ──────────────────────────────────────────────────────────────────────── */
+import rawDB from '../../src/data/exercises.json'; // ajusta la ruta si este archivo cambia
 
 import React, { useState } from 'react';
 import {
@@ -31,23 +32,31 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 // --- ¡¡CAMBIO IMPORTANTE EN VIDEO_DATA!! ---
 // Tienes que especificar el formato de cada vídeo
-const VIDEO_DATA = {
-  PECTORAL: {
-    'Press Banca con Barra': { id: 'qmb-6KOXvJI', formato: '16:9' }, // Video normal
-    'Press Inclinado Mancuerna': { id: 'VIDEO_ID_SHORT', formato: '9:16' }, // Ejemplo de Short
-    'Aperturas Cable': { id: 'VIDEO_ID_APERTURAS_CABLE', formato: '16:9' },
-  },
-  ESPALDA: {
-    'Dominadas': { id: 'VIDEO_ID_DOMINADAS', formato: '16:9' },
-    'Remo con Barra': { id: 'VIDEO_ID_REMO_BARRA', formato: '16:9' },
-    'Jalón al Pecho': { id: 'VIDEO_ID_JALON_PECHO', formato: '16:9' },
-  },
-  CUADRICEPS: {
-    'Sentadilla Trasera': { id: 'VIDEO_ID_SENTADILLA', formato: '16:9' },
-    'Prensa': { id: 'VIDEO_ID_PRENSA', formato: '16:9' },
-    'Extensión Cuádriceps': { id: 'VIDEO_ID_EXTENSION_CUAD', formato: '16:9' },
-  },
-};
+// Convierte el JSON (array por músculo) a { [musculo]: { [nombreEjercicio]: { id, formato } } }
+function buildVideoIndex(db) {
+  // db: [{ musculo: string, ejercicios: Array<{ nombre, videoId, ... }> }, ...]
+  const out = {};
+  for (const grupo of db) {
+    const musculo = String(grupo.musculo || '').trim();
+    if (!musculo) continue;
+    if (!out[musculo]) out[musculo] = {};
+    for (const ej of grupo.ejercicios || []) {
+      const nombre = String(ej.nombre || '').trim();
+      if (!nombre) continue;
+
+      const id = (ej.videoId || '').trim(); // puede venir vacío
+      // Heurística simple: si más adelante guardas shorts como "short: true" en el JSON,
+      // aquí puedes leer ej.short y poner '9:16'. Por ahora, todo 16:9 por defecto.
+      const formato = '16:9';
+
+      // En caso de duplicados de nombre dentro del mismo músculo,
+      // el último sobrescribe (intencional para mantenerlo simple).
+      out[musculo][nombre] = { id, formato };
+    }
+  }
+  return out;
+}
+const VIDEO_DATA = buildVideoIndex(rawDB);
 
 // --- CÁLCULOS DE TAMAÑO ---
 const screenWidth = Dimensions.get('window').width;

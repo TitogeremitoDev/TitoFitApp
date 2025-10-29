@@ -9,10 +9,12 @@
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/wait.png",
-      "resizeMode": "contain",
+      "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -23,12 +25,17 @@
       },
       "package": "com.german92.titofitapp",
       "softwareKeyboardLayoutMode": "resize",
-
+      "launchMode": "singleTask",
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": { "scheme": "titofitapp" },
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": {
+            "scheme": "titofitapp"
+          },
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -43,12 +50,12 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/wait.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
+          "resizeMode": "cover",
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 
 // <--- ¡Importamos el botón reutilizable!
-import ActionButton from '../components/ActionButton';
+import ActionButton from '../../components/ActionButton';
 
 export default function PerfilScreen() {
   const router = useRouter();

@@ -3,7 +3,7 @@
 Pantalla principal de entrenamiento — v1.5 (estilo corregido solapamientos)
 ──────────────────────────────────────────────────────────────────────────── */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState ,useCallback} from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
+import Stopwatch from '../../components/Stopwatch';
 
 const { width } = Dimensions.get('window');
 const ARROW_W = 56;
@@ -370,12 +371,16 @@ export default function Entreno() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.select({ ios: 'padding', android: 'height' })}
-      keyboardVerticalOffset={Platform.select({ ios: 0, android: 0 })}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}        
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <View style={styles.container}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>{rutina.nombre}</Text>
+
+          <View style={styles.center}>
+            <Stopwatch />
+          </View>
 
           <TouchableOpacity
             style={styles.exportBtn}
@@ -383,7 +388,7 @@ export default function Entreno() {
             activeOpacity={0.85}
           >
             <Ionicons name="download-outline" size={16} color="#fff" />
-            <Text style={styles.exportTxt}>Excel Semana</Text>
+            <Text style={styles.exportTxt}>Excel S</Text>
           </TouchableOpacity>
         </View>
 
@@ -546,10 +551,36 @@ export default function Entreno() {
 /* ───────── styles ───────── */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fafafa', padding: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  title: { flex: 1, fontSize: 18, fontWeight: 'bold', marginRight: 10 },
-  exportBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#3b82f6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
-  exportTxt: { color: '#fff', fontSize: 13, marginLeft: 6, fontWeight: '600' },
+headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 , zIndex: 10},
+
+title: { flexShrink: 1, fontSize: 18, fontWeight: 'bold', marginRight: 10, maxWidth: '45%' },
+
+center: {
+  flexGrow: 1,            // ocupa el hueco central
+  alignItems: 'center',   // centra horizontal
+  justifyContent: 'center'
+},
+
+exportBtn: {
+  marginLeft: 8,
+  flexShrink: 0,          // que NO se expanda
+  flexGrow: 0,            // que NO robe espacio
+  flexBasis: 'auto',
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#3b82f6',
+  paddingHorizontal: 10,
+  paddingVertical: 8,
+  borderRadius: 10,
+  shadowColor: '#000',
+  shadowOpacity: 0.15,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 3
+},
+
+exportTxt: { color: '#fff', fontSize: 13, marginLeft: 6, fontWeight: '600' },
+
 
   carouselWrap: { position: 'relative', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderColor: '#d1d5db', borderWidth: 3, borderRadius: 12, minHeight: 52, overflow: 'hidden', paddingHorizontal: ARROW_W, backgroundColor: '#f8fafc' },
   slide: { alignItems: 'center', justifyContent: 'center' },
