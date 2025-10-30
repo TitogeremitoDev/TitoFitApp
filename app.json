@@ -56,16 +56,8 @@
         }
       ],
       "expo-notifications",
-      "expo-secure-store",
-          ["expo-build-properties", {
-        "android": {
-          "newArchEnabled": false,
-          "kotlinVersion": "1.9.22",
-          "androidGradlePluginVersion": "8.4.2",
-          "gradleVersion": "8.5"
-        }
-      }]
-    ], 
+      "expo-secure-store"
+    ],
     "experiments": {
       "typedRoutes": true
     },
