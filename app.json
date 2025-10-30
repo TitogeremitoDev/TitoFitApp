@@ -26,7 +26,6 @@
       },
       "package": "com.german92.titofitapp",
       "softwareKeyboardLayoutMode": "resize",
-      "launchMode": "singleTask",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -56,8 +55,10 @@
         }
       ],
       "expo-notifications",
-      "expo-secure-store"
-    ],
+      "expo-secure-store",
+        ["expo-build-properties", { "android": { "newArchEnabled": false } }]
+]
+    ,
     "experiments": {
       "typedRoutes": true
     },
