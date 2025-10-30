@@ -9,7 +9,7 @@
       "android": { "buildType": "apk"}
     },
     "development": {
-      "developmentClient": true,
+      "developmentClient": false,
       "distribution": "internal"
     },
     "production": {

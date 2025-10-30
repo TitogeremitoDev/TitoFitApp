@@ -45,7 +45,11 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", { "android": { "newArchEnabled": false } }],
+      ["expo-build-properties", { "android": { "newArchEnabled": false, 
+                                    "extraProguardRules": "-keep class com.facebook.react.bridge.queue.MessageQueueThreadImpl { *; }\n-keepclassmembers class com.facebook.react.bridge.queue.MessageQueueThreadImpl { boolean mIsFinished; }\n-keep class com.swmansion.reanimated.** { *; }\n-keep class com.swmansion.gesturehandler.** { *; }",
+                                    "enableProguardInReleaseBuilds": true
+
+ } }],
       "expo-router",
       ["expo-splash-screen", { "image": "./assets/images/wait.png", "resizeMode": "cover", "backgroundColor": "#ffffff" }],
       "expo-notifications",
