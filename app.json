@@ -45,19 +45,12 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      ["expo-build-properties", { "android": { "newArchEnabled": false } }],
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/wait.png",
-          "resizeMode": "cover",
-          "backgroundColor": "#ffffff"
-        }
-      ],
+      ["expo-splash-screen", { "image": "./assets/images/wait.png", "resizeMode": "cover", "backgroundColor": "#ffffff" }],
       "expo-notifications",
-      "expo-secure-store",
-        ["expo-build-properties", { "android": { "newArchEnabled": false } }]
-]
+      "expo-secure-store"
+    ]
     ,
     "experiments": {
       "typedRoutes": true

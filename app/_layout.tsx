@@ -3,6 +3,8 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext'; // Ajusta la ruta
 import { ActivityIndicator, View } from 'react-native';
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 
 const RootLayoutNav = () => {
   const { token, isLoading } = useAuth();
