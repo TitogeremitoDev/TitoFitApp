@@ -6,8 +6,7 @@
   "build": {
     "internal": {
       "distribution": "internal",
-      "android": { "buildType": "apk",
-    "image": "ubuntu-20.04-jdk-11-ndk-r23b" }
+      "android": { "buildType": "apk"}
     },
     "development": {
       "developmentClient": true,
