@@ -24,7 +24,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
 
 // Mantenemos el Splash Screen visible
-SplashScreen.preventAutoHideAsync();
+//SplashScreen.preventAutoHideAsync();
 
 // Helper para parsear JSON de forma segura devolviendo siempre un array
 const safeParseArray = (jsonString: string | null): any[] => {

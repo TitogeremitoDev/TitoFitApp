@@ -1,31 +1,44 @@
 // app/_layout.tsx
-import React, { useEffect } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { AuthProvider, useAuth } from '../context/AuthContext'; // Ajusta la ruta
+import React, { useEffect, useRef } from 'react';
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ActivityIndicator, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as SplashScreen from 'expo-splash-screen';
 
-const RootLayoutNav = () => {
+// Mantén el splash visible hasta que el router + auth estén listos
+try { SplashScreen.preventAutoHideAsync(); } catch {}
+
+function RootLayoutNav() {
   const { token, isLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const navState = useRootNavigationState(); // router listo cuando tiene key
+  const splashHidden = useRef(false);
 
+  // Oculta el splash UNA SOLA VEZ cuando todo está listo
   useEffect(() => {
-    if (isLoading) return; // No hagas nada mientras carga
+    const ready = !!navState?.key && !isLoading;
+    if (ready && !splashHidden.current) {
+      SplashScreen.hideAsync().catch(() => {});
+      splashHidden.current = true;
+    }
+  }, [navState?.key, isLoading]);
+
+  // Redirecciones de auth (sin navegar a grupos)
+  useEffect(() => {
+    if (isLoading || !navState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!token && !inAuthGroup) {
-      // --- CORRECCIÓN 1 ---
-      // Si no hay token y NO está en (auth), llévalo a /login
-      router.replace('/login');
+      router.replace('/login');   // p.ej. app/(auth)/login.tsx
     } else if (token && inAuthGroup) {
-      // --- CORRECCIÓN 2 (La de tu imagen) ---
-      // Si hay token y SÍ está en (auth), llévalo al inicio: /
-      router.replace('/');
+      router.replace('/');        // p.ej. app/(app)/index.tsx
     }
-  }, [token, isLoading, segments, router]);
+  }, [token, isLoading, navState?.key, segments, router]);
 
-  if (isLoading) {
+  if (isLoading || !navState?.key) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
@@ -33,21 +46,20 @@ const RootLayoutNav = () => {
     );
   }
 
-  // Esto define los Stacks "principales" que puede ver el usuario
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(app)" />
       <Stack.Screen name="(auth)" />
-      {/* Puedes añadir otras pantallas aquí si estuvieran fuera de los grupos */}
     </Stack>
   );
-};
+}
 
-// El Layout Raíz
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <RootLayoutNav />
+      </GestureHandlerRootView>
     </AuthProvider>
   );
 }

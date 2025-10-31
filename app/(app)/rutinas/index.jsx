@@ -263,6 +263,7 @@ export default function RutinasHome() {
 
           {/* --- Sección Crear Nueva Rutina --- */}
           <View style={styles.sectionContainer}>
+            
               <Text style={styles.sectionTitle}>Crear Nueva Rutina</Text>
               <Text style={styles.label}>Nombre rutina</Text>
               <TextInput style={styles.input} value={nombre} onChangeText={setNombre} placeholder="Ej: Mi Rutina PPL"/>
@@ -273,6 +274,11 @@ export default function RutinasHome() {
                   <Ionicons name="add-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }}/>
                   <Text style={styles.addTxt}>CREAR RUTINA</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.impBtn} onPress={importarRutina}>
+              <Ionicons name="document-text-outline" size={18} color="#fff" style={{ marginRight: 8 }}/>
+              <Text style={styles.impTxt}>IMPORTAR DESDE CSV</Text>
+              </TouchableOpacity>
+              
           </View>
 
           {/* --- Sección Añadir Rutinas Predefinidas (Comentada si no tienes PREDEFINED_ROUTINES) --- */}
