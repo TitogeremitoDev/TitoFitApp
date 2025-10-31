@@ -13,9 +13,7 @@
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
@@ -29,23 +27,8 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": {
-            "scheme": "titofitapp"
-          },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        },
-        {
-          "action": "VIEW",
-          "data": {
-            "scheme": "titofitapp"
-          },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "data": { "scheme": "titofitapp" },
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
@@ -59,9 +42,14 @@
         "expo-build-properties",
         {
           "android": {
+            "gradleVersion": "8.6",
             "newArchEnabled": false,
-            "extraProguardRules": "-keep class com.facebook.react.bridge.queue.MessageQueueThreadImpl { *; }\n-keepclassmembers class com.facebook.react.bridge.queue.MessageQueueThreadImpl { boolean mIsFinished; }\n-keep class com.swmansion.reanimated.** { *; }\n-keep class com.swmansion.gesturehandler.** { *; }",
-            "enableProguardInReleaseBuilds": true
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "34.0.0",
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],

@@ -1,9 +1,9 @@
-# Ignorar la caché de Gradle de Android
-android/.gradle
-
-# Ignorar también node_modules (EAS hace npm install por su cuenta)
-node_modules
-
-# Ignorar carpetas de build locales
-android/app/build
-android/build
+node_modules/
+android/
+ios/
+.expo/
+.git/
+dist/
+web-build/
+*/*.log
+*/.DS_Store
