@@ -13,9 +13,7 @@
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
@@ -29,13 +27,8 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": {
-            "scheme": "titofitapp"
-          },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "data": { "scheme": "titofitapp" },
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
@@ -45,6 +38,21 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "gradleVersion": "8.6",
+            "newArchEnabled": false,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "34.0.0",
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
@@ -55,10 +63,8 @@
         }
       ],
       "expo-notifications",
-      "expo-secure-store",
-        ["expo-build-properties", { "android": { "newArchEnabled": false } }]
-]
-    ,
+      "expo-secure-store"
+    ],
     "experiments": {
       "typedRoutes": true
     },
@@ -67,6 +73,12 @@
       "eas": {
         "projectId": "3233332a-d64c-4f96-9775-d8043263302c"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3233332a-d64c-4f96-9775-d8043263302c"
     }
   }
 }

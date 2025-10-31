@@ -1,4 +1,6 @@
 /* app/_layout.tsx */
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 
 // --- 1. IMPORTACIONES AÑADIDAS ---
 import { useState, useEffect, useCallback } from 'react';

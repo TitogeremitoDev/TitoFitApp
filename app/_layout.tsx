@@ -3,8 +3,13 @@ import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ActivityIndicator, View } from 'react-native';
+<<<<<<< HEAD
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
+=======
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
+>>>>>>> 5f1b8eda6ef10d87f4d5ced35f60636c46b4f368
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch {}

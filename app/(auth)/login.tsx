@@ -4,7 +4,8 @@ import { View, TextInput, Button, Text, Alert, StyleSheet, ActivityIndicator } f
 import { useAuth } from '../../context/AuthContext'; // Ajusta la ruta si es necesario
 import { Link } from 'expo-router';
 import axios from 'axios';
-
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 export default function LoginScreen() {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
