@@ -6,7 +6,9 @@
   "build": {
     "internal": {
       "distribution": "internal",
-      "android": { "buildType": "apk"}
+      "android": { "buildType": "apk"},
+      "channel": "staging"
+
     },
     "development": {
       "developmentClient": false,
