@@ -1,6 +1,4 @@
 /* app/_layout.tsx */
-import 'react-native-gesture-handler';
-import 'react-native-reanimated';
 
 // --- 1. IMPORTACIONES AÑADIDAS ---
 import { useState, useEffect, useCallback } from 'react';
@@ -218,7 +216,7 @@ export default function RootLayout() {
               {/* Tus Stack.Screen existentes */}
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="entreno" />
-              <Stack.Screen name="rutinas" />
+              <Stack.Screen name="rutina" />
               <Stack.Screen name="rutinas/[id]" />
               <Stack.Screen name="evolucion" />
               <Stack.Screen name="perfil" />

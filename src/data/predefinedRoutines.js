@@ -11,7 +11,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_1',
       musculo: 'PIERNAS',
-      nombre: 'Sentadilla Trasera con Barra',
+      nombre: 'Sentadilla Libre',
       series: [
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
@@ -21,7 +21,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_2',
       musculo: 'PIERNAS',
-      nombre: 'Peso Muerto Rumano con Barra',
+      nombre: 'Peso Muerto Rumano',
       series: [
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
@@ -33,7 +33,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_3',
       musculo: 'ESPALDA',
-      nombre: 'Jalón al Pecho en Polea',
+      nombre: 'Jalón al Pecho',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -43,7 +43,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_4',
       musculo: 'ESPALDA',
-      nombre: 'Remo Sentado en Máquina (agarre neutro)',
+      nombre: 'Remo en T (con apoyo)',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -55,7 +55,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_5',
       musculo: 'PECTORAL',
-      nombre: 'Press en Máquina (pecho)',
+      nombre: 'Press Banca Maquina',
       series: [
         { repMin: '10', repMax: '15', extra: 'Ninguno' },
         { repMin: '10', repMax: '15', extra: 'Ninguno' },
@@ -65,7 +65,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_1_6',
       musculo: 'HOMBRO',
-      nombre: 'Elevaciones Laterales en Polea',
+      nombre: 'Elevaciones Laterales Polea',
       series: [
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
@@ -80,7 +80,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_1',
       musculo: 'ESPALDA',
-      nombre: 'Peso Muerto Convencional',
+      nombre: 'SLDL',
       series: [
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
@@ -90,7 +90,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_2',
       musculo: 'ESPALDA',
-      nombre: 'Dominadas Asistidas (o Remo con Barra)',
+      nombre: 'Dominadas',
       series: [
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
@@ -102,7 +102,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_3',
       musculo: 'PECTORAL',
-      nombre: 'Press Banca con Mancuernas',
+      nombre: 'Press Banca Plano/Poco Inclinado',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -112,7 +112,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_4',
       musculo: 'HOMBRO',
-      nombre: 'Press Militar con Mancuernas (sentado)',
+      nombre: 'Press Militar Mancuernas',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -124,7 +124,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_5',
       musculo: 'PIERNAS',
-      nombre: 'Prensa de Piernas (máquina)',
+      nombre: 'Prensa',
       series: [
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
@@ -134,7 +134,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_2_6',
       musculo: 'ISQUIOTIBIALES',
-      nombre: 'Curl Femoral en Máquina',
+      nombre: 'Femoral Tumbado',
       series: [
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
@@ -143,7 +143,7 @@ export const GENERIC_FULLBODY_DATA = [
     },
   ],
 
-  // Día 3 (Índice 2): Empuje FUERTE (6–8, multiarticular) · Piernas INTERMEDIO (10–12) · Tirón LIVIANO (10–15, máquinas/poleas)
+  // Día 3 (Índice 2): Empuje FUERTE (6–8) · Piernas INTERMEDIO (10–12) · Tirón LIVIANO (10–15)
   [
     // EMPUJE — FUERTE
     {
@@ -159,7 +159,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_3_2',
       musculo: 'HOMBRO',
-      nombre: 'Press Militar de Pie con Barra',
+      nombre: 'Press Militar',
       series: [
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
         { repMin: '6', repMax: '8', extra: 'Ninguno' },
@@ -171,7 +171,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_3_3',
       musculo: 'PIERNAS',
-      nombre: 'Zancadas con Mancuernas (caminar o estáticas)',
+      nombre: 'Sentadilla Bulgara Mancuernas (Cuád)',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -181,7 +181,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_3_4',
       musculo: 'GLÚTEOS',
-      nombre: 'Hip Thrust en Máquina o Barra',
+      nombre: 'Hip Thrust',
       series: [
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
         { repMin: '10', repMax: '12', extra: 'Ninguno' },
@@ -193,7 +193,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_3_5',
       musculo: 'ESPALDA',
-      nombre: 'Remo en Polea (agarre amplio o neutro)',
+      nombre: 'Remo en Multipower',
       series: [
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
@@ -203,7 +203,7 @@ export const GENERIC_FULLBODY_DATA = [
     {
       id: 'gen_fb_3_6',
       musculo: 'POSTERIOR/HOMBRO-ESPALDA',
-      nombre: 'Face Pull en Polea',
+      nombre: 'Face Pulls',
       series: [
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
         { repMin: '12', repMax: '15', extra: 'Ninguno' },
@@ -218,45 +218,45 @@ export const GENERIC_FULLBODY_DATA = [
 const RUTINA_GERMAN_MARTINEZ_4_DIAS_DATA = [
   // --- Día 1 (Índice 0): Empujes + Cuádriceps ---
   [
-    { id: 'gm_1_1', musculo: 'DELTOIDES LATERAL', nombre: 'Elevaciones laterales polea', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_2', musculo: 'DELTOIDES ANTERIOR', nombre: 'Press militar mancuernas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_3', musculo: 'PECTORAL', nombre: 'Press inclinado mancuernas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_4', musculo: 'PECTORAL', nombre: 'Press banca plano', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_5', musculo: 'TRÍCEPS', nombre: 'Extensión codo barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_6', musculo: 'TRÍCEPS', nombre: 'Press francés', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_7', musculo: 'CUÁDRICEPS', nombre: 'Extensión rodilla', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_1_8', musculo: 'ABDOMEN', nombre: 'Crunch en polea', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
+    { id: 'gm_1_1', musculo: 'DELTOIDES LATERAL', nombre: 'Elevaciones Laterales Polea', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_2', musculo: 'DELTOIDES ANTERIOR', nombre: 'Press Militar Mancuernas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
+    { id: 'gm_1_3', musculo: 'PECTORAL', nombre: 'Press Inclinado Mancuernas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_4', musculo: 'PECTORAL', nombre: 'Press Banca Plano/Poco Inclinado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_5', musculo: 'TRÍCEPS', nombre: 'Extensión codo barra (Polea)', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_6', musculo: 'TRÍCEPS', nombre: 'Press Francés', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_7', musculo: 'CUÁDRICEPS', nombre: 'Extensión Rodilla', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_1_8', musculo: 'ABDOMEN', nombre: 'Crunch en Polea', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
   ],
   // --- Día 2 (Índice 1): Tracciones + Femoral ---
   [
-    { id: 'gm_2_1', musculo: 'GEMELO', nombre: 'Gemelo', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_2', musculo: 'ISQUIOS', nombre: 'Femoral tumbado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_3', musculo: 'DORSALES', nombre: 'Jalón agarre neutro', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_4', musculo: 'ESPALDA ALTA/MEDIA', nombre: 'Remo en T', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_5', musculo: 'DORSALES', nombre: 'Jalón abierto', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_6', musculo: 'DELTOIDES POSTERIOR', nombre: 'Posterior en máquina o pájaros', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_7', musculo: 'BÍCEPS', nombre: 'Curl bíceps mancuerna', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, ], },
-    { id: 'gm_2_8', musculo: 'BÍCEPS', nombre: 'Curl Arnold', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, ], },
+    { id: 'gm_2_1', musculo: 'GEMELO', nombre: 'Gemelo en Prensa', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_2_2', musculo: 'ISQUIOS', nombre: 'Femoral Tumbado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_2_3', musculo: 'DORSALES', nombre: 'Jalón Agarre Neutro', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_2_4', musculo: 'ESPALDA ALTA/MEDIA', nombre: 'Remo en T (con apoyo)', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_2_5', musculo: 'DORSALES', nombre: 'Jalón al Pecho', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' } ] },
+    { id: 'gm_2_6', musculo: 'DELTOIDES POSTERIOR', nombre: 'Posterior en Máquina', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_2_7', musculo: 'BÍCEPS', nombre: 'Curl Sentado con Mancuernas', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' } ] },
+    { id: 'gm_2_8', musculo: 'BÍCEPS', nombre: 'Curl con Barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
   ],
   // --- Día 3 (Índice 2): Pierna ---
   [
-    { id: 'gm_3_1', musculo: 'GLUTEO-FEMORAL', nombre: 'Peso muerto rumano', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_2', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla', series: [ { repMin: '4', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_3', musculo: 'CUÁDRICEPS', nombre: 'Prensa', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_4', musculo: 'ISQUIOS', nombre: 'Femoral sentado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_5', musculo: 'CUÁDRICEPS', nombre: 'Extensión rodilla', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_6', musculo: 'ADUCTORES', nombre: 'Aductor máquina', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_3_7', musculo: 'ABDOMEN', nombre: 'Encogimientos en máquina', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
+    { id: 'gm_3_1', musculo: 'GLUTEO-FEMORAL', nombre: 'Peso Muerto Rumano', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_3_2', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla Libre', series: [ { repMin: '4', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' } ] },
+    { id: 'gm_3_3', musculo: 'CUÁDRICEPS', nombre: 'Prensa', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_3_4', musculo: 'ISQUIOS', nombre: 'Femoral Sentado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_3_5', musculo: 'CUÁDRICEPS', nombre: 'Extensión Rodilla', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_3_6', musculo: 'ADUCTORES', nombre: 'Aductor Máquina', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_3_7', musculo: 'ABDOMEN', nombre: 'Encogimientos en Máquina', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
   ],
   // --- Día 4 (Índice 3): Empujes - Tracciones ---
   [
-    { id: 'gm_4_1', musculo: 'DELTOIDES LATERAL', nombre: 'Elevación lateral mancuerna', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_2', musculo: 'PECTORAL', nombre: 'Press inclinado mancuernas', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_3', musculo: 'ESPALDA ALTA/MEDIA', nombre: 'Remo máquina sentado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_4', musculo: 'DORSALES', nombre: 'Remo Gironda', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_5', musculo: 'DELTOIDES POSTERIOR', nombre: 'Posterior en polea unilateral', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_6', musculo: 'TRÍCEPS', nombre: 'Extensión tríceps polea', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
-    { id: 'gm_4_7', musculo: 'BÍCEPS', nombre: 'Curl bíceps con barra Z', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, ], },
+    { id: 'gm_4_1', musculo: 'DELTOIDES LATERAL', nombre: 'Elevación Lateral Mancuerna', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_4_2', musculo: 'PECTORAL', nombre: 'Press Inclinado Mancuernas', series: [ { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '5', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '10', extra: 'Ninguno' } ] },
+    { id: 'gm_4_3', musculo: 'ESPALDA ALTA/MEDIA', nombre: 'Remo en T (con apoyo)', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_4_4', musculo: 'DORSALES', nombre: 'Remo T de Pie', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
+    { id: 'gm_4_5', musculo: 'DELTOIDES POSTERIOR', nombre: 'Posterior en Polea Unilateral', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_4_6', musculo: 'TRÍCEPS', nombre: 'Extensión Codo Cuerda', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
+    { id: 'gm_4_7', musculo: 'BÍCEPS', nombre: 'Curl con Barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
   ],
 ];
 
@@ -298,11 +298,10 @@ export const PREDEFINED_ROUTINES = [
   //   dias: 4,
   //   fecha: '...',
   //   division: 'Torso/Pierna',
-  //   diasArr: OTROS_DATOS_RUTINA_3 // Necesitarías definir esta constante arriba
+  //   diasArr: OTROS_DATOS_RUTINA_3
   // },
 ];
 
 // Opcional: Exportar IDs si los usas en otro lugar
 export const GENERIC_ID = PREDEFINED_ROUTINES[0].id;
 export const GERMAN_MARTINEZ_ID = PREDEFINED_ROUTINES[1].id;
-
