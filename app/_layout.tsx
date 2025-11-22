@@ -7,10 +7,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Mantén el splash visible hasta que el router + auth estén listos
-try { SplashScreen.preventAutoHideAsync(); } catch {}
+try { SplashScreen.preventAutoHideAsync(); } catch { }
 
 function RootLayoutNav() {
-  const { token, isLoading } = useAuth();
+  const { token, isLoading, user } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const navState = useRootNavigationState(); // router listo cuando tiene key
@@ -20,7 +20,7 @@ function RootLayoutNav() {
   useEffect(() => {
     const ready = !!navState?.key && !isLoading;
     if (ready && !splashHidden.current) {
-      SplashScreen.hideAsync().catch(() => {});
+      SplashScreen.hideAsync().catch(() => { });
       splashHidden.current = true;
     }
   }, [navState?.key, isLoading]);
@@ -30,13 +30,27 @@ function RootLayoutNav() {
     if (isLoading || !navState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inModeSelect = (segments[0] as string) === 'mode-select';
 
+    // Usuario sin sesión → login
     if (!token && !inAuthGroup) {
-      router.replace('/login');   // p.ej. app/(auth)/login.tsx
-    } else if (token && inAuthGroup) {
-      router.replace('/');        // p.ej. app/(app)/index.tsx
+      router.replace('/login');
+      return;
     }
-  }, [token, isLoading, navState?.key, segments, router]);
+
+    // Usuario con sesión en auth → redirigir según rol
+    if (token && inAuthGroup) {
+      const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR';
+
+      if (isAdminOrCoach) {
+        // Admin/Coach → mode-select para elegir
+        router.replace('mode-select' as any);
+      } else {
+        // Usuario normal → directo a entrenar
+        router.replace('/(app)');
+      }
+    }
+  }, [token, isLoading, navState?.key, segments, router, user]);
 
   if (isLoading || !navState?.key) {
     return (
@@ -48,8 +62,10 @@ function RootLayoutNav() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="mode-select" />
       <Stack.Screen name="(app)" />
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(coach)" />
     </Stack>
   );
 }

@@ -27,6 +27,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { useAuth } from '../../context/AuthContext';
+
 // API URL
 const API_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -42,14 +44,29 @@ const COMMON_BENEFITS = [
 // URL CUESTIONARIO HIGH TICKET
 const COACHING_FORM_URL = 'https://docs.google.com/forms/d/1-KNo9I1GEeaoeIAegtyYoPG9BqaBAP5OmOvCllQ96Ck/edit';
 
+const COACH_PLAN = {
+  id: 'coach-plan',
+  nombre: 'Plan Entrenador',
+  descripcion: 'Gestiona tus propios clientes y lleva tu negocio al siguiente nivel.',
+  precioActual: 10,
+  precioOriginal: 10,
+  moneda: 'EUR',
+  duracionMeses: 1,
+  destacado: true,
+  etiquetaOferta: 'NUEVO',
+  textoAhorro: null,
+  isCoachPlan: true
+};
+
 export default function PaymentScreen() {
   const router = useRouter();
-  
+  const { user } = useAuth();
+
   // Estado para planes
   const [planes, setPlanes] = useState([]);
   const [loadingPlanes, setLoadingPlanes] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Estado de UI
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('stripe');
@@ -66,7 +83,7 @@ export default function PaymentScreen() {
   const cargarPlanes = async () => {
     try {
       setLoadingPlanes(true);
-      
+
       console.log('[Payment] Cargando planes desde API...');
       const response = await fetch(`${API_URL}/api/plans`, {
         method: 'GET',
@@ -77,11 +94,26 @@ export default function PaymentScreen() {
 
       if (data.success && data.plans && data.plans.length > 0) {
         console.log(`[Payment] ${data.plans.length} planes cargados`);
-        setPlanes(data.plans);
-        
+
+        let finalPlans = data.plans;
+
+        // Lógica de visibilidad según rol
+        if (user?.tipoUsuario === 'PREMIUM' || user?.tipoUsuario === 'CLIENTE') {
+          // Premium y Cliente solo ven Plan Entrenador
+          finalPlans = [COACH_PLAN];
+        } else if (user?.tipoUsuario === 'FREEUSER' || !user?.tipoUsuario) {
+          // Free ve todos (Estándar + Entrenador)
+          finalPlans = [...data.plans, COACH_PLAN];
+        } else {
+          // Otros roles (ej. Entrenador) podrían no ver nada o solo Coach
+          finalPlans = [COACH_PLAN];
+        }
+
+        setPlanes(finalPlans);
+
         // Seleccionar automáticamente el plan destacado o el primero
-        const planDestacado = data.plans.find(p => p.destacado);
-        setSelectedPlan(planDestacado || data.plans[0]);
+        const planDestacado = finalPlans.find(p => p.destacado);
+        setSelectedPlan(planDestacado || finalPlans[0]);
       } else {
         console.warn('[Payment] No hay planes disponibles');
         Alert.alert(
@@ -104,7 +136,7 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   // EFFECTS
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   useEffect(() => {
     (async () => {
       try {
@@ -118,7 +150,7 @@ export default function PaymentScreen() {
 
   useEffect(() => {
     cargarPlanes();
-  }, []);
+  }, [user]); // Recargar si cambia el usuario
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -128,7 +160,7 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   // VALIDACIÓN Y FORMATEO DE TARJETA
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   const formatCardNumber = (text) => {
     const cleaned = text.replace(/\D/g, '').substring(0, 16);
     return cleaned.match(/.{1,4}/g)?.join(' ') || cleaned;
@@ -152,17 +184,17 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   // PROCESAR PAGO
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   const processPayment = async (endpoint, payload) => {
     setLoading(true);
     try {
       console.log(`[Payment] Procesando pago: ${endpoint}`);
-      
+
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${userToken}` 
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userToken}`
         },
         body: JSON.stringify(payload)
       });
@@ -194,18 +226,29 @@ export default function PaymentScreen() {
     if (!selectedPlan) {
       return Alert.alert('Selecciona un plan', 'Debes seleccionar un plan de suscripción');
     }
-    
+
+    if (selectedPlan.isCoachPlan) {
+      return Alert.alert(
+        'Plan Entrenador',
+        'Para activar este plan (10€/mes cada 5 clientes o 100€ anuales), por favor contáctame directamente para más información.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Contactar', onPress: openCoaching }
+        ]
+      );
+    }
+
     if (paymentMethod === 'stripe') {
       if (!validateCard()) return;
-      processPayment('/api/payments/stripe/create-intent', { 
-        amount: selectedPlan.precioActual, 
-        currency: selectedPlan.moneda.toLowerCase(), 
-        planId: selectedPlan.id 
+      processPayment('/api/payments/stripe/create-intent', {
+        amount: selectedPlan.precioActual,
+        currency: selectedPlan.moneda.toLowerCase(),
+        planId: selectedPlan.id
       });
     } else if (paymentMethod === 'paypal') {
       processPayment('/api/payments/paypal/create-order', {
-        amount: selectedPlan.precioActual, 
-        currency: selectedPlan.moneda, 
+        amount: selectedPlan.precioActual,
+        currency: selectedPlan.moneda,
         planId: selectedPlan.id
       });
     } else {
@@ -220,7 +263,7 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   // CÁLCULOS DE RESUMEN
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   const subtotal = selectedPlan?.precioActual || 0;
   const tax = subtotal * 0.21; // IVA 21%
   const total = subtotal + tax;
@@ -228,7 +271,7 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDERIZADO
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   if (loadingPlanes) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -291,15 +334,15 @@ export default function PaymentScreen() {
         </Pressable>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView} 
+      <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
         }
       >
-        
+
         {/* SECCIÓN 1: TITULO DE ALTO IMPACTO */}
         <View style={styles.heroSection}>
           <Text style={styles.heroTitle}>Desbloquea tu mejor versión</Text>
@@ -313,7 +356,7 @@ export default function PaymentScreen() {
           {planes.map((plan) => {
             const isSelected = selectedPlan?.id === plan.id;
             const tieneDescuento = plan.precioOriginal > plan.precioActual;
-            
+
             return (
               <Pressable
                 key={plan.id}
@@ -344,7 +387,7 @@ export default function PaymentScreen() {
                       {plan.nombre}
                     </Text>
                     <Text style={styles.planDesc}>{plan.descripcion}</Text>
-                    
+
                     {/* Texto de ahorro */}
                     {plan.textoAhorro && (
                       <View style={styles.saveTag}>
@@ -407,7 +450,7 @@ export default function PaymentScreen() {
             </Text>
           </View>
           <Text style={styles.coachingDesc}>
-            Coaching personalizado 1:1 con seguimiento semanal, plan de nutrición y 
+            Coaching personalizado 1:1 con seguimiento semanal, plan de nutrición y
             asesoramiento directo conmigo.
           </Text>
           <Pressable onPress={openCoaching} style={styles.coachingButton}>
@@ -418,16 +461,16 @@ export default function PaymentScreen() {
         {/* SECCIÓN 5: MÉTODOS DE PAGO */}
         <View style={styles.paymentSection}>
           <Text style={styles.sectionHeader}>Método de pago</Text>
-          
+
           <View style={styles.methodsRow}>
             <Pressable
               onPress={() => setPaymentMethod('stripe')}
               style={[styles.methodBadge, paymentMethod === 'stripe' && styles.methodBadgeActive]}
             >
-              <Ionicons 
-                name="card-outline" 
-                size={20} 
-                color={paymentMethod === 'stripe' ? '#FFF' : '#94A3B8'} 
+              <Ionicons
+                name="card-outline"
+                size={20}
+                color={paymentMethod === 'stripe' ? '#FFF' : '#94A3B8'}
               />
               <Text style={[styles.methodText, paymentMethod === 'stripe' && styles.methodTextActive]}>
                 Tarjeta
@@ -438,10 +481,10 @@ export default function PaymentScreen() {
               onPress={() => setPaymentMethod('paypal')}
               style={[styles.methodBadge, paymentMethod === 'paypal' && styles.methodBadgeActive]}
             >
-              <Ionicons 
-                name="logo-paypal" 
-                size={20} 
-                color={paymentMethod === 'paypal' ? '#FFF' : '#94A3B8'} 
+              <Ionicons
+                name="logo-paypal"
+                size={20}
+                color={paymentMethod === 'paypal' ? '#FFF' : '#94A3B8'}
               />
               <Text style={[styles.methodText, paymentMethod === 'paypal' && styles.methodTextActive]}>
                 PayPal
@@ -452,10 +495,10 @@ export default function PaymentScreen() {
               onPress={() => setPaymentMethod('googlepay')}
               style={[styles.methodBadge, paymentMethod === 'googlepay' && styles.methodBadgeActive]}
             >
-              <Ionicons 
-                name="logo-google" 
-                size={20} 
-                color={paymentMethod === 'googlepay' ? '#FFF' : '#94A3B8'} 
+              <Ionicons
+                name="logo-google"
+                size={20}
+                color={paymentMethod === 'googlepay' ? '#FFF' : '#94A3B8'}
               />
               <Text style={[styles.methodText, paymentMethod === 'googlepay' && styles.methodTextActive]}>
                 Google Pay
@@ -474,7 +517,7 @@ export default function PaymentScreen() {
                   placeholderTextColor="#64748B"
                   keyboardType="numeric"
                   value={cardData.number}
-                  onChangeText={(t) => setCardData({...cardData, number: formatCardNumber(t)})}
+                  onChangeText={(t) => setCardData({ ...cardData, number: formatCardNumber(t) })}
                 />
               </View>
               <TextInput
@@ -483,27 +526,27 @@ export default function PaymentScreen() {
                 placeholderTextColor="#64748B"
                 autoCapitalize="words"
                 value={cardData.name}
-                onChangeText={(t) => setCardData({...cardData, name: t})}
+                onChangeText={(t) => setCardData({ ...cardData, name: t })}
               />
               <View style={styles.row}>
                 <TextInput
-                  style={[styles.input, {flex: 1}]}
+                  style={[styles.input, { flex: 1 }]}
                   placeholder="MM/AA"
                   placeholderTextColor="#64748B"
                   keyboardType="numeric"
                   maxLength={5}
                   value={cardData.expiry}
-                  onChangeText={(t) => setCardData({...cardData, expiry: formatExpiry(t)})}
+                  onChangeText={(t) => setCardData({ ...cardData, expiry: formatExpiry(t) })}
                 />
                 <TextInput
-                  style={[styles.input, {flex: 1}]}
+                  style={[styles.input, { flex: 1 }]}
                   placeholder="CVC"
                   placeholderTextColor="#64748B"
                   keyboardType="numeric"
                   maxLength={4}
                   secureTextEntry
                   value={cardData.cvc}
-                  onChangeText={(t) => setCardData({...cardData, cvc: t.replace(/\D/g, '')})}
+                  onChangeText={(t) => setCardData({ ...cardData, cvc: t.replace(/\D/g, '') })}
                 />
               </View>
             </View>
@@ -535,8 +578,8 @@ export default function PaymentScreen() {
           <Pressable
             onPress={handlePay}
             disabled={loading}
-            style={({pressed}) => [
-              styles.payButton, 
+            style={({ pressed }) => [
+              styles.payButton,
               (loading || pressed) && styles.payButtonDim
             ]}
           >
@@ -552,14 +595,14 @@ export default function PaymentScreen() {
               )}
             </LinearGradient>
           </Pressable>
-          
+
           <View style={styles.secureBadge}>
             <Ionicons name="lock-closed" size={12} color="#94A3B8" />
             <Text style={styles.secureText}>Pagos procesados de forma segura</Text>
           </View>
         </View>
-        
-        <View style={{height: 40}} />
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -567,52 +610,52 @@ export default function PaymentScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    paddingHorizontal: 20, 
-    paddingTop: Platform.OS === 'ios' ? 60 : 45, 
-    paddingBottom: 15 
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 45,
+    paddingBottom: 15
   },
-  backButton: { 
-    padding: 8, 
-    backgroundColor: 'rgba(255,255,255,0.1)', 
-    borderRadius: 12 
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12
   },
   refreshButton: {
     padding: 8,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12
   },
-  headerTitle: { 
-    color: '#F8FAFC', 
-    fontSize: 18, 
-    fontWeight: '600' 
+  headerTitle: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '600'
   },
   scrollView: { flex: 1 },
   content: { padding: 20 },
-  
+
   // Loading y Empty States
   loadingText: { color: '#94A3B8', marginTop: 12, fontSize: 14 },
-  emptyState: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    paddingHorizontal: 40 
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40
   },
-  emptyTitle: { 
-    color: '#F8FAFC', 
-    fontSize: 20, 
-    fontWeight: '700', 
-    marginTop: 16, 
-    marginBottom: 8 
+  emptyTitle: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8
   },
-  emptyText: { 
-    color: '#94A3B8', 
-    textAlign: 'center', 
-    fontSize: 14, 
-    lineHeight: 20 
+  emptyText: {
+    color: '#94A3B8',
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 20
   },
   retryButton: {
     marginTop: 20,
@@ -622,7 +665,7 @@ const styles = StyleSheet.create({
     borderRadius: 10
   },
   retryButtonText: { color: '#FFF', fontWeight: '700' },
-  
+
   // HERO
   heroSection: { marginBottom: 25, alignItems: 'center' },
   heroTitle: { fontSize: 24, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginBottom: 8 },
@@ -672,20 +715,20 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   badgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  
+
   planContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
   planName: { color: '#F8FAFC', fontSize: 18, fontWeight: '700', marginBottom: 4 },
   textActive: { color: '#10B981' },
   planDesc: { color: '#94A3B8', fontSize: 12, marginBottom: 8 },
-  
+
   saveTag: { backgroundColor: '#F59E0B', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   saveTagText: { color: '#000', fontSize: 10, fontWeight: '800' },
-  
+
   priceBlock: { alignItems: 'flex-end' },
   priceOld: { color: '#64748B', textDecorationLine: 'line-through', fontSize: 13 },
   priceNew: { color: '#F8FAFC', fontSize: 26, fontWeight: '800' },
   pricePeriod: { color: '#94A3B8', fontSize: 12 },
-  
+
   radioContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#475569', alignItems: 'center', justifyContent: 'center' },
   radioOuterSelected: { borderColor: '#10B981' },
@@ -699,9 +742,9 @@ const styles = StyleSheet.create({
   benefitText: { color: '#E2E8F0', fontSize: 14 },
 
   // COACHING HIGH TICKET
-  coachingCard: { 
-    borderRadius: 16, 
-    padding: 20, 
+  coachingCard: {
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 25,
     borderWidth: 1,
     borderColor: '#FCD34D'
@@ -720,7 +763,7 @@ const styles = StyleSheet.create({
   methodBadgeActive: { backgroundColor: '#334155', borderColor: '#475569' },
   methodText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   methodTextActive: { color: '#FFF' },
-  
+
   cardForm: { gap: 12 },
   inputContainer: { position: 'relative' },
   inputIcon: { position: 'absolute', left: 12, top: 14, zIndex: 1 },
@@ -736,7 +779,7 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   totalLabel: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
   totalVal: { color: '#10B981', fontSize: 24, fontWeight: '800' },
-  
+
   payButton: { borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
   payButtonDim: { opacity: 0.7 },
   payButtonGradient: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center' },

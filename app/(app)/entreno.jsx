@@ -35,6 +35,7 @@ import {
   Modal,
   ScrollView,
   Animated,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -520,6 +521,770 @@ function StatsModal({ visible, onClose, stats }) {
 }
 
 /* ───────── Componente principal ───────── */
+/* ───────── 🎓 TUTORIAL/ONBOARDING MODAL ───────── */
+const TOTAL_TUTORIAL_SLIDES = 5;
+
+function TutorialModal({ visible, onComplete }) {
+  const { theme } = useTheme();
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const scrollViewRef = useRef(null);
+  const { width: screenWidth } = Dimensions.get('window');
+
+  const goToSlide = (index) => {
+    if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;
+    setCurrentSlide(index);
+    scrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+  };
+
+  const handleScroll = (event) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const newIndex = Math.round(offsetX / screenWidth);
+    if (newIndex !== currentSlide && newIndex >= 0 && newIndex < TOTAL_TUTORIAL_SLIDES) {
+      setCurrentSlide(newIndex);
+    }
+  };
+
+  const getCoachMessage = () => {
+    switch (currentSlide) {
+      case 0: return "¡Bienvenido, recluta! Soy tu coach. Aquí no venimos a jugar, venimos a transformar.";
+      case 1: return "El orden es clave. Verde para lo hecho, Rojo para lo fallado. Sin excusas.";
+      case 2: return "Tu rival eres tú mismo de la semana pasada. ¡Destruye a ese fantasma!";
+      case 3: return "Cada repetición que hagas tiene significado. El sistema analiza todo.";
+      case 4: return "Ya tienes las herramientas. Ahora solo falta tu sudor. ¿Estás listo?";
+      default: return "A entrenar.";
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? onComplete : undefined}
+    >
+      <View style={[tutorialStyles.container, { backgroundColor: theme.background }]}>
+        {/* Efectos de fondo */}
+        <View style={[tutorialStyles.bgGradientTop, { backgroundColor: theme.primary + '10' }]} />
+        <View style={[tutorialStyles.bgGradientBottom, { backgroundColor: theme.success + '10' }]} />
+
+        {/* Barra de progreso */}
+        <View style={tutorialStyles.progressBar}>
+          {Array.from({ length: TOTAL_TUTORIAL_SLIDES }).map((_, idx) => (
+            <View
+              key={idx}
+              style={[
+                tutorialStyles.progressSegment,
+                {
+                  backgroundColor: idx <= currentSlide ? theme.primary : theme.border,
+                },
+              ]}
+            />
+          ))}
+        </View>
+
+        {/* Contenido de slides */}
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          style={tutorialStyles.slidesContainer}
+        >
+          {/* SLIDE 1: BIENVENIDA */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <View style={tutorialStyles.slideContent}>
+              <View style={tutorialStyles.logoContainer}>
+                <Image
+                  source={require('../../assets/logo.png')}
+                  style={tutorialStyles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+              
+              <Text style={[tutorialStyles.mainTitle, { color: theme.text }]}>
+                SISTEMA{'\n'}
+                <Text style={{ color: theme.primary }}>TITOGEREMITO</Text>
+              </Text>
+              <Text style={[tutorialStyles.subtitle, { color: theme.textSecondary }]}>
+                Tu progreso, medido al milímetro.
+              </Text>
+              
+              <TouchableOpacity
+                style={[tutorialStyles.startButton, { backgroundColor: theme.primary }]}
+                onPress={() => goToSlide(1)}
+                activeOpacity={0.85}
+              >
+                <Text style={tutorialStyles.startButtonText}>INICIAR TUTORIAL</Text>
+                <Ionicons name="arrow-forward" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SLIDE 2: LOS BOTONES */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
+                  Lógica del Sistema
+                </Text>
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Cada repetición cuenta. Clasifica tu serie:
+                </Text>
+
+                {/* Card Completado */}
+                <View style={[tutorialStyles.card, tutorialStyles.cardSuccess, { 
+                  backgroundColor: theme.success + '20',
+                  borderColor: theme.success + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: theme.success + '30' }]}>
+                    <Ionicons name="checkmark-circle" size={28} color={theme.success} />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: theme.success }]}>
+                      Completado (C)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      Objetivo cumplido. Los datos se guardan y sumas progreso.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Card No Completado */}
+                <View style={[tutorialStyles.card, tutorialStyles.cardError, { 
+                  backgroundColor: '#ef4444' + '20',
+                  borderColor: '#ef4444' + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#ef4444' + '30' }]}>
+                    <Ionicons name="alert-circle" size={28} color="#ef4444" />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: '#ef4444' }]}>
+                      Fallo (NC)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      No llegaste al objetivo. No se guarda. Se repite la semana siguiente.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Card Otro Ejercicio */}
+                <View style={[tutorialStyles.card, { 
+                  backgroundColor: '#f59e0b' + '20',
+                  borderColor: '#f59e0b' + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#f59e0b' + '30' }]}>
+                    <Ionicons name="barbell" size={28} color="#f59e0b" />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: '#f59e0b' }]}>
+                      Variante (OE)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      Tuviste que cambiar el ejercicio por maquinaria ocupada.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 3: MODO FANTASMA */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <View style={tutorialStyles.ghostHeader}>
+                  <Ionicons name="eye-outline" size={36} color={theme.primary} />
+                  <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
+                    Modo{'\n'}Fantasma
+                  </Text>
+                </View>
+                
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Tu objetivo siempre será superar tu registro anterior. El sistema te mostrará 
+                  lo que hiciste la semana pasada como una "sombra".
+                </Text>
+
+                {/* Simulación UI */}
+                <View style={[tutorialStyles.ghostCard, { 
+                  backgroundColor: theme.cardBackground,
+                  borderColor: theme.cardBorder
+                }]}>
+                  <View style={[tutorialStyles.ghostTag, { backgroundColor: theme.backgroundSecondary }]}>
+                    <Text style={[tutorialStyles.ghostTagText, { color: theme.textSecondary }]}>
+                      PESO MUERTO
+                    </Text>
+                  </View>
+
+                  {/* Semana Pasada */}
+                  <View style={tutorialStyles.ghostPrevious}>
+                    <View style={tutorialStyles.ghostLabel}>
+                      <Ionicons name="eye-outline" size={14} color={theme.textSecondary} />
+                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.textSecondary }]}>
+                        Semana Pasada
+                      </Text>
+                    </View>
+                    <View style={tutorialStyles.ghostValues}>
+                      <View style={[tutorialStyles.ghostValueBox, { 
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
+                          120
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
+                          KG
+                        </Text>
+                      </View>
+                      <View style={[tutorialStyles.ghostValueBox, { 
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
+                          8
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
+                          REPS
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Objetivo Hoy */}
+                  <View style={tutorialStyles.ghostToday}>
+                    <View style={tutorialStyles.ghostLabel}>
+                      <Ionicons name="flame" size={14} color={theme.primary} />
+                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.primary }]}>
+                        Objetivo Hoy
+                      </Text>
+                    </View>
+                    <View style={tutorialStyles.ghostValues}>
+                      <View style={[tutorialStyles.ghostValueBox, { 
+                        backgroundColor: theme.primary + '20',
+                        borderColor: theme.primary
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
+                          122.5
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.primary }]}>
+                          KG
+                        </Text>
+                        <View style={[tutorialStyles.ghostBadge, { backgroundColor: theme.primary }]}>
+                          <Text style={tutorialStyles.ghostBadgeText}>+2.5</Text>
+                        </View>
+                      </View>
+                      <View style={[tutorialStyles.ghostValueBox, { 
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
+                          ?
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[tutorialStyles.ghostQuote, { 
+                  backgroundColor: theme.backgroundSecondary,
+                  borderColor: theme.border
+                }]}>
+                  <Text style={[tutorialStyles.ghostQuoteText, { color: theme.text }]}>
+                    "Si no superas al fantasma, no hay progreso."
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 4: TUS DATOS */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <Ionicons name="analytics" size={48} color={theme.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text, textAlign: 'center' }]}>
+                  Tus Datos Cuentan
+                </Text>
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Cada vez que entrenes, el sistema guardará:
+                </Text>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Repeticiones por serie</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Peso levantado</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Volumen total</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>1RM estimado</Text>
+                </View>
+
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginTop: 24, textAlign: 'center' }]}>
+                  Podrás ver tu evolución completa en la sección de estadísticas.
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 5: MOTIVACIÓN FINAL */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <View style={tutorialStyles.slideContent}>
+              <View style={tutorialStyles.finalImageContainer}>
+                <Image
+                  source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                  style={tutorialStyles.finalImage}
+                  resizeMode="cover"
+                />
+                <View style={tutorialStyles.finalImageOverlay} />
+                <Text style={tutorialStyles.finalImageText}>
+                  NO PAIN{'\n'}
+                  <Text style={tutorialStyles.finalImageTextAccent}>NO GAIN</Text>
+                </Text>
+              </View>
+
+              <Text style={[tutorialStyles.finalText, { color: theme.text }]}>
+                El sistema está listo. El camino está marcado. Lo único que falta es tu voluntad.
+              </Text>
+
+              <TouchableOpacity
+                style={[tutorialStyles.finalButton, { backgroundColor: theme.success }]}
+                onPress={onComplete}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="trophy" size={28} color="#fff" />
+                <Text style={tutorialStyles.finalButtonText}>¡A DARLE CAÑA!</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Profesor Coach (fijo abajo) */}
+        <View style={[tutorialStyles.coachContainer, { backgroundColor: theme.background }]}>
+          <View style={tutorialStyles.coachContent}>
+            <View style={tutorialStyles.coachAvatarContainer}>
+              <View style={[tutorialStyles.coachAvatarGlow, { backgroundColor: theme.primary + '20' }]} />
+              <Image
+                source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                style={tutorialStyles.coachAvatar}
+                resizeMode="cover"
+              />
+            </View>
+            
+            <View style={[tutorialStyles.coachBubble, { 
+              backgroundColor: theme.cardBackground,
+              borderColor: theme.cardBorder
+            }]}>
+              <Text style={[tutorialStyles.coachText, { color: theme.text }]}>
+                {getCoachMessage()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Navegación */}
+          <View style={tutorialStyles.navigation}>
+            <TouchableOpacity
+              onPress={() => goToSlide(currentSlide - 1)}
+              disabled={currentSlide === 0}
+              style={[
+                tutorialStyles.navButton,
+                { backgroundColor: theme.iconButton },
+                currentSlide === 0 && tutorialStyles.navButtonDisabled
+              ]}
+            >
+              <Ionicons 
+                name="chevron-back" 
+                size={24} 
+                color={currentSlide === 0 ? theme.border : theme.text} 
+              />
+            </TouchableOpacity>
+            
+            <Text style={[tutorialStyles.navCounter, { color: theme.textSecondary }]}>
+              {currentSlide + 1} / {TOTAL_TUTORIAL_SLIDES}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? onComplete() : goToSlide(currentSlide + 1)}
+              style={[tutorialStyles.navButton, { backgroundColor: theme.primary }]}
+            >
+              <Ionicons 
+                name={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? "checkmark" : "chevron-forward"} 
+                size={24} 
+                color="#fff" 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* ───────── Estilos del Tutorial ───────── */
+const tutorialStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  bgGradientTop: {
+    position: 'absolute',
+    top: -100,
+    left: 0,
+    width: '100%',
+    height: 300,
+    borderRadius: 9999,
+    opacity: 0.3,
+  },
+  bgGradientBottom: {
+    position: 'absolute',
+    bottom: -100,
+    right: 0,
+    width: '100%',
+    height: 300,
+    borderRadius: 9999,
+    opacity: 0.3,
+  },
+  progressBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+  },
+  slidesContainer: {
+    flex: 1,
+  },
+  slide: {
+    flex: 1,
+  },
+  slideScroll: {
+    flex: 1,
+  },
+  slideContent: {
+    flex: 1,
+    padding: 24,
+    paddingBottom: 180,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+    marginTop: 40,
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+  },
+  mainTitle: {
+    fontSize: 40,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -1,
+  },
+  subtitle: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 32,
+    fontWeight: '600',
+  },
+  startButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  startButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  slideTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  slideDescription: {
+    fontSize: 15,
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  cardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardContent: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  cardText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  ghostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 24,
+  },
+  ghostCard: {
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  ghostTag: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomLeftRadius: 12,
+    borderTopRightRadius: 20,
+  },
+  ghostTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  ghostPrevious: {
+    marginBottom: 24,
+    opacity: 0.5,
+  },
+  ghostToday: {
+    marginTop: 8,
+  },
+  ghostLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ghostLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  ghostValues: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  ghostValueBox: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    position: 'relative',
+  },
+  ghostValueNumber: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  ghostValueLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ghostBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ghostBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ghostQuote: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  ghostQuoteText: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  dataCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  dataText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  finalImageContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    position: 'relative',
+  },
+  finalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  finalImageOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  finalImageText: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#fff',
+    fontStyle: 'italic',
+  },
+  finalImageTextAccent: {
+    color: '#ef4444',
+  },
+  finalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  finalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  finalButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  coachContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 20,
+  },
+  coachContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 16,
+  },
+  coachAvatarContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+  },
+  coachAvatarGlow: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 32,
+    opacity: 0.3,
+  },
+  coachAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  coachBubble: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+  },
+  coachText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  navigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonDisabled: {
+    opacity: 0.3,
+  },
+  navCounter: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+});
+
 export default function Entreno() {
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -538,6 +1303,9 @@ export default function Entreno() {
   
   // Modal de Sin Rutina Activa
   const [showNoRoutineModal, setShowNoRoutineModal] = useState(false);
+
+  // 🎓 Tutorial Modal (solo primera vez)
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // 🔥 NUEVO: Modal de estadísticas
   const [statsModal, setStatsModal] = useState({ visible: false, stats: null });
@@ -608,6 +1376,30 @@ export default function Entreno() {
 
     setHydrated(true);
   }, []);
+
+  // Verificar si es primera vez (mostrar tutorial)
+  useEffect(() => {
+    const checkFirstTime = async () => {
+      try {
+        const hasSeenTutorial = await AsyncStorage.getItem('has_seen_tutorial');
+        if (!hasSeenTutorial && hydrated && rutina) {
+          setShowTutorial(true);
+        }
+      } catch (e) {
+        console.warn('Error checking tutorial status', e);
+      }
+    };
+    checkFirstTime();
+  }, [hydrated, rutina]);
+
+  const completeTutorial = async () => {
+    try {
+      await AsyncStorage.setItem('has_seen_tutorial', 'true');
+      setShowTutorial(false);
+    } catch (e) {
+      console.warn('Error saving tutorial status', e);
+    }
+  };
 
   // Al montar
   useEffect(() => {
@@ -1436,6 +2228,12 @@ export default function Entreno() {
           </View>
         </View>
       </Modal>
+
+      {/* 🎓 Tutorial Modal (Primera Vez) */}
+      <TutorialModal
+        visible={showTutorial}
+        onComplete={completeTutorial}
+      />
     </KeyboardAvoidingView>
   );
 }

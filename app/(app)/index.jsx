@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 // Botón reutilizable
 import ActionButton from '../../components/ActionButton';
+import { useAuth } from '../../context/AuthContext';
 
 // Frases motivadoras
 const FRASES = [
@@ -65,6 +66,7 @@ const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la
 
 
 export default function HomeScreen() {
+  const { user } = useAuth();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
 
@@ -82,7 +84,7 @@ export default function HomeScreen() {
         if (lastSeen !== APP_VERSION) {
           setShowChangelog(true);
         }
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -90,7 +92,7 @@ export default function HomeScreen() {
     setShowChangelog(false);
     try {
       await AsyncStorage.setItem('last_seen_version', APP_VERSION);
-    } catch {}
+    } catch { }
   };
 
   return (
@@ -116,8 +118,10 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.paymentGradient}
           >
-            <Ionicons name="card-outline" size={20} color="#FFF" />
-            <Text style={styles.paymentButtonText}>Pagar</Text>
+            <Ionicons name={user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'PREMIUM' ? "trending-up-outline" : "card-outline"} size={20} color="#FFF" />
+            <Text style={styles.paymentButtonText}>
+              {user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'PREMIUM' ? 'Subir de Nivel' : 'Pagar'}
+            </Text>
           </LinearGradient>
         </Pressable>
       </Link>

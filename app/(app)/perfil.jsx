@@ -32,6 +32,7 @@ export default function PerfilScreen() {
     router.push('perfil/ajustes');
   };
 
+  
   const handleCerrarSesion = async () => {
     await logout();
     Alert.alert('Sesión cerrada');

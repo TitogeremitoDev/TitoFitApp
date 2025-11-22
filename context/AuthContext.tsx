@@ -19,7 +19,7 @@ export type User = {_id: string;
   nombre: string;
   email: string;
   username: string;
-  tipoUsuario: 'FREEUSER' | 'CLIENTE' | 'PREMIUM' | 'ADMINISTRADOR';
+  tipoUsuario: 'FREEUSER' | 'CLIENTE' | 'PREMIUM' | 'ADMINISTRADOR' | 'ENTRENADOR';
   token?: string;
 };
 
