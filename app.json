@@ -3,11 +3,11 @@
     "name": "TitoFitApp",
     "slug": "TitoFitApp",
     "version": "1.3.1",
-    "runtimeVersion": "1.3.1",     
+    "runtimeVersion": "1.3.1",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/mi-logo-icono.png",
-    "scheme": "titofitapp",
+    "scheme": "com.german92.titofitapp",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/wait.png",
@@ -15,7 +15,10 @@
       "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": ["**/*"],
-    "ios": { "supportsTablet": true },
+    "ios": { 
+      "supportsTablet": true,
+      "bundleIdentifier": "com.german92.titofitapp"
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/mi-logo-icono-foreground.png",
@@ -26,7 +29,13 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": { "scheme": "titofitapp" },
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "com.german92.titofitapp",
+              "host": "oauthredirect"
+            }
+          ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
@@ -38,16 +47,45 @@
     },
     "plugins": [
       "expo-router",
-      ["expo-splash-screen", { "image": "./assets/images/wait.png", "resizeMode": "cover", "backgroundColor": "#ffffff" }],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/wait.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#ffffff"
+        }
+      ],
       "expo-notifications",
       "expo-secure-store",
-      ["expo-build-properties", { "android": { "newArchEnabled": false } }],
-      ["expo-updates", { "runtimeVersion": "1.3.0" }] 
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "newArchEnabled": false
+          }
+        }
+      ],
+      [
+        "expo-updates",
+        {
+          "runtimeVersion": "1.3.1"
+        }
+      ]
     ],
-    "experiments": { "typedRoutes": true },
+    "experiments": {
+      "typedRoutes": true
+    },
     "extra": {
       "router": {},
-      "eas": { "projectId": "3233332a-d64c-4f96-9775-d8043263302c" }
+      "eas": {
+        "projectId": "3233332a-d64c-4f96-9775-d8043263302c"
+      },
+      "EXPO_PUBLIC_API_URL": "https://consistent-donna-titogeremito-29c943bc.koyeb.app",
+      "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "915310517535-u0n1rrrvjf9bnkjc0b0a8kj7qogoe18i.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL": "915310517535-99o32oj3k65j6b3fa1l3dpm7appuv5ll.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+      "EXPO_PUBLIC_APP_ENV": "dev"
     },
     "updates": {
       "url": "https://u.expo.dev/3233332a-d64c-4f96-9775-d8043263302c"

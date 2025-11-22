@@ -1,167 +1,208 @@
 // context/AuthContext.tsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { syncRoutinesFromServer } from '../src/lib/syncRoutines';
 
-// ----------------------------------------------------
-// ¡RECUERDA PONER TU IP LOCAL AQUÍ!
-const API_URL = 'http://192.168.1.38:3000/api';
-// ----------------------------------------------------
+const DEFAULT_KOYEB = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+const API_BASE = ((process.env.EXPO_PUBLIC_API_URL as string) || DEFAULT_KOYEB).replace(/\/+$/, '');
+axios.defaults.baseURL = `${API_BASE}/api`;
 
-axios.defaults.baseURL = API_URL;
+if (__DEV__) {
+  console.log('[Auth] API_BASE =', axios.defaults.baseURL);
+}
+
 const TOKEN_KEY = 'titofit_token';
+const USER_KEY = 'titofit_user';
 
-// --- 1. Definimos los "tipos" ---
-
-// El tipo para un objeto Usuario (basado en lo que devuelve tu API)
-interface User {
-  _id: string;
+export type User = {_id: string;
   nombre: string;
   email: string;
   username: string;
   tipoUsuario: 'FREEUSER' | 'CLIENTE' | 'PREMIUM' | 'ADMINISTRADOR';
-}
+  token?: string;
+};
 
-// El tipo para el "valor" de nuestro contexto
-interface AuthContextData {
+type AuthContextData = {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (emailOrUsername: string, password: string) => Promise<any>;
-  register: (nombre: string, email: string, username: string, password: string) => Promise<any>;
-  logout: () => void;
-}
-
-// --- 2. Creamos el Contexto con el tipo ---
-// Le decimos a TS que el contexto puede ser AuthContextData o null
-const AuthContext = createContext<AuthContextData | null>(null);
-
-// --- 3. Creamos el Proveedor (Provider) ---
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // --- 4. Estados con Tipos ---
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null); // <- ¡Arreglado!
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const loadToken = async () => {
-      try {
-        const storedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-        if (storedToken) {
-          setToken(storedToken); // <- ¡Arreglado!
-          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-          // Aquí podríamos cargar los datos del usuario, pero por ahora simple
-        }
-      } catch (e) {
-        console.error('Failed to load token', e);
-      }
-      setIsLoading(false);
-    };
-    loadToken();
-  }, []);
-
-  // --- 5. Funciones con Parámetros Tipados ---
-  const login = async (emailOrUsername: string, password: string) => {
-    
-    // --- INICIO DE LA "PUERTA TRASERA DE DESARROLLADOR" ---
-    // Estas son tus "credenciales mágicas"
-    const DEV_USER = 'admin';
-    const DEV_PASS = 'admin';
-
-    if (emailOrUsername === DEV_USER && password === DEV_PASS) {
-      console.warn('--- MODO DESARROLLADOR: Saltando login real ---');
-      
-      // 1. Creamos un token y usuario falsos
-      const fakeToken = 'admin-token-local'; // Es solo un string, no importa qué sea
-      const fakeUser: User = { // Un objeto User falso
-        _id: 'admin-id-001',
-        nombre: 'Administrador (Local)',
-        email: 'admin@local.com',
-        username: 'admin',
-        tipoUsuario: 'ADMINISTRADOR' // ¡Para probar todo!
-      };
-
-      // 2. Simulamos todo lo que hace un login exitoso
-      setToken(fakeToken);
-      setUser(fakeUser);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${fakeToken}`;
-      await SecureStore.setItemAsync(TOKEN_KEY, fakeToken);
-      
-      console.warn('--- MODO DESARROLLADOR: Logueado con éxito ---');
-      return { token: fakeToken, ...fakeUser }; // Devuelve los datos falsos
-    }
-    // --- FIN DE LA "PUERTA TRASERA DE DESARROLLADOR" ---
-
-
-    // --- INICIO DEL CÓDIGO DE LOGIN REAL (SOLO SE EJECUTA SI NO ERES DEV) ---
-    try {
-      const response = await axios.post('/users/login', {
-        emailOrUsername,
-        password,
-      });
-
-      const { token: newToken, ...userData } = response.data;
-
-      setToken(newToken);
-      setUser(userData as User); // Le decimos a TS que userData es de tipo User
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-      await SecureStore.setItemAsync(TOKEN_KEY, newToken);
-      
-      return response.data;
-    } catch (e) {
-      console.error('Login failed', e);
-      throw e;
-    }
-  };
-
-  const register = async (nombre: string, email: string, username: string, password: string) => { // <- ¡Arreglado!
-    try {
-      const response = await axios.post('/users/signup', {
-        nombre,
-        email,
-        username,
-        password,
-      });
-
-      const { token: newToken, ...userData } = response.data;
-
-      setToken(newToken);
-      setUser(userData as User);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-      await SecureStore.setItemAsync(TOKEN_KEY, newToken);
-
-      return response.data;
-    } catch (e) {
-      console.error('Register failed', e);
-      throw e;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      setToken(null);
-      setUser(null);
-      delete axios.defaults.headers.common['Authorization'];
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-    } catch (e) {
-      console.error('Logout failed', e);
-    }
-  };
-
-  return (
-    <AuthContext.Provider
-      value={{ user, token, isLoading, login, register, logout }} // <- 'isLoading' (con L)
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  login: (emailOrUsername: string, password: string) => Promise<User>;
+  register: (nombre: string, email: string, username: string, password: string, clientCode?: string) => Promise<User>;
+  upgradeByCode: (clientCode: string) => Promise<User>;
+  loginWithGoogle: (googleAccessToken: string) => Promise<User>;
+  logout: () => Promise<void>;
 };
 
-// --- 6. Hook para usar el contexto ---
+const AuthContext = createContext<AuthContextData | null>(null);
+
+async function persistSession(data: User & { token: string }) {
+  const { token, ...u } = data;
+  axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  await AsyncStorage.multiSet([
+    [TOKEN_KEY, token],
+    [USER_KEY, JSON.stringify(u)],
+  ]);
+  return { token, user: u as User };
+}
+
+async function loadSession() {
+  const [[, t], [, u]] = await AsyncStorage.multiGet([TOKEN_KEY, USER_KEY]);
+  const user = u ? (JSON.parse(u) as User) : null;
+  const token = t || null;
+  if (token) axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  return { token, user };
+}
+
+async function clearSession() {
+  await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+  delete axios.defaults.headers.common.Authorization;
+}
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await loadSession();
+        setToken(s.token);
+        setUser(s.user);
+        if (__DEV__ && s.user) {
+          console.log('[Auth] Sesión restaurada:', s.user.email);
+        }
+      } catch (error) {
+        console.error('[Auth] Error cargando sesión:', error);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const value = useMemo<AuthContextData>(
+    () => ({
+      user,
+      token,
+      isLoading,
+
+      async login(emailOrUsername: string, password: string) {
+        if (__DEV__) {
+          console.log('[Auth] Login clásico iniciado');
+        }
+        const { data } = await axios.post<User & { token: string }>(
+          '/users/login',
+          { emailOrUsername, password }
+        );
+        const s = await persistSession(data);
+        setToken(s.token);
+        setUser(s.user);
+
+        // Sincroniza rutinas desde servidor
+        try {
+          await syncRoutinesFromServer(API_BASE, s.token);
+          if (__DEV__) {
+            console.log('[Auth] Rutinas sincronizadas tras login');
+          }
+        } catch (syncError) {
+          console.error('[Auth] Error sincronizando rutinas:', syncError);
+        }
+
+        return { ...s.user, token: s.token };
+      },
+
+      async register(nombre: string, email: string, username: string, password: string, clientCode?: string) {
+        if (__DEV__) {
+          console.log('[Auth] Registro iniciado');
+        }
+        const payload: any = { nombre, email, username, password };
+        if (clientCode && clientCode.trim()) payload.clientCode = clientCode.trim();
+        const { data } = await axios.post<User & { token: string }>('/users/signup', payload);
+        const s = await persistSession(data);
+        setToken(s.token);
+        setUser(s.user);
+
+        // Sincroniza rutinas tras registrarse
+        try {
+          await syncRoutinesFromServer(API_BASE, s.token);
+          if (__DEV__) {
+            console.log('[Auth] Rutinas sincronizadas tras registro');
+          }
+        } catch (syncError) {
+          console.error('[Auth] Error sincronizando rutinas:', syncError);
+        }
+
+        return { ...s.user, token: s.token };
+      },
+
+      async upgradeByCode(clientCode: string) {
+        if (__DEV__) {
+          console.log('[Auth] Upgrade por código iniciado');
+        }
+        const { data } = await axios.post<User & { token: string }>(
+          '/users/upgrade',
+          { clientCode: clientCode.trim() }
+        );
+        const s = await persistSession(data);
+        setToken(s.token);
+        setUser(s.user);
+
+        // Re-sincroniza por si el upgrade asigna rutinas
+        try {
+          await syncRoutinesFromServer(API_BASE, s.token);
+          if (__DEV__) {
+            console.log('[Auth] Rutinas sincronizadas tras upgrade');
+          }
+        } catch (syncError) {
+          console.error('[Auth] Error sincronizando rutinas:', syncError);
+        }
+
+        return { ...s.user, token: s.token };
+      },
+
+      async loginWithGoogle(googleAccessToken: string) {
+        if (__DEV__) {
+          console.log('[Auth] Login con Google iniciado');
+        }
+        const { data } = await axios.post<User & { token: string }>(
+          '/users/google-login',
+          { accessToken: googleAccessToken }
+        );
+        const s = await persistSession(data);
+        setToken(s.token);
+        setUser(s.user);
+
+        // Sincroniza rutinas al entrar con Google
+        try {
+          await syncRoutinesFromServer(API_BASE, s.token);
+          if (__DEV__) {
+            console.log('[Auth] Rutinas sincronizadas tras login Google');
+          }
+        } catch (syncError) {
+          console.error('[Auth] Error sincronizando rutinas:', syncError);
+        }
+
+        return { ...s.user, token: s.token };
+      },
+
+      async logout() {
+        if (__DEV__) {
+          console.log('[Auth] Cerrando sesión');
+        }
+        await clearSession();
+        setToken(null);
+        setUser(null);
+      },
+    }),
+    [user, token, isLoading]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth debe usarse dentro de <AuthProvider>');
+  return ctx;
 };

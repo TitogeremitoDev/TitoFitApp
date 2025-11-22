@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../../context/ThemeContext';
 
 const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales'];
 const STORAGE_PREFIX = 'routine_';
@@ -70,6 +71,7 @@ const nextDayKey = (entries) => {
 
 /* ───────────────────────────────── Componente principal ─────────────────────────────── */
 export default function RoutineEditorScreen() {
+  const { theme } = useTheme();
   const { id } = useLocalSearchParams();
   const storageKey = `${STORAGE_PREFIX}${id}`;
 
@@ -384,9 +386,9 @@ export default function RoutineEditorScreen() {
 
   /* ───────── UI ───────── */
   const HeaderApp = () => (
-    <View style={styles.headerTop}>
-      <Text style={styles.title}>{routineName}</Text>
-      <Text style={styles.subtitle}>Editor de rutina</Text>
+    <View style={[styles.headerTop, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+      <Text style={[styles.title, { color: theme.text }]}>{routineName}</Text>
+      <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Editor de rutina</Text>
     </View>
   );
 
@@ -394,62 +396,72 @@ export default function RoutineEditorScreen() {
     const label = `Día ${Number.isFinite(Number(ord)) ? ord : 1}`;
     const expanded = !!diasAbiertos[diaKey];
     return (
-      <View style={styles.sectionHeaderContainer}>
+      <View style={[styles.sectionHeaderContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
         <TouchableOpacity
           style={styles.sectionHeaderTitleContainer}
           onPress={() => onToggleDia(diaKey)}
           activeOpacity={0.8}
         >
-          <Text style={styles.sectionHeader}>{label}</Text>
+          <Text style={[styles.sectionHeader, { color: theme.text }]}>{label}</Text>
           <Ionicons
             name={expanded ? 'chevron-down-outline' : 'chevron-forward-outline'}
             size={20}
-            color="#374151"
+            color={theme.textSecondary}
           />
         </TouchableOpacity>
         <View style={styles.sectionHeaderControls}>
-          <IconBtn onPress={() => openAllInDay(diaKey)} icon="expand-outline" />
-          <IconBtn onPress={() => closeAllInDay(diaKey)} icon="contract-outline" />
-          <IconBtn onPress={() => moveDay(diaKey, -1)} icon="arrow-up" tint="#3b82f6" />
-          <IconBtn onPress={() => moveDay(diaKey, +1)} icon="arrow-down" tint="#3b82f6" />
-          <IconBtn onPress={() => insertDayAfter(diaKey)} icon="add" tint="#10b981" />
-          <IconBtn onPress={() => onDeleteDay(diaKey)} icon="remove" tint="#ef4444" />
+          <IconBtn onPress={() => openAllInDay(diaKey)} icon="expand-outline" tint={theme.textSecondary} />
+          <IconBtn onPress={() => closeAllInDay(diaKey)} icon="contract-outline" tint={theme.textSecondary} />
+          <IconBtn onPress={() => moveDay(diaKey, -1)} icon="arrow-up" tint={theme.primary} />
+          <IconBtn onPress={() => moveDay(diaKey, +1)} icon="arrow-down" tint={theme.primary} />
+          <IconBtn onPress={() => insertDayAfter(diaKey)} icon="add" tint={theme.success} />
+          <IconBtn onPress={() => onDeleteDay(diaKey)} icon="remove" tint={theme.danger} />
         </View>
       </View>
     );
   };
 
   const DiaFooter = ({ diaKey }) => (
-    <View style={styles.dayFooter}>
+    <View style={[styles.dayFooter, { backgroundColor: theme.backgroundSecondary, borderColor: theme.borderLight }]}>
       <TouchableOpacity
-        style={styles.addExerciseCTA}
+        style={[styles.addExerciseCTA, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
         onPress={() => addExerciseAtEnd(diaKey)}
         activeOpacity={0.88}
       >
-        <Ionicons name="add-circle-outline" size={20} color="#10b981" />
-        <Text style={styles.addExerciseCTATxt}>Añadir ejercicio</Text>
+        <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
+        <Text style={[styles.addExerciseCTATxt, { color: theme.successText }]}>Añadir ejercicio</Text>
       </TouchableOpacity>
     </View>
   );
 
   const SerieRow = ({ diaKey, ejercicioId, s, index }) => {
     return (
-      <View style={styles.serieRow}>
-        <Text style={styles.serieLabel}>Serie {index + 1}</Text>
+      <View style={[styles.serieRow, { borderColor: theme.border, backgroundColor: theme.inputBackground }]}>
+        <Text style={[styles.serieLabel, { color: theme.text }]}>Serie {index + 1}</Text>
 
         <TextInput
-          style={styles.serieInput}
+          style={[styles.serieInput, { 
+            borderColor: theme.inputBorder, 
+            backgroundColor: theme.inputBackground,
+            color: theme.inputText 
+          }]}
           placeholder="min"
+          placeholderTextColor={theme.placeholder}
           keyboardType="numeric"
           value={String(s.repMin ?? '')}
           onChangeText={(v) =>
             updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)
           }
         />
-        <Text style={{ marginHorizontal: 6, color: '#6b7280' }}>–</Text>
+        <Text style={{ marginHorizontal: 6, color: theme.textTertiary }}>–</Text>
         <TextInput
-          style={styles.serieInput}
+          style={[styles.serieInput, { 
+            borderColor: theme.inputBorder, 
+            backgroundColor: theme.inputBackground,
+            color: theme.inputText 
+          }]}
           placeholder="max"
+          placeholderTextColor={theme.placeholder}
           keyboardType="numeric"
           value={String(s.repMax ?? '')}
           onChangeText={(v) =>
@@ -458,11 +470,11 @@ export default function RoutineEditorScreen() {
         />
 
         <TouchableOpacity
-          style={styles.extraPill}
+          style={[styles.extraPill, { borderColor: theme.inputBorder, backgroundColor: theme.backgroundTertiary }]}
           onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
         >
-          <Text style={styles.extraPillTxt}>{s.extra || 'Ninguno'}</Text>
-          <Ionicons name="chevron-down-outline" size={16} color="#1f2937" />
+          <Text style={[styles.extraPillTxt, { color: theme.text }]}>{s.extra || 'Ninguno'}</Text>
+          <Ionicons name="chevron-down-outline" size={16} color={theme.text} />
         </TouchableOpacity>
 
         <View style={{ flex: 1 }} />
@@ -470,7 +482,7 @@ export default function RoutineEditorScreen() {
         <IconBtn
           onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
           icon="close-circle"
-          tint="#ef4444"
+          tint={theme.danger}
         />
       </View>
     );
@@ -481,24 +493,24 @@ export default function RoutineEditorScreen() {
     const abierto = isOpen(item.id);
 
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
         {/* Header ejercicio */}
-        <View style={styles.cardHeaderContainer}>
+        <View style={[styles.cardHeaderContainer, { borderColor: theme.cardHeaderBorder }]}>
           <TouchableOpacity
             onPress={() => toggleOpen(item.id)}
             style={styles.cardHeaderTouchable}
           >
-            <Text style={styles.cardHeader}>
+            <Text style={[styles.cardHeader, { color: theme.text }]}>
               {(item.musculo || 'MÚSCULO')} — {(item.nombre || 'Nombre ejercicio')}
             </Text>
           </TouchableOpacity>
 
           <View style={styles.moveControls}>
-            <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint="#3b82f6" />
-            <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint="#3b82f6" />
-            <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint="#10b981" />
-            <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint="#ef4444" />
-            <IconBtn onPress={() => toggleOpen(item.id)} icon={abierto ? 'chevron-down' : 'chevron-forward'} />
+            <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint={theme.primary} />
+            <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint={theme.primary} />
+            <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint={theme.success} />
+            <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint={theme.danger} />
+            <IconBtn onPress={() => toggleOpen(item.id)} icon={abierto ? 'chevron-down' : 'chevron-forward'} tint={theme.textSecondary} />
           </View>
         </View>
 
@@ -506,10 +518,16 @@ export default function RoutineEditorScreen() {
         {abierto && (
           <View style={styles.editBlock}>
             <View style={styles.inlineRow}>
-              <Text style={styles.inlineLabel}>Músculo</Text>
+              <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Músculo</Text>
               <TextInput
-                style={[styles.inlineInput, { flex: 1 }]}
+                style={[styles.inlineInput, { 
+                  flex: 1, 
+                  borderColor: theme.inputBorder,
+                  backgroundColor: theme.inputBackground,
+                  color: theme.inputText
+                }]}
                 placeholder="Ej: ESPALDA"
+                placeholderTextColor={theme.placeholder}
                 value={item.musculo ?? ''}
                 onChangeText={(v) =>
                   updateEjercicioCampo(diaKey, item.id, 'musculo', v.toUpperCase())
@@ -518,10 +536,16 @@ export default function RoutineEditorScreen() {
             </View>
 
             <View style={[styles.inlineRow, { marginTop: 8 }]}>
-              <Text style={styles.inlineLabel}>Nombre</Text>
+              <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Nombre</Text>
               <TextInput
-                style={[styles.inlineInput, { flex: 1 }]}
+                style={[styles.inlineInput, { 
+                  flex: 1,
+                  borderColor: theme.inputBorder,
+                  backgroundColor: theme.inputBackground,
+                  color: theme.inputText
+                }]}
                 placeholder="Ej: Remo sentado máquina (agarre neutro)"
+                placeholderTextColor={theme.placeholder}
                 value={item.nombre ?? ''}
                 onChangeText={(v) => updateEjercicioCampo(diaKey, item.id, 'nombre', v)}
               />
@@ -533,10 +557,10 @@ export default function RoutineEditorScreen() {
         {abierto && (
           <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
             <View style={styles.serieHeadRow}>
-              <Text style={[styles.serieLabel, { fontWeight: '700' }]}>#</Text>
-              <Text style={styles.headCol}>Min</Text>
-              <Text style={styles.headCol}>Max</Text>
-              <Text style={[styles.headCol, { flex: 1, textAlign: 'left' }]}>Técnica</Text>
+              <Text style={[styles.serieLabel, { fontWeight: '700', color: theme.text }]}>#</Text>
+              <Text style={[styles.headCol, { color: theme.text }]}>Min</Text>
+              <Text style={[styles.headCol, { color: theme.text }]}>Max</Text>
+              <Text style={[styles.headCol, { flex: 1, textAlign: 'left', color: theme.text }]}>Técnica</Text>
               <Text style={{ width: 28 }} />
             </View>
 
@@ -551,11 +575,11 @@ export default function RoutineEditorScreen() {
             ))}
 
             <TouchableOpacity
-              style={styles.addSerieBtn}
+              style={[styles.addSerieBtn, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
               onPress={() => addSerie(diaKey, item.id)}
             >
-              <Ionicons name="add-circle-outline" size={20} color="#10b981" />
-              <Text style={styles.addSerieTxt}>Añadir serie</Text>
+              <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
+              <Text style={[styles.addSerieTxt, { color: theme.successText }]}>Añadir serie</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -564,7 +588,7 @@ export default function RoutineEditorScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <HeaderApp />
       <SectionList
         sections={sections}
@@ -585,7 +609,10 @@ export default function RoutineEditorScreen() {
 }
 
 /* ───────────────────────── IconBtn ───────────────────────── */
-function IconBtn({ onPress, icon, tint = '#4b5563' }) {
+function IconBtn({ onPress, icon, tint }) {
+  const { theme } = useTheme();
+  const finalTint = tint || theme.textSecondary;
+  
   const map = {
     'arrow-up': 'arrow-up-outline',
     'arrow-down': 'arrow-down-outline',
@@ -598,34 +625,30 @@ function IconBtn({ onPress, icon, tint = '#4b5563' }) {
     'contract-outline': 'contract-outline',
   };
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.iconBtnRound}>
-      <Ionicons name={map[icon]} size={18} color={tint} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={[styles.iconBtnRound, { backgroundColor: theme.iconButton, borderColor: theme.border }]}>
+      <Ionicons name={map[icon]} size={18} color={finalTint} />
     </TouchableOpacity>
   );
 }
 
 /* ───────────────────────── Styles ───────────────────────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fb' },
+  container: { flex: 1 },
 
   headerTop: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 10,
-    backgroundColor: '#ffffff',
     borderBottomWidth: 0.6,
-    borderColor: '#e5e7eb',
   },
-  title: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  subtitle: { marginTop: 2, fontSize: 12, color: '#6b7280' },
+  title: { fontSize: 20, fontWeight: '800' },
+  subtitle: { marginTop: 2, fontSize: 12 },
 
   /* Día */
   sectionHeaderContainer: {
-    backgroundColor: '#fff',
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 0.6,
-    borderColor: '#e5e7eb',
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -635,15 +658,13 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
-  sectionHeader: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  sectionHeader: { fontSize: 16, fontWeight: '700' },
   sectionHeaderControls: { flexDirection: 'row', alignItems: 'center' },
 
   dayFooter: {
-    backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderTopWidth: 0.6,
-    borderColor: '#eef2f7',
   },
   addExerciseCTA: {
     flexDirection: 'row',
@@ -653,30 +674,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: '#ecfdf5',
     borderWidth: 1,
-    borderColor: '#d1fae5',
   },
-  addExerciseCTATxt: { color: '#065f46', fontWeight: '700', fontSize: 13 },
+  addExerciseCTATxt: { fontWeight: '700', fontSize: 13 },
 
   iconBtnRound: {
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#f3f4f6',
     marginLeft: 6,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
   },
 
   /* Card ejercicio */
   card: {
-    backgroundColor: '#fff',
     marginHorizontal: 12,
     marginTop: 10,
     borderRadius: 12,
     borderWidth: 0.6,
-    borderColor: '#e5e7eb',
     overflow: 'hidden',
   },
   cardHeaderContainer: {
@@ -685,10 +700,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderBottomWidth: 0.6,
-    borderColor: '#eef2f7',
   },
   cardHeaderTouchable: { flex: 1 },
-  cardHeader: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  cardHeader: { fontSize: 14, fontWeight: '700' },
   moveControls: { flexDirection: 'row', alignItems: 'center' },
 
   /* Bloque edición musculo/nombre */
@@ -698,14 +712,12 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  inlineLabel: { width: 70, color: '#374151', fontSize: 12, fontWeight: '600' },
+  inlineLabel: { width: 70, fontSize: 12, fontWeight: '600' },
   inlineInput: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: '#fff',
     fontSize: 13,
   },
 
@@ -716,29 +728,25 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingHorizontal: 4,
   },
-  headCol: { width: 70, textAlign: 'center', fontWeight: '700', color: '#111827' },
+  headCol: { width: 70, textAlign: 'center', fontWeight: '700' },
 
   serieRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 0.6,
-    borderColor: '#e5e7eb',
     borderRadius: 10,
     padding: 8,
     marginTop: 8,
-    backgroundColor: '#fff',
   },
-  serieLabel: { width: 70, fontSize: 12, color: '#111827' },
+  serieLabel: { width: 70, fontSize: 12 },
   serieInput: {
     width: 64,
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 8,
     fontSize: 12,
     textAlign: 'center',
-    backgroundColor: '#fff',
   },
 
   extraPill: {
@@ -750,10 +758,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#f9fafb',
   },
-  extraPillTxt: { fontSize: 12, color: '#1f2937', fontWeight: '700' },
+  extraPillTxt: { fontSize: 12, fontWeight: '700' },
 
   addSerieBtn: {
     flexDirection: 'row',
@@ -764,9 +770,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: '#ecfdf5',
     borderWidth: 1,
-    borderColor: '#d1fae5',
   },
-  addSerieTxt: { color: '#065f46', fontWeight: '800', fontSize: 13 },
+  addSerieTxt: { fontWeight: '800', fontSize: 13 },
 });

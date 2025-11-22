@@ -1,13 +1,13 @@
 // src/data/predefinedRoutines.js
+// ⚠️ IMPORTANTE: Este archivo contiene SOLO rutinas GRATUITAS
 
 // --- 1. DATOS DE EJERCICIOS (Arrays [dia][ejercicio] por separado) ---
 
 // Datos para la Rutina Full-Body Genérica (3 días)
-// Asegúrate de completar los ejercicios de los días 2 y 3 aquí
 export const GENERIC_FULLBODY_DATA = [
   // Día 1 (Índice 0): Piernas FUERTE (6–8, multiarticular) · Tirón INTERMEDIO (10–12) · Empuje LIVIANO (10–15, máquinas/poleas)
   [
-    // PIERNA — FUERTE
+    // PIERNA – FUERTE
     {
       id: 'gen_fb_1_1',
       musculo: 'PIERNAS',
@@ -29,7 +29,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // TIRÓN — INTERMEDIO
+    // TIRÓN – INTERMEDIO
     {
       id: 'gen_fb_1_3',
       musculo: 'ESPALDA',
@@ -51,7 +51,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // EMPUJE — LIVIANO
+    // EMPUJE – LIVIANO
     {
       id: 'gen_fb_1_5',
       musculo: 'PECTORAL',
@@ -76,7 +76,7 @@ export const GENERIC_FULLBODY_DATA = [
 
   // Día 2 (Índice 1): Tirón FUERTE (6–8, multiarticular) · Empuje INTERMEDIO (10–12) · Piernas LIVIANO (10–15, máquinas)
   [
-    // TIRÓN — FUERTE
+    // TIRÓN – FUERTE
     {
       id: 'gen_fb_2_1',
       musculo: 'ESPALDA',
@@ -98,7 +98,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // EMPUJE — INTERMEDIO
+    // EMPUJE – INTERMEDIO
     {
       id: 'gen_fb_2_3',
       musculo: 'PECTORAL',
@@ -120,7 +120,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // PIERNAS — LIVIANO
+    // PIERNAS – LIVIANO
     {
       id: 'gen_fb_2_5',
       musculo: 'PIERNAS',
@@ -145,7 +145,7 @@ export const GENERIC_FULLBODY_DATA = [
 
   // Día 3 (Índice 2): Empuje FUERTE (6–8) · Piernas INTERMEDIO (10–12) · Tirón LIVIANO (10–15)
   [
-    // EMPUJE — FUERTE
+    // EMPUJE – FUERTE
     {
       id: 'gen_fb_3_1',
       musculo: 'PECTORAL',
@@ -167,7 +167,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // PIERNAS — INTERMEDIO
+    // PIERNAS – INTERMEDIO
     {
       id: 'gen_fb_3_3',
       musculo: 'PIERNAS',
@@ -189,7 +189,7 @@ export const GENERIC_FULLBODY_DATA = [
       ],
     },
 
-    // TIRÓN — LIVIANO
+    // TIRÓN – LIVIANO
     {
       id: 'gen_fb_3_5',
       musculo: 'ESPALDA',
@@ -212,7 +212,6 @@ export const GENERIC_FULLBODY_DATA = [
     },
   ],
 ];
-
 
 // Datos para la Rutina German Martinez 4 Días (COMPLETA)
 const RUTINA_GERMAN_MARTINEZ_4_DIAS_DATA = [
@@ -260,8 +259,8 @@ const RUTINA_GERMAN_MARTINEZ_4_DIAS_DATA = [
   ],
 ];
 
-// --- 2. ARRAY PRINCIPAL DE RUTINAS PREDEFINIDAS ---
-export const PREDEFINED_ROUTINES = [
+// --- 2. ARRAY PRINCIPAL DE RUTINAS PREDEFINIDAS (GRATUITAS) ---
+export const predefinedRoutines = [
   // --- Objeto Rutina 1: Full-Body Genérica ---
   {
     // Metadatos (para mostrar en la lista 'rutinas')
@@ -290,18 +289,8 @@ export const PREDEFINED_ROUTINES = [
     // Datos completos
     diasArr: RUTINA_GERMAN_MARTINEZ_4_DIAS_DATA
   },
-
-  // --- Puedes añadir más rutinas aquí ---
-  // {
-  //   id: 'otra_rutina_003',
-  //   nombre: 'Rutina Torso-Pierna 4 Días',
-  //   dias: 4,
-  //   fecha: '...',
-  //   division: 'Torso/Pierna',
-  //   diasArr: OTROS_DATOS_RUTINA_3
-  // },
 ];
 
-// Opcional: Exportar IDs si los usas en otro lugar
-export const GENERIC_ID = PREDEFINED_ROUTINES[0].id;
-export const GERMAN_MARTINEZ_ID = PREDEFINED_ROUTINES[1].id;
+// Exportar IDs si los usas en otro lugar
+export const GENERIC_ID = predefinedRoutines[0].id;
+export const GERMAN_MARTINEZ_ID = predefinedRoutines[1].id;

@@ -1,10 +1,11 @@
 /* app/index.jsx
    ────────────────────────────────────────────────────────────────────────
-   Home + Changelog modal 1.3.1 (solo primera vez por versión)
+   Home + Changelog modal 1.3.1 + BOTÓN DE PAGOS
    - Lee versión de Constants.expoConfig.version
    - Guarda 'last_seen_version' en AsyncStorage al cerrar
    - Lista de mejoras + logo al pie
    - Mantiene UI previa (frases, botones, etc.)
+   - NUEVO: Botón de pagos arriba a la derecha
    ──────────────────────────────────────────────────────────────────────── */
 
 import React, { useState, useEffect } from 'react';
@@ -43,7 +44,7 @@ const FRASES = [
 ];
 
 // Versión de la app (lee de app.json → expo.version)
-const APP_VERSION = Constants?.expoConfig?.version ?? '1.3.1';
+const APP_VERSION = Constants?.expoConfig?.version ?? '0.8.0';
 
 // Contenido del changelog (puedes formatear cada línea libremente)
 const CAMBIOS_131 = [
@@ -55,9 +56,9 @@ const CAMBIOS_131 = [
   'Dos rutinas genéricas incorporadas y alineadas con la base de ejercicios (técnica y vídeo).',
   'Acceso a espacio de promoción personal desde la aplicación.',
   'Constructor de rutinas optimizado: crear, modificar, reordenar e importar CSV con validación y normalización.',
-  'Botones en Entreno: “Técnica correcta (TC)” y vídeo incrustado por ejercicio.',
+  'Botones en Entreno: "Técnica correcta (TC)" y vídeo incrustado por ejercicio.',
   'Memoria de sesión: vuelve automáticamente a la última semana y día utilizados.',
-  'Estado “OE (Otro Ejercicio)” con compatibilidad retroactiva para datos antiguos.',
+  'Estado "OE (Otro Ejercicio)" con compatibilidad retroactiva para datos antiguos.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -105,6 +106,21 @@ export default function HomeScreen() {
       />
       <View style={[styles.blob, styles.blobTop]} />
       <View style={[styles.blob, styles.blobBottom]} />
+
+      {/* NUEVO: BOTÓN DE PAGOS ARRIBA A LA DERECHA */}
+      <Link href="/payment" asChild>
+        <Pressable style={styles.paymentButton}>
+          <LinearGradient
+            colors={['#10B981', '#059669']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.paymentGradient}
+          >
+            <Ionicons name="card-outline" size={20} color="#FFF" />
+            <Text style={styles.paymentButtonText}>Pagar</Text>
+          </LinearGradient>
+        </Pressable>
+      </Link>
 
       {/* Contenido */}
       <View style={styles.contentContainer}>
@@ -210,6 +226,34 @@ const styles = StyleSheet.create({
   },
   blobTop: { top: -40, left: -40 },
   blobBottom: { bottom: -30, right: -30, backgroundColor: '#10B981' },
+
+  // NUEVO: Botón de pagos flotante
+  paymentButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    right: 20,
+    zIndex: 999,
+    borderRadius: 20,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  paymentGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+  },
+  paymentButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 
   card: {
     width: '100%',

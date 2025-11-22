@@ -4,20 +4,68 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "internal": {
+    "dev": {
+      "developmentClient": true,
       "distribution": "internal",
-      "android": { "buildType": "apk"},
-      "channel": "staging"
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "dev",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL": "915310517535-99o32oj3k65j6b3fa1l3dpm7appuv5ll.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "915310517535-u0n1rrrvjf9bnkjc0b0a8kj7qogoe18i.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_URL": "https://consistent-donna-titogeremito-29c943bc.koyeb.app"
+      }
     },
     "development": {
       "developmentClient": false,
       "distribution": "internal",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "dev",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL": "915310517535-99o32oj3k65j6b3fa1l3dpm7appuv5ll.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "915310517535-u0n1rrrvjf9bnkjc0b0a8kj7qogoe18i.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_URL": "https://consistent-donna-titogeremito-29c943bc.koyeb.app"
+      }
+    },
+    "internal": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "staging",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "internal",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL": "915310517535-99o32oj3k65j6b3fa1l3dpm7appuv5ll.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "915310517535-u0n1rrrvjf9bnkjc0b0a8kj7qogoe18i.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_URL": "https://consistent-donna-titogeremito-29c943bc.koyeb.app"
+      }
     },
     "production": {
+      "developmentClient": false,
+      "distribution": "store",
       "autoIncrement": true,
-      "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "prod",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL": "915310517535-99o32oj3k65j6b3fa1l3dpm7appuv5ll.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD": "915310517535-gkntma85f58tulhaedc2gsalslg0hp7a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "915310517535-u0n1rrrvjf9bnkjc0b0a8kj7qogoe18i.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_URL": "https://consistent-donna-titogeremito-29c943bc.koyeb.app"
+      }
     }
   },
   "submit": {

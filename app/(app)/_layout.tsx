@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // --- ¡CAMBIO! Importamos el ARRAY COMPLETO de rutinas ---
-import { PREDEFINED_ROUTINES } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
+import { predefinedRoutines } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
 
 // --- 2. IMPORTACIONES EXISTENTES ---
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -19,6 +19,9 @@ import { Platform, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
+
+// AÑADIDO: Importar nuestro ThemeProvider personalizado
+import { ThemeProvider as CustomThemeProvider } from '../../context/ThemeContext';
 
 // --- 3. CLAVES Y FUNCIÓN DE SEEDING (¡ACTUALIZADA!) ---
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
@@ -50,7 +53,7 @@ const checkAndSeedPredefinedRoutines = async () => {
     let routinesDataToSave: [string, string][] = []; // Datos completos a guardar [key, value] con multiSet
 
     // Iteramos sobre CADA rutina predefinida importada
-    for (const routine of PREDEFINED_ROUTINES) {
+    for (const routine of predefinedRoutines) {
       // Validar datos básicos de la rutina predefinida
       if (!routine || !routine.id || !routine.nombre || typeof routine.dias !== 'number' || !Array.isArray(routine.diasArr)) {
         console.warn('Skipping invalid predefined routine object:', routine?.nombre || 'Unknown ID');
@@ -186,52 +189,54 @@ export default function RootLayout() {
   // console.log("App is ready, rendering main layout.");
   // --- Renderizado Principal (cuando la app está lista) ---
   return (
-    // Usamos la View con onLayout para controlar cuándo ocultar el Splash
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <SafeAreaProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                // Tus screenOptions existentes para el header
-                headerTransparent: true,
-                ...(Platform.OS === 'android'
-                  ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
-                  : {}),
-                headerTitle: '',
-                headerTintColor: 'black',
-                headerShadowVisible: true,
-                headerLeft: (props) => { // Tu headerLeft personalizado
-                    if (!props.canGoBack) return null;
-                    return (
-                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                            <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                                <Ionicons name="arrow-back" size={24} color="black" />
-                            </Pressable>
-                        </View>
-                    );
-                },
-              }}
-            >
-              {/* Tus Stack.Screen existentes */}
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="entreno" />
-              <Stack.Screen name="rutina" />
-              <Stack.Screen name="rutinas/[id]" />
-              <Stack.Screen name="evolucion" />
-              <Stack.Screen name="perfil" />
-              <Stack.Screen name="videos" />
-              <Stack.Screen name="+not-found" />
-            </Stack>
+    // AÑADIDO: Envolvemos todo con CustomThemeProvider
+    <CustomThemeProvider>
+      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+          <SafeAreaProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  // Tus screenOptions existentes para el header
+                  headerTransparent: true,
+                  ...(Platform.OS === 'android'
+                    ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
+                    : {}),
+                  headerTitle: '',
+                  headerTintColor: 'black',
+                  headerShadowVisible: true,
+                  headerLeft: (props) => { // Tu headerLeft personalizado
+                      if (!props.canGoBack) return null;
+                      return (
+                          <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                              <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                                  <Ionicons name="arrow-back" size={24} color="black" />
+                              </Pressable>
+                          </View>
+                      );
+                  },
+                }}
+              >
+                {/* Tus Stack.Screen existentes */}
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="entreno" />
+                <Stack.Screen name="rutina" />
+                <Stack.Screen name="rutinas/[id]" />
+                <Stack.Screen name="perfil/evolucion" />
+                <Stack.Screen name="perfil" />
+                <Stack.Screen name="videos" />
+                <Stack.Screen name="+not-found" />
 
-            <StatusBar
-              style="auto"
-              translucent={Platform.OS === 'android' ? false : undefined}
-              backgroundColor="transparent"
-            />
-          </ThemeProvider>
-        </SafeAreaProvider>
-    </View>
+              </Stack>
+
+              <StatusBar
+                style="auto"
+                translucent={Platform.OS === 'android' ? false : undefined}
+                backgroundColor="transparent"
+              />
+            </ThemeProvider>
+          </SafeAreaProvider>
+      </View>
+    </CustomThemeProvider>
   );
 }
-
