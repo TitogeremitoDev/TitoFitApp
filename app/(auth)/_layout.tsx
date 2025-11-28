@@ -1,13 +1,10 @@
 // app/(auth)/_layout.tsx
-import 'react-native-gesture-handler';
-import 'react-native-reanimated';
 import { Stack } from 'expo-router';
 
 export default function AuthLayout() {
+  console.log("AUTH LAYOUT RENDER");
+  
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="login" />
-      <Stack.Screen name="register" />
-    </Stack>
+    <Stack screenOptions={{ headerShown: false }} />
   );
 }

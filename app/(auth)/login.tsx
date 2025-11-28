@@ -39,7 +39,7 @@ export default function LoginScreen() {
   // ════════════════════════════════════════════════════════════════════════
   // CONFIGURACIÓN DE CLIENTES GOOGLE SEGÚN ENTORNO
   // ════════════════════════════════════════════════════════════════════════
-  
+
   const APP_ENV = process.env.EXPO_PUBLIC_APP_ENV || (__DEV__ ? 'dev' : 'prod');
 
   const ANDROID_DEV = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_DEV;
@@ -51,8 +51,8 @@ export default function LoginScreen() {
     APP_ENV === 'prod'
       ? ANDROID_PROD
       : APP_ENV === 'internal'
-      ? ANDROID_INTERNAL
-      : ANDROID_DEV;
+        ? ANDROID_INTERNAL
+        : ANDROID_DEV;
 
   // Logging para debugging
   useEffect(() => {
@@ -87,22 +87,22 @@ export default function LoginScreen() {
       Alert.alert('Datos incompletos', 'Introduce usuario/email y contraseña.');
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
       if (__DEV__) {
         console.log('[Login] Intentando login clásico con:', emailOrUsername);
       }
-      
+
       await login(emailOrUsername.trim(), password.trim());
-      
+
       if (__DEV__) {
         console.log('[Login] Login clásico exitoso');
       }
     } catch (e) {
       console.error('[Login] Error en login clásico:', e);
-      
+
       let msg = 'No se pudo iniciar sesión';
       if (axios.isAxiosError(e)) {
         if (e.response?.data?.message) {
@@ -113,7 +113,7 @@ export default function LoginScreen() {
       } else if (e instanceof Error) {
         msg = e.message;
       }
-      
+
       Alert.alert('Error', msg);
     } finally {
       setIsSubmitting(false);
@@ -154,7 +154,7 @@ export default function LoginScreen() {
     } catch (e) {
       console.error('[Login] Error en promptAsync:', e);
       setIsGoogleLoading(false);
-      
+
       let msg = 'No se pudo iniciar sesión con Google';
       if (axios.isAxiosError(e) && e.response?.data?.message) {
         msg = e.response.data.message;
@@ -167,91 +167,91 @@ export default function LoginScreen() {
   // EFECTO: PROCESAR RESPUESTA DE GOOGLE
   // ════════════════════════════════════════════════════════════════════════
 
- useEffect(() => {
-  if (!response) return;
+  useEffect(() => {
+    if (!response) return;
 
-  // ✅ CRÍTICO: Evitar procesar la misma respuesta múltiples veces
-  const responseId = response.type === 'success' 
-    ? (response as any)?.params?.state || (response as any)?.authentication?.issuedAt?.toString()
-    : `${response.type}-${Date.now()}`;
+    // ✅ CRÍTICO: Evitar procesar la misma respuesta múltiples veces
+    const responseId = response.type === 'success'
+      ? (response as any)?.params?.state || (response as any)?.authentication?.issuedAt?.toString()
+      : `${response.type}-${Date.now()}`;
 
-  if (processedResponseRef.current === responseId) {
-    if (__DEV__) {
-      console.log('[Login] Respuesta ya procesada, ignorando:', responseId);
-    }
-    return; // Ya procesamos esta respuesta
-  }
-
-  // Marcar como procesada INMEDIATAMENTE
-  processedResponseRef.current = responseId;
-
-  const stopLoading = () => setIsGoogleLoading(false);
-
-  if (__DEV__) {
-    console.log('[Login] Google Response Type:', response.type);
-    console.log('[Login] Response ID:', responseId);
-  }
-
-  if (response.type === 'success') {
-    (async () => {
-      try {
-        const anyResponse: any = response;
-        const accessToken: string | undefined =
-          anyResponse?.authentication?.accessToken ||
-          anyResponse?.params?.access_token;
-
-        if (__DEV__) {
-          console.log('[Login] Access Token recibido:', accessToken ? 'SÍ' : 'NO');
-          if (accessToken) {
-            console.log('[Login] Token (primeros 20 chars):', accessToken.substring(0, 20) + '...');
-          }
-        }
-
-        if (!accessToken) {
-          Alert.alert(
-            'Error',
-            'No se recibió accessToken de Google. Revisa la configuración OAuth.'
-          );
-          stopLoading();
-          return;
-        }
-
-        if (__DEV__) {
-          console.log('[Login] Enviando accessToken al backend...');
-        }
-
-        await loginWithGoogle(accessToken);
-
-        if (__DEV__) {
-          console.log('[Login] Login con Google completado exitosamente');
-        }
-      } catch (e) {
-        console.error('[Login] Error en loginWithGoogle:', e);
-        
-        let msg = 'No se pudo completar el login con Google.';
-        if (axios.isAxiosError(e)) {
-          msg = e.response?.data?.message || e.message || msg;
-        }
-        
-        Alert.alert('Error', msg);
-      } finally {
-        stopLoading();
+    if (processedResponseRef.current === responseId) {
+      if (__DEV__) {
+        console.log('[Login] Respuesta ya procesada, ignorando:', responseId);
       }
-    })();
-  } else if (response.type === 'cancel' || response.type === 'dismiss') {
-    if (__DEV__) {
-      console.log('[Login] Usuario canceló el login de Google');
+      return; // Ya procesamos esta respuesta
     }
-    stopLoading();
-  } else if (response.type === 'error') {
-    console.error('[Login] Error de Google:', response.error);
-    Alert.alert(
-      'Error',
-      `Error en Google Login: ${response.error?.message || 'Desconocido'}`
-    );
-    stopLoading();
-  }
-}, [response]); // ✅ Solo depende de 'response', NO de loginWithGoogle
+
+    // Marcar como procesada INMEDIATAMENTE
+    processedResponseRef.current = responseId;
+
+    const stopLoading = () => setIsGoogleLoading(false);
+
+    if (__DEV__) {
+      console.log('[Login] Google Response Type:', response.type);
+      console.log('[Login] Response ID:', responseId);
+    }
+
+    if (response.type === 'success') {
+      (async () => {
+        try {
+          const anyResponse: any = response;
+          const accessToken: string | undefined =
+            anyResponse?.authentication?.accessToken ||
+            anyResponse?.params?.access_token;
+
+          if (__DEV__) {
+            console.log('[Login] Access Token recibido:', accessToken ? 'SÍ' : 'NO');
+            if (accessToken) {
+              console.log('[Login] Token (primeros 20 chars):', accessToken.substring(0, 20) + '...');
+            }
+          }
+
+          if (!accessToken) {
+            Alert.alert(
+              'Error',
+              'No se recibió accessToken de Google. Revisa la configuración OAuth.'
+            );
+            stopLoading();
+            return;
+          }
+
+          if (__DEV__) {
+            console.log('[Login] Enviando accessToken al backend...');
+          }
+
+          await loginWithGoogle(accessToken);
+
+          if (__DEV__) {
+            console.log('[Login] Login con Google completado exitosamente');
+          }
+        } catch (e) {
+          console.error('[Login] Error en loginWithGoogle:', e);
+
+          let msg = 'No se pudo completar el login con Google.';
+          if (axios.isAxiosError(e)) {
+            msg = e.response?.data?.message || e.message || msg;
+          }
+
+          Alert.alert('Error', msg);
+        } finally {
+          stopLoading();
+        }
+      })();
+    } else if (response.type === 'cancel' || response.type === 'dismiss') {
+      if (__DEV__) {
+        console.log('[Login] Usuario canceló el login de Google');
+      }
+      stopLoading();
+    } else if (response.type === 'error') {
+      console.error('[Login] Error de Google:', response.error);
+      Alert.alert(
+        'Error',
+        `Error en Google Login: ${response.error?.message || 'Desconocido'}`
+      );
+      stopLoading();
+    }
+  }, [response]); // ✅ Solo depende de 'response', NO de loginWithGoogle
 
   // ════════════════════════════════════════════════════════════════════════
   // PLACEHOLDERS PARA OTROS PROVIDERS
@@ -276,7 +276,7 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.center} keyboardShouldPersistTaps="handled">
           {/* Marca / encabezado */}
           <View style={styles.brandWrap}>
-            <Text style={styles.brand}>TitoFitApp</Text>
+            <Text style={styles.brand}>TotalGains</Text>
             <Text style={styles.subtitle}>Entrena mejor. Progresa siempre.</Text>
           </View>
 
@@ -374,6 +374,13 @@ export default function LoginScreen() {
               )}
             </View>
 
+            {/* Link olvid contraseña */}
+            <View style={styles.forgotPasswordRow}>
+              <Link href="/forgot-password">
+                <Text style={styles.forgotPasswordLink}>¿Olvidaste tu contraseña?</Text>
+              </Link>
+            </View>
+
             {/* Link registro */}
             <View style={styles.bottomRow}>
               <Text style={{ color: '#9CA3AF' }}>¿No tienes cuenta? </Text>
@@ -457,6 +464,16 @@ const styles = StyleSheet.create({
   google: { backgroundColor: '#FCD34D' },
   apple: { backgroundColor: '#D1D5DB' },
   facebook: { backgroundColor: '#93C5FD' },
-  bottomRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 14 },
+  forgotPasswordRow: {
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  forgotPasswordLink: {
+    color: '#60A5FA',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bottomRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 6 },
   link: { color: '#60A5FA', fontWeight: '700' },
 });

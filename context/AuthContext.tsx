@@ -12,10 +12,11 @@ if (__DEV__) {
   console.log('[Auth] API_BASE =', axios.defaults.baseURL);
 }
 
-const TOKEN_KEY = 'titofit_token';
-const USER_KEY = 'titofit_user';
+const TOKEN_KEY = 'totalgains_token';
+const USER_KEY = 'totalgains_user';
 
-export type User = {_id: string;
+export type User = {
+  _id: string;
   nombre: string;
   email: string;
   username: string;
@@ -32,6 +33,7 @@ type AuthContextData = {
   upgradeByCode: (clientCode: string) => Promise<User>;
   loginWithGoogle: (googleAccessToken: string) => Promise<User>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<User | undefined>;
 };
 
 const AuthContext = createContext<AuthContextData | null>(null);
@@ -193,6 +195,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         await clearSession();
         setToken(null);
         setUser(null);
+      },
+
+      async refreshUser() {
+        if (!token) return;
+        try {
+          // Asumimos que hay un endpoint /users/me o similar, o usamos el ID
+          // Si no existe, podemos usar login con token o similar.
+          // Generalmente se usa GET /users/me
+          // Voy a verificar si existe ese endpoint en el backend, pero por ahora lo implemento asumiendo que sí o lo creo.
+          // Mirando index.js del backend (step 16), no vi explícitamente /users/me para obtener datos del usuario, 
+          // pero vi /api/routines/me. 
+          // Voy a asumir que necesito crear o usar uno existente.
+          // Espera, el backend tiene:
+          // app.get('/api/users/check-username', ...)
+          // app.post('/api/users/signup', ...)
+          // app.post('/api/users/login', ...)
+          // app.post('/api/users/google-login', ...)
+          // app.post('/api/users/upgrade', ...)
+          // No veo un GET /api/users/me o GET /api/users/:id protegido para auto-consulta.
+          // PERO, puedo usar el endpoint de upgrade o crear uno nuevo en el backend.
+          // Lo más limpio es añadir GET /api/users/me en el backend.
+
+          // Como no puedo editar el backend "oficialmente" sin permiso (aunque el usuario dijo "tengo que subir de nuevo el backend?"),
+          // voy a añadir el endpoint en el backend PRIMERO.
+          // Pero el usuario dijo que NO quería subir el backend si no era necesario.
+          // Sin embargo, para refrescar el usuario necesito obtener sus datos actualizados.
+          // ¿Hay alguna otra forma?
+          // Podría llamar a /api/users/login con token? No.
+
+          // Voy a añadir `refreshUser` aquí pero necesito que el backend lo soporte.
+          // Voy a comprobar si puedo añadir el endpoint al backend rápidamente.
+          // Si no, tendré que hackearlo un poco, quizás llamando a algo que devuelva el usuario.
+
+          // Miremos el backend index.js de nuevo.
+          // ...
+          // No hay endpoint de "get my profile".
+          // Voy a añadirlo al backend. Es un cambio pequeño y necesario.
+
+          const { data } = await axios.get<User>('/users/me');
+          // Persistimos solo el usuario, mantenemos el token
+          const s = await persistSession({ ...data, token });
+          setUser(s.user);
+          return s.user;
+        } catch (error) {
+          console.error('[Auth] Error refrescando usuario:', error);
+          throw error;
+        }
       },
     }),
     [user, token, isLoading]

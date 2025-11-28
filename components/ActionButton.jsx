@@ -37,18 +37,18 @@ export default function ActionButton({
 
   // Determina qué estilos usar (Primario o Secundario)
   const isPrimary = variant === 'primary';
-  
-  const baseStyle = isPrimary 
-    ? [styles.btnPrimary, { 
-        backgroundColor: theme.primary,
-        shadowColor: theme.primary,
-      }]
-    : [styles.btnSecondary, { 
-        backgroundColor: theme.cardBackground,
-        borderColor: theme.border,
-      }];
 
-  const textStyle = isPrimary 
+  const baseStyle = isPrimary
+    ? [styles.btnPrimary, {
+      backgroundColor: theme.primary,
+      shadowColor: theme.primary,
+    }]
+    : [styles.btnSecondary, {
+      backgroundColor: theme.cardBackground,
+      borderColor: theme.border,
+    }];
+
+  const textStyle = isPrimary
     ? [styles.btnPrimaryTxt, { color: theme.primaryText }]
     : [styles.btnSecondaryTxt, { color: theme.text }];
 
@@ -64,6 +64,7 @@ export default function ActionButton({
         style={({ pressed }) => [
           baseStyle,
           pressed && Platform.OS === 'ios' ? { opacity: 0.9 } : null,
+          typeof pressableProps.style === 'function' ? pressableProps.style({ pressed }) : pressableProps.style,
         ]}
       >
         {icon ? <Ionicons name={icon} size={18} color={iconColor} /> : null}

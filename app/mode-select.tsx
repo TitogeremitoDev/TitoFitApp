@@ -13,7 +13,7 @@ interface Mode {
     subtitle: string;
     icon: any;
     color: string;
-    route: '/(app)' | '/(coach)' | '/admin';
+    route: '/(app)/home' | '/(coach)' | '/(admin)';
     visible: boolean;
 }
 
@@ -31,7 +31,7 @@ export default function ModeSelect() {
             subtitle: 'Accede a tu rutina y entrena',
             icon: 'barbell' as any,
             color: '#3b82f6',
-            route: '/(app)' as const,
+            route: '/(app)/home' as const,
             visible: true
         },
         {
@@ -49,7 +49,7 @@ export default function ModeSelect() {
             subtitle: 'Panel de administración',
             icon: 'settings' as any,
             color: '#f97316',
-            route: '/admin' as const,
+            route: '/(admin)' as const,
             visible: isAdmin
         }
     ];
@@ -66,7 +66,7 @@ export default function ModeSelect() {
                         borderColor: mode.color
                     }
                 ]}
-                onPress={() => router.push(mode.route)}
+onPress={() => router.push(mode.route as any)}
                 activeOpacity={0.8}
             >
                 <View style={[styles.iconContainer, { backgroundColor: mode.color }]}>

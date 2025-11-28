@@ -47,6 +47,7 @@ import YoutubeIframe from 'react-native-youtube-iframe';
 import Stopwatch from '../../components/Stopwatch';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 // ⚠️ Ajusta la ruta si tu JSON cambia de sitio:
 import rawDB from '../../src/data/exercises.json';
 
@@ -172,9 +173,9 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
 
   return (
     <View
-      style={[styles.carouselWrap, { 
+      style={[styles.carouselWrap, {
         borderColor: theme.border,
-        backgroundColor: theme.backgroundSecondary 
+        backgroundColor: theme.backgroundSecondary
       }]}
       onLayout={(e) => setWrapW(e.nativeEvent.layout.width)}
     >
@@ -185,7 +186,7 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
         style={({ pressed }) => [
           styles.arrowBtn,
           styles.arrowLeft,
-          { 
+          {
             backgroundColor: theme.iconButton,
             borderColor: theme.borderLight
           },
@@ -226,7 +227,7 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
         style={({ pressed }) => [
           styles.arrowBtn,
           styles.arrowRight,
-          { 
+          {
             backgroundColor: theme.iconButton,
             borderColor: theme.borderLight
           },
@@ -249,7 +250,7 @@ function WeeksCarousel({ selected, onChange }) {
       onIndexChange={(i) => onChange(i + 1)}
       initialIndex={Math.max(0, (selected || 1) - 1)}
       renderItem={({ item }) => (
-        <View style={[styles.centerPill, { 
+        <View style={[styles.centerPill, {
           backgroundColor: theme.cardBackground,
           borderColor: theme.cardBorder
         }]}>
@@ -276,7 +277,7 @@ function DaysCarousel({ total, selected, onChange }) {
       onIndexChange={onChange}
       initialIndex={safeSelected}
       renderItem={({ item }) => (
-        <View style={[styles.centerPill, { 
+        <View style={[styles.centerPill, {
           backgroundColor: theme.cardBackground,
           borderColor: theme.cardBorder
         }]}>
@@ -372,7 +373,7 @@ function StatsModal({ visible, onClose, stats }) {
             <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
           </Pressable>
 
-          <ScrollView 
+          <ScrollView
             showsVerticalScrollIndicator={false}
             style={styles.statsScrollView}
             contentContainerStyle={styles.statsScrollContent}
@@ -402,7 +403,7 @@ function StatsModal({ visible, onClose, stats }) {
               <Text style={[styles.sectionTitle, { color: theme.text }]}>
                 {previous ? '📊 Comparación con Semana Anterior' : '📊 Estadísticas de Hoy'}
               </Text>
-{/* Volumen Total */}
+              {/* Volumen Total */}
               <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                 <View style={styles.statHeader}>
                   <Ionicons name="cube" size={24} color="#8b5cf6" />
@@ -456,7 +457,7 @@ function StatsModal({ visible, onClose, stats }) {
                 </View>
               </View>
 
-              
+
 
               {/* Carga Media */}
               <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
@@ -601,7 +602,7 @@ function TutorialModal({ visible, onComplete }) {
                   resizeMode="contain"
                 />
               </View>
-              
+
               <Text style={[tutorialStyles.mainTitle, { color: theme.text }]}>
                 SISTEMA{'\n'}
                 <Text style={{ color: theme.primary }}>TITOGEREMITO</Text>
@@ -609,7 +610,7 @@ function TutorialModal({ visible, onComplete }) {
               <Text style={[tutorialStyles.subtitle, { color: theme.textSecondary }]}>
                 Tu progreso, medido al milímetro.
               </Text>
-              
+
               <TouchableOpacity
                 style={[tutorialStyles.startButton, { backgroundColor: theme.primary }]}
                 onPress={() => goToSlide(1)}
@@ -633,7 +634,7 @@ function TutorialModal({ visible, onComplete }) {
                 </Text>
 
                 {/* Card Completado */}
-                <View style={[tutorialStyles.card, tutorialStyles.cardSuccess, { 
+                <View style={[tutorialStyles.card, tutorialStyles.cardSuccess, {
                   backgroundColor: theme.success + '20',
                   borderColor: theme.success + '40'
                 }]}>
@@ -651,7 +652,7 @@ function TutorialModal({ visible, onComplete }) {
                 </View>
 
                 {/* Card No Completado */}
-                <View style={[tutorialStyles.card, tutorialStyles.cardError, { 
+                <View style={[tutorialStyles.card, tutorialStyles.cardError, {
                   backgroundColor: '#ef4444' + '20',
                   borderColor: '#ef4444' + '40'
                 }]}>
@@ -669,7 +670,7 @@ function TutorialModal({ visible, onComplete }) {
                 </View>
 
                 {/* Card Otro Ejercicio */}
-                <View style={[tutorialStyles.card, { 
+                <View style={[tutorialStyles.card, {
                   backgroundColor: '#f59e0b' + '20',
                   borderColor: '#f59e0b' + '40'
                 }]}>
@@ -699,14 +700,14 @@ function TutorialModal({ visible, onComplete }) {
                     Modo{'\n'}Fantasma
                   </Text>
                 </View>
-                
+
                 <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
-                  Tu objetivo siempre será superar tu registro anterior. El sistema te mostrará 
+                  Tu objetivo siempre será superar tu registro anterior. El sistema te mostrará
                   lo que hiciste la semana pasada como una "sombra".
                 </Text>
 
                 {/* Simulación UI */}
-                <View style={[tutorialStyles.ghostCard, { 
+                <View style={[tutorialStyles.ghostCard, {
                   backgroundColor: theme.cardBackground,
                   borderColor: theme.cardBorder
                 }]}>
@@ -725,7 +726,7 @@ function TutorialModal({ visible, onComplete }) {
                       </Text>
                     </View>
                     <View style={tutorialStyles.ghostValues}>
-                      <View style={[tutorialStyles.ghostValueBox, { 
+                      <View style={[tutorialStyles.ghostValueBox, {
                         backgroundColor: theme.backgroundSecondary,
                         borderColor: theme.border
                       }]}>
@@ -736,7 +737,7 @@ function TutorialModal({ visible, onComplete }) {
                           KG
                         </Text>
                       </View>
-                      <View style={[tutorialStyles.ghostValueBox, { 
+                      <View style={[tutorialStyles.ghostValueBox, {
                         backgroundColor: theme.backgroundSecondary,
                         borderColor: theme.border
                       }]}>
@@ -759,7 +760,7 @@ function TutorialModal({ visible, onComplete }) {
                       </Text>
                     </View>
                     <View style={tutorialStyles.ghostValues}>
-                      <View style={[tutorialStyles.ghostValueBox, { 
+                      <View style={[tutorialStyles.ghostValueBox, {
                         backgroundColor: theme.primary + '20',
                         borderColor: theme.primary
                       }]}>
@@ -773,7 +774,7 @@ function TutorialModal({ visible, onComplete }) {
                           <Text style={tutorialStyles.ghostBadgeText}>+2.5</Text>
                         </View>
                       </View>
-                      <View style={[tutorialStyles.ghostValueBox, { 
+                      <View style={[tutorialStyles.ghostValueBox, {
                         backgroundColor: theme.backgroundSecondary,
                         borderColor: theme.border
                       }]}>
@@ -785,7 +786,7 @@ function TutorialModal({ visible, onComplete }) {
                   </View>
                 </View>
 
-                <View style={[tutorialStyles.ghostQuote, { 
+                <View style={[tutorialStyles.ghostQuote, {
                   backgroundColor: theme.backgroundSecondary,
                   borderColor: theme.border
                 }]}>
@@ -879,8 +880,8 @@ function TutorialModal({ visible, onComplete }) {
                 resizeMode="cover"
               />
             </View>
-            
-            <View style={[tutorialStyles.coachBubble, { 
+
+            <View style={[tutorialStyles.coachBubble, {
               backgroundColor: theme.cardBackground,
               borderColor: theme.cardBorder
             }]}>
@@ -901,13 +902,13 @@ function TutorialModal({ visible, onComplete }) {
                 currentSlide === 0 && tutorialStyles.navButtonDisabled
               ]}
             >
-              <Ionicons 
-                name="chevron-back" 
-                size={24} 
-                color={currentSlide === 0 ? theme.border : theme.text} 
+              <Ionicons
+                name="chevron-back"
+                size={24}
+                color={currentSlide === 0 ? theme.border : theme.text}
               />
             </TouchableOpacity>
-            
+
             <Text style={[tutorialStyles.navCounter, { color: theme.textSecondary }]}>
               {currentSlide + 1} / {TOTAL_TUTORIAL_SLIDES}
             </Text>
@@ -916,10 +917,10 @@ function TutorialModal({ visible, onComplete }) {
               onPress={() => currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? onComplete() : goToSlide(currentSlide + 1)}
               style={[tutorialStyles.navButton, { backgroundColor: theme.primary }]}
             >
-              <Ionicons 
-                name={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? "checkmark" : "chevron-forward"} 
-                size={24} 
-                color="#fff" 
+              <Ionicons
+                name={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? "checkmark" : "chevron-forward"}
+                size={24}
+                color="#fff"
               />
             </TouchableOpacity>
           </View>
@@ -1281,12 +1282,208 @@ const tutorialStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
+    marginBottom: 24,
+    opacity: 0.5,
+  },
+  ghostToday: {
+    marginTop: 8,
+  },
+  ghostLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ghostLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  ghostValues: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  ghostValueBox: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    position: 'relative',
+  },
+  ghostValueNumber: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  ghostValueLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ghostBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ghostBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ghostQuote: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  ghostQuoteText: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  dataCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  dataText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  finalImageContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    position: 'relative',
+  },
+  finalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  finalImageOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  finalImageText: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#fff',
+    fontStyle: 'italic',
+  },
+  finalImageTextAccent: {
+    color: '#ef4444',
+  },
+  finalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  finalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  finalButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  coachContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 20,
+  },
+  coachContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 16,
+  },
+  coachAvatarContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+  },
+  coachAvatarGlow: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 32,
+    opacity: 0.3,
+  },
+  coachAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  coachBubble: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+  },
+  coachText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  navigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonDisabled: {
+    opacity: 0.3,
+  },
+  navCounter: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
     letterSpacing: 2,
   },
 });
 
 export default function Entreno() {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const navigation = useNavigation();
   const [activeId, setActiveId] = useState(null);  // rutina activa
   const [hydrated, setHydrated] = useState(false); // ya cargamos última sesión
@@ -1296,11 +1493,11 @@ export default function Entreno() {
   const [diaIdx, setDiaIdx] = useState(0);
   const [prog, setProg] = useState({});
   const [openId, setOpenId] = useState(null);
-  
+
   // Modales de Técnica y Vídeo
   const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
   const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false });
-  
+
   // Modal de Sin Rutina Activa
   const [showNoRoutineModal, setShowNoRoutineModal] = useState(false);
 
@@ -1309,6 +1506,9 @@ export default function Entreno() {
 
   // 🔥 NUEVO: Modal de estadísticas
   const [statsModal, setStatsModal] = useState({ visible: false, stats: null });
+
+  // Modal de Upgrade para FREEUSER
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const listRef = useRef(null);
 
@@ -1323,7 +1523,7 @@ export default function Entreno() {
           sessionKeyFor(activeId),
           JSON.stringify({ lastSemana, lastDiaIdx, updatedAt: Date.now() })
         );
-      } catch {}
+      } catch { }
     },
     [activeId, hydrated]
   );
@@ -1372,7 +1572,7 @@ export default function Entreno() {
         setSemana(1);
         setDiaIdx(0);
       }
-    } catch {}
+    } catch { }
 
     setHydrated(true);
   }, []);
@@ -1451,14 +1651,14 @@ export default function Entreno() {
       const data = prog[keyPrevDay]?.[field];
       if (data) return data;
     }
-    
+
     // Si no hay día anterior en esta semana, buscar en la última semana
     for (let w = semana - 1; w > 0; w--) {
       const key = `${w}|${diaIdx}|${exerciseId}|${serieIdx}`;
       const data = prog[key]?.[field];
       if (data) return data;
     }
-    
+
     return null;
   };
 
@@ -1580,7 +1780,7 @@ export default function Entreno() {
   const saveAllDayData = async () => {
     try {
       const ejerciciosDia = (diasEj[diaIdx] || []).filter(Boolean);
-      
+
       if (ejerciciosDia.length === 0) {
         Alert.alert('Sin ejercicios', 'No hay ejercicios en este día para guardar.');
         return;
@@ -1603,7 +1803,7 @@ export default function Entreno() {
         // Si tiene estado (C, NC, OE), procesar normalmente
         if (ESTADOS.includes(currentState) || currentState === 'OJ') {
           ejerciciosConEstado++;
-          
+
           // Si el estado es 'C', agregar al log global
           if (currentState === 'C' || currentState === 'OJ') {
             const seriesData = (ejercicio.series || []).map((serie, idx) => {
@@ -1613,7 +1813,7 @@ export default function Entreno() {
               const load = Number(datosSerie.peso) || 0;
               const volume = reps * load;
               const e1RM = reps > 0 ? load * (1 + reps / 30) : 0;
-              
+
               return {
                 id: `${now}-${ejercicio.id}-${idx}`,
                 date: now,
@@ -1628,21 +1828,21 @@ export default function Entreno() {
                 e1RM,
               };
             });
-            
+
             logEntriesToAdd.push(...seriesData);
           }
         } else {
           // Sin estado: usar datos del día anterior
           ejerciciosSinEstado++;
-          
+
           // Buscar si hay datos del día anterior para copiar
           let hayDatosAnteriores = false;
-          
+
           for (let idx = 0; idx < (ejercicio.series || []).length; idx++) {
             const serieKey = `${ejerKey}|${idx}`;
             const prevReps = findPrevDayData(ejercicio.id, idx, 'reps');
             const prevPeso = findPrevDayData(ejercicio.id, idx, 'peso');
-            
+
             if (prevReps || prevPeso) {
               hayDatosAnteriores = true;
               // Copiar los datos del día anterior si no hay datos actuales
@@ -1655,7 +1855,7 @@ export default function Entreno() {
             }
           }
         }
-        
+
         ejerciciosProcesados++;
       }
 
@@ -1669,7 +1869,7 @@ export default function Entreno() {
           lastDiaIdx: diaIdx,
           updatedAt: Date.now(),
         });
-        
+
         await AsyncStorage.multiSet([
           ['progress', JSON.stringify(nextProg)],
           [sessionKeyFor(activeId), sessionData],
@@ -1732,7 +1932,7 @@ export default function Entreno() {
     } else {
       try {
         await AsyncStorage.setItem('progress', JSON.stringify(nextProg));
-      } catch {}
+      } catch { }
     }
   };
 
@@ -1810,7 +2010,7 @@ export default function Entreno() {
           onRequestClose={() => setShowNoRoutineModal(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={[styles.noRoutineCard, { 
+            <View style={[styles.noRoutineCard, {
               backgroundColor: theme.backgroundSecondary,
               borderColor: theme.border
             }]}>
@@ -1821,7 +2021,7 @@ export default function Entreno() {
               <Text style={[styles.noRoutineTitle, { color: theme.text }]}>
                 Sin rutina activa
               </Text>
-              
+
               <Text style={[styles.noRoutineDescription, { color: theme.textSecondary }]}>
                 Para comenzar a entrenar, primero necesitas seleccionar una rutina activa.
               </Text>
@@ -1838,13 +2038,6 @@ export default function Entreno() {
                 <Text style={styles.actionButtonText}>Ir a Rutinas</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.cancelButton, { borderColor: theme.border }]}
-                onPress={() => setShowNoRoutineModal(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cerrar</Text>
-              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -1861,7 +2054,7 @@ export default function Entreno() {
         animated: true,
         viewPosition: 0.3,
       });
-    } catch {}
+    } catch { }
   };
 
   // Abrir Técnica Correcta (TC)
@@ -1876,6 +2069,11 @@ export default function Entreno() {
 
   // Abrir Vídeo
   const onOpenVideo = (item) => {
+    if (user?.tipoUsuario === 'FREEUSER') {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const ej = findExercise(item.musculo, item.nombre);
     const id = ej?.videoId?.trim();
     if (!id) {
@@ -1885,11 +2083,16 @@ export default function Entreno() {
     setVideoModal({ visible: true, videoId: id, playing: true });
   };
 
+  const goToPayment = () => {
+    setShowUpgradeModal(false);
+    navigation.navigate('payment');
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
     >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.headerRow}>
@@ -1929,8 +2132,9 @@ export default function Entreno() {
 
         <FlatList
           ref={listRef}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 300 }}
           keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
           style={{ marginTop: 12 }}
           data={ejerciciosDia}
           keyExtractor={(it, i) => (it?.id ? String(it.id) : `idx-${i}`)}
@@ -1944,7 +2148,7 @@ export default function Entreno() {
             const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
 
             return (
-              <View style={[styles.card, { 
+              <View style={[styles.card, {
                 backgroundColor: theme.cardBackground,
                 borderColor: theme.cardBorder
               }]}>
@@ -1971,7 +2175,7 @@ export default function Entreno() {
                         style={[
                           styles.radio,
                           { borderColor: theme.border },
-                          currentState === e && [styles.radioSel, { 
+                          currentState === e && [styles.radioSel, {
                             backgroundColor: theme.success,
                             borderColor: theme.success
                           }]
@@ -1994,7 +2198,7 @@ export default function Entreno() {
                   <View style={styles.toolsRow}>
                     <TouchableOpacity
                       onPress={() => onOpenTC(item)}
-                      style={[styles.toolBtn, { 
+                      style={[styles.toolBtn, {
                         backgroundColor: theme.backgroundTertiary,
                         borderColor: theme.border
                       }]}
@@ -2005,7 +2209,7 @@ export default function Entreno() {
 
                     <TouchableOpacity
                       onPress={() => onOpenVideo(item)}
-                      style={[styles.toolBtn, styles.toolBtnIcon, { 
+                      style={[styles.toolBtn, styles.toolBtnIcon, {
                         backgroundColor: theme.backgroundTertiary,
                         borderColor: theme.border
                       }]}
@@ -2051,11 +2255,18 @@ export default function Entreno() {
                       const iconKg = getTrendIcon(curr.peso, prevKg);
 
                       return (
-                        <View key={idx} style={[styles.serieRow, { 
+                        <View key={idx} style={[styles.serieRow, {
                           backgroundColor: bgColor,
                           borderColor: theme.border
                         }]}>
-                          <Text style={[styles.serieLabel, { color: theme.textSecondary }]}>Serie {idx + 1}</Text>
+                          <View style={{ width: 70, justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
+                            {repMin !== null && repMax !== null && (
+                              <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
+                                {repMin}-{repMax}
+                              </Text>
+                            )}
+                          </View>
 
                           {/* Reps */}
                           <View style={styles.inputWithTrend}>
@@ -2076,7 +2287,7 @@ export default function Entreno() {
                                     animated: true,
                                     viewPosition: 0.3,
                                   });
-                                } catch {}
+                                } catch { }
                               }}
                               onChangeText={(v) => setSerieDato(serieKey, 'reps', v)}
                             />
@@ -2161,7 +2372,7 @@ export default function Entreno() {
         onRequestClose={() => setTechModal((s) => ({ ...s, visible: false }))}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { 
+          <View style={[styles.modalCard, {
             backgroundColor: theme.backgroundSecondary,
             borderColor: theme.border
           }]}>
@@ -2198,7 +2409,7 @@ export default function Entreno() {
         }
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.videoCard, { 
+          <View style={[styles.videoCard, {
             backgroundColor: theme.backgroundSecondary,
             borderColor: theme.border
           }]}>
@@ -2225,6 +2436,34 @@ export default function Entreno() {
             ) : (
               <Text style={{ color: theme.text }}>Vídeo no disponible</Text>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Upgrade */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showUpgradeModal}
+        onRequestClose={() => setShowUpgradeModal(false)}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <Pressable onPress={() => setShowUpgradeModal(false)} style={styles.upgradeModalClose}>
+              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+            </Pressable>
+            <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+            <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
+            <Text style={styles.upgradeModalText}>
+              Para ver esto sube de nivel
+            </Text>
+            <Pressable style={styles.upgradeButton} onPress={goToPayment}>
+              <Ionicons name="add-circle" size={24} color="#FFF" />
+              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+            </Pressable>
+            <Pressable style={styles.upgradeCancelButton} onPress={() => setShowUpgradeModal(false)}>
+              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -2385,7 +2624,7 @@ const styles = StyleSheet.create({
   },
   trendIcon: {
     position: 'absolute',
-    right: 10,
+    right: 200,
     top: '50%',
     transform: [{ translateY: -7 }],
   },
@@ -2429,7 +2668,7 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     letterSpacing: 0.5,
     textAlign: 'center',
-    padding:0
+    padding: 0
   },
 
   // 🔥 Estilos del Modal de Estadísticas ÉPICO 🔥
@@ -2440,10 +2679,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 0,
     maxHeight: '100%',
-    
+
   },
   statsModalCard: {
     width: '95%',
+    height: '95%',
     maxWidth: 500,
     maxHeight: '90%',
     borderRadius: 24,
@@ -2704,5 +2944,69 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  upgradeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  upgradeModalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#111827',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  upgradeModalClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  upgradeModalTitle: {
+    color: '#E5E7EB',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  upgradeModalText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    marginBottom: 15,
+    gap: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  upgradeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  upgradeCancelButton: {
+    paddingVertical: 10,
+  },
+  upgradeCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
   },
 });

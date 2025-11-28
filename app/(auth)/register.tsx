@@ -83,7 +83,7 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.center} keyboardShouldPersistTaps="handled">
           {/* Marca */}
           <View style={styles.brandWrap}>
-            <Text style={styles.brand}>TitoFitApp</Text>
+            <Text style={styles.brand}>TotalGains</Text>
             <Text style={styles.subtitle}>Crea tu cuenta y empieza hoy.</Text>
           </View>
 
@@ -145,12 +145,12 @@ export default function RegisterScreen() {
               {username.trim().length < 3
                 ? 'Mínimo 3 caracteres'
                 : uStatus === 'available'
-                ? 'Nombre de usuario disponible'
-                : uStatus === 'taken'
-                ? 'Usuario ocupado'
-                : uStatus === 'checking'
-                ? 'Comprobando...'
-                : 'Introduce un nombre de usuario'}
+                  ? 'Nombre de usuario disponible'
+                  : uStatus === 'taken'
+                    ? 'Usuario ocupado'
+                    : uStatus === 'checking'
+                      ? 'Comprobando...'
+                      : 'Introduce un nombre de usuario'}
             </Text>
 
             {/* Password (mínimo 8) */}

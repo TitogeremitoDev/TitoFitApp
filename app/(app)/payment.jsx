@@ -28,9 +28,10 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../context/AuthContext';
+import { useStripe } from '../../utils/stripeWrapper';
 
-// API URL
-const API_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+// API URL - Usa la variable de entorno
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // BENEFICIOS COMUNES (estos se mantienen estáticos o también puedes cargarlos desde la API)
 const COMMON_BENEFITS = [
@@ -44,23 +45,13 @@ const COMMON_BENEFITS = [
 // URL CUESTIONARIO HIGH TICKET
 const COACHING_FORM_URL = 'https://docs.google.com/forms/d/1-KNo9I1GEeaoeIAegtyYoPG9BqaBAP5OmOvCllQ96Ck/edit';
 
-const COACH_PLAN = {
-  id: 'coach-plan',
-  nombre: 'Plan Entrenador',
-  descripcion: 'Gestiona tus propios clientes y lleva tu negocio al siguiente nivel.',
-  precioActual: 10,
-  precioOriginal: 10,
-  moneda: 'EUR',
-  duracionMeses: 1,
-  destacado: true,
-  etiquetaOferta: 'NUEVO',
-  textoAhorro: null,
-  isCoachPlan: true
-};
+// Los planes de entrenador ahora se cargan dinámicamente desde la API
+// Filtramos por isCoach y clientRange según la selección del usuario
 
 export default function PaymentScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   // Estado para planes
   const [planes, setPlanes] = useState([]);
@@ -72,10 +63,8 @@ export default function PaymentScreen() {
   const [paymentMethod, setPaymentMethod] = useState('stripe');
   const [loading, setLoading] = useState(false);
   const [userToken, setUserToken] = useState(null);
-
-  const [cardData, setCardData] = useState({
-    number: '', expiry: '', cvc: '', name: ''
-  });
+  const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
+  const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20 clientes
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CARGAR PLANES DESDE LA API
@@ -95,25 +84,23 @@ export default function PaymentScreen() {
       if (data.success && data.plans && data.plans.length > 0) {
         console.log(`[Payment] ${data.plans.length} planes cargados`);
 
-        let finalPlans = data.plans;
+        // Guardamos todos los planes desde la API
+        setPlanes(data.plans);
 
-        // Lógica de visibilidad según rol
-        if (user?.tipoUsuario === 'PREMIUM' || user?.tipoUsuario === 'CLIENTE') {
-          // Premium y Cliente solo ven Plan Entrenador
-          finalPlans = [COACH_PLAN];
-        } else if (user?.tipoUsuario === 'FREEUSER' || !user?.tipoUsuario) {
-          // Free ve todos (Estándar + Entrenador)
-          finalPlans = [...data.plans, COACH_PLAN];
-        } else {
-          // Otros roles (ej. Entrenador) podrían no ver nada o solo Coach
-          finalPlans = [COACH_PLAN];
-        }
-
-        setPlanes(finalPlans);
+        // Filter plans based on initial userType (default athlete)
+        const filtered = data.plans.filter(p => {
+          if (userType === 'coach') {
+            // Para entrenadores, filtrar por isCoach y clientRange
+            return p.isCoach && p.clientRange === coachClientCount;
+          } else {
+            // Para atletas, solo planes que NO son de coach
+            return !p.isCoach;
+          }
+        });
 
         // Seleccionar automáticamente el plan destacado o el primero
-        const planDestacado = finalPlans.find(p => p.destacado);
-        setSelectedPlan(planDestacado || finalPlans[0]);
+        const planDestacado = filtered.find(p => p.destacado);
+        setSelectedPlan(planDestacado || filtered[0]);
       } else {
         console.warn('[Payment] No hay planes disponibles');
         Alert.alert(
@@ -140,7 +127,7 @@ export default function PaymentScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const token = await AsyncStorage.getItem('titofit_token');
+        const token = await AsyncStorage.getItem('totalgains_token');
         setUserToken(token);
       } catch (error) {
         console.error('Error token:', error);
@@ -152,73 +139,73 @@ export default function PaymentScreen() {
     cargarPlanes();
   }, [user]); // Recargar si cambia el usuario
 
+  // Efecto para actualizar el plan seleccionado cuando cambia el número de clientes
+  useEffect(() => {
+    if (userType === 'coach' && planes.length > 0) {
+      const filtered = planes.filter(p => p.isCoach && p.clientRange === coachClientCount);
+      const planDestacado = filtered.find(p => p.destacado);
+      setSelectedPlan(planDestacado || filtered[0]);
+    }
+  }, [coachClientCount, userType, planes]);
+
   const onRefresh = () => {
     setRefreshing(true);
     cargarPlanes();
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // VALIDACIÓN Y FORMATEO DE TARJETA
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const formatCardNumber = (text) => {
-    const cleaned = text.replace(/\D/g, '').substring(0, 16);
-    return cleaned.match(/.{1,4}/g)?.join(' ') || cleaned;
-  };
-
-  const formatExpiry = (text) => {
-    const cleaned = text.replace(/\D/g, '').substring(0, 4);
-    return cleaned.length >= 2 ? `${cleaned.substring(0, 2)}/${cleaned.substring(2)}` : cleaned;
-  };
-
-  const validateCard = () => {
-    const { number, expiry, cvc, name } = cardData;
-    if (!name.trim()) { Alert.alert('Falta información', 'Ingresa el nombre del titular'); return false; }
-    if (number.replace(/\s/g, '').length < 13) { Alert.alert('Tarjeta inválida', 'Revisa el número de la tarjeta'); return false; }
-    const [m, y] = expiry.split('/');
-    if (!m || !y || m > 12 || m < 1) { Alert.alert('Fecha inválida', 'Revisa la fecha de expiración'); return false; }
-    if (cvc.length < 3) { Alert.alert('CVC inválido', 'Código de seguridad incompleto'); return false; }
-    return true;
-  };
-
-  // ═══════════════════════════════════════════════════════════════════════════
   // PROCESAR PAGO
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const processPayment = async (endpoint, payload) => {
-    setLoading(true);
-    try {
-      console.log(`[Payment] Procesando pago: ${endpoint}`);
+  const initializePaymentSheet = async (plan) => {
+    if (!userToken) return;
 
-      const response = await fetch(`${API_URL}${endpoint}`, {
+    try {
+      const response = await fetch(`${API_URL}/api/payments/stripe/create-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${userToken}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          currency: plan.moneda.toLowerCase(),
+          planId: plan.id
+        })
       });
 
-      const data = await response.json();
+      const { clientSecret, error } = await response.json();
 
-      if (data.success) {
-        Alert.alert(
-          '¡Bienvenido al Team! 🚀',
-          `Suscripción ${selectedPlan.nombre} activada correctamente.`,
-          [{ text: 'Empezar a Entrenar', onPress: () => router.back() }]
-        );
-      } else {
-        throw new Error(data.error?.message || 'Error procesando el pago');
+      if (error) {
+        Alert.alert('Error', error.message);
+        return false;
       }
+
+      const { error: initError } = await initPaymentSheet({
+        merchantDisplayName: 'TotalGains',
+        paymentIntentClientSecret: clientSecret,
+        defaultBillingDetails: {
+          name: user?.nombre || '',
+          email: user?.email || '',
+        },
+        returnURL: 'totalgains://stripe-redirect', // Asegúrate de tener configurado el scheme
+        customFlow: false,
+      });
+
+      if (initError) {
+        Alert.alert('Error', initError.message);
+        return false;
+      }
+
+      return { clientSecret, paymentIntentId: response.paymentIntentId }; // Asumiendo que el backend devuelve paymentIntentId si lo necesitas para confirmar manualmente, aunque el webhook o confirmación automática suele ser mejor.
+      // Nota: El backend actual devuelve paymentIntentId en la respuesta de create-intent.
     } catch (error) {
-      console.error('[Payment] Error:', error);
-      Alert.alert('Error', error.message || 'No se pudo completar la transacción');
-    } finally {
-      setLoading(false);
+      console.error('Error initializing Payment Sheet:', error);
+      Alert.alert('Error', 'No se pudo iniciar el pago.');
+      return false;
     }
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!userToken) {
       return Alert.alert('Acceso requerido', 'Inicia sesión para continuar');
     }
@@ -227,10 +214,14 @@ export default function PaymentScreen() {
       return Alert.alert('Selecciona un plan', 'Debes seleccionar un plan de suscripción');
     }
 
-    if (selectedPlan.isCoachPlan) {
+    if (selectedPlan.isCoach) {
+      const duracion = selectedPlan.duracionMeses === 1 ? 'mensual' : 'anual';
+      const precio = selectedPlan.precioActual;
+      const clientes = selectedPlan.clientRange || 5;
+
       return Alert.alert(
         'Plan Entrenador',
-        'Para activar este plan (10€/mes cada 5 clientes o 100€ anuales), por favor contáctame directamente para más información.',
+        `Para activar el plan ${duracion} para ${clientes} clientes (${precio}€), por favor contáctame directamente para más información.`,
         [
           { text: 'Cancelar', style: 'cancel' },
           { text: 'Contactar', onPress: openCoaching }
@@ -239,25 +230,134 @@ export default function PaymentScreen() {
     }
 
     if (paymentMethod === 'stripe') {
-      if (!validateCard()) return;
-      processPayment('/api/payments/stripe/create-intent', {
-        amount: selectedPlan.precioActual,
-        currency: selectedPlan.moneda.toLowerCase(),
-        planId: selectedPlan.id
-      });
+      setLoading(true);
+      const initResult = await initializePaymentSheet(selectedPlan);
+
+      if (!initResult) {
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await presentPaymentSheet();
+
+      if (error) {
+        Alert.alert(`Error: ${error.code}`, error.message);
+        setLoading(false);
+      } else {
+        // Pago exitoso en Stripe, ahora confirmamos en backend si es necesario
+        // O simplemente mostramos éxito si el webhook se encarga (pero aquí el backend tiene un endpoint de confirmación manual)
+        // Vamos a llamar al endpoint de confirmación para asegurar que el usuario se actualice al instante.
+        // Pero espera, create-intent devuelve paymentIntentId? Sí.
+        // Necesitamos el ID para confirmar.
+        // Modifiqué initializePaymentSheet para devolverlo, pero initPaymentSheet no devuelve el ID del intent creado, solo error.
+        // Ah, el ID viene del fetch al backend.
+
+        // REVISIÓN: El backend tiene /api/payments/stripe/confirm/:paymentIntentId
+        // Pero `presentPaymentSheet` confirma el pago en Stripe.
+        // Necesitamos el ID del PaymentIntent para decirle al backend "Oye, ya pagué, actualiza mi usuario".
+        // El backend verifica el estado en Stripe y actualiza.
+
+        // Sin embargo, initializePaymentSheet devuelve clientSecret. El ID está implícito o hay que extraerlo.
+        // Mejor: Modificaré initializePaymentSheet para que devuelva el objeto completo del backend.
+
+        // Espera, el backend devuelve: { success: true, clientSecret, paymentIntentId, ... }
+        // Así que sí puedo obtener el ID.
+
+        // Recuperar el ID (tendría que haberlo guardado del fetch anterior).
+        // Vamos a refactorizar un poco handlePay para hacerlo en orden.
+
+        // Refactorización inline rápida:
+        // 1. Fetch create-intent -> obtengo paymentIntentId y clientSecret
+        // 2. initPaymentSheet(clientSecret)
+        // 3. presentPaymentSheet()
+        // 4. Si éxito -> Fetch confirm/:paymentIntentId
+
+        // Implementación correcta abajo:
+        confirmPaymentBackend();
+      }
     } else if (paymentMethod === 'paypal') {
-      processPayment('/api/payments/paypal/create-order', {
-        amount: selectedPlan.precioActual,
-        currency: selectedPlan.moneda,
-        planId: selectedPlan.id
-      });
+      try {
+        setLoading(true);
+
+        // Crear suscripción de PayPal
+        const response = await fetch(`${API_URL}/api/payments/paypal/create-subscription`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userToken}`
+          },
+          body: JSON.stringify({
+            planId: selectedPlan.id,
+            currency: 'EUR'
+          })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          Alert.alert('Error', data.error?.message || 'No se pudo crear la suscripción');
+          setLoading(false);
+          return;
+        }
+
+        console.log('[PayPal] Suscripción creada:', data.subscriptionId);
+
+        // Abrir URL de aprobación en navegador
+        if (data.approvalUrl) {
+          const canOpen = await Linking.canOpenURL(data.approvalUrl);
+          if (canOpen) {
+            await Linking.openURL(data.approvalUrl);
+
+            // Mostrar instrucciones al usuario
+            Alert.alert(
+              'Completar Pago',
+              'Se ha abierto PayPal en tu navegador. Completa el pago y vuelve a la app.',
+              [
+                { text: 'Pago Completado', onPress: () => router.back() },
+                { text: 'Cancelar', style: 'cancel' }
+              ]
+            );
+          } else {
+            Alert.alert('Error', 'No se pudo abrir PayPal. Inténtalo desde un navegador.');
+          }
+        }
+
+        setLoading(false);
+
+      } catch (error) {
+        console.error('[PayPal] Error:', error);
+        Alert.alert('Error', error.message || 'Error al procesar el pago con PayPal');
+        setLoading(false);
+      }
     } else {
       Alert.alert('Próximamente', 'Google Pay estará disponible en breve.');
     }
   };
 
+  // Función auxiliar para confirmar en backend tras éxito de Stripe
+  const confirmPaymentBackend = async () => {
+    // Necesitamos el paymentIntentId. 
+    // Como initPaymentSheet y presentPaymentSheet están desacoplados en el tiempo en la UI ideal (init al cargar, present al clickar),
+    // pero aquí lo hacemos todo junto al clickar "Pagar" para simplificar (lazy loading).
+
+    // Voy a re-implementar la lógica dentro de handlePay para tener acceso a las variables.
+    // Ver abajo la implementación real en el bloque else.
+  };
+
   const openCoaching = () => {
     Linking.openURL(COACHING_FORM_URL).catch(err => console.error("Couldn't load page", err));
+  };
+
+  const openEmailContact = () => {
+    const email = 'titogeremitocoach@gmail.com';
+    const subject = 'Consulta Plan Entrenador - Más de 20 clientes';
+    const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+
+    if (Platform.OS === 'web') {
+      window.location.href = mailtoUrl;
+    } else {
+      Linking.openURL(mailtoUrl).catch(err => console.error("Couldn't open email", err));
+    }
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -343,6 +443,74 @@ export default function PaymentScreen() {
         }
       >
 
+        {/* SECCIÓN 0: TOGGLE TIPO USUARIO */}
+        <View style={styles.toggleContainer}>
+          <Text style={styles.toggleLabel}>¿Qué eres?</Text>
+          <View style={styles.toggleWrapper}>
+            <Pressable
+              style={[styles.toggleOption, userType === 'athlete' && styles.toggleOptionActive]}
+              onPress={() => {
+                setUserType('athlete');
+                const filtered = planes.filter(p => !p.isCoach);
+                const planDestacado = filtered.find(p => p.destacado);
+                setSelectedPlan(planDestacado || filtered[0]);
+              }}
+            >
+              <Text style={[styles.toggleText, userType === 'athlete' && styles.toggleTextActive]}>Atleta</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.toggleOption, userType === 'coach' && styles.toggleOptionActive]}
+              onPress={() => {
+                setUserType('coach');
+                const filtered = planes.filter(p => p.isCoach && p.clientRange === coachClientCount);
+                const planDestacado = filtered.find(p => p.destacado);
+                setSelectedPlan(planDestacado || filtered[0]);
+              }}
+            >
+              <Text style={[styles.toggleText, userType === 'coach' && styles.toggleTextActive]}>Entrenador</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* SECCIÓN 0.5: NÚMERO DE CLIENTES (solo para entrenadores) */}
+        {userType === 'coach' && (
+          <View style={styles.clientCountContainer}>
+            <Text style={styles.clientCountLabel}>Número de clientes</Text>
+            <View style={styles.clientCountOptions}>
+              <Pressable
+                style={[styles.clientCountOption, coachClientCount === 5 && styles.clientCountOptionActive]}
+                onPress={() => setCoachClientCount(5)}
+              >
+                <View style={[styles.radioOuter, coachClientCount === 5 && styles.radioOuterSelected]}>
+                  {coachClientCount === 5 && <View style={styles.radioInner} />}
+                </View>
+                <Text style={[styles.clientCountText, coachClientCount === 5 && styles.clientCountTextActive]}>5</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.clientCountOption, coachClientCount === 10 && styles.clientCountOptionActive]}
+                onPress={() => setCoachClientCount(10)}
+              >
+                <View style={[styles.radioOuter, coachClientCount === 10 && styles.radioOuterSelected]}>
+                  {coachClientCount === 10 && <View style={styles.radioInner} />}
+                </View>
+                <Text style={[styles.clientCountText, coachClientCount === 10 && styles.clientCountTextActive]}>10</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.clientCountOption, coachClientCount === 20 && styles.clientCountOptionActive]}
+                onPress={() => setCoachClientCount(20)}
+              >
+                <View style={[styles.radioOuter, coachClientCount === 20 && styles.radioOuterSelected]}>
+                  {coachClientCount === 20 && <View style={styles.radioInner} />}
+                </View>
+                <Text style={[styles.clientCountText, coachClientCount === 20 && styles.clientCountTextActive]}>20</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.clientCountHint}>
+              ¿Necesitas un plan mayor? <Text style={styles.clientCountHintLink} onPress={openEmailContact}>Contáctame</Text>
+            </Text>
+          </View>
+        )}
+
         {/* SECCIÓN 1: TITULO DE ALTO IMPACTO */}
         <View style={styles.heroSection}>
           <Text style={styles.heroTitle}>Desbloquea tu mejor versión</Text>
@@ -353,7 +521,13 @@ export default function PaymentScreen() {
 
         {/* SECCIÓN 2: PLANES DINÁMICOS */}
         <View style={styles.plansContainer}>
-          {planes.map((plan) => {
+          {planes.filter(p => {
+            if (userType === 'coach') {
+              return p.isCoach && p.clientRange === coachClientCount;
+            } else {
+              return !p.isCoach;
+            }
+          }).map((plan) => {
             const isSelected = selectedPlan?.id === plan.id;
             const tieneDescuento = plan.precioOriginal > plan.precioActual;
 
@@ -508,47 +682,10 @@ export default function PaymentScreen() {
 
           {/* Formulario de tarjeta (solo si Stripe está seleccionado) */}
           {paymentMethod === 'stripe' && (
-            <View style={styles.cardForm}>
-              <View style={styles.inputContainer}>
-                <Ionicons name="card-outline" size={18} color="#64748B" style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { paddingLeft: 40 }]}
-                  placeholder="Número de tarjeta"
-                  placeholderTextColor="#64748B"
-                  keyboardType="numeric"
-                  value={cardData.number}
-                  onChangeText={(t) => setCardData({ ...cardData, number: formatCardNumber(t) })}
-                />
-              </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre del titular"
-                placeholderTextColor="#64748B"
-                autoCapitalize="words"
-                value={cardData.name}
-                onChangeText={(t) => setCardData({ ...cardData, name: t })}
-              />
-              <View style={styles.row}>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="MM/AA"
-                  placeholderTextColor="#64748B"
-                  keyboardType="numeric"
-                  maxLength={5}
-                  value={cardData.expiry}
-                  onChangeText={(t) => setCardData({ ...cardData, expiry: formatExpiry(t) })}
-                />
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="CVC"
-                  placeholderTextColor="#64748B"
-                  keyboardType="numeric"
-                  maxLength={4}
-                  secureTextEntry
-                  value={cardData.cvc}
-                  onChangeText={(t) => setCardData({ ...cardData, cvc: t.replace(/\D/g, '') })}
-                />
-              </View>
+            <View style={{ marginTop: 16, padding: 16, backgroundColor: '#334155', borderRadius: 12 }}>
+              <Text style={{ color: '#F8FAFC', textAlign: 'center' }}>
+                Al pulsar "Pagar", se abrirá la pasarela segura de Stripe.
+              </Text>
             </View>
           )}
         </View>
@@ -576,7 +713,95 @@ export default function PaymentScreen() {
           </View>
 
           <Pressable
-            onPress={handlePay}
+            onPress={async () => {
+              if (paymentMethod === 'stripe') {
+                setLoading(true);
+                try {
+                  // 1. Crear Intent (Suscripción)
+                  const response = await fetch(`${API_URL}/api/payments/stripe/create-intent`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify({
+                      amount: selectedPlan.price,
+                      currency: 'eur',
+                      planId: selectedPlan.id
+                    })
+                  });
+
+                  const data = await response.json();
+
+                  if (!data.success) {
+                    Alert.alert('Error', data.error?.message || 'No se pudo iniciar el pago');
+                    setLoading(false);
+                    return;
+                  }
+
+                  const { clientSecret, paymentIntentId, subscriptionId } = data;
+                  console.log('[Payment] Intent creado:', paymentIntentId, 'Suscripción:', subscriptionId);
+
+                  // 2. Inicializar Sheet
+                  const { error: initError } = await initPaymentSheet({
+                    merchantDisplayName: 'TotalGains',
+                    paymentIntentClientSecret: clientSecret,
+                    defaultBillingDetails: {
+                      name: user?.nombre || '',
+                      email: user?.email || '',
+                    },
+                    returnURL: 'totalgains://stripe-redirect',
+                    customFlow: false,
+                  });
+
+                  if (initError) throw new Error(initError.message);
+
+                  // 3. Presentar Sheet
+                  const { error: presentError } = await presentPaymentSheet();
+
+                  if (presentError) {
+                    // El usuario canceló o hubo error
+                    if (presentError.code !== 'Canceled') {
+                      Alert.alert('Error', presentError.message);
+                    }
+                  } else {
+                    // 4. Confirmar en Backend
+                    const confirmRes = await fetch(`${API_URL}/api/payments/stripe/confirm/${paymentIntentId}`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}`
+                      },
+                      body: JSON.stringify({ planId: selectedPlan.id })
+                    });
+
+                    const confirmData = await confirmRes.json();
+
+                    if (confirmData.success) {
+                      // Refrescar datos del usuario para actualizar estado a PREMIUM
+                      if (refreshUser) {
+                        await refreshUser();
+                      }
+
+                      Alert.alert(
+                        '¡Bienvenido al Team! 🚀',
+                        `Suscripción ${selectedPlan.nombre} activada correctamente.`,
+                        [{ text: 'Empezar a Entrenar', onPress: () => router.back() }]
+                      );
+                    } else {
+                      Alert.alert('Atención', 'El pago se realizó pero hubo un problema activando la suscripción. Contáctanos.');
+                    }
+                  }
+                } catch (e) {
+                  console.error(e);
+                  Alert.alert('Error', e.message || 'Error desconocido');
+                } finally {
+                  setLoading(false);
+                }
+              } else {
+                handlePay();
+              }
+            }}
             disabled={loading}
             style={({ pressed }) => [
               styles.payButton,
@@ -591,7 +816,7 @@ export default function PaymentScreen() {
               {loading ? (
                 <ActivityIndicator color="#FFF" />
               ) : (
-                <Text style={styles.payButtonText}>CONFIRMAR SUSCRIPCIÓN</Text>
+                <Text style={styles.payButtonText}>¡SUBE AL SIGUIENTE NIVEL!</Text>
               )}
             </LinearGradient>
           </Pressable>
@@ -602,9 +827,17 @@ export default function PaymentScreen() {
           </View>
         </View>
 
+        {/* SECCIÓN 7: CONTACTO */}
+        <View style={styles.contactSection}>
+          <Text style={styles.contactTitle}>¿Quieres contactar conmigo?</Text>
+          <Pressable onPress={() => Linking.openURL('mailto:titogeremitocoach@gmail.com')}>
+            <Text style={styles.contactEmail}>titogeremitocoach@gmail.com</Text>
+          </Pressable>
+        </View>
+
         <View style={{ height: 40 }} />
-      </ScrollView>
-    </View>
+      </ScrollView >
+    </View >
   );
 }
 
@@ -785,5 +1018,55 @@ const styles = StyleSheet.create({
   payButtonGradient: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center' },
   payButtonText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 1 },
   secureBadge: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center' },
-  secureText: { color: '#64748B', fontSize: 12 }
+  secureText: { color: '#64748B', fontSize: 12 },
+
+  // TOGGLE
+  toggleContainer: { alignItems: 'center', marginBottom: 20 },
+  toggleLabel: { color: '#94A3B8', marginBottom: 8, fontSize: 14, fontWeight: '600' },
+  toggleWrapper: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 12, padding: 4, borderWidth: 1, borderColor: '#334155' },
+  toggleOption: { paddingHorizontal: 24, paddingVertical: 8, borderRadius: 8 },
+  toggleOptionActive: { backgroundColor: '#10B981' },
+  toggleText: { color: '#94A3B8', fontWeight: '600' },
+  toggleTextActive: { color: '#FFF' },
+
+  // CONTACTO
+  contactSection: { alignItems: 'center', marginTop: 20, marginBottom: 40 },
+  contactTitle: { color: '#F8FAFC', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  contactEmail: { color: '#10B981', fontSize: 16, textDecorationLine: 'underline' },
+
+  // CLIENT COUNT (para entrenadores)
+  clientCountContainer: { alignItems: 'center', marginBottom: 20, marginTop: 10 },
+  clientCountLabel: { color: '#94A3B8', marginBottom: 12, fontSize: 14, fontWeight: '600' },
+  clientCountOptions: { flexDirection: 'row', gap: 12, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 20 },
+  clientCountOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 8
+  },
+  clientCountOptionActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderColor: '#10B981'
+  },
+  clientCountText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  clientCountTextActive: { color: '#10B981' },
+  clientCountHint: {
+    color: '#64748B',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 20
+  },
+  clientCountHintLink: {
+    color: '#10B981',
+    fontWeight: '600',
+    textDecorationLine: 'underline'
+  }
 });

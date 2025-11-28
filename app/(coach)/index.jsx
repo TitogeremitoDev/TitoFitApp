@@ -1,194 +1,221 @@
+// app/(coach)/index.jsx - Trainer Dashboard Principal
 import React, { useState, useEffect } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity,
-    ActivityIndicator, Alert, ScrollView, SafeAreaView
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    ScrollView,
+    SafeAreaView,
+    Image,
+    ActivityIndicator,
+    Alert
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
+import { useRouter } from 'expo-router';
 
-export default function CoachDashboard() {
-    const { token } = useAuth();
-    const { theme } = useTheme();
+export default function TrainerDashboard() {
+    const { token, user } = useAuth();
+    const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [clients, setClients] = useState([]);
-    const [codes, setCodes] = useState([]);
+    const [trainerProfile, setTrainerProfile] = useState(null);
+    const [currentClients, setCurrentClients] = useState(0);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     useEffect(() => {
-        loadData();
+        loadTrainerData();
     }, []);
 
-    const loadData = async () => {
+    const loadTrainerData = async () => {
         try {
             setLoading(true);
-
-            const [clientsRes, codesRes] = await Promise.all([
-                fetch(`${API_URL}/api/coach/clients`, {
+            const [profileRes, clientsRes] = await Promise.all([
+                fetch(`${API_URL}/api/trainers/profile`, {
                     headers: { Authorization: `Bearer ${token}` }
                 }),
-                fetch(`${API_URL}/api/coach/codes`, {
+                fetch(`${API_URL}/api/trainers/clients`, {
                     headers: { Authorization: `Bearer ${token}` }
                 })
             ]);
 
+            const profileData = await profileRes.json();
             const clientsData = await clientsRes.json();
-            const codesData = await codesRes.json();
 
-            setClients(clientsData.clients || []);
-            setCodes(codesData.codes || []);
+            setTrainerProfile(profileData.profile || {});
+            setCurrentClients(clientsData.count || 0);
         } catch (error) {
-            console.error('Error loading data:', error);
-            Alert.alert('Error', 'No se pudieron cargar los datos');
+            console.error('Error loading trainer data:', error);
+            Alert.alert('Error', 'No se pudieron cargar los datos del entrenador');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleGenerateCode = async () => {
-        try {
-            const res = await fetch(`${API_URL}/api/coach/generate-code`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    maxUses: 10,
-                    expiresInDays: 30
+    const copyCodeToClipboard = () => {
+        const code = trainerProfile?.trainerCode;
+
+        if (!code || code === 'NO-CONFIGURADO') {
+            window.alert('⚠️ No tienes un código configurado aún.\n\nVe a "Perfil Profesional" para generar tu código único.');
+            return;
+        }
+
+        // Copiar al portapapeles
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code)
+                .then(() => {
+                    window.alert(`✅ Código copiado!\n\n${code}\n\nComparte este código con tus clientes para que se vinculen contigo.`);
                 })
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                await loadData();
-                Alert.alert('¡Código Generado!', `Código: ${data.code}`, [
-                    {
-                        text: 'Copiar',
-                        onPress: () => {
-                            Clipboard.setStringAsync(data.code);
-                            Alert.alert('Copiado', 'Código copiado al portapapeles');
-                        }
-                    },
-                    { text: 'OK' }
-                ]);
-            } else {
-                Alert.alert('Error', data.message || 'No se pudo generar el código');
-            }
-        } catch (error) {
-            Alert.alert('Error', 'Error al generar código');
+                .catch(() => {
+                    // Fallback para navegadores antiguos
+                    window.alert(`Tu código de entrenador:\n\n${code}\n\n(Cópialo manualmente)`);
+                });
+        } else {
+            // Fallback si no hay clipboard API
+            window.alert(`Tu código de entrenador:\n\n${code}\n\n(Cópialo manualmente)`);
         }
     };
 
-    const copyToClipboard = (code) => {
-        Clipboard.setStringAsync(code);
-        Alert.alert('Copiado', `Código ${code} copiado al portapapeles`);
-    };
-
-    const renderClient = (item) => (
-        <View key={item._id} style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-            <View style={styles.cardContent}>
-                <Ionicons name="person-circle" size={40} color={theme.primary} />
-                <View style={styles.clientInfo}>
-                    <Text style={[styles.clientName, { color: theme.text }]}>{item.nombre}</Text>
-                    <Text style={[styles.clientEmail, { color: theme.textSecondary }]}>{item.email}</Text>
-                    <Text style={[styles.clientDate, { color: theme.textTertiary }]}>
-                        Desde: {new Date(item.createdAt).toLocaleDateString()}
-                    </Text>
-                </View>
-            </View>
-        </View>
-    );
-
-    const renderCode = (item) => {
-        const isActive = item.active && new Date(item.expiresAt) > new Date();
-
-        return (
-            <View key={item._id} style={[styles.codeCard, {
-                backgroundColor: theme.cardBackground,
-                borderColor: isActive ? theme.success : theme.danger,
-                borderWidth: 2
-            }]}>
-                <View style={styles.codeHeader}>
-                    <View style={styles.codeInfo}>
-                        <Text style={[styles.codeText, { color: theme.text, fontFamily: 'monospace' }]}>
-                            {item.code}
-                        </Text>
-                        <Text style={[styles.codeStatus, { color: isActive ? theme.success : theme.danger }]}>
-                            {isActive ? '✓ Activo' : '✗ Inactivo'}
-                        </Text>
-                    </View>
-                    <TouchableOpacity
-                        style={[styles.copyBtn, { backgroundColor: theme.primary }]}
-                        onPress={() => copyToClipboard(item.code)}
-                    >
-                        <Ionicons name="copy" size={20} color="#fff" />
-                    </TouchableOpacity>
-                </View>
-                <Text style={[styles.codeDetail, { color: theme.textSecondary }]}>
-                    Usos: {item.usedCount}/{item.maxUses} | Expira: {new Date(item.expiresAt).toLocaleDateString()}
-                </Text>
-            </View>
-        );
-    };
+    const dashboardSections = [
+        { icon: 'person', name: 'Perfil Profesional', route: '/(coach)/profile', color: '#3b82f6' },
+        { icon: 'people', name: 'Clientes', route: '/(coach)/clients', color: '#10b981' },
+        { icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6' },
+        { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
+        { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899' },
+        { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6' },
+        { icon: 'calendar', name: 'Calendario', route: '/(coach)/calendar', color: '#6366f1' },
+        { icon: 'stats-chart', name: 'Progreso', route: '/(coach)/progress', color: '#ef4444' },
+        { icon: 'nutrition', name: 'Nutrición', route: '/(coach)/nutrition', color: '#22c55e' },
+        { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4' },
+        { icon: 'analytics', name: 'Análisis Técnico', route: '/(coach)/analysis', color: '#f97316' },
+        { icon: 'trophy', name: 'Objetivos', route: '/(coach)/goals', color: '#eab308' },
+        { icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7' },
+        { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
+    ];
 
     if (loading) {
         return (
-            <View style={[styles.loading, { backgroundColor: theme.background }]}>
-                <ActivityIndicator size="large" color={theme.primary} />
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3b82f6" />
             </View>
         );
     }
 
+    const maxClients = trainerProfile?.maxClients || 5;
+    const canUpgrade = currentClients >= maxClients;
+
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-            <ScrollView>
-                {/* Estadísticas */}
-                <View style={styles.statsRow}>
-                    <View style={[styles.statCard, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.statNumber}>{clients.length}</Text>
-                        <Text style={styles.statLabel}>Clientes</Text>
-                    </View>
-                    <View style={[styles.statCard, { backgroundColor: theme.success }]}>
-                        <Text style={styles.statNumber}>{codes.filter(c => c.active).length}</Text>
-                        <Text style={styles.statLabel}>Códigos Activos</Text>
-                    </View>
-                </View>
-
-                {/* Botón Generar Código */}
-                <TouchableOpacity
-                    style={[styles.generateBtn, { backgroundColor: theme.primary }]}
-                    onPress={handleGenerateCode}
+        <SafeAreaView style={styles.container}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Header con Información del Entrenador */}
+                <LinearGradient
+                    colors={['#1e293b', '#334155']}
+                    style={styles.header}
                 >
-                    <Ionicons name="add-circle" size={24} color="#fff" />
-                    <Text style={styles.generateBtnText}>Generar Código de Invitación</Text>
-                </TouchableOpacity>
+                    {/* Código de Entrenador */}
+                    <View style={styles.codeSection}>
+                        <Text style={styles.codeLabel}>CÓDIGO DE ENTRENADOR</Text>
+                        <TouchableOpacity
+                            style={styles.codeContainer}
+                            onPress={copyCodeToClipboard}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.codeText}>
+                                {trainerProfile?.trainerCode || 'NO-CONFIGURADO'}
+                            </Text>
+                            <Ionicons name="copy-outline" size={20} color="#10b981" />
+                        </TouchableOpacity>
+                    </View>
 
-                {/* Códigos */}
-                <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Códigos de Invitación</Text>
-                    {codes.length === 0 ? (
-                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                            No has generado códigos todavía
-                        </Text>
-                    ) : (
-                        codes.slice(0, 5).map(code => renderCode(code))
-                    )}
-                </View>
+                    {/* Info del Entrenador */}
+                    <View style={styles.profileSection}>
+                        <View style={styles.profileInfo}>
+                            <Text style={styles.trainerName}>{user?.nombre || 'Entrenador'}</Text>
+                            <Text style={styles.brandName}>
+                                {trainerProfile?.brandName || 'Configura tu marca'}
+                            </Text>
+                        </View>
 
-                {/* Clientes */}
-                <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Mis Clientes</Text>
-                    {clients.length === 0 ? (
-                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                            Aún no tienes clientes asociados
+                        <TouchableOpacity
+                            style={styles.profileImageContainer}
+                            onPress={() => router.push('/(coach)/profile')}
+                        >
+                            {trainerProfile?.logoUrl ? (
+                                <Image
+                                    source={{ uri: trainerProfile.logoUrl }}
+                                    style={styles.profileImage}
+                                />
+                            ) : (
+                                <View style={styles.profileImagePlaceholder}>
+                                    <Ionicons name="person" size={40} color="#94a3b8" />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Clientes Info */}
+                    <View style={styles.clientsSection}>
+                        <View style={styles.clientsInfo}>
+                            <Text style={styles.clientsLabel}>CLIENTES</Text>
+                            <View style={styles.clientsCount}>
+                                <Text style={styles.currentClients}>{currentClients}</Text>
+                                <Text style={styles.maxClients}> / {maxClients}</Text>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[
+                                styles.upgradeButton,
+                                !canUpgrade && styles.upgradeButtonDisabled
+                            ]}
+                            onPress={() => router.push('/(app)/payment')}
+                        >
+                            <Ionicons name="add-circle" size={24} color={canUpgrade ? "#fff" : "#64748b"} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Progress Bar */}
+                    <View style={styles.progressContainer}>
+                        <View style={styles.progressBar}>
+                            <View
+                                style={[
+                                    styles.progressFill,
+                                    { width: `${Math.min((currentClients / maxClients) * 100, 100)}%` }
+                                ]}
+                            />
+                        </View>
+                        <Text style={styles.progressText}>
+                            {currentClients >= maxClients ? '¡Límite alcanzado!' : `${maxClients - currentClients} slots disponibles`}
                         </Text>
-                    ) : (
-                        clients.map(client => renderClient(client))
-                    )}
+                    </View>
+                </LinearGradient>
+
+                {/* Dashboard Sections */}
+                <View style={styles.sectionsContainer}>
+                    <Text style={styles.sectionsTitle}>Panel de Control</Text>
+
+                    <View style={styles.grid}>
+                        {dashboardSections.map((section, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={styles.sectionCard}
+                                onPress={() => router.push(section.route)}
+                                activeOpacity={0.7}
+                            >
+                                <LinearGradient
+                                    colors={[section.color, `${section.color}dd`]}
+                                    style={styles.sectionGradient}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                >
+                                    <Ionicons name={section.icon} size={28} color="#fff" />
+                                </LinearGradient>
+                                <Text style={styles.sectionName}>{section.name}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
                 </View>
             </ScrollView>
         </SafeAreaView>
@@ -196,45 +223,194 @@ export default function CoachDashboard() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    statsRow: { flexDirection: 'row', padding: 16, gap: 12 },
-    statCard: { flex: 1, borderRadius: 12, padding: 16, alignItems: 'center' },
-    statNumber: { fontSize: 32, fontWeight: '700', color: '#fff' },
-    statLabel: { fontSize: 14, color: '#fff', marginTop: 4 },
-    generateBtn: {
+    container: {
+        flex: 1,
+        backgroundColor: '#f8fafc'
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc'
+    },
+    header: {
+        padding: 24,
+        paddingTop: 14,
+        borderBottomLeftRadius: 32,
+        borderBottomRightRadius: 32
+    },
+    codeSection: {
+        marginBottom: 10
+    },
+    codeLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#94a3b8',
+        letterSpacing: 1.5,
+        marginBottom: 8
+    },
+    codeContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        margin: 16,
-        padding: 16,
-        borderRadius: 12
-    },
-    generateBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-    section: { padding: 16 },
-    sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
-    emptyText: { textAlign: 'center', marginTop: 20 },
-    card: {
+        justifyContent: 'space-between',
+        backgroundColor: '#1e293b',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
         borderRadius: 12,
         borderWidth: 1,
-        padding: 12,
+        borderColor: '#334155'
+    },
+    codeText: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#10b981',
+        letterSpacing: 2
+    },
+    profileSection: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24
+    },
+    profileInfo: {
+        flex: 1
+    },
+    trainerName: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#fff',
+        marginBottom: 4
+    },
+    brandName: {
+        fontSize: 16,
+        color: '#94a3b8',
+        fontWeight: '500'
+    },
+    profileImageContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        overflow: 'hidden',
+        borderWidth: 3,
+        borderColor: '#10b981'
+    },
+    profileImage: {
+        width: '100%',
+        height: '100%'
+    },
+    profileImagePlaceholder: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#334155',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    clientsSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16
+    },
+    clientsInfo: {
+        flex: 1
+    },
+    clientsLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#94a3b8',
+        letterSpacing: 1.5,
+        marginBottom: 4
+    },
+    clientsCount: {
+        flexDirection: 'row',
+        alignItems: 'baseline'
+    },
+    currentClients: {
+        fontSize: 36,
+        fontWeight: '800',
+        color: '#fff'
+    },
+    maxClients: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#64748b'
+    },
+    upgradeButton: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#3b82f6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8
+    },
+    upgradeButtonDisabled: {
+        backgroundColor: '#1e293b',
+        shadowOpacity: 0
+    },
+    progressContainer: {
+        marginTop: 8
+    },
+    progressBar: {
+        height: 8,
+        backgroundColor: '#1e293b',
+        borderRadius: 4,
+        overflow: 'hidden',
         marginBottom: 8
     },
-    cardContent: { flexDirection: 'row', alignItems: 'center' },
-    clientInfo: { marginLeft: 12, flex: 1 },
-    clientName: { fontSize: 16, fontWeight: '600' },
-    clientEmail: { fontSize: 14, marginTop: 2 },
-    clientDate: { fontSize: 12, marginTop: 4 },
-    codeCard: {
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 8
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#10b981',
+        borderRadius: 4
     },
-    codeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    codeInfo: { flex: 1 },
-    codeText: { fontSize: 20, fontWeight: '700', letterSpacing: 2 },
-    codeStatus: { fontSize: 12, fontWeight: '600', marginTop: 4 },
-    copyBtn: { padding: 10, borderRadius: 8 },
-    codeDetail: { fontSize: 12, marginTop: 8 }
+    progressText: {
+        fontSize: 12,
+        color: '#94a3b8',
+        fontWeight: '600',
+        textAlign: 'center'
+    },
+    sectionsContainer: {
+        padding: 24
+    },
+    sectionsTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#1e293b',
+        marginBottom: 20
+    },
+    grid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 16
+    },
+    sectionCard: {
+        width: '47%',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2
+    },
+    sectionGradient: {
+        width: 56,
+        height: 56,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12
+    },
+    sectionName: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#334155',
+        textAlign: 'center'
+    }
 });

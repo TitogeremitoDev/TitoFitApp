@@ -1,12 +1,4 @@
-/* app/index.jsx
-   ────────────────────────────────────────────────────────────────────────
-   Home + Changelog modal 1.3.1 + BOTÓN DE PAGOS
-   - Lee versión de Constants.expoConfig.version
-   - Guarda 'last_seen_version' en AsyncStorage al cerrar
-   - Lista de mejoras + logo al pie
-   - Mantiene UI previa (frases, botones, etc.)
-   - NUEVO: Botón de pagos arriba a la derecha
-   ──────────────────────────────────────────────────────────────────────── */
+/* app/index.jsx - HOME SCREEN CON MODAL DE UPGRADE PARA FREE */
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -19,18 +11,15 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
-
-// Botón reutilizable
 import ActionButton from '../../components/ActionButton';
 import { useAuth } from '../../context/AuthContext';
 
-// Frases motivadoras
 const FRASES = [
   "La disciplina es el puente entre metas y logros.",
   "El dolor que sientes hoy será la fuerza que sientas mañana.",
@@ -44,10 +33,8 @@ const FRASES = [
   "Lucha cada puta repetición como si fuera la última."
 ];
 
-// Versión de la app (lee de app.json → expo.version)
-const APP_VERSION = Constants?.expoConfig?.version ?? '0.8.0';
+const APP_VERSION = Constants?.expoConfig?.version ?? '0.9.0';
 
-// Contenido del changelog (puedes formatear cada línea libremente)
 const CAMBIOS_131 = [
   'Nuevo acceso con interfaz de inicio de sesión (versión visual inicial).',
   'Cronómetro integrado en Entreno con persistencia durante la sesión.',
@@ -64,20 +51,20 @@ const CAMBIOS_131 = [
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
 
-
 export default function HomeScreen() {
+  const router = useRouter();
   const { user } = useAuth();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showPerfilUpgradeModal, setShowPerfilUpgradeModal] = useState(false);
 
   useEffect(() => {
-    // Frase aleatoria una sola vez
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
   }, []);
 
   useEffect(() => {
-    // Mostrar changelog 1ª vez por versión
     (async () => {
       try {
         const lastSeen = await AsyncStorage.getItem('last_seen_version');
@@ -95,11 +82,44 @@ export default function HomeScreen() {
     } catch { }
   };
 
+  const handleVideosPress = () => {
+    if (user?.tipoUsuario === 'FREEUSER') {
+      setShowUpgradeModal(true);
+    } else {
+      router.push('/videos');
+    }
+  };
+
+  const handlePerfilPress = () => {
+    router.push('/perfil');
+  };
+
+  const closeUpgradeModal = () => {
+    setShowUpgradeModal(false);
+  };
+
+  const closePerfilUpgradeModal = () => {
+    setShowPerfilUpgradeModal(false);
+  };
+
+  const goToPayment = () => {
+    setShowUpgradeModal(false);
+    router.push('/payment');
+  };
+
+  const goToPaymentFromPerfil = () => {
+    setShowPerfilUpgradeModal(false);
+    router.push('/payment');
+  };
+
+  const showPaymentButton =
+    user?.tipoUsuario === 'FREEUSER' ||
+    user?.tipoUsuario === 'PREMIUM' ||
+    user?.tipoUsuario === 'ADMIN';
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-
-      {/* Fondo */}
       <LinearGradient
         colors={['#0B1220', '#0D1B2A', '#111827']}
         start={{ x: 0, y: 0 }}
@@ -109,26 +129,23 @@ export default function HomeScreen() {
       <View style={[styles.blob, styles.blobTop]} />
       <View style={[styles.blob, styles.blobBottom]} />
 
-      {/* NUEVO: BOTÓN DE PAGOS ARRIBA A LA DERECHA */}
-      <Link href="/payment" asChild>
-        <Pressable style={styles.paymentButton}>
-          <LinearGradient
-            colors={['#10B981', '#059669']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.paymentGradient}
-          >
-            <Ionicons name={user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'PREMIUM' ? "trending-up-outline" : "card-outline"} size={20} color="#FFF" />
-            <Text style={styles.paymentButtonText}>
-              {user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'PREMIUM' ? 'Subir de Nivel' : 'Pagar'}
-            </Text>
-          </LinearGradient>
-        </Pressable>
-      </Link>
+      {showPaymentButton && (
+        <Link href="/payment" asChild>
+          <Pressable style={styles.paymentButton}>
+            <LinearGradient
+              colors={['#10B981', '#059669']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.paymentGradient}
+            >
+              <Ionicons name={user?.tipoUsuario === 'PREMIUM' || "ADMIN" || "ENTRENADOR" || "CLIENTE" ? "trending-up-outline" : "card-outline"} size={20} color="#FFF" />
+              <Text style={styles.paymentButtonText}>Subir de Nivel</Text>
+            </LinearGradient>
+          </Pressable>
+        </Link>
+      )}
 
-      {/* Contenido */}
       <View style={styles.contentContainer}>
-        {/* Tarjeta central */}
         <View style={styles.card}>
           <Image
             source={require('../../assets/logo.png')}
@@ -138,7 +155,6 @@ export default function HomeScreen() {
           <Text style={styles.title}>TitoGeremito</Text>
           <Text style={styles.subtitle}>Tu progreso, bien medido.</Text>
 
-          {/* Botones */}
           <Link href="/entreno" asChild>
             <ActionButton title="Empezar entreno" icon="barbell-outline" />
           </Link>
@@ -147,24 +163,28 @@ export default function HomeScreen() {
             <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
           </Link>
           <View style={{ height: 10 }} />
-          <Link href="/perfil" asChild>
-            <ActionButton title="Perfil" icon="person-outline" variant="secondary" />
-          </Link>
+          <ActionButton
+            title="Perfil"
+            icon="person-outline"
+            variant="secondary"
+            onPress={handlePerfilPress}
+          />
           <View style={{ height: 10 }} />
-          <Link href="/videos" asChild>
-            <ActionButton title="Videos" icon="videocam-outline" variant="secondary" />
-          </Link>
+          <ActionButton
+            title="Videos"
+            icon="videocam-outline"
+            variant="secondary"
+            onPress={handleVideosPress}
+          />
 
           <Text style={styles.version}>v{APP_VERSION} • APK Fitness</Text>
         </View>
 
-        {/* Banner bajo tarjeta */}
         <View style={styles.bannerContainer}>
           <Text style={styles.bannerText}>{fraseActual}</Text>
         </View>
       </View>
 
-      {/* MODAL DE CHANGELOG */}
       <Modal
         visible={showChangelog}
         transparent
@@ -173,14 +193,11 @@ export default function HomeScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            {/* Cerrar */}
             <Pressable onPress={closeChangelog} style={styles.modalClose}>
               <Ionicons name="close" size={22} color="#fff" />
             </Pressable>
-
             <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
             <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
-
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
               {CAMBIOS_131.map((line, i) => (
                 <View key={i} style={styles.changeRow}>
@@ -188,8 +205,6 @@ export default function HomeScreen() {
                   <Text style={styles.changeText}>{line}</Text>
                 </View>
               ))}
-
-              {/* Logo al pie del modal */}
               <View style={styles.modalFooter}>
                 <Image
                   source={require('../../assets/logo.png')}
@@ -198,27 +213,76 @@ export default function HomeScreen() {
                 />
               </View>
             </ScrollView>
-
-            {/* CTA cerrar grande */}
             <Pressable onPress={closeChangelog} style={styles.modalCta}>
               <Text style={styles.modalCtaText}>ENTENDIDO</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
-      {/* FIN MODAL */}
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showUpgradeModal}
+        onRequestClose={closeUpgradeModal}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <Pressable onPress={closeUpgradeModal} style={styles.upgradeModalClose}>
+              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+            </Pressable>
+            <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+            <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
+            <Text style={styles.upgradeModalText}>
+              Para ver esto sube de nivel
+            </Text>
+            <Pressable style={styles.upgradeButton} onPress={goToPayment}>
+              <Ionicons name="add-circle" size={24} color="#FFF" />
+              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+            </Pressable>
+            <Pressable style={styles.upgradeCancelButton} onPress={closeUpgradeModal}>
+              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showPerfilUpgradeModal}
+        onRequestClose={closePerfilUpgradeModal}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <Pressable onPress={closePerfilUpgradeModal} style={styles.upgradeModalClose}>
+              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+            </Pressable>
+            <Ionicons name="rocket" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+            <Text style={styles.upgradeModalTitle}>¡SUBE AL SIGUIENTE NIVEL!</Text>
+            <Text style={styles.upgradeModalText}>
+              Si quieres subir al siguiente nivel ven por aquí
+            </Text>
+            <Pressable style={styles.upgradeButton} onPress={goToPaymentFromPerfil}>
+              <Ionicons name="add-circle" size={24} color="#FFF" />
+              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+            </Pressable>
+            <Pressable style={styles.upgradeCancelButton} onPress={closePerfilUpgradeModal}>
+              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-/* ───────── estilos ───────── */
 const CARD_BG = 'rgba(255,255,255,0.08)';
 const BORDER = 'rgba(255,255,255,0.18)';
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   contentContainer: { width: '86%', alignItems: 'center' },
-
   blob: {
     position: 'absolute',
     width: 280,
@@ -230,8 +294,6 @@ const styles = StyleSheet.create({
   },
   blobTop: { top: -40, left: -40 },
   blobBottom: { bottom: -30, right: -30, backgroundColor: '#10B981' },
-
-  // NUEVO: Botón de pagos flotante
   paymentButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 40,
@@ -258,7 +320,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-
   card: {
     width: '100%',
     alignItems: 'center',
@@ -287,7 +348,6 @@ const styles = StyleSheet.create({
   title: { color: '#E5E7EB', fontSize: 22, fontWeight: '800', letterSpacing: 0.5 },
   subtitle: { color: '#9CA3AF', marginTop: 2, marginBottom: 16 },
   version: { marginTop: 16, color: '#93A3B3', fontSize: 12 },
-
   bannerContainer: {
     width: '100%',
     marginTop: 20,
@@ -304,8 +364,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   bannerText: { color: '#F3F4F6', fontSize: 15, fontWeight: '600', textAlign: 'center' },
-
-  // Modal changelog
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -336,10 +394,8 @@ const styles = StyleSheet.create({
   changeRow: { flexDirection: 'row', gap: 8, marginBottom: 10, alignItems: 'flex-start' },
   changeBullet: { color: '#93C5FD', fontSize: 16, lineHeight: 18, marginTop: 2 },
   changeText: { color: '#E5E7EB', fontSize: 14, lineHeight: 20, flex: 1 },
-
   modalFooter: { marginTop: 10, alignItems: 'center' },
   modalLogo: { width: 110, height: 110, opacity: 0.9 },
-
   modalCta: {
     marginTop: 12,
     paddingVertical: 12,
@@ -350,4 +406,68 @@ const styles = StyleSheet.create({
     borderColor: '#1D4ED8',
   },
   modalCtaText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 },
+  upgradeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  upgradeModalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#111827',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  upgradeModalClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  upgradeModalTitle: {
+    color: '#E5E7EB',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  upgradeModalText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    marginBottom: 15,
+    gap: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  upgradeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  upgradeCancelButton: {
+    paddingVertical: 10,
+  },
+  upgradeCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
+  },
 });

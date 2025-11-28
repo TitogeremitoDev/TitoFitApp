@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
@@ -69,16 +69,193 @@ const nextDayKey = (entries) => {
   return `dia${max + 1}`;
 };
 
+/* ───────────────────────────────── Componentes Extraídos ─────────────────────────────── */
+
+const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, theme, updateSerieCampo, toggleSerieExtra, deleteSerie }) => {
+  return (
+    <View style={[styles.serieRow, { borderColor: theme.border, backgroundColor: theme.inputBackground }]}>
+      <Text style={[styles.serieLabel, { color: theme.text }]}>Serie {index + 1}</Text>
+
+      <TextInput
+        style={[styles.serieInput, {
+          borderColor: theme.inputBorder,
+          backgroundColor: theme.inputBackground,
+          color: theme.inputText
+        }]}
+        placeholder="min"
+        placeholderTextColor={theme.placeholder}
+        keyboardType="numeric"
+        value={String(s.repMin ?? '')}
+        onChangeText={(v) =>
+          updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)
+        }
+      />
+      <Text style={{ marginHorizontal: 6, color: theme.textTertiary }}>–</Text>
+      <TextInput
+        style={[styles.serieInput, {
+          borderColor: theme.inputBorder,
+          backgroundColor: theme.inputBackground,
+          color: theme.inputText
+        }]}
+        placeholder="max"
+        placeholderTextColor={theme.placeholder}
+        keyboardType="numeric"
+        value={String(s.repMax ?? '')}
+        onChangeText={(v) =>
+          updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)
+        }
+      />
+
+      <TouchableOpacity
+        style={[styles.extraPill, { borderColor: theme.inputBorder, backgroundColor: theme.backgroundTertiary }]}
+        onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
+      >
+        <Text style={[styles.extraPillTxt, { color: theme.text }]}>{s.extra || 'Ninguno'}</Text>
+        <Ionicons name="chevron-down-outline" size={16} color={theme.text} />
+      </TouchableOpacity>
+
+      <View style={{ flex: 1 }} />
+
+      <IconBtn
+        onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
+        icon="close-circle"
+        tint={theme.danger}
+      />
+    </View>
+  );
+});
+
+const ExerciseCard = React.memo(({
+  item,
+  section,
+  isOpen,
+  toggleOpen,
+  moveExercise,
+  addExerciseAfter,
+  deleteExercise,
+  updateEjercicioCampo,
+  addSerie,
+  updateSerieCampo,
+  toggleSerieExtra,
+  deleteSerie,
+  theme
+}) => {
+  const diaKey = section.title;
+  const abierto = isOpen(item.id);
+
+  return (
+    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+      {/* Header ejercicio */}
+      <View style={[styles.cardHeaderContainer, { borderColor: theme.cardHeaderBorder }]}>
+        <TouchableOpacity
+          onPress={() => toggleOpen(item.id)}
+          style={styles.cardHeaderTouchable}
+        >
+          <Text style={[styles.cardHeader, { color: theme.text }]}>
+            {(item.musculo || 'MÚSCULO')} — {(item.nombre || 'Nombre ejercicio')}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.moveControls}>
+          <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint={theme.primary} />
+          <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint={theme.primary} />
+          <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint={theme.success} />
+          <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint={theme.danger} />
+          <IconBtn onPress={() => toggleOpen(item.id)} icon={abierto ? 'chevron-down' : 'chevron-forward'} tint={theme.textSecondary} />
+        </View>
+      </View>
+
+      {/* Editar musculo / nombre */}
+      {abierto && (
+        <View style={styles.editBlock}>
+          <View style={styles.inlineRow}>
+            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Músculo</Text>
+            <TextInput
+              style={[styles.inlineInput, {
+                flex: 1,
+                borderColor: theme.inputBorder,
+                backgroundColor: theme.inputBackground,
+                color: theme.inputText
+              }]}
+              placeholder="Ej: ESPALDA"
+              placeholderTextColor={theme.placeholder}
+              value={item.musculo ?? ''}
+              onChangeText={(v) =>
+                updateEjercicioCampo(diaKey, item.id, 'musculo', v.toUpperCase())
+              }
+            />
+          </View>
+
+          <View style={[styles.inlineRow, { marginTop: 8 }]}>
+            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Nombre</Text>
+            <TextInput
+              style={[styles.inlineInput, {
+                flex: 1,
+                borderColor: theme.inputBorder,
+                backgroundColor: theme.inputBackground,
+                color: theme.inputText
+              }]}
+              placeholder="Ej: Remo sentado máquina (agarre neutro)"
+              placeholderTextColor={theme.placeholder}
+              value={item.nombre ?? ''}
+              onChangeText={(v) => updateEjercicioCampo(diaKey, item.id, 'nombre', v)}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Series */}
+      {abierto && (
+        <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
+          <View style={styles.serieHeadRow}>
+            <Text style={[styles.serieLabel, { fontWeight: '700', color: theme.text }]}>#</Text>
+            <Text style={[styles.headCol, { color: theme.text }]}>Min</Text>
+            <Text style={[styles.headCol, { color: theme.text }]}>Max</Text>
+            <Text style={[styles.headCol, { flex: 1, textAlign: 'left', color: theme.text }]}>Técnica</Text>
+            <Text style={{ width: 28 }} />
+          </View>
+
+          {item.series?.map((s, idx) => (
+            <SerieRow
+              key={s.id}
+              diaKey={diaKey}
+              ejercicioId={item.id}
+              s={s}
+              index={idx}
+              theme={theme}
+              updateSerieCampo={updateSerieCampo}
+              toggleSerieExtra={toggleSerieExtra}
+              deleteSerie={deleteSerie}
+            />
+          ))}
+
+          <TouchableOpacity
+            style={[styles.addSerieBtn, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
+            onPress={() => addSerie(diaKey, item.id)}
+          >
+            <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
+            <Text style={[styles.addSerieTxt, { color: theme.successText }]}>Añadir serie</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+});
+
 /* ───────────────────────────────── Componente principal ─────────────────────────────── */
 export default function RoutineEditorScreen() {
   const { theme } = useTheme();
   const { id } = useLocalSearchParams();
+  const navigation = useNavigation();
+  const router = useRouter();
   const storageKey = `${STORAGE_PREFIX}${id}`;
 
   const [rutina, setRutina] = useState({});
   const [diasAbiertos, setDiasAbiertos] = useState({});
   const [openSet, setOpenSet] = useState(new Set());           // ejercicios abiertos
   const [routineName, setRoutineName] = useState(String(id));  // título visible
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isFirstLoad = useRef(true);
 
   /* ───────── Carga inicial + normalización ───────── */
   useEffect(() => {
@@ -111,6 +288,10 @@ export default function RoutineEditorScreen() {
           setDiasAbiertos({ dia1: true });
           await AsyncStorage.setItem(storageKey, JSON.stringify(init));
         }
+        // Reset unsaved changes after initial load
+        setTimeout(() => {
+          isFirstLoad.current = false;
+        }, 500);
       } catch (e) {
         console.warn('Error cargando rutina', e);
       }
@@ -123,38 +304,68 @@ export default function RoutineEditorScreen() {
     AsyncStorage.multiSet([
       ['active_routine', String(id)],
       ['active_routine_name', routineName || String(id)],
-    ]).catch(() => {});
+    ]).catch(() => { });
   }, [id, routineName]);
 
-  /* ───────── Guardado con debounce ───────── */
-  const saveTimeout = useRef(null);
-  const scheduleSave = useCallback(
-    (next) => {
-      if (saveTimeout.current) clearTimeout(saveTimeout.current);
-      saveTimeout.current = setTimeout(async () => {
-        try {
-          await AsyncStorage.setItem(storageKey, JSON.stringify(next));
-        } catch (e) {
-          console.warn('No se pudo guardar rutina', e);
-        }
-      }, 220);
-    },
-    [storageKey]
-  );
-
+  /* ───────── Control de Cambios ───────── */
   useEffect(() => {
-    if (!rutina || Object.keys(rutina).length === 0) return;
-    scheduleSave(rutina);
-  }, [rutina, scheduleSave]);
+    if (isFirstLoad.current) return;
+    if (Object.keys(rutina).length > 0) {
+      setHasUnsavedChanges(true);
+    }
+  }, [rutina]);
+
+  const saveRoutine = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(storageKey, JSON.stringify(rutina));
+      setHasUnsavedChanges(false);
+      Alert.alert('Éxito', 'Rutina guardada correctamente');
+    } catch (e) {
+      console.warn('No se pudo guardar rutina', e);
+      Alert.alert('Error', 'No se pudo guardar la rutina');
+    }
+  }, [storageKey, rutina]);
+
+  // Interceptar salida sin guardar
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!hasUnsavedChanges) {
+        return;
+      }
+
+      // Prevenir navegación
+      e.preventDefault();
+
+      Alert.alert(
+        'Cambios sin guardar',
+        'No has guardado la rutina. ¿Quieres guardarla antes de salir?',
+        [
+          { text: 'No guardar', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+          { text: 'Cancelar', style: 'cancel', onPress: () => { } },
+          {
+            text: 'Guardar',
+            onPress: async () => {
+              await AsyncStorage.setItem(storageKey, JSON.stringify(rutina));
+              setHasUnsavedChanges(false);
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges, rutina, storageKey]);
+
 
   /* ───────── Open/close ejercicio ───────── */
-  const isOpen = (eid) => openSet.has(eid);
-  const toggleOpen = (eid) =>
+  const isOpen = useCallback((eid) => openSet.has(eid), [openSet]);
+  const toggleOpen = useCallback((eid) =>
     setOpenSet((prev) => {
       const next = new Set(prev);
       next.has(eid) ? next.delete(eid) : next.add(eid);
       return next;
-    });
+    }), []);
 
   const openAllInDay = useCallback(
     (diaKey) => {
@@ -434,166 +645,29 @@ export default function RoutineEditorScreen() {
     </View>
   );
 
-  const SerieRow = ({ diaKey, ejercicioId, s, index }) => {
-    return (
-      <View style={[styles.serieRow, { borderColor: theme.border, backgroundColor: theme.inputBackground }]}>
-        <Text style={[styles.serieLabel, { color: theme.text }]}>Serie {index + 1}</Text>
-
-        <TextInput
-          style={[styles.serieInput, { 
-            borderColor: theme.inputBorder, 
-            backgroundColor: theme.inputBackground,
-            color: theme.inputText 
-          }]}
-          placeholder="min"
-          placeholderTextColor={theme.placeholder}
-          keyboardType="numeric"
-          value={String(s.repMin ?? '')}
-          onChangeText={(v) =>
-            updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)
-          }
-        />
-        <Text style={{ marginHorizontal: 6, color: theme.textTertiary }}>–</Text>
-        <TextInput
-          style={[styles.serieInput, { 
-            borderColor: theme.inputBorder, 
-            backgroundColor: theme.inputBackground,
-            color: theme.inputText 
-          }]}
-          placeholder="max"
-          placeholderTextColor={theme.placeholder}
-          keyboardType="numeric"
-          value={String(s.repMax ?? '')}
-          onChangeText={(v) =>
-            updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)
-          }
-        />
-
-        <TouchableOpacity
-          style={[styles.extraPill, { borderColor: theme.inputBorder, backgroundColor: theme.backgroundTertiary }]}
-          onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
-        >
-          <Text style={[styles.extraPillTxt, { color: theme.text }]}>{s.extra || 'Ninguno'}</Text>
-          <Ionicons name="chevron-down-outline" size={16} color={theme.text} />
-        </TouchableOpacity>
-
-        <View style={{ flex: 1 }} />
-
-        <IconBtn
-          onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
-          icon="close-circle"
-          tint={theme.danger}
-        />
-      </View>
-    );
-  };
-
-  const RenderItem = ({ item, section }) => {
-    const diaKey = section.title;
-    const abierto = isOpen(item.id);
-
-    return (
-      <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-        {/* Header ejercicio */}
-        <View style={[styles.cardHeaderContainer, { borderColor: theme.cardHeaderBorder }]}>
-          <TouchableOpacity
-            onPress={() => toggleOpen(item.id)}
-            style={styles.cardHeaderTouchable}
-          >
-            <Text style={[styles.cardHeader, { color: theme.text }]}>
-              {(item.musculo || 'MÚSCULO')} — {(item.nombre || 'Nombre ejercicio')}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.moveControls}>
-            <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint={theme.primary} />
-            <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint={theme.primary} />
-            <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint={theme.success} />
-            <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint={theme.danger} />
-            <IconBtn onPress={() => toggleOpen(item.id)} icon={abierto ? 'chevron-down' : 'chevron-forward'} tint={theme.textSecondary} />
-          </View>
-        </View>
-
-        {/* Editar musculo / nombre */}
-        {abierto && (
-          <View style={styles.editBlock}>
-            <View style={styles.inlineRow}>
-              <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Músculo</Text>
-              <TextInput
-                style={[styles.inlineInput, { 
-                  flex: 1, 
-                  borderColor: theme.inputBorder,
-                  backgroundColor: theme.inputBackground,
-                  color: theme.inputText
-                }]}
-                placeholder="Ej: ESPALDA"
-                placeholderTextColor={theme.placeholder}
-                value={item.musculo ?? ''}
-                onChangeText={(v) =>
-                  updateEjercicioCampo(diaKey, item.id, 'musculo', v.toUpperCase())
-                }
-              />
-            </View>
-
-            <View style={[styles.inlineRow, { marginTop: 8 }]}>
-              <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Nombre</Text>
-              <TextInput
-                style={[styles.inlineInput, { 
-                  flex: 1,
-                  borderColor: theme.inputBorder,
-                  backgroundColor: theme.inputBackground,
-                  color: theme.inputText
-                }]}
-                placeholder="Ej: Remo sentado máquina (agarre neutro)"
-                placeholderTextColor={theme.placeholder}
-                value={item.nombre ?? ''}
-                onChangeText={(v) => updateEjercicioCampo(diaKey, item.id, 'nombre', v)}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Series */}
-        {abierto && (
-          <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
-            <View style={styles.serieHeadRow}>
-              <Text style={[styles.serieLabel, { fontWeight: '700', color: theme.text }]}>#</Text>
-              <Text style={[styles.headCol, { color: theme.text }]}>Min</Text>
-              <Text style={[styles.headCol, { color: theme.text }]}>Max</Text>
-              <Text style={[styles.headCol, { flex: 1, textAlign: 'left', color: theme.text }]}>Técnica</Text>
-              <Text style={{ width: 28 }} />
-            </View>
-
-            {item.series?.map((s, idx) => (
-              <SerieRow
-                key={s.id}
-                diaKey={diaKey}
-                ejercicioId={item.id}
-                s={s}
-                index={idx}
-              />
-            ))}
-
-            <TouchableOpacity
-              style={[styles.addSerieBtn, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
-              onPress={() => addSerie(diaKey, item.id)}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
-              <Text style={[styles.addSerieTxt, { color: theme.successText }]}>Añadir serie</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    );
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <HeaderApp />
       <SectionList
         sections={sections}
         keyExtractor={(item, index) => item?.id ?? `idx-${index}-${uid()}`}
-        renderItem={RenderItem}
+        renderItem={({ item, section }) => (
+          <ExerciseCard
+            item={item}
+            section={section}
+            isOpen={isOpen}
+            toggleOpen={toggleOpen}
+            moveExercise={moveExercise}
+            addExerciseAfter={addExerciseAfter}
+            deleteExercise={deleteExercise}
+            updateEjercicioCampo={updateEjercicioCampo}
+            addSerie={addSerie}
+            updateSerieCampo={updateSerieCampo}
+            toggleSerieExtra={toggleSerieExtra}
+            deleteSerie={deleteSerie}
+            theme={theme}
+          />
+        )}
         renderSectionHeader={({ section }) => (
           <DiaHeader diaKey={section.title} ord={section.ord} />
         )}
@@ -601,8 +675,18 @@ export default function RoutineEditorScreen() {
           diasAbiertos[title] ? <DiaFooter diaKey={title} /> : null
         }
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        extraData={{ openSetSize: openSet.size, diasAbiertos }}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        extraData={{ openSetSize: openSet.size, diasAbiertos, rutina }}
+        ListFooterComponent={
+          <View style={{ padding: 16 }}>
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: theme.primary }]}
+              onPress={saveRoutine}
+            >
+              <Text style={styles.saveButtonText}>Guardar Rutina</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
     </View>
   );
@@ -612,7 +696,7 @@ export default function RoutineEditorScreen() {
 function IconBtn({ onPress, icon, tint }) {
   const { theme } = useTheme();
   const finalTint = tint || theme.textSecondary;
-  
+
   const map = {
     'arrow-up': 'arrow-up-outline',
     'arrow-down': 'arrow-down-outline',
@@ -773,4 +857,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   addSerieTxt: { fontWeight: '800', fontSize: 13 },
+
+  saveButton: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });

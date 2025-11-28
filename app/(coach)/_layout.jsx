@@ -22,6 +22,7 @@ export default function CoachLayout() {
             }}
         >
             <Stack.Screen name="index" options={{ title: 'Panel Entrenador' }} />
+            <Stack.Screen name="workouts/create" options={{ title: 'Diseño Rutina' }} />
         </Stack>
     );
 }

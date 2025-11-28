@@ -5,6 +5,10 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
+import { Ionicons } from '@expo/vector-icons';
+import { StripeProvider } from '../utils/stripeWrapper';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
@@ -16,43 +20,63 @@ function RootLayoutNav() {
   const navState = useRootNavigationState(); // router listo cuando tiene key
   const splashHidden = useRef(false);
 
+  // Cargar fuentes de iconos para web
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
   // Oculta el splash UNA SOLA VEZ cuando todo está listo
   useEffect(() => {
-    const ready = !!navState?.key && !isLoading;
+    const ready = !!navState?.key && !isLoading && fontsLoaded;
     if (ready && !splashHidden.current) {
       SplashScreen.hideAsync().catch(() => { });
       splashHidden.current = true;
     }
-  }, [navState?.key, isLoading]);
+  }, [navState?.key, isLoading, fontsLoaded]);
 
   // Redirecciones de auth (sin navegar a grupos)
   useEffect(() => {
     if (isLoading || !navState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    const inModeSelect = (segments[0] as string) === 'mode-select';
+    const inOnboarding = segments[0] === 'onboarding';
 
     // Usuario sin sesión → login
     if (!token && !inAuthGroup) {
       router.replace('/login');
       return;
     }
+    const inModeSelect = (segments[0] as string) === 'mode-select';
+    const isRoot = (segments as string[]).length === 0 || ((segments as string[]).length === 1 && (segments[0] as string) === 'index');
 
     // Usuario con sesión en auth → redirigir según rol
-    if (token && inAuthGroup) {
+    if (token && (inAuthGroup || isRoot)) {
       const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR';
 
       if (isAdminOrCoach) {
         // Admin/Coach → mode-select para elegir
-        router.replace('mode-select' as any);
+        router.replace('/mode-select');
       } else {
-        // Usuario normal → directo a entrenar
-        router.replace('/(app)');
+        // Usuario normal → verificar onboarding
+        (async () => {
+          try {
+            const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+
+            if (!hasCompletedOnboarding) {
+              router.replace('/onboarding');
+            } else {
+              router.replace('/home');
+            }
+          } catch (error) {
+            console.error('Error verificando onboarding:', error);
+            router.replace('/home');
+          }
+        })();
       }
     }
   }, [token, isLoading, navState?.key, segments, router, user]);
 
-  if (isLoading || !navState?.key) {
+  if (isLoading || !navState?.key || !fontsLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
@@ -63,19 +87,28 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="mode-select" />
+      <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
       <Stack.Screen name="(app)" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(coach)" />
+      <Stack.Screen name="(admin)" />
     </Stack>
   );
 }
 
 export default function RootLayout() {
+  const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+
   return (
     <AuthProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <RootLayoutNav />
-      </GestureHandlerRootView>
+      <StripeProvider
+        publishableKey={publishableKey}
+        merchantIdentifier="merchant.com.totalgains" // Opcional, para Apple Pay
+      >
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <RootLayoutNav />
+        </GestureHandlerRootView>
+      </StripeProvider>
     </AuthProvider>
   );
 }
