@@ -8,7 +8,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { Redirect } from 'expo-router';
 
 export default function HomeRedirect() {
-  return <Redirect href="/app" />;
+  return <Redirect href="/(app)/home" />;
 }
 
 

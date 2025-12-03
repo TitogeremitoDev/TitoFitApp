@@ -79,16 +79,16 @@ export default function Stopwatch({ style }) {
     return clearTimer;
   }, [isRunning, clearTimer]);
 
-  // Pausa al ir a background
+  // ⏱️ MODIFICADO: Ya NO pausa al ir a background
+  // El cronómetro sigue contando incluso cuando cambias de app o pantalla
+  // porque el cálculo se basa en timestamps (Date.now() - startRef.current)
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
-      if (appState.current.match(/active/) && next.match(/inactive|background/)) {
-        pause();
-      }
+      // Solo actualizamos el estado de la app, sin pausar
       appState.current = next;
     });
     return () => sub.remove?.();
-  }, [pause]);
+  }, []);
 
   return (
     <View style={[styles.wrap, style, Platform.select({ android: { zIndex: 10, elevation: 10 } })]}>
@@ -112,7 +112,7 @@ export default function Stopwatch({ style }) {
       {/* Separador vertical */}
       <View style={styles.vDivider} />
 
-      {/* Botón “cero” (ahora es "Reset") */}
+      {/* Botón "cero" (ahora es "Reset") */}
       <Pressable
         onPress={(e) => {
           e.stopPropagation?.();

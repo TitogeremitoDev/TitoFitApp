@@ -4,12 +4,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // --- ¡CAMBIO! Importamos el ARRAY COMPLETO de rutinas ---
-import { PREDEFINED_ROUTINES } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
+import { predefinedRoutines } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
 
 // --- 2. IMPORTACIONES EXISTENTES ---
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter,SplashScreen } from 'expo-router';
+import { Stack, useRouter, SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,6 +19,9 @@ import { Platform, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
+
+// AÑADIDO: Importar nuestro ThemeProvider personalizado
+import { ThemeProvider as CustomThemeProvider } from '../../context/ThemeContext';
 
 // --- 3. CLAVES Y FUNCIÓN DE SEEDING (¡ACTUALIZADA!) ---
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
@@ -50,7 +53,7 @@ const checkAndSeedPredefinedRoutines = async () => {
     let routinesDataToSave: [string, string][] = []; // Datos completos a guardar [key, value] con multiSet
 
     // Iteramos sobre CADA rutina predefinida importada
-    for (const routine of PREDEFINED_ROUTINES) {
+    for (const routine of predefinedRoutines) {
       // Validar datos básicos de la rutina predefinida
       if (!routine || !routine.id || !routine.nombre || typeof routine.dias !== 'number' || !Array.isArray(routine.diasArr)) {
         console.warn('Skipping invalid predefined routine object:', routine?.nombre || 'Unknown ID');
@@ -66,10 +69,10 @@ const checkAndSeedPredefinedRoutines = async () => {
         const { diasArr, ...metadata } = routine;
         // Aseguramos que los metadatos básicos estén presentes antes de añadir
         if (metadata.id && metadata.nombre && metadata.dias) {
-             routinesMetadataToAdd.push(metadata);
+          routinesMetadataToAdd.push(metadata);
         } else {
-             console.warn(`Metadata incomplete for predefined routine ID ${routine.id}. Skipping metadata addition.`);
-             continue; // No añadir metadatos si falta algo esencial
+          console.warn(`Metadata incomplete for predefined routine ID ${routine.id}. Skipping metadata addition.`);
+          continue; // No añadir metadatos si falta algo esencial
         }
 
 
@@ -77,12 +80,12 @@ const checkAndSeedPredefinedRoutines = async () => {
         const dataKey = `routine_${routine.id}`;
         // Validar que diasArr sea un array antes de guardar
         if (Array.isArray(diasArr)) {
-             routinesDataToSave.push([dataKey, JSON.stringify(diasArr)]);
+          routinesDataToSave.push([dataKey, JSON.stringify(diasArr)]);
         } else {
-             console.warn(`Exercise data (diasArr) is missing or invalid for routine ID ${routine.id}. Skipping data save.`);
-             // Opcional: ¿Deberíamos eliminar los metadatos si los datos fallan?
-             routinesMetadataToAdd.pop(); // Quitamos los metadatos si los datos son inválidos
-             continue; // Saltar si los datos no son válidos
+          console.warn(`Exercise data (diasArr) is missing or invalid for routine ID ${routine.id}. Skipping data save.`);
+          // Opcional: ¿Deberíamos eliminar los metadatos si los datos fallan?
+          routinesMetadataToAdd.pop(); // Quitamos los metadatos si los datos son inválidos
+          continue; // Saltar si los datos no son válidos
         }
 
       } else {
@@ -135,12 +138,12 @@ export default function RootLayout() {
         // Carga de fuentes (ya estaba)
         // Esperar a que las fuentes estén cargadas O haya un error
         if (!loaded && !fontError) {
-             // console.log("Fuentes aún no cargadas, esperando...");
-             return; // Esperar al siguiente renderizado
+          // console.log("Fuentes aún no cargadas, esperando...");
+          return; // Esperar al siguiente renderizado
         }
         if (fontError) {
-             console.error("Error cargando fuentes:", fontError);
-             throw fontError; // Lanzar error si las fuentes fallan
+          console.error("Error cargando fuentes:", fontError);
+          throw fontError; // Lanzar error si las fuentes fallan
         }
         // console.log("Fuentes cargadas.");
 
@@ -156,8 +159,8 @@ export default function RootLayout() {
       } finally {
         // Marcamos la app como lista SOLO si las fuentes están cargadas (o fallaron)
         if (loaded || fontError) {
-             // console.log("App is ready, setting state.");
-             setAppIsReady(true);
+          // console.log("App is ready, setting state.");
+          setAppIsReady(true);
         }
       }
     }
@@ -172,7 +175,7 @@ export default function RootLayout() {
       // Ocultar el splash screen una vez que la app está lista y el layout renderizado
       await SplashScreen.hideAsync();
     } else {
-        // console.log("Layout rendered but app not ready yet.");
+      // console.log("Layout rendered but app not ready yet.");
     }
   }, [appIsReady]);
 
@@ -186,8 +189,9 @@ export default function RootLayout() {
   // console.log("App is ready, rendering main layout.");
   // --- Renderizado Principal (cuando la app está lista) ---
   return (
-    // Usamos la View con onLayout para controlar cuándo ocultar el Splash
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    // AÑADIDO: Envolvemos todo con CustomThemeProvider
+    <CustomThemeProvider>
+      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
         <SafeAreaProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <Stack
@@ -202,26 +206,26 @@ export default function RootLayout() {
                 headerTintColor: 'black',
                 headerShadowVisible: true,
                 headerLeft: (props) => { // Tu headerLeft personalizado
-                    if (!props.canGoBack) return null;
-                    return (
-                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                            <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                                <Ionicons name="arrow-back" size={24} color="black" />
-                            </Pressable>
-                        </View>
-                    );
+                  if (!props.canGoBack) return null;
+                  return (
+                    <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                      <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                        <Ionicons name="arrow-back" size={24} color="black" />
+                      </Pressable>
+                    </View>
+                  );
                 },
               }}
             >
               {/* Tus Stack.Screen existentes */}
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="home" options={{ headerShown: false }} />
               <Stack.Screen name="entreno" />
-              <Stack.Screen name="rutina" />
               <Stack.Screen name="rutinas/[id]" />
-              <Stack.Screen name="evolucion" />
-              <Stack.Screen name="perfil" />
+              <Stack.Screen name="perfil/evolucion" />
               <Stack.Screen name="videos" />
               <Stack.Screen name="+not-found" />
+
             </Stack>
 
             <StatusBar
@@ -231,7 +235,7 @@ export default function RootLayout() {
             />
           </ThemeProvider>
         </SafeAreaProvider>
-    </View>
+      </View>
+    </CustomThemeProvider>
   );
 }
-

@@ -4,6 +4,7 @@
     >>> ¡ARREGLO 14.0!: Arreglado el tamaño de los Shorts.
     >>> - 'VIDEO_DATA' ahora incluye el 'formato' (16:9 o 9:16).
     >>> - El modal calcula la altura dinámicamente.
+    >>> - Modal de upgrade para usuarios FREE
     ──────────────────────────────────────────────────────────────────────── */
 import rawDB from '../../src/data/exercises.json'; // ajusta la ruta si este archivo cambia
 
@@ -24,6 +25,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubeIframe from 'react-native-youtube-iframe';
+import { useAuth } from '../../context/AuthContext';
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -65,10 +67,12 @@ const modalWidth = screenWidth * 0.95; // Ancho del modal (95% de la pantalla)
 
 export default function VideosScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [openMuscle, setOpenMuscle] = useState(null);
   const [selectedVideo, setSelectedVideo] = useState(null); // <-- Ahora es un objeto
   const [playing, setPlaying] = useState(false); 
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const toggleMuscle = (muscle) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -77,6 +81,12 @@ export default function VideosScreen() {
 
   // --- ¡CAMBIO EN handleExercisePress! ---
   const handleExercisePress = (videoData) => { // Recibe el objeto {id, formato}
+    // Si el usuario es FREE, mostrar modal de upgrade
+    if (user?.tipoUsuario === 'FREE') {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     if (!videoData || !videoData.id || videoData.id.startsWith('VIDEO_ID_')) {
       alert('Video no disponible aún para este ejercicio.');
       return;
@@ -92,6 +102,15 @@ export default function VideosScreen() {
     setPlaying(false); 
     setShowVideoPlayer(false); 
     setSelectedVideo(null); // Limpia el objeto
+  };
+
+  const closeUpgradeModal = () => {
+    setShowUpgradeModal(false);
+  };
+
+  const goToPayment = () => {
+    setShowUpgradeModal(false);
+    router.push('/payment');
   };
 
   const onStateChange = (state) => {
@@ -179,7 +198,7 @@ export default function VideosScreen() {
 
       <View style={{ height: 64 }} />
 
-      {/* --- MODAL --- */}
+      {/* --- MODAL DE VIDEO PLAYER --- */}
       <Modal
         animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
         transparent={true}
@@ -207,7 +226,40 @@ export default function VideosScreen() {
           </View>
         </View>
       </Modal>
-      {/* --- FIN MODAL --- */}
+      {/* --- FIN MODAL DE VIDEO --- */}
+
+      {/* --- MODAL DE UPGRADE PARA USUARIOS FREE --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showUpgradeModal}
+        onRequestClose={closeUpgradeModal}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <Pressable onPress={closeUpgradeModal} style={styles.upgradeModalClose}>
+              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+            </Pressable>
+
+            <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+            
+            <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
+            <Text style={styles.upgradeModalText}>
+              Para acceder a nuestros videos exclusivos, necesitas mejorar tu plan.
+            </Text>
+
+            <Pressable style={styles.upgradeButton} onPress={goToPayment}>
+              <Ionicons name="add-circle" size={24} color="#FFF" />
+              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+            </Pressable>
+
+            <Pressable style={styles.upgradeCancelButton} onPress={closeUpgradeModal}>
+              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      {/* --- FIN MODAL DE UPGRADE --- */}
     </ScrollView>
   );
 }
@@ -296,5 +348,70 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 20,
+  },
+  // Estilos para el modal de upgrade
+  upgradeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  upgradeModalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#111827',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  upgradeModalClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  upgradeModalTitle: {
+    color: '#E5E7EB',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  upgradeModalText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    marginBottom: 15,
+    gap: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  upgradeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  upgradeCancelButton: {
+    paddingVertical: 10,
+  },
+  upgradeCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
   },
 });

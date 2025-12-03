@@ -1,9 +1,18 @@
 /* app/entreno/index.jsx
 ────────────────────────────────────────────────────────────────────────────
-Pantalla principal de entrenamiento — v2.1
+Pantalla principal de entrenamiento — v4.0 ULTIMATE EDITION 🔥
 - Última sesión por RUTINA (last_session_<id>), rehidratación al foco.
 - Carruseles corrigidos anti-NaN y claves re-montables tras hidratar.
 - Estados: C / NC / OE (compat con datos antiguos "OJ").
+- Guardado consolidado al final del día con botón "Terminar Día".
+- Los ejercicios sin estado usan valores del día anterior automáticamente.
+- 🔥 NUEVO: Modal épico con estadísticas comparativas y análisis de mejora
+  • 1RM Estimado con fórmula científica
+  • Volumen Total (clave para hipertrofia)
+  • Carga Media (intensidad promedio)
+  • Comparación automática con semana anterior
+  • Destacado de mayor mejora por ejercicio
+  • Animaciones y diseño premium
 - Botones extra por ejercicio:
   • TC: Modal con Técnica Correcta desde exercises.json.
   • Vídeo: Modal con reproductor YouTube (react-native-youtube-iframe).
@@ -25,6 +34,8 @@ import {
   Pressable,
   Modal,
   ScrollView,
+  Animated,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,14 +45,15 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import YoutubeIframe from 'react-native-youtube-iframe';
 import Stopwatch from '../../components/Stopwatch';
+import { useNavigation } from '@react-navigation/native';
+import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 
-// ⚠️ Ajusta la ruta si tu JSON cambia de sitio:
-import rawDB from '../../src/data/exercises.json';
 
 const { width } = Dimensions.get('window');
 const ARROW_W = 56;
 const ESTADOS = ['C', 'NC', 'OE']; // ← OJ → OE
-const SEMANAS_MAX = 12;
+const SEMANAS_MAX = 200;
 
 const EXTRA_ABBR = {
   Descendentes: 'DESC',
@@ -59,6 +71,16 @@ function getTrendIcon(curr, prev) {
   if (c > p) return { name: 'arrow-up', color: '#3b82f6' };
   if (c < p) return { name: 'arrow-down', color: '#ef4444' };
   return { name: 'remove', color: '#6b7280' };
+}
+
+/* ───────── Cálculo de 1RM (Fórmula Epley) ───────── */
+function calculate1RM(peso, reps) {
+  if (!peso || !reps || reps <= 0) return 0;
+  const p = Number(peso);
+  const r = Number(reps);
+  if (isNaN(p) || isNaN(r)) return 0;
+  // Fórmula: 1RM ≈ Peso / (1.0278 - 0.0278 × Reps)
+  return p / (1.0278 - 0.0278 * r);
 }
 
 /* ───────── Normalización de rutina guardada ───────── */
@@ -89,49 +111,38 @@ const normalizeStr = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-function buildExerciseIndex(db) {
-  // Estructura: { MUSCULO: { byName: {originalName: obj}, byNorm: {normName: obj} } }
+/**
+ * Construye un índice de ejercicios desde una lista plana de ejercicios de MongoDB
+ * Estructura MongoDB: [{ _id, name, muscle, tecnicaCorrecta, videoId }, ...]
+ * Resultado: { MUSCULO: { byName: {originalName: obj}, byNorm: {normName: obj} } }
+ */
+function buildExerciseIndex(exercises) {
   const out = {};
-  for (const grupo of db || []) {
-    const mus = String(grupo?.musculo || '').trim();
-    if (!mus) continue;
+  for (const ej of exercises || []) {
+    const mus = String(ej?.muscle || '').trim();
+    const name = String(ej?.name || '').trim();
+    if (!mus || !name) continue;
+    
     if (!out[mus]) out[mus] = { byName: {}, byNorm: {} };
-    for (const ej of grupo?.ejercicios || []) {
-      const name = String(ej?.nombre || '').trim();
-      if (!name) continue;
-      out[mus].byName[name] = ej;
-      out[mus].byNorm[normalizeStr(name)] = ej;
-    }
+    
+    // Adaptamos la estructura MongoDB a la esperada por el código existente
+    const adaptedExercise = {
+      nombre: ej.name,
+      musculo: ej.muscle,
+      tecnicaCorrecta: ej.tecnicaCorrecta || [],
+      videoId: ej.videoId || null,
+      _id: ej._id
+    };
+    
+    out[mus].byName[name] = adaptedExercise;
+    out[mus].byNorm[normalizeStr(name)] = adaptedExercise;
   }
   return out;
-}
-const EX_INDEX = buildExerciseIndex(rawDB);
-
-function findExercise(musculo, nombre) {
-  const group = EX_INDEX[String(musculo || '').trim()];
-  if (!group) {
-    // Fallback: buscar por nombre en TODOS los músculos si el músculo no cuadra
-    const norm = normalizeStr(nombre);
-    for (const mus of Object.keys(EX_INDEX)) {
-      const g = EX_INDEX[mus];
-      if (g.byName[nombre]) return g.byName[nombre];
-      if (g.byNorm[norm]) return g.byNorm[norm];
-    }
-    return null;
-  }
-  // 1) exacto
-  if (group.byName[nombre]) return group.byName[nombre];
-  // 2) normalizado
-  const norm = normalizeStr(nombre);
-  if (group.byNorm[norm]) return group.byNorm[norm];
-  // 3) incluye/contiene (búsqueda tolerante)
-  const candidates = Object.keys(group.byNorm);
-  const hit = candidates.find((k) => k.includes(norm) || norm.includes(k));
-  return hit ? group.byNorm[hit] : null;
 }
 
 /* ───────── Carrusel reutilizable ───────── */
 function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
+  const { theme } = useTheme();
   const listRef = useRef(null);
   const [wrapW, setWrapW] = useState(Dimensions.get('window').width);
   const SLIDE_W = Math.max(1, wrapW - ARROW_W * 2);
@@ -149,7 +160,10 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
 
   return (
     <View
-      style={styles.carouselWrap}
+      style={[styles.carouselWrap, {
+        borderColor: theme.border,
+        backgroundColor: theme.backgroundSecondary
+      }]}
       onLayout={(e) => setWrapW(e.nativeEvent.layout.width)}
     >
       <Pressable
@@ -159,10 +173,14 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
         style={({ pressed }) => [
           styles.arrowBtn,
           styles.arrowLeft,
+          {
+            backgroundColor: theme.iconButton,
+            borderColor: theme.borderLight
+          },
           pressed && styles.arrowBtnPressed,
         ]}
       >
-        <Text style={styles.arrowGlyph}>‹</Text>
+        <Text style={[styles.arrowGlyph, { color: theme.text }]}>‹</Text>
       </Pressable>
 
       <FlatList
@@ -196,16 +214,21 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
         style={({ pressed }) => [
           styles.arrowBtn,
           styles.arrowRight,
+          {
+            backgroundColor: theme.iconButton,
+            borderColor: theme.borderLight
+          },
           pressed && styles.arrowBtnPressed,
         ]}
       >
-        <Text style={styles.arrowGlyph}>›</Text>
+        <Text style={[styles.arrowGlyph, { color: theme.text }]}>›</Text>
       </Pressable>
     </View>
   );
 }
 
 function WeeksCarousel({ selected, onChange }) {
+  const { theme } = useTheme();
   const data = Array.from({ length: SEMANAS_MAX }, (_, i) => i + 1);
   return (
     <Carousel
@@ -214,8 +237,11 @@ function WeeksCarousel({ selected, onChange }) {
       onIndexChange={(i) => onChange(i + 1)}
       initialIndex={Math.max(0, (selected || 1) - 1)}
       renderItem={({ item }) => (
-        <View style={styles.centerPill}>
-          <Text style={[styles.bigLabel, selected === item && styles.bigLabelSel]}>
+        <View style={[styles.centerPill, {
+          backgroundColor: theme.cardBackground,
+          borderColor: theme.cardBorder
+        }]}>
+          <Text style={[styles.bigLabel, { color: theme.text }, selected === item && { color: theme.primary }]}>
             Semana {item}
           </Text>
         </View>
@@ -225,6 +251,7 @@ function WeeksCarousel({ selected, onChange }) {
 }
 
 function DaysCarousel({ total, selected, onChange }) {
+  const { theme } = useTheme();
   const safeTotal =
     Math.max(1, Number.isFinite(Number(total)) ? Number(total) : 0) || 1;
   const data = Array.from({ length: safeTotal }, (_, i) => i + 1);
@@ -237,8 +264,11 @@ function DaysCarousel({ total, selected, onChange }) {
       onIndexChange={onChange}
       initialIndex={safeSelected}
       renderItem={({ item }) => (
-        <View style={styles.centerPill}>
-          <Text style={[styles.bigLabel, safeSelected === item - 1 && styles.bigLabelSel]}>
+        <View style={[styles.centerPill, {
+          backgroundColor: theme.cardBackground,
+          borderColor: theme.cardBorder
+        }]}>
+          <Text style={[styles.bigLabel, { color: theme.text }, safeSelected === item - 1 && { color: theme.primary }]}>
             Día {item}
           </Text>
         </View>
@@ -247,8 +277,1201 @@ function DaysCarousel({ total, selected, onChange }) {
   );
 }
 
+/* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
+function StatsModal({ visible, onClose, stats }) {
+  const { theme } = useTheme();
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0);
+      fadeAnim.setValue(0);
+    }
+  }, [visible, scaleAnim, fadeAnim]);
+
+  if (!stats) return null;
+
+  const { current, previous, bestImprovement } = stats;
+
+  const getDiffColor = (diff) => {
+    if (!diff || diff === 0) return theme.textSecondary;
+    return diff > 0 ? '#10b981' : '#ef4444';
+  };
+
+  const getDiffIcon = (diff) => {
+    if (!diff || diff === 0) return 'remove';
+    return diff > 0 ? 'trending-up' : 'trending-down';
+  };
+
+  const formatNumber = (num) => {
+    if (num == null || isNaN(num)) return '0';
+    return Number(num).toFixed(1);
+  };
+
+  const formatDiff = (diff) => {
+    if (diff == null || isNaN(diff)) return '';
+    const sign = diff > 0 ? '+' : '';
+    return `${sign}${formatNumber(diff)}`;
+  };
+
+  const formatPercent = (diff, prev) => {
+    if (!prev || prev === 0 || !diff) return '';
+    const percent = (diff / prev) * 100;
+    const sign = percent > 0 ? '+' : '';
+    return ` (${sign}${percent.toFixed(1)}%)`;
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <View style={styles.statsModalOverlay}>
+        <Animated.View
+          style={[
+            styles.statsModalCard,
+            {
+              backgroundColor: theme.backgroundSecondary,
+              borderColor: theme.border,
+              transform: [{ scale: scaleAnim }],
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          {/* Icono de cierre */}
+          <Pressable onPress={onClose} style={styles.statsModalClose}>
+            <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+          </Pressable>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.statsScrollView}
+            contentContainerStyle={styles.statsScrollContent}
+          >
+            {/* 🏆 Encabezado con trofeo */}
+            <View style={styles.statsHeader}>
+              <View style={styles.trophyContainer}>
+                <Ionicons name="trophy" size={64} color="#fbbf24" />
+              </View>
+              <Text style={[styles.statsTitle, { color: theme.text }]}>
+                ¡Enhorabuena!
+              </Text>
+              <Text style={[styles.statsSubtitle, { color: theme.primary }]}>
+                Has superado tus metas
+              </Text>
+            </View>
+
+            {/* 💪 Imagen motivacional */}
+            <View style={styles.motivationalSection}>
+              <View style={styles.dumbbellContainer}>
+                <Ionicons name="barbell" size={80} color={theme.primary} />
+              </View>
+            </View>
+
+            {/* 📊 Estadísticas comparativas */}
+            <View style={styles.statsSection}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                {previous ? '📊 Comparación con Semana Anterior' : '📊 Estadísticas de Hoy'}
+              </Text>
+              {/* Volumen Total */}
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                <View style={styles.statHeader}>
+                  <Ionicons name="cube" size={24} color="#8b5cf6" />
+                  <Text style={[styles.statTitle, { color: theme.text }]}>Volumen Total</Text>
+                </View>
+                <View style={styles.statRow}>
+                  <Text style={[styles.statValue, { color: theme.primary }]}>
+                    {formatNumber(current.volume)} kg
+                  </Text>
+                  {previous && (
+                    <View style={styles.statDiff}>
+                      <Ionicons
+                        name={getDiffIcon(current.volume - previous.volume)}
+                        size={20}
+                        color={getDiffColor(current.volume - previous.volume)}
+                      />
+                      <Text style={[styles.statDiffText, { color: getDiffColor(current.volume - previous.volume) }]}>
+                        {formatDiff(current.volume - previous.volume)}
+                        {formatPercent(current.volume - previous.volume, previous.volume)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {previous && (
+                  <Text style={[styles.statPrevious, { color: theme.textSecondary }]}>
+                    Anterior: {formatNumber(previous.volume)} kg
+                  </Text>
+                )}
+              </View>
+              {/* 1RM Estimado */}
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                <View style={styles.statHeader}>
+                  <Ionicons name="flash" size={24} color="#f59e0b" />
+                  <Text style={[styles.statTitle, { color: theme.text }]}>1RM Estimado</Text>
+                </View>
+                <View style={styles.statRow}>
+
+                  {previous && (
+                    <View style={styles.statDiff}>
+                      <Ionicons
+                        name={getDiffIcon(current.oneRM - previous.oneRM)}
+                        size={20}
+                        color={getDiffColor(current.oneRM - previous.oneRM)}
+                      />
+                      <Text style={[styles.statDiffText, { color: getDiffColor(current.oneRM - previous.oneRM) }]}>
+                        {formatDiff(current.oneRM - previous.oneRM)}
+                        {formatPercent(current.oneRM - previous.oneRM, previous.oneRM)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+
+
+              {/* Carga Media */}
+              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                <View style={styles.statHeader}>
+                  <Ionicons name="analytics" size={24} color="#06b6d4" />
+                  <Text style={[styles.statTitle, { color: theme.text }]}>Carga Media</Text>
+                </View>
+                <View style={styles.statRow}>
+                  {previous && (
+                    <View style={styles.statDiff}>
+                      <Ionicons
+                        name={getDiffIcon(current.avgLoad - previous.avgLoad)}
+                        size={20}
+                        color={getDiffColor(current.avgLoad - previous.avgLoad)}
+                      />
+                      <Text style={[styles.statDiffText, { color: getDiffColor(current.avgLoad - previous.avgLoad) }]}>
+                        {formatDiff(current.avgLoad - previous.avgLoad)}
+                        {formatPercent(current.avgLoad - previous.avgLoad, previous.avgLoad)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {/* 🌟 Mayor mejora */}
+            {bestImprovement && (
+              <View style={[styles.bestImprovementSection, { backgroundColor: theme.success + '20', borderColor: theme.success }]}>
+                <View style={styles.bestImprovementHeader}>
+                  <Ionicons name="star" size={28} color="#fbbf24" />
+                  <Text style={[styles.bestImprovementTitle, { color: theme.text }]}>
+                    ¡Tu Mayor Mejora!
+                  </Text>
+                </View>
+                <Text style={[styles.bestImprovementExercise, { color: theme.primary }]}>
+                  {bestImprovement.exercise}
+                </Text>
+                <Text style={[styles.bestImprovementText, { color: theme.text }]}>
+                  {bestImprovement.metric}: {formatDiff(bestImprovement.improvement)}{' '}
+                  {bestImprovement.unit}
+                  {formatPercent(bestImprovement.improvement, bestImprovement.previous)}
+                </Text>
+                <Text style={[styles.motivationalText, { color: theme.success }]}>
+                  ¡Sigue así! 💪
+                </Text>
+              </View>
+            )}
+
+            {/* Botón de cerrar */}
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: theme.primary }]}
+              onPress={onClose}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.closeButtonText}>¡Genial! 🎉</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 /* ───────── Componente principal ───────── */
+/* ───────── 🎓 TUTORIAL/ONBOARDING MODAL ───────── */
+const TOTAL_TUTORIAL_SLIDES = 5;
+
+function TutorialModal({ visible, onComplete }) {
+  const { theme } = useTheme();
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const scrollViewRef = useRef(null);
+  const { width: screenWidth } = Dimensions.get('window');
+
+  const goToSlide = (index) => {
+    if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;
+    setCurrentSlide(index);
+    scrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+  };
+
+  const handleScroll = (event) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const newIndex = Math.round(offsetX / screenWidth);
+    if (newIndex !== currentSlide && newIndex >= 0 && newIndex < TOTAL_TUTORIAL_SLIDES) {
+      setCurrentSlide(newIndex);
+    }
+  };
+
+  const getCoachMessage = () => {
+    switch (currentSlide) {
+      case 0: return "¡Bienvenido, recluta! Soy tu coach. Aquí no venimos a jugar, venimos a transformar.";
+      case 1: return "El orden es clave. Verde para lo hecho, Rojo para lo fallado. Sin excusas.";
+      case 2: return "Tu rival eres tú mismo de la semana pasada. ¡Destruye a ese fantasma!";
+      case 3: return "Cada repetición que hagas tiene significado. El sistema analiza todo.";
+      case 4: return "Ya tienes las herramientas. Ahora solo falta tu sudor. ¿Estás listo?";
+      default: return "A entrenar.";
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? onComplete : undefined}
+    >
+      <View style={[tutorialStyles.container, { backgroundColor: theme.background }]}>
+        {/* Efectos de fondo */}
+        <View style={[tutorialStyles.bgGradientTop, { backgroundColor: theme.primary + '10' }]} />
+        <View style={[tutorialStyles.bgGradientBottom, { backgroundColor: theme.success + '10' }]} />
+
+        {/* Barra de progreso */}
+        <View style={tutorialStyles.progressBar}>
+          {Array.from({ length: TOTAL_TUTORIAL_SLIDES }).map((_, idx) => (
+            <View
+              key={idx}
+              style={[
+                tutorialStyles.progressSegment,
+                {
+                  backgroundColor: idx <= currentSlide ? theme.primary : theme.border,
+                },
+              ]}
+            />
+          ))}
+        </View>
+
+        {/* Contenido de slides */}
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          style={tutorialStyles.slidesContainer}
+        >
+          {/* SLIDE 1: BIENVENIDA */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <View style={tutorialStyles.slideContent}>
+              <View style={tutorialStyles.logoContainer}>
+                <Image
+                  source={require('../../assets/logo.png')}
+                  style={tutorialStyles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Text style={[tutorialStyles.mainTitle, { color: theme.text }]}>
+                SISTEMA{'\n'}
+                <Text style={{ color: theme.primary }}>TITOGEREMITO</Text>
+              </Text>
+              <Text style={[tutorialStyles.subtitle, { color: theme.textSecondary }]}>
+                Tu progreso, medido al milímetro.
+              </Text>
+
+              <TouchableOpacity
+                style={[tutorialStyles.startButton, { backgroundColor: theme.primary }]}
+                onPress={() => goToSlide(1)}
+                activeOpacity={0.85}
+              >
+                <Text style={tutorialStyles.startButtonText}>INICIAR TUTORIAL</Text>
+                <Ionicons name="arrow-forward" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SLIDE 2: LOS BOTONES */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
+                  Lógica del Sistema
+                </Text>
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Cada repetición cuenta. Clasifica tu serie:
+                </Text>
+
+                {/* Card Completado */}
+                <View style={[tutorialStyles.card, tutorialStyles.cardSuccess, {
+                  backgroundColor: theme.success + '20',
+                  borderColor: theme.success + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: theme.success + '30' }]}>
+                    <Ionicons name="checkmark-circle" size={28} color={theme.success} />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: theme.success }]}>
+                      Completado (C)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      Objetivo cumplido. Los datos se guardan y sumas progreso.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Card No Completado */}
+                <View style={[tutorialStyles.card, tutorialStyles.cardError, {
+                  backgroundColor: '#ef4444' + '20',
+                  borderColor: '#ef4444' + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#ef4444' + '30' }]}>
+                    <Ionicons name="alert-circle" size={28} color="#ef4444" />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: '#ef4444' }]}>
+                      Fallo (NC)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      No llegaste al objetivo. No se guarda. Se repite la semana siguiente.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Card Otro Ejercicio */}
+                <View style={[tutorialStyles.card, {
+                  backgroundColor: '#f59e0b' + '20',
+                  borderColor: '#f59e0b' + '40'
+                }]}>
+                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#f59e0b' + '30' }]}>
+                    <Ionicons name="barbell" size={28} color="#f59e0b" />
+                  </View>
+                  <View style={tutorialStyles.cardContent}>
+                    <Text style={[tutorialStyles.cardTitle, { color: '#f59e0b' }]}>
+                      Variante (OE)
+                    </Text>
+                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
+                      Tuviste que cambiar el ejercicio por maquinaria ocupada.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 3: MODO FANTASMA */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <View style={tutorialStyles.ghostHeader}>
+                  <Ionicons name="eye-outline" size={36} color={theme.primary} />
+                  <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
+                    Modo{'\n'}Fantasma
+                  </Text>
+                </View>
+
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Tu objetivo siempre será superar tu registro anterior. El sistema te mostrará
+                  lo que hiciste la semana pasada como una "sombra".
+                </Text>
+
+                {/* Simulación UI */}
+                <View style={[tutorialStyles.ghostCard, {
+                  backgroundColor: theme.cardBackground,
+                  borderColor: theme.cardBorder
+                }]}>
+                  <View style={[tutorialStyles.ghostTag, { backgroundColor: theme.backgroundSecondary }]}>
+                    <Text style={[tutorialStyles.ghostTagText, { color: theme.textSecondary }]}>
+                      PESO MUERTO
+                    </Text>
+                  </View>
+
+                  {/* Semana Pasada */}
+                  <View style={tutorialStyles.ghostPrevious}>
+                    <View style={tutorialStyles.ghostLabel}>
+                      <Ionicons name="eye-outline" size={14} color={theme.textSecondary} />
+                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.textSecondary }]}>
+                        Semana Pasada
+                      </Text>
+                    </View>
+                    <View style={tutorialStyles.ghostValues}>
+                      <View style={[tutorialStyles.ghostValueBox, {
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
+                          120
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
+                          KG
+                        </Text>
+                      </View>
+                      <View style={[tutorialStyles.ghostValueBox, {
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
+                          8
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
+                          REPS
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Objetivo Hoy */}
+                  <View style={tutorialStyles.ghostToday}>
+                    <View style={tutorialStyles.ghostLabel}>
+                      <Ionicons name="flame" size={14} color={theme.primary} />
+                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.primary }]}>
+                        Objetivo Hoy
+                      </Text>
+                    </View>
+                    <View style={tutorialStyles.ghostValues}>
+                      <View style={[tutorialStyles.ghostValueBox, {
+                        backgroundColor: theme.primary + '20',
+                        borderColor: theme.primary
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
+                          122.5
+                        </Text>
+                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.primary }]}>
+                          KG
+                        </Text>
+                        <View style={[tutorialStyles.ghostBadge, { backgroundColor: theme.primary }]}>
+                          <Text style={tutorialStyles.ghostBadgeText}>+2.5</Text>
+                        </View>
+                      </View>
+                      <View style={[tutorialStyles.ghostValueBox, {
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border
+                      }]}>
+                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
+                          ?
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[tutorialStyles.ghostQuote, {
+                  backgroundColor: theme.backgroundSecondary,
+                  borderColor: theme.border
+                }]}>
+                  <Text style={[tutorialStyles.ghostQuoteText, { color: theme.text }]}>
+                    "Si no superas al fantasma, no hay progreso."
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 4: TUS DATOS */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={tutorialStyles.slideContent}>
+                <Ionicons name="analytics" size={48} color={theme.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text, textAlign: 'center' }]}>
+                  Tus Datos Cuentan
+                </Text>
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
+                  Cada vez que entrenes, el sistema guardará:
+                </Text>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Repeticiones por serie</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Peso levantado</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>Volumen total</Text>
+                </View>
+
+                <View style={[tutorialStyles.dataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                  <Text style={[tutorialStyles.dataText, { color: theme.text }]}>1RM estimado</Text>
+                </View>
+
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginTop: 24, textAlign: 'center' }]}>
+                  Podrás ver tu evolución completa en la sección de estadísticas.
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* SLIDE 5: MOTIVACIÓN FINAL */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <View style={tutorialStyles.slideContent}>
+              <View style={tutorialStyles.finalImageContainer}>
+                <Image
+                  source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                  style={tutorialStyles.finalImage}
+                  resizeMode="cover"
+                />
+                <View style={tutorialStyles.finalImageOverlay} />
+                <Text style={tutorialStyles.finalImageText}>
+                  NO PAIN{'\n'}
+                  <Text style={tutorialStyles.finalImageTextAccent}>NO GAIN</Text>
+                </Text>
+              </View>
+
+              <Text style={[tutorialStyles.finalText, { color: theme.text }]}>
+                El sistema está listo. El camino está marcado. Lo único que falta es tu voluntad.
+              </Text>
+
+              <TouchableOpacity
+                style={[tutorialStyles.finalButton, { backgroundColor: theme.success }]}
+                onPress={onComplete}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="trophy" size={28} color="#fff" />
+                <Text style={tutorialStyles.finalButtonText}>¡A DARLE CAÑA!</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Profesor Coach (fijo abajo) */}
+        <View style={[tutorialStyles.coachContainer, { backgroundColor: theme.background }]}>
+          <View style={tutorialStyles.coachContent}>
+            <View style={tutorialStyles.coachAvatarContainer}>
+              <View style={[tutorialStyles.coachAvatarGlow, { backgroundColor: theme.primary + '20' }]} />
+              <Image
+                source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                style={tutorialStyles.coachAvatar}
+                resizeMode="cover"
+              />
+            </View>
+
+            <View style={[tutorialStyles.coachBubble, {
+              backgroundColor: theme.cardBackground,
+              borderColor: theme.cardBorder
+            }]}>
+              <Text style={[tutorialStyles.coachText, { color: theme.text }]}>
+                {getCoachMessage()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Navegación */}
+          <View style={tutorialStyles.navigation}>
+            <TouchableOpacity
+              onPress={() => goToSlide(currentSlide - 1)}
+              disabled={currentSlide === 0}
+              style={[
+                tutorialStyles.navButton,
+                { backgroundColor: theme.iconButton },
+                currentSlide === 0 && tutorialStyles.navButtonDisabled
+              ]}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={24}
+                color={currentSlide === 0 ? theme.border : theme.text}
+              />
+            </TouchableOpacity>
+
+            <Text style={[tutorialStyles.navCounter, { color: theme.textSecondary }]}>
+              {currentSlide + 1} / {TOTAL_TUTORIAL_SLIDES}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? onComplete() : goToSlide(currentSlide + 1)}
+              style={[tutorialStyles.navButton, { backgroundColor: theme.primary }]}
+            >
+              <Ionicons
+                name={currentSlide === TOTAL_TUTORIAL_SLIDES - 1 ? "checkmark" : "chevron-forward"}
+                size={24}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* ───────── Estilos del Tutorial ───────── */
+const tutorialStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  bgGradientTop: {
+    position: 'absolute',
+    top: -100,
+    left: 0,
+    width: '100%',
+    height: 300,
+    borderRadius: 9999,
+    opacity: 0.3,
+  },
+  bgGradientBottom: {
+    position: 'absolute',
+    bottom: -100,
+    right: 0,
+    width: '100%',
+    height: 300,
+    borderRadius: 9999,
+    opacity: 0.3,
+  },
+  progressBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  progressSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+  },
+  slidesContainer: {
+    flex: 1,
+  },
+  slide: {
+    flex: 1,
+  },
+  slideScroll: {
+    flex: 1,
+  },
+  slideContent: {
+    flex: 1,
+    padding: 24,
+    paddingBottom: 180,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+    marginTop: 40,
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+  },
+  mainTitle: {
+    fontSize: 40,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -1,
+  },
+  subtitle: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 32,
+    fontWeight: '600',
+  },
+  startButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  startButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  slideTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  slideDescription: {
+    fontSize: 15,
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  cardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardContent: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  cardText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  ghostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 24,
+  },
+  ghostCard: {
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  ghostTag: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomLeftRadius: 12,
+    borderTopRightRadius: 20,
+  },
+  ghostTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  ghostPrevious: {
+    marginBottom: 24,
+    opacity: 0.5,
+  },
+  ghostToday: {
+    marginTop: 8,
+  },
+  ghostLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ghostLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  ghostValues: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  ghostValueBox: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    position: 'relative',
+  },
+  ghostValueNumber: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  ghostValueLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ghostBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ghostBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ghostQuote: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  ghostQuoteText: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  dataCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  dataText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  finalImageContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    position: 'relative',
+  },
+  finalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  finalImageOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  finalImageText: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#fff',
+    fontStyle: 'italic',
+  },
+  finalImageTextAccent: {
+    color: '#ef4444',
+  },
+  finalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  finalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  finalButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  coachContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 20,
+  },
+  coachContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 16,
+  },
+  coachAvatarContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+  },
+  coachAvatarGlow: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 32,
+    opacity: 0.3,
+  },
+  coachAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  coachBubble: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+  },
+  coachText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  navigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonDisabled: {
+    opacity: 0.3,
+  },
+  navCounter: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    marginBottom: 24,
+    opacity: 0.5,
+  },
+  ghostToday: {
+    marginTop: 8,
+  },
+  ghostLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ghostLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  ghostValues: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  ghostValueBox: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    position: 'relative',
+  },
+  ghostValueNumber: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  ghostValueLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ghostBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ghostBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ghostQuote: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  ghostQuoteText: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  dataCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  dataText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  finalImageContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    position: 'relative',
+  },
+  finalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  finalImageOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  finalImageText: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#fff',
+    fontStyle: 'italic',
+  },
+  finalImageTextAccent: {
+    color: '#ef4444',
+  },
+  finalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  finalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  finalButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  coachContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 20,
+  },
+  coachContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 16,
+  },
+  coachAvatarContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+  },
+  coachAvatarGlow: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 32,
+    opacity: 0.3,
+  },
+  coachAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  coachBubble: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+  },
+  coachText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  navigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonDisabled: {
+    opacity: 0.3,
+  },
+  navCounter: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+});
+
 export default function Entreno() {
+  const { theme } = useTheme();
+  const { user } = useAuth();
+  const navigation = useNavigation();
   const [activeId, setActiveId] = useState(null);  // rutina activa
   const [hydrated, setHydrated] = useState(false); // ya cargamos última sesión
   const [rutina, setRutina] = useState(null);
@@ -262,7 +1485,67 @@ export default function Entreno() {
   const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
   const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false });
 
+  // Modal de Sin Rutina Activa
+  const [showNoRoutineModal, setShowNoRoutineModal] = useState(false);
+
+  // 🎓 Tutorial Modal (solo primera vez)
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  // 🔥 NUEVO: Modal de estadísticas
+  const [statsModal, setStatsModal] = useState({ visible: false, stats: null });
+
+  // Modal de Upgrade para FREEUSER
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
   const listRef = useRef(null);
+
+// 🆕 Estado para ejercicios desde MongoDB
+  const [exercises, setExercises] = useState([]);
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
+  const { token } = useAuth();
+  // 🆕 Índice dinámico de ejercicios
+  const exercisesIndex = useMemo(() => {
+    return buildExerciseIndex(exercises);
+  }, [exercises]);
+  // 🆕 Función findExercise que usa el índice dinámico
+  const findExerciseInIndex = useCallback((musculo, nombre) => {
+    const group = exercisesIndex[String(musculo || '').trim()];
+    if (!group) {
+      // Fallback: buscar por nombre en TODOS los músculos
+      const norm = normalizeStr(nombre);
+      for (const mus of Object.keys(exercisesIndex)) {
+        const g = exercisesIndex[mus];
+        if (g.byName[nombre]) return g.byName[nombre];
+        if (g.byNorm[norm]) return g.byNorm[norm];
+      }
+      return null;
+    }
+    // 1) exacto
+    if (group.byName[nombre]) return group.byName[nombre];
+    // 2) normalizado
+    const norm = normalizeStr(nombre);
+    if (group.byNorm[norm]) return group.byNorm[norm];
+    // 3) incluye/contiene (búsqueda tolerante)
+    const candidates = Object.keys(group.byNorm);
+    const hit = candidates.find((k) => k.includes(norm) || norm.includes(k));
+    return hit ? group.byNorm[hit] : null;
+  }, [exercisesIndex]);
+  // 🆕 Fetch exercises from API
+  const fetchAllExercises = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/exercises`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setExercises(data.exercises);
+      }
+    } catch (error) {
+      console.error(' fetching exercises:', error);
+    }
+  }, [API_URL, token]);
+
+
 
   /* Guardado de última sesión (semana/día) — por RUTINA */
   const saveLastSession = useCallback(
@@ -275,7 +1558,7 @@ export default function Entreno() {
           sessionKeyFor(activeId),
           JSON.stringify({ lastSemana, lastDiaIdx, updatedAt: Date.now() })
         );
-      } catch {}
+      } catch { }
     },
     [activeId, hydrated]
   );
@@ -295,7 +1578,7 @@ export default function Entreno() {
     const progStr = result[2]?.[1] || '{}';
 
     if (!idAct) {
-      Alert.alert('Sin rutina activa', 'Selecciona una rutina en Rutinas');
+      setShowNoRoutineModal(true);
       setHydrated(true);
       return;
     }
@@ -324,15 +1607,40 @@ export default function Entreno() {
         setSemana(1);
         setDiaIdx(0);
       }
-    } catch {}
+    } catch { }
 
     setHydrated(true);
   }, []);
 
-  // Al montar
+  // Verificar si es primera vez (mostrar tutorial)
   useEffect(() => {
+    const checkFirstTime = async () => {
+      try {
+        const hasSeenTutorial = await AsyncStorage.getItem('has_seen_tutorial');
+        if (!hasSeenTutorial && hydrated && rutina) {
+          setShowTutorial(true);
+        }
+      } catch (e) {
+        console.warn('Error checking tutorial status', e);
+      }
+    };
+    checkFirstTime();
+  }, [hydrated, rutina]);
+
+  const completeTutorial = async () => {
+    try {
+      await AsyncStorage.setItem('has_seen_tutorial', 'true');
+      setShowTutorial(false);
+    } catch (e) {
+      console.warn('Error saving tutorial status', e);
+    }
+  };
+
+// Al montar
+  useEffect(() => {
+    fetchAllExercises(); // 🆕 Fetch exercises from MongoDB
     hydrate();
-  }, [hydrate]);
+  }, [hydrate, fetchAllExercises])
 
   // Cada vez que la pantalla vuelve a foco
   useFocusEffect(
@@ -364,67 +1672,273 @@ export default function Entreno() {
     saveLastSession(semana, diaIdx);
   }, [semana, diaIdx, hydrated, saveLastSession]);
 
-  const setEstadoEj = async (clave, val, ejercicioCompleto) => {
-    // Compat: si tenías "OJ" guardado, lo tratamos como "OE" a partir de ahora
+  /* ───────── Cambio de estado SIN guardado inmediato ───────── */
+  const setEstadoEjLocal = (clave, val) => {
+    // Solo cambio local del estado, NO guardamos en AsyncStorage aquí
     const nextVal = val === 'OJ' ? 'OE' : val;
+    setProg((prev) => ({ ...prev, [clave]: nextVal }));
+  };
 
-    const nextProg = { ...prog, [clave]: nextVal };
-    setProg(nextProg);
+  /* ───────── Buscar datos del día anterior ───────── */
+  const findPrevDayData = (exerciseId, serieIdx, field) => {
+    // Buscar en el día anterior de esta semana
+    if (diaIdx > 0) {
+      const keyPrevDay = `${semana}|${diaIdx - 1}|${exerciseId}|${serieIdx}`;
+      const data = prog[keyPrevDay]?.[field];
+      if (data) return data;
+    }
 
-    // Persistimos también la última sesión por rutina (si hidratados)
-    if (activeId) {
-      const sessionData = JSON.stringify({
-        lastSemana: semana,
-        lastDiaIdx: diaIdx,
-        updatedAt: Date.now(),
+    // Si no hay día anterior en esta semana, buscar en la última semana
+    for (let w = semana - 1; w > 0; w--) {
+      const key = `${w}|${diaIdx}|${exerciseId}|${serieIdx}`;
+      const data = prog[key]?.[field];
+      if (data) return data;
+    }
+
+    return null;
+  };
+
+  /* ───────── Calcular estadísticas de una sesión ───────── */
+  const calculateSessionStats = (ejerciciosDia, week) => {
+    let totalVolume = 0;
+    let totalReps = 0;
+    let max1RM = 0;
+    const exerciseStats = {};
+
+    ejerciciosDia.forEach((ejercicio) => {
+      let exerciseVolume = 0;
+      let exerciseReps = 0;
+      let exercise1RM = 0;
+
+      (ejercicio.series || []).forEach((serie, idx) => {
+        const serieKey = `${week}|${diaIdx}|${ejercicio.id}|${idx}`;
+        const datosSerie = prog[serieKey] || {};
+        const reps = Number(datosSerie.reps) || 0;
+        const peso = Number(datosSerie.peso) || 0;
+
+        if (reps > 0 && peso > 0) {
+          const volume = reps * peso;
+          exerciseVolume += volume;
+          exerciseReps += reps;
+          totalVolume += volume;
+          totalReps += reps;
+
+          const serieRM = calculate1RM(peso, reps);
+          if (serieRM > exercise1RM) exercise1RM = serieRM;
+          if (serieRM > max1RM) max1RM = serieRM;
+        }
       });
-      try {
+
+      exerciseStats[ejercicio.id] = {
+        name: ejercicio.nombre,
+        volume: exerciseVolume,
+        reps: exerciseReps,
+        oneRM: exercise1RM,
+        avgLoad: exerciseReps > 0 ? exerciseVolume / exerciseReps : 0,
+      };
+    });
+
+    return {
+      oneRM: max1RM,
+      volume: totalVolume,
+      avgLoad: totalReps > 0 ? totalVolume / totalReps : 0,
+      totalReps,
+      exerciseStats,
+    };
+  };
+
+  /* ───────── Encontrar mayor mejora ───────── */
+  const findBestImprovement = (currentStats, previousStats) => {
+    if (!previousStats) return null;
+
+    let bestImprovement = null;
+    let maxImprovementPercent = 0;
+
+    Object.keys(currentStats.exerciseStats).forEach((exerciseId) => {
+      const current = currentStats.exerciseStats[exerciseId];
+      const previous = previousStats.exerciseStats[exerciseId];
+
+      if (!previous) return;
+
+      // Comparar volumen
+      if (previous.volume > 0) {
+        const volumeDiff = current.volume - previous.volume;
+        const volumePercent = (volumeDiff / previous.volume) * 100;
+        if (volumePercent > maxImprovementPercent) {
+          maxImprovementPercent = volumePercent;
+          bestImprovement = {
+            exercise: current.name,
+            metric: 'Volumen',
+            improvement: volumeDiff,
+            previous: previous.volume,
+            unit: 'kg',
+          };
+        }
+      }
+
+      // Comparar 1RM
+      if (previous.oneRM > 0) {
+        const rmDiff = current.oneRM - previous.oneRM;
+        const rmPercent = (rmDiff / previous.oneRM) * 100;
+        if (rmPercent > maxImprovementPercent) {
+          maxImprovementPercent = rmPercent;
+          bestImprovement = {
+            exercise: current.name,
+            metric: '1RM Estimado',
+            improvement: rmDiff,
+            previous: previous.oneRM,
+            unit: 'kg',
+          };
+        }
+      }
+
+      // Comparar carga media
+      if (previous.avgLoad > 0) {
+        const avgDiff = current.avgLoad - previous.avgLoad;
+        const avgPercent = (avgDiff / previous.avgLoad) * 100;
+        if (avgPercent > maxImprovementPercent) {
+          maxImprovementPercent = avgPercent;
+          bestImprovement = {
+            exercise: current.name,
+            metric: 'Carga Media',
+            improvement: avgDiff,
+            previous: previous.avgLoad,
+            unit: 'kg',
+          };
+        }
+      }
+    });
+
+    return bestImprovement;
+  };
+
+  /* ───────── Guardar todo el día con estadísticas ───────── */
+  const saveAllDayData = async () => {
+    try {
+      const ejerciciosDia = (diasEj[diaIdx] || []).filter(Boolean);
+
+      if (ejerciciosDia.length === 0) {
+        Alert.alert('Sin ejercicios', 'No hay ejercicios en este día para guardar.');
+        return;
+      }
+
+      let ejerciciosProcesados = 0;
+      let ejerciciosConEstado = 0;
+      let ejerciciosSinEstado = 0;
+      const now = new Date().toISOString();
+      const logEntriesToAdd = [];
+
+      // Crear una copia del progreso actual
+      const nextProg = { ...prog };
+
+      // Recorrer cada ejercicio del día
+      for (const ejercicio of ejerciciosDia) {
+        const ejerKey = `${semana}|${diaIdx}|${ejercicio.id}`;
+        const currentState = prog[ejerKey];
+
+        // Si tiene estado (C, NC, OE), procesar normalmente
+        if (ESTADOS.includes(currentState) || currentState === 'OJ') {
+          ejerciciosConEstado++;
+
+          // Si el estado es 'C', agregar al log global
+          if (currentState === 'C' || currentState === 'OJ') {
+            const seriesData = (ejercicio.series || []).map((serie, idx) => {
+              const serieKey = `${ejerKey}|${idx}`;
+              const datosSerie = prog[serieKey] || {};
+              const reps = Number(datosSerie.reps) || 0;
+              const load = Number(datosSerie.peso) || 0;
+              const volume = reps * load;
+              const e1RM = reps > 0 ? load * (1 + reps / 30) : 0;
+
+              return {
+                id: `${now}-${ejercicio.id}-${idx}`,
+                date: now,
+                routineName: rutina?.nombre || 'Rutina Desconocida',
+                week: semana,
+                muscle: ejercicio.musculo,
+                exercise: ejercicio.nombre,
+                setIndex: idx + 1,
+                reps,
+                load,
+                volume,
+                e1RM,
+              };
+            });
+
+            logEntriesToAdd.push(...seriesData);
+          }
+        } else {
+          // Sin estado: usar datos del día anterior
+          ejerciciosSinEstado++;
+
+          // Buscar si hay datos del día anterior para copiar
+          let hayDatosAnteriores = false;
+
+          for (let idx = 0; idx < (ejercicio.series || []).length; idx++) {
+            const serieKey = `${ejerKey}|${idx}`;
+            const prevReps = findPrevDayData(ejercicio.id, idx, 'reps');
+            const prevPeso = findPrevDayData(ejercicio.id, idx, 'peso');
+
+            if (prevReps || prevPeso) {
+              hayDatosAnteriores = true;
+              // Copiar los datos del día anterior si no hay datos actuales
+              if (!prog[serieKey]?.reps && prevReps) {
+                nextProg[serieKey] = { ...(nextProg[serieKey] || {}), reps: prevReps };
+              }
+              if (!prog[serieKey]?.peso && prevPeso) {
+                nextProg[serieKey] = { ...(nextProg[serieKey] || {}), peso: prevPeso };
+              }
+            }
+          }
+        }
+
+        ejerciciosProcesados++;
+      }
+
+      // Actualizar el estado con los nuevos datos
+      setProg(nextProg);
+
+      // Guardar en AsyncStorage
+      if (activeId) {
+        const sessionData = JSON.stringify({
+          lastSemana: semana,
+          lastDiaIdx: diaIdx,
+          updatedAt: Date.now(),
+        });
+
         await AsyncStorage.multiSet([
           ['progress', JSON.stringify(nextProg)],
           [sessionKeyFor(activeId), sessionData],
         ]);
-      } catch (e) {
-        console.warn('No se pudo guardar el estado/sesión', e);
-      }
-    } else {
-      try {
+      } else {
         await AsyncStorage.setItem('progress', JSON.stringify(nextProg));
-      } catch {}
-    }
+      }
 
-    // Log global al marcar 'C'
-    if (nextVal === 'C' && ejercicioCompleto) {
-      try {
-        const now = new Date().toISOString();
-        const logEntriesToAdd = (ejercicioCompleto.series || []).map((serie, idx) => {
-          const serieKey = `${clave}|${idx}`;
-          const datosSerie = prog[serieKey] || {};
-          const reps = Number(datosSerie.reps) || 0;
-          const load = Number(datosSerie.peso) || 0;
-          const volume = reps * load;
-          const e1RM = reps > 0 ? load * (1 + reps / 30) : 0;
-          return {
-            id: `${now}-${ejercicioCompleto.id}-${idx}`,
-            date: now,
-            routineName: rutina?.nombre || 'Rutina Desconocida',
-            week: semana,
-            muscle: ejercicioCompleto.musculo,
-            exercise: ejercicioCompleto.nombre,
-            setIndex: idx + 1,
-            reps,
-            load,
-            volume,
-            e1RM,
-          };
-        });
-
+      // Guardar en GLOBAL_LOG si hay entradas
+      if (logEntriesToAdd.length > 0) {
         const currentLogJson = await AsyncStorage.getItem('GLOBAL_LOG');
         const currentLog = currentLogJson ? JSON.parse(currentLogJson) : [];
         const updatedLog = [...currentLog, ...logEntriesToAdd];
         await AsyncStorage.setItem('GLOBAL_LOG', JSON.stringify(updatedLog));
-      } catch (e) {
-        console.warn('No se pudo añadir al GLOBAL_LOG', e);
       }
+
+      // 🔥 CALCULAR ESTADÍSTICAS Y MOSTRAR MODAL ÉPICO
+      const currentStats = calculateSessionStats(ejerciciosDia, semana);
+      const previousStats = semana > 1 ? calculateSessionStats(ejerciciosDia, semana - 1) : null;
+      const bestImprovement = findBestImprovement(currentStats, previousStats);
+
+      setStatsModal({
+        visible: true,
+        stats: {
+          current: currentStats,
+          previous: previousStats,
+          bestImprovement,
+        },
+      });
+
+    } catch (e) {
+      console.error('Error al guardar el día:', e);
+      Alert.alert('Error', 'No se pudo guardar el día completo. Por favor, intenta de nuevo.');
     }
   };
 
@@ -435,6 +1949,7 @@ export default function Entreno() {
     };
     setProg(nextProg);
 
+    // Guardado inmediato para las series (mantener comportamiento original)
     if (activeId) {
       const sessionData = JSON.stringify({
         lastSemana: semana,
@@ -453,7 +1968,7 @@ export default function Entreno() {
     } else {
       try {
         await AsyncStorage.setItem('progress', JSON.stringify(nextProg));
-      } catch {}
+      } catch { }
     }
   };
 
@@ -520,7 +2035,51 @@ export default function Entreno() {
     }
   };
 
-  if (!rutina) return <View style={styles.container} />;
+  if (!rutina) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        {/* Modal Sin Rutina Activa */}
+        <Modal
+          visible={showNoRoutineModal}
+          transparent
+          animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
+          onRequestClose={() => setShowNoRoutineModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.noRoutineCard, {
+              backgroundColor: theme.backgroundSecondary,
+              borderColor: theme.border
+            }]}>
+              <View style={styles.noRoutineIconContainer}>
+                <Ionicons name="fitness-outline" size={64} color={theme.primary} />
+              </View>
+
+              <Text style={[styles.noRoutineTitle, { color: theme.text }]}>
+                Sin rutina activa
+              </Text>
+
+              <Text style={[styles.noRoutineDescription, { color: theme.textSecondary }]}>
+                Para comenzar a entrenar, primero necesitas seleccionar una rutina activa.
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  setShowNoRoutineModal(false);
+                  navigation.navigate('rutinas/index');
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.actionButtonText}>Ir a Rutinas</Text>
+              </TouchableOpacity>
+
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
 
   const ejerciciosDia = (diasEj[diaIdx] || []).filter(Boolean);
 
@@ -531,12 +2090,12 @@ export default function Entreno() {
         animated: true,
         viewPosition: 0.3,
       });
-    } catch {}
+    } catch { }
   };
 
   // Abrir Técnica Correcta (TC)
   const onOpenTC = (item) => {
-    const ej = findExercise(item.musculo, item.nombre);
+const ej = findExerciseInIndex(item.musculo, item.nombre);
     if (!ej || !Array.isArray(ej.tecnicaCorrecta) || ej.tecnicaCorrecta.length === 0) {
       Alert.alert('Técnica no disponible', 'No hay técnica registrada para este ejercicio.');
       return;
@@ -546,7 +2105,12 @@ export default function Entreno() {
 
   // Abrir Vídeo
   const onOpenVideo = (item) => {
-    const ej = findExercise(item.musculo, item.nombre);
+    if (user?.tipoUsuario === 'FREEUSER') {
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
     const id = ej?.videoId?.trim();
     if (!id) {
       Alert.alert('Vídeo no disponible', 'No hay vídeo asignado a este ejercicio.');
@@ -555,22 +2119,27 @@ export default function Entreno() {
     setVideoModal({ visible: true, videoId: id, playing: true });
   };
 
+  const goToPayment = () => {
+    setShowUpgradeModal(false);
+    navigation.navigate('payment');
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>{rutina.nombre}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{rutina.nombre}</Text>
 
           <View style={styles.center}>
             <Stopwatch />
           </View>
 
           <TouchableOpacity
-            style={styles.exportBtn}
+            style={[styles.exportBtn, { backgroundColor: theme.primary }]}
             onPress={exportWeekToExcel}
             activeOpacity={0.85}
           >
@@ -599,8 +2168,9 @@ export default function Entreno() {
 
         <FlatList
           ref={listRef}
-          contentContainerStyle={{ paddingBottom: 160 }}
+          contentContainerStyle={{ paddingBottom: 300 }}
           keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
           style={{ marginTop: 12 }}
           data={ejerciciosDia}
           keyExtractor={(it, i) => (it?.id ? String(it.id) : `idx-${i}`)}
@@ -614,18 +2184,21 @@ export default function Entreno() {
             const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
 
             return (
-              <View style={styles.card}>
+              <View style={[styles.card, {
+                backgroundColor: theme.cardBackground,
+                borderColor: theme.cardBorder
+              }]}>
                 <TouchableOpacity
-                  style={styles.cardHeader}
+                  style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder }]}
                   onPress={() => setOpenId(abierto ? null : item.id)}
                 >
-                  <Text style={styles.cardTxt}>
+                  <Text style={[styles.cardTxt, { color: theme.text }]}>
                     {item.musculo} — {item.nombre}
                   </Text>
                   <Ionicons
                     name={abierto ? 'chevron-up' : 'chevron-down'}
                     size={20}
-                    color="#374151"
+                    color={theme.textSecondary}
                   />
                 </TouchableOpacity>
 
@@ -635,12 +2208,20 @@ export default function Entreno() {
                     {ESTADOS.map((e) => (
                       <TouchableOpacity
                         key={e}
-                        style={[styles.radio, currentState === e && styles.radioSel]}
-                        onPress={() => setEstadoEj(ejerKey, e, item)}
+                        style={[
+                          styles.radio,
+                          { borderColor: theme.border },
+                          currentState === e && [styles.radioSel, {
+                            backgroundColor: theme.success,
+                            borderColor: theme.success
+                          }]
+                        ]}
+                        onPress={() => setEstadoEjLocal(ejerKey, e)}
                       >
                         <Text
                           style={[
                             styles.radioTxt,
+                            { color: theme.text },
                             currentState === e && styles.radioTxtSel,
                           ]}
                         >
@@ -653,18 +2234,24 @@ export default function Entreno() {
                   <View style={styles.toolsRow}>
                     <TouchableOpacity
                       onPress={() => onOpenTC(item)}
-                      style={styles.toolBtn}
+                      style={[styles.toolBtn, {
+                        backgroundColor: theme.backgroundTertiary,
+                        borderColor: theme.border
+                      }]}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.toolBtnTxt}>TC</Text>
+                      <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => onOpenVideo(item)}
-                      style={[styles.toolBtn, styles.toolBtnIcon]}
+                      style={[styles.toolBtn, styles.toolBtnIcon, {
+                        backgroundColor: theme.backgroundTertiary,
+                        borderColor: theme.border
+                      }]}
                       activeOpacity={0.85}
                     >
-                      <Ionicons name="videocam-outline" size={16} color="#fff" />
+                      <Ionicons name="videocam-outline" size={16} color={theme.text} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -672,12 +2259,12 @@ export default function Entreno() {
                 {abierto && (
                   <View style={styles.seriesBox}>
                     <View style={styles.serieRowHeader}>
-                      <Text style={[styles.serieLabel, { fontWeight: 'bold' }]}>#</Text>
+                      <Text style={[styles.serieLabel, { fontWeight: 'bold', color: theme.textSecondary }]}>#</Text>
                       <View style={styles.inputCol}>
-                        <Text style={styles.colLabel}>Reps</Text>
+                        <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Reps</Text>
                       </View>
                       <View style={styles.inputCol}>
-                        <Text style={styles.colLabel}>Kg</Text>
+                        <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Kg</Text>
                       </View>
                       <View style={{ flex: 1 }} />
                     </View>
@@ -688,7 +2275,7 @@ export default function Entreno() {
                       const prevKg = findPrev(semana, diaIdx, item.id, idx, 'peso');
                       const curr = prog[serieKey] || {};
 
-                      let bgColor = '#fff';
+                      let bgColor = theme.cardBackground;
                       const repMin = serie?.repMin != null ? Number(serie.repMin) : null;
                       const repMax = serie?.repMax != null ? Number(serie.repMax) : null;
                       const reps = curr?.reps != null ? Number(curr.reps) : null;
@@ -704,14 +2291,29 @@ export default function Entreno() {
                       const iconKg = getTrendIcon(curr.peso, prevKg);
 
                       return (
-                        <View key={idx} style={[styles.serieRow, { backgroundColor: bgColor }]}>
-                          <Text style={styles.serieLabel}>Serie {idx + 1}</Text>
+                        <View key={idx} style={[styles.serieRow, {
+                          backgroundColor: bgColor,
+                          borderColor: theme.border
+                        }]}>
+                          <View style={{ width: 70, justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
+                            {repMin !== null && repMax !== null && (
+                              <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
+                                {repMin}-{repMax}
+                              </Text>
+                            )}
+                          </View>
 
                           {/* Reps */}
                           <View style={styles.inputWithTrend}>
                             <TextInput
-                              style={styles.serieInput}
+                              style={[styles.serieInput, {
+                                borderColor: theme.inputBorder,
+                                backgroundColor: theme.inputBackground,
+                                color: theme.inputText
+                              }]}
                               placeholder={prevReps ? String(prevReps) : ''}
+                              placeholderTextColor={theme.placeholder}
                               keyboardType="numeric"
                               value={curr.reps || ''}
                               onFocus={() => {
@@ -721,7 +2323,7 @@ export default function Entreno() {
                                     animated: true,
                                     viewPosition: 0.3,
                                   });
-                                } catch {}
+                                } catch { }
                               }}
                               onChangeText={(v) => setSerieDato(serieKey, 'reps', v)}
                             />
@@ -738,8 +2340,13 @@ export default function Entreno() {
                           {/* Kg */}
                           <View style={styles.inputWithTrend}>
                             <TextInput
-                              style={styles.serieInput}
+                              style={[styles.serieInput, {
+                                borderColor: theme.inputBorder,
+                                backgroundColor: theme.inputBackground,
+                                color: theme.inputText
+                              }]}
                               placeholder={prevKg ? String(prevKg) : ''}
+                              placeholderTextColor={theme.placeholder}
                               keyboardType="numeric"
                               value={curr.peso || ''}
                               onChangeText={(v) => setSerieDato(serieKey, 'peso', v)}
@@ -755,9 +2362,11 @@ export default function Entreno() {
                           </View>
 
                           {/* SP flag */}
-                          {prevExceeded && <Text style={styles.sp}>¡SP!</Text>}
+                          {prevExceeded && <Text style={[styles.sp, { color: theme.primary }]}>¡SP!</Text>}
 
-                          <Text style={styles.extraTxt}>{EXTRA_ABBR[serie?.extra] || ''}</Text>
+                          <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
+                            {EXTRA_ABBR[serie?.extra] || ''}
+                          </Text>
                         </View>
                       );
                     })}
@@ -766,9 +2375,30 @@ export default function Entreno() {
               </View>
             );
           }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center' }}>Sin ejercicios</Text>}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.textSecondary }}>Sin ejercicios</Text>}
+          ListFooterComponent={
+            ejerciciosDia.length > 0 ? (
+              <View style={styles.footerButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.saveDayButton, { backgroundColor: theme.success }]}
+                  onPress={saveAllDayData}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="checkmark-circle" size={28} color="#fff" />
+                  <Text style={styles.saveDayButtonText}>Terminar Día y Guardar Registro</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
+          }
         />
       </View>
+
+      {/* 🔥 Modal de Estadísticas ÉPICO */}
+      <StatsModal
+        visible={statsModal.visible}
+        onClose={() => setStatsModal({ visible: false, stats: null })}
+        stats={statsModal.stats}
+      />
 
       {/* Modal Técnica Correcta */}
       <Modal
@@ -778,24 +2408,27 @@ export default function Entreno() {
         onRequestClose={() => setTechModal((s) => ({ ...s, visible: false }))}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: theme.border
+          }]}>
             <Pressable
               onPress={() => setTechModal((s) => ({ ...s, visible: false }))}
               style={styles.modalClose}
             >
-              <Ionicons name="close-outline" size={24} color="#fff" />
+              <Ionicons name="close-outline" size={24} color={theme.text} />
             </Pressable>
 
-            <Text style={styles.modalTitle}>Técnica: {techModal.title}</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Técnica: {techModal.title}</Text>
             <ScrollView style={{ maxHeight: 420 }}>
               {(techModal.tips || []).map((t, i) => (
                 <View key={i} style={styles.tipRow}>
-                  <Text style={styles.tipBullet}>•</Text>
-                  <Text style={styles.tipText}>{t}</Text>
+                  <Text style={[styles.tipBullet, { color: theme.primary }]}>•</Text>
+                  <Text style={[styles.tipText, { color: theme.textSecondary }]}>{t}</Text>
                 </View>
               ))}
               {!techModal.tips?.length && (
-                <Text style={styles.tipText}>No hay detalles de técnica.</Text>
+                <Text style={[styles.tipText, { color: theme.textSecondary }]}>No hay detalles de técnica.</Text>
               )}
             </ScrollView>
           </View>
@@ -812,14 +2445,17 @@ export default function Entreno() {
         }
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.videoCard}>
+          <View style={[styles.videoCard, {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: theme.border
+          }]}>
             <Pressable
               onPress={() =>
                 setVideoModal((s) => ({ ...s, visible: false, playing: false }))
               }
               style={styles.modalClose}
             >
-              <Ionicons name="close-outline" size={24} color="#fff" />
+              <Ionicons name="close-outline" size={24} color={theme.text} />
             </Pressable>
             {videoModal.videoId ? (
               <YoutubeIframe
@@ -834,18 +2470,52 @@ export default function Entreno() {
                 }}
               />
             ) : (
-              <Text style={{ color: '#fff' }}>Vídeo no disponible</Text>
+              <Text style={{ color: theme.text }}>Vídeo no disponible</Text>
             )}
           </View>
         </View>
       </Modal>
+
+      {/* Modal Upgrade */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showUpgradeModal}
+        onRequestClose={() => setShowUpgradeModal(false)}
+      >
+        <View style={styles.upgradeModalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <Pressable onPress={() => setShowUpgradeModal(false)} style={styles.upgradeModalClose}>
+              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+            </Pressable>
+            <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+            <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
+            <Text style={styles.upgradeModalText}>
+              Para ver esto sube de nivel
+            </Text>
+            <Pressable style={styles.upgradeButton} onPress={goToPayment}>
+              <Ionicons name="add-circle" size={24} color="#FFF" />
+              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+            </Pressable>
+            <Pressable style={styles.upgradeCancelButton} onPress={() => setShowUpgradeModal(false)}>
+              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🎓 Tutorial Modal (Primera Vez) */}
+      <TutorialModal
+        visible={showTutorial}
+        onComplete={completeTutorial}
+      />
     </KeyboardAvoidingView>
   );
 }
 
 /* ───────── styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fafafa', padding: 16 },
+  container: { flex: 1, padding: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, zIndex: 10 },
   title: { flexShrink: 1, fontSize: 18, fontWeight: 'bold', marginRight: 10, maxWidth: '45%' },
   center: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
@@ -856,7 +2526,6 @@ const styles = StyleSheet.create({
     flexBasis: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#3b82f6',
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
@@ -873,22 +2542,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderColor: '#d1d5db',
     borderWidth: 3,
     borderRadius: 12,
     minHeight: 52,
     overflow: 'hidden',
     paddingHorizontal: ARROW_W,
-    backgroundColor: '#f8fafc',
   },
   slide: { alignItems: 'center', justifyContent: 'center' },
   centerPill: {
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -897,17 +2562,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  bigLabel: { fontSize: 18, color: '#1f2937', fontWeight: '700' },
-  bigLabelSel: { color: '#3b82f6' },
+  bigLabel: { fontSize: 18, fontWeight: '700' },
   arrowBtn: {
     position: 'absolute',
     top: 6,
     bottom: 6,
     width: ARROW_W,
     borderRadius: 10,
-    backgroundColor: '#F2EAD9',
     borderWidth: 1,
-    borderColor: '#e6d9bf',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -919,15 +2581,13 @@ const styles = StyleSheet.create({
   arrowLeft: { left: 6 },
   arrowRight: { right: 6 },
   arrowBtnPressed: { transform: [{ translateY: 1 }], shadowOpacity: 0.05, elevation: 1 },
-  arrowGlyph: { fontSize: 20, fontWeight: '700', color: '#374151' },
+  arrowGlyph: { fontSize: 20, fontWeight: '700' },
 
   card: {
-    backgroundColor: '#fff',
     borderRadius: 10,
     marginBottom: 12,
     elevation: 2,
     borderWidth: 0.6,
-    borderColor: '#e5e7eb',
     paddingBottom: 8,
   },
   cardHeader: {
@@ -936,9 +2596,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 10,
     borderBottomWidth: 0.6,
-    borderColor: '#e5e7eb',
   },
-  cardTxt: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827' },
+  cardTxt: { flex: 1, fontSize: 14, fontWeight: '600' },
 
   stateToolsRow: {
     flexDirection: 'row',
@@ -956,21 +2615,19 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  radio: { borderWidth: 1, borderColor: '#9ca3af', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
-  radioSel: { backgroundColor: '#10b981', borderColor: '#10b981' },
+  radio: { borderWidth: 1, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  radioSel: {},
   radioTxt: { fontSize: 11, fontWeight: 'bold' },
   radioTxtSel: { color: '#fff' },
 
   toolBtn: {
-    backgroundColor: '#111827',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#1f2937',
   },
   toolBtnIcon: { paddingHorizontal: 9 },
-  toolBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 12, letterSpacing: 0.5 },
+  toolBtnTxt: { fontWeight: '700', fontSize: 12, letterSpacing: 0.5 },
 
   seriesBox: { marginTop: 8 },
   serieRowHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, paddingHorizontal: 10 },
@@ -981,7 +2638,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 0.6,
-    borderColor: '#e5e7eb',
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -1004,26 +2660,226 @@ const styles = StyleSheet.create({
   },
   trendIcon: {
     position: 'absolute',
-    right: 10,
+    right: 200,
     top: '50%',
     transform: [{ translateY: -7 }],
   },
   serieInput: {
     width: 60,
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 6,
     paddingVertical: 4,
     paddingHorizontal: 6,
     fontSize: 12,
     textAlign: 'center',
-    backgroundColor: '#fff',
   },
 
-  extraTxt: { marginLeft: 'auto', fontSize: 12, fontWeight: '600', color: '#374151' },
-  sp: { marginLeft: 8, fontSize: 12, fontWeight: '700', color: '#1e40af', flexShrink: 0 },
+  extraTxt: { marginLeft: 'auto', fontSize: 12, fontWeight: '600' },
+  sp: { marginLeft: 8, fontSize: 12, fontWeight: '700', flexShrink: 0 },
 
-  // Modales
+  // Botón al final de la lista (no flotante) ✅
+  footerButtonContainer: {
+    marginTop: 24,
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+  saveDayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+    minWidth: 240,
+  },
+  saveDayButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 12,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    padding: 0
+  },
+
+  // 🔥 Estilos del Modal de Estadísticas ÉPICO 🔥
+  statsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 0,
+    maxHeight: '100%',
+
+  },
+  statsModalCard: {
+    width: '95%',
+    height: '95%',
+    maxWidth: 500,
+    maxHeight: '90%',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  statsModalClose: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    zIndex: 10,
+  },
+  statsScrollView: {
+    flex: 1,
+    maxHeight: '100%',
+  },
+  statsScrollContent: {
+    paddingBottom: 20,
+  },
+  statsHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  trophyContainer: {
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 100,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+  },
+  statsTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  statsSubtitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  motivationalSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dumbbellContainer: {
+    padding: 16,
+  },
+  statsSection: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  statCard: {
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  statHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  statTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  statDiff: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statDiffText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statPrevious: {
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  bestImprovementSection: {
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 24,
+    borderWidth: 2,
+    alignItems: 'center',
+  },
+  bestImprovementHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  bestImprovementTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  bestImprovementExercise: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  bestImprovementText: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  motivationalText: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  closeButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Modales originales
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -1034,19 +2890,15 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '94%',
     maxWidth: 720,
-    backgroundColor: '#111827',
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#374151',
   },
   videoCard: {
     width: '94%',
-    backgroundColor: '#000',
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
     alignItems: 'center',
   },
   modalClose: {
@@ -1058,8 +2910,139 @@ const styles = StyleSheet.create({
     padding: 6,
     zIndex: 10,
   },
-  modalTitle: { color: '#E5E7EB', fontSize: 16, fontWeight: '800', marginBottom: 8 },
+  modalTitle: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
   tipRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  tipBullet: { color: '#93C5FD', fontSize: 18, lineHeight: 18, marginTop: 2 },
-  tipText: { color: '#E5E7EB', fontSize: 14, lineHeight: 20 },
+  tipBullet: { fontSize: 18, lineHeight: 18, marginTop: 2 },
+  tipText: { fontSize: 14, lineHeight: 20 },
+
+  // Modal Sin Rutina Activa
+  noRoutineCard: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  noRoutineIconContainer: {
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 50,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  noRoutineTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  noRoutineDescription: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  cancelButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    width: '100%',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  upgradeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  upgradeModalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#111827',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  upgradeModalClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  upgradeModalTitle: {
+    color: '#E5E7EB',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  upgradeModalText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    marginBottom: 15,
+    gap: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  upgradeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  upgradeCancelButton: {
+    paddingVertical: 10,
+  },
+  upgradeCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
+  },
 });
