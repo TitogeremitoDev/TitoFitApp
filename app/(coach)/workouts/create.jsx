@@ -234,7 +234,7 @@ const ExerciseCard = React.memo(({
 export default function CreateRoutineScreen() {
   const router = useRouter();
   const { id, name, days: paramDays } = useLocalSearchParams();
-  const { token } = useAuth();
+  const { token ,user} = useAuth();
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   const [routineName, setRoutineName] = useState(name || '');
@@ -679,14 +679,45 @@ export default function CreateRoutineScreen() {
   }, []);
 
   /* ───────── Save ───────── */
-  const handleSaveRoutine = async () => {
-    if (!routineName.trim()) {
-      Alert.alert('Error', 'Ingresa un nombre para la rutina');
-      return;
-    }
+const handleSaveRoutine = async () => {
+  if (!routineName.trim()) {
+    Alert.alert('Error', 'Ingresa un nombre para la rutina');
+    return;
+  }
 
-    setSaving(true);
-    try {
+  setSaving(true);
+  try {
+    const isFreeUser = user?.tipoUsuario === 'FREEUSER';
+    
+    if (isFreeUser) {
+      // GUARDADO LOCAL para usuarios FREE
+      await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
+      
+      // Actualizar metadatos en la lista 'rutinas'
+      const storedRutinas = await AsyncStorage.getItem('rutinas');
+      if (storedRutinas) {
+        let rutinasList = JSON.parse(storedRutinas);
+        const exists = rutinasList.find(r => r.id === id);
+        if (exists) {
+          rutinasList = rutinasList.map(r => 
+            r.id === id ? { ...r, nombre: routineName, updatedAt: new Date().toISOString() } : r
+          );
+        } else {
+          rutinasList.push({
+            id: id,
+            nombre: routineName,
+            origen: 'local',
+            updatedAt: new Date().toISOString(),
+            folder: null
+          });
+        }
+        await AsyncStorage.setItem('rutinas', JSON.stringify(rutinasList));
+      }
+      
+      Alert.alert('Éxito', 'Rutina guardada localmente');
+      router.back();
+    } else {
+      // GUARDADO EN MONGODB para usuarios PREMIUM/CLIENTE
       const daysArray = [];
       const entries = Object.entries(rutina);
       for (let i = 0; i < entries.length; i++) {
@@ -726,7 +757,7 @@ export default function CreateRoutineScreen() {
         const retryData = await retryResponse.json();
 
         if (retryData.success) {
-          Alert.alert('Éxito', 'Rutina creada como nueva');
+          Alert.alert('Éxito', 'Rutina creada como nueva en la nube');
           router.back();
           return;
         } else {
@@ -738,18 +769,19 @@ export default function CreateRoutineScreen() {
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert('Éxito', 'Rutina guardada');
+        Alert.alert('Éxito', 'Rutina guardada en la nube');
         router.back();
       } else {
         Alert.alert('Error', data.message || 'Error al guardar');
       }
-    } catch (error) {
-      console.error('Save error:', error);
-      Alert.alert('Error', 'Error de conexión');
-    } finally {
-      setSaving(false);
     }
-  };
+  } catch (error) {
+    console.error('Save error:', error);
+    Alert.alert('Error', 'Error al guardar la rutina');
+  } finally {
+    setSaving(false);
+  }
+};
 
   /* ───────── Sections ───────── */
   const sections = useMemo(() => {
@@ -928,6 +960,14 @@ export default function CreateRoutineScreen() {
               onPress={handleSaveRoutine}
               disabled={saving}
             >
+                    {user?.tipoUsuario === 'FREEUSER' && (
+        <View style={styles.warningContainer}>
+          <Ionicons name="warning-outline" size={16} color="#f59e0b" />
+          <Text style={styles.warningText}>
+            Modo FREE: Las rutinas se guardan solo en este dispositivo. Pasa a Premium para sincronizar en la nube.
+          </Text>
+        </View>
+      )}
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Rutina</Text>}
             </TouchableOpacity>
           </View>
@@ -1188,4 +1228,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+    warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400e',
+    lineHeight: 16,
+  },
 });

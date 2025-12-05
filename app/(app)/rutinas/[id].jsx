@@ -1,4 +1,4 @@
-// app/rutinas/[id].jsx
+// app/(app)/rutinas/[id].jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -8,27 +8,27 @@ import {
   StyleSheet,
   TextInput,
   Alert,
+  ActivityIndicator,
+  Platform
 } from 'react-native';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../../context/ThemeContext';
+import { Picker } from '@react-native-picker/picker';
+import { useAuth } from '../../../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales'];
-const STORAGE_PREFIX = 'routine_';
 
-/* ───────────────────────── Helpers de IDs y normalización ───────────────────────── */
-const uid = () =>
-  Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(4);
+/* ───────────────────────── Helpers ───────────────────────── */
+const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(4);
 
-/** Garantiza: día1..n, todos los ejercicios con id y series con id/valores por defecto */
 const normalizeRoutine = (input) => {
   const out = {};
   const entries = Object.entries(input || {});
   const base = entries.length ? entries : [['dia1', []]];
 
   base.forEach(([_, list], dIdx) => {
-    const dayKey = `dia${dIdx + 1}`; // desde 1
+    const dayKey = `dia${dIdx + 1}`;
     const safeList = Array.isArray(list) ? list : [];
     const normList = safeList.map((ej) => {
       const ejId = ej?.id ?? `ej-${uid()}`;
@@ -36,14 +36,14 @@ const normalizeRoutine = (input) => {
       const series = rawSeries.map((s, sIdx) => ({
         ...s,
         id: s?.id ?? `s-${ejId}-${sIdx}-${uid()}`,
-        repMin: s?.repMin ?? '6',
-        repMax: s?.repMax ?? '8',
+        repMin: s?.repMin ?? '8',
+        repMax: s?.repMax ?? '12',
         extra: s?.extra ?? 'Ninguno',
       }));
       return {
         musculo: '',
         nombre: '',
-        extra: 'Ninguno',
+        dbId: null,
         ...ej,
         id: ejId,
         series,
@@ -69,57 +69,41 @@ const nextDayKey = (entries) => {
   return `dia${max + 1}`;
 };
 
-/* ───────────────────────────────── Componentes Extraídos ─────────────────────────────── */
+/* ───────────────────────── Components ───────────────────────── */
 
-const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, theme, updateSerieCampo, toggleSerieExtra, deleteSerie }) => {
+const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, updateSerieCampo, toggleSerieExtra, deleteSerie }) => {
   return (
-    <View style={[styles.serieRow, { borderColor: theme.border, backgroundColor: theme.inputBackground }]}>
-      <Text style={[styles.serieLabel, { color: theme.text }]}>Serie {index + 1}</Text>
+    <View style={styles.serieRow}>
+      <Text style={styles.serieLabel}>Serie {index + 1}</Text>
 
       <TextInput
-        style={[styles.serieInput, {
-          borderColor: theme.inputBorder,
-          backgroundColor: theme.inputBackground,
-          color: theme.inputText
-        }]}
+        style={styles.serieInput}
         placeholder="min"
-        placeholderTextColor={theme.placeholder}
         keyboardType="numeric"
         value={String(s.repMin ?? '')}
-        onChangeText={(v) =>
-          updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)
-        }
+        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
       />
-      <Text style={{ marginHorizontal: 6, color: theme.textTertiary }}>–</Text>
+      <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
       <TextInput
-        style={[styles.serieInput, {
-          borderColor: theme.inputBorder,
-          backgroundColor: theme.inputBackground,
-          color: theme.inputText
-        }]}
+        style={styles.serieInput}
         placeholder="max"
-        placeholderTextColor={theme.placeholder}
         keyboardType="numeric"
         value={String(s.repMax ?? '')}
-        onChangeText={(v) =>
-          updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)
-        }
+        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
       />
 
       <TouchableOpacity
-        style={[styles.extraPill, { borderColor: theme.inputBorder, backgroundColor: theme.backgroundTertiary }]}
+        style={styles.extraPill}
         onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
       >
-        <Text style={[styles.extraPillTxt, { color: theme.text }]}>{s.extra || 'Ninguno'}</Text>
-        <Ionicons name="chevron-down-outline" size={16} color={theme.text} />
+        <Text style={styles.extraPillTxt}>{s.extra || 'Ninguno'}</Text>
+        <Ionicons name="chevron-down-outline" size={16} color="#475569" />
       </TouchableOpacity>
-
-      <View style={{ flex: 1 }} />
 
       <IconBtn
         onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
         icon="close-circle"
-        tint={theme.danger}
+        tint="#ef4444"
       />
     </View>
   );
@@ -138,30 +122,38 @@ const ExerciseCard = React.memo(({
   updateSerieCampo,
   toggleSerieExtra,
   deleteSerie,
-  theme
+  muscles,
+  exercises,
+  onMuscleChange,
+  onExerciseChange,
 }) => {
   const diaKey = section.title;
   const abierto = isOpen(item.id);
+  const isValidated = !!item.dbId || exercises.some(e => e.name === item.nombre && e.muscle === item.musculo);
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+    <View style={styles.card}>
       {/* Header ejercicio */}
-      <View style={[styles.cardHeaderContainer, { borderColor: theme.cardHeaderBorder }]}>
+      <View style={styles.cardHeaderContainer}>
         <TouchableOpacity
           onPress={() => toggleOpen(item.id)}
           style={styles.cardHeaderTouchable}
         >
-          <Text style={[styles.cardHeader, { color: theme.text }]}>
-            {(item.musculo || 'MÚSCULO')} — {(item.nombre || 'Nombre ejercicio')}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={styles.cardHeader}>
+              {(item.musculo || 'MÚSCULO')} — {(item.nombre || 'Nombre ejercicio')}
+            </Text>
+            <View style={[styles.validationBadge, { backgroundColor: isValidated ? '#dcfce7' : '#fee2e2' }]}>
+              <Text style={{ fontSize: 12 }}>{isValidated ? '✅' : '❌'}</Text>
+            </View>
+          </View>
         </TouchableOpacity>
 
         <View style={styles.moveControls}>
-          <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint={theme.primary} />
-          <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint={theme.primary} />
-          <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint={theme.success} />
-          <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint={theme.danger} />
-          <IconBtn onPress={() => toggleOpen(item.id)} icon={abierto ? 'chevron-down' : 'chevron-forward'} tint={theme.textSecondary} />
+          <IconBtn onPress={() => moveExercise(diaKey, item.id, -1)} icon="arrow-up" tint="#3b82f6" />
+          <IconBtn onPress={() => moveExercise(diaKey, item.id, +1)} icon="arrow-down" tint="#3b82f6" />
+          <IconBtn onPress={() => addExerciseAfter(diaKey, item.id)} icon="add" tint="#10b981" />
+          <IconBtn onPress={() => deleteExercise(diaKey, item.id)} icon="remove" tint="#ef4444" />
         </View>
       </View>
 
@@ -169,37 +161,34 @@ const ExerciseCard = React.memo(({
       {abierto && (
         <View style={styles.editBlock}>
           <View style={styles.inlineRow}>
-            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Músculo</Text>
-            <TextInput
-              style={[styles.inlineInput, {
-                flex: 1,
-                borderColor: theme.inputBorder,
-                backgroundColor: theme.inputBackground,
-                color: theme.inputText
-              }]}
-              placeholder="Ej: ESPALDA"
-              placeholderTextColor={theme.placeholder}
-              value={item.musculo ?? ''}
-              onChangeText={(v) =>
-                updateEjercicioCampo(diaKey, item.id, 'musculo', v.toUpperCase())
-              }
-            />
+            <Text style={styles.inlineLabel}>Músculo</Text>
+            <View style={[styles.pickerWrapper, { flex: 1 }]}>
+              <Picker
+                selectedValue={item.musculo ?? ''}
+                onValueChange={(val) => onMuscleChange(diaKey, item.id, val)}
+                style={styles.picker}
+              >
+                <Picker.Item label="Seleccionar..." value="" />
+                {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
+              </Picker>
+            </View>
           </View>
 
           <View style={[styles.inlineRow, { marginTop: 8 }]}>
-            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Nombre</Text>
-            <TextInput
-              style={[styles.inlineInput, {
-                flex: 1,
-                borderColor: theme.inputBorder,
-                backgroundColor: theme.inputBackground,
-                color: theme.inputText
-              }]}
-              placeholder="Ej: Remo sentado máquina (agarre neutro)"
-              placeholderTextColor={theme.placeholder}
-              value={item.nombre ?? ''}
-              onChangeText={(v) => updateEjercicioCampo(diaKey, item.id, 'nombre', v)}
-            />
+            <Text style={styles.inlineLabel}>Ejercicio</Text>
+            <View style={[styles.pickerWrapper, { flex: 1 }]}>
+              <Picker
+                selectedValue={item.dbId || exercises.find(e => e.name === item.nombre && e.muscle === item.musculo)?._id || ''}
+                onValueChange={(val) => onExerciseChange(diaKey, item.id, val)}
+                style={styles.picker}
+                enabled={!!item.musculo}
+              >
+                <Picker.Item label={item.musculo ? "Seleccionar..." : "Primero selecciona músculo"} value="" />
+                {exercises.filter(e => e.muscle === item.musculo).map(e => (
+                  <Picker.Item key={e._id} label={e.name} value={e._id} />
+                ))}
+              </Picker>
+            </View>
           </View>
         </View>
       )}
@@ -208,10 +197,10 @@ const ExerciseCard = React.memo(({
       {abierto && (
         <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
           <View style={styles.serieHeadRow}>
-            <Text style={[styles.serieLabel, { fontWeight: '700', color: theme.text }]}>#</Text>
-            <Text style={[styles.headCol, { color: theme.text }]}>Min</Text>
-            <Text style={[styles.headCol, { color: theme.text }]}>Max</Text>
-            <Text style={[styles.headCol, { flex: 1, textAlign: 'left', color: theme.text }]}>Técnica</Text>
+            <Text style={[styles.serieLabel, { fontWeight: '700' }]}>#</Text>
+            <Text style={styles.headCol}>Min</Text>
+            <Text style={styles.headCol}>Max</Text>
+            <Text style={[styles.headCol, { flex: 1, textAlign: 'left' }]}>Técnica</Text>
             <Text style={{ width: 28 }} />
           </View>
 
@@ -222,7 +211,6 @@ const ExerciseCard = React.memo(({
               ejercicioId={item.id}
               s={s}
               index={idx}
-              theme={theme}
               updateSerieCampo={updateSerieCampo}
               toggleSerieExtra={toggleSerieExtra}
               deleteSerie={deleteSerie}
@@ -230,11 +218,11 @@ const ExerciseCard = React.memo(({
           ))}
 
           <TouchableOpacity
-            style={[styles.addSerieBtn, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
+            style={styles.addSerieBtn}
             onPress={() => addSerie(diaKey, item.id)}
           >
-            <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
-            <Text style={[styles.addSerieTxt, { color: theme.successText }]}>Añadir serie</Text>
+            <Ionicons name="add-circle-outline" size={20} color="#10b981" />
+            <Text style={styles.addSerieTxt}>Añadir serie</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -242,123 +230,184 @@ const ExerciseCard = React.memo(({
   );
 });
 
-/* ───────────────────────────────── Componente principal ─────────────────────────────── */
-export default function RoutineEditorScreen() {
-  const { theme } = useTheme();
-  const { id } = useLocalSearchParams();
-  const navigation = useNavigation();
+/* ───────────────────────── Main Component ───────────────────────── */
+export default function UserRoutineEditorScreen() {
   const router = useRouter();
-  const storageKey = `${STORAGE_PREFIX}${id}`;
+  const { id, name, days: paramDays } = useLocalSearchParams();
+const { token, user } = useAuth();
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
+  const [routineName, setRoutineName] = useState(name || '');
+  const [days, setDays] = useState(paramDays ? parseInt(paramDays) : 3);
   const [rutina, setRutina] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [diasAbiertos, setDiasAbiertos] = useState({});
-  const [openSet, setOpenSet] = useState(new Set());           // ejercicios abiertos
-  const [routineName, setRoutineName] = useState(String(id));  // título visible
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [openSet, setOpenSet] = useState(new Set());
+
+  // Selector State
+  const [muscles, setMuscles] = useState([]);
+  const [selectedMuscle, setSelectedMuscle] = useState('');
+  const [exercises, setExercises] = useState([]);
+  const [selectedExercise, setSelectedExercise] = useState('');
+  const [loadingExercises, setLoadingExercises] = useState(false);
+  const [addingToDay, setAddingToDay] = useState(null);
+
   const isFirstLoad = useRef(true);
 
-  /* ───────── Carga inicial + normalización ───────── */
+  /* ───────── Initial Load ───────── */
   useEffect(() => {
-    (async () => {
-      try {
-        // Obtener nombre humano de la rutina desde la lista maestra
-        const listJSON = await AsyncStorage.getItem('rutinas');
-        if (listJSON) {
-          const lista = JSON.parse(listJSON);
-          const meta = (lista || []).find((r) => r?.id === id);
-          if (meta?.nombre) setRoutineName(meta.nombre);
-        }
-
-        // Cargar datos de la rutina y normalizar
-        const raw = await AsyncStorage.getItem(storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) || {};
-          const normalized = normalizeRoutine(parsed);
-          setRutina(normalized);
-
-          const open = {};
-          Object.keys(normalized).forEach((k) => (open[k] = true));
-          setDiasAbiertos(open);
-
-          // Persistir ya normalizado
-          await AsyncStorage.setItem(storageKey, JSON.stringify(normalized));
-        } else {
-          const init = normalizeRoutine({ dia1: [] });
-          setRutina(init);
-          setDiasAbiertos({ dia1: true });
-          await AsyncStorage.setItem(storageKey, JSON.stringify(init));
-        }
-        // Reset unsaved changes after initial load
-        setTimeout(() => {
-          isFirstLoad.current = false;
-        }, 500);
-      } catch (e) {
-        console.warn('Error cargando rutina', e);
-      }
-    })();
-  }, [storageKey, id]);
-
-  // Marcar esta rutina como activa al abrir el editor (para que Entreno la lea)
-  useEffect(() => {
-    if (!id) return;
-    AsyncStorage.multiSet([
-      ['active_routine', String(id)],
-      ['active_routine_name', routineName || String(id)],
-    ]).catch(() => { });
-  }, [id, routineName]);
-
-  /* ───────── Control de Cambios ───────── */
-  useEffect(() => {
-    if (isFirstLoad.current) return;
-    if (Object.keys(rutina).length > 0) {
-      setHasUnsavedChanges(true);
+    fetchMuscles();
+    fetchAllExercises();
+    if (id) {
+      loadRoutine(id);
+    } else {
+      const init = normalizeRoutine({});
+      for (let i = 1; i <= days; i++) init[`dia${i}`] = [];
+      setRutina(init);
+      const open = {};
+      Object.keys(init).forEach((k) => (open[k] = true));
+      setDiasAbiertos(open);
     }
-  }, [rutina]);
+    setTimeout(() => {
+      isFirstLoad.current = false;
+    }, 500);
+  }, [id]);
 
-  const saveRoutine = useCallback(async () => {
+  const fetchMuscles = async () => {
     try {
-      await AsyncStorage.setItem(storageKey, JSON.stringify(rutina));
-      setHasUnsavedChanges(false);
-      Alert.alert('Éxito', 'Rutina guardada correctamente');
-    } catch (e) {
-      console.warn('No se pudo guardar rutina', e);
-      Alert.alert('Error', 'No se pudo guardar la rutina');
+      const response = await fetch(`${API_URL}/api/exercises/muscles`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMuscles([...data.muscles, 'OTRO']);
+      } else {
+        setMuscles(['PECHO', 'ESPALDA', 'PIERNAS', 'HOMBRO', 'BICEPS', 'TRICEPS', 'ABDOMEN', 'CARDIO', 'OTRO']);
+      }
+    } catch (error) {
+      setMuscles(['PECHO', 'ESPALDA', 'PIERNAS', 'HOMBRO', 'BICEPS', 'TRICEPS', 'ABDOMEN', 'CARDIO', 'OTRO']);
     }
-  }, [storageKey, rutina]);
+  };
 
-  // Interceptar salida sin guardar
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (!hasUnsavedChanges) {
+  const loadRoutine = async (routineId) => {
+    setLoading(true);
+    try {
+      // 1. Intentar cargar desde AsyncStorage (Local)
+      const localData = await AsyncStorage.getItem(`routine_${routineId}`);
+
+      if (localData) {
+        const parsedData = JSON.parse(localData);
+        // Si viene de AsyncStorage, probablemente es el objeto directo de días
+        const diasKeys = Object.keys(parsedData).filter(k => k.startsWith('dia'));
+        const diasCount = diasKeys.length;
+
+        setRutina(normalizeRoutine(parsedData));
+        setDays(diasCount || 1);
+
+        const open = {};
+        Object.keys(parsedData).forEach((k) => (open[k] = true));
+        setDiasAbiertos(open);
+        setLoading(false);
         return;
       }
 
-      // Prevenir navegación
-      e.preventDefault();
+      // 2. Si no está en local, intentar API (Server/Premium)
+      const response = await fetch(`${API_URL}/api/routines/${routineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      Alert.alert(
-        'Cambios sin guardar',
-        'No has guardado la rutina. ¿Quieres guardarla antes de salir?',
-        [
-          { text: 'No guardar', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
-          { text: 'Cancelar', style: 'cancel', onPress: () => { } },
-          {
-            text: 'Guardar',
-            onPress: async () => {
-              await AsyncStorage.setItem(storageKey, JSON.stringify(rutina));
-              setHasUnsavedChanges(false);
-              navigation.dispatch(e.data.action);
-            },
-          },
-        ]
-      );
-    });
+      if (response.status === 404) {
+        if (!routineName) {
+          Alert.alert('Aviso', 'No se encontró la rutina, se creará una nueva.');
+        }
+        const init = normalizeRoutine({});
+        for (let i = 1; i <= days; i++) init[`dia${i}`] = [];
+        setRutina(init);
+        return;
+      }
 
-    return unsubscribe;
-  }, [navigation, hasUnsavedChanges, rutina, storageKey]);
+      const data = await response.json();
+      if (data.success && data.routine) {
+        processRoutineData(data.routine);
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Error al cargar rutina');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const processRoutineData = (r) => {
+    setRoutineName(r.nombre);
+    setDays(r.dias);
 
-  /* ───────── Open/close ejercicio ───────── */
+    const loadedData = {};
+    if (Array.isArray(r.diasArr)) {
+      r.diasArr.forEach((dayExercises, idx) => {
+        const dayKey = `dia${idx + 1}`;
+        loadedData[dayKey] = dayExercises.map(ex => ({
+          id: `ej-${uid()}`,
+          musculo: ex.musculo,
+          nombre: ex.nombre,
+          dbId: ex.dbId,
+          series: ex.series.map(s => ({
+            id: `s-${uid()}`,
+            repMin: s.repMin,
+            repMax: s.repMax,
+            extra: s.extra || 'Ninguno'
+          }))
+        }));
+      });
+    }
+
+    for (let i = 1; i <= r.dias; i++) {
+      if (!loadedData[`dia${i}`]) loadedData[`dia${i}`] = [];
+    }
+
+    setRutina(normalizeRoutine(loadedData));
+    const open = {};
+    Object.keys(loadedData).forEach((k) => (open[k] = true));
+    setDiasAbiertos(open);
+  };
+
+  const fetchAllExercises = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/exercises`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setExercises(data.exercises);
+      }
+    } catch (error) {
+      console.error('Error fetching exercises:', error);
+    }
+  };
+
+  const fetchExercisesForMuscle = async (muscle) => {
+    if (!muscle) {
+      return;
+    }
+    setLoadingExercises(true);
+    try {
+      const response = await fetch(`${API_URL}/api/exercises?muscle=${muscle}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Los ejercicios ya están cargados
+      }
+    } catch (error) {
+      // Ignorar errores
+    } finally {
+      setLoadingExercises(false);
+    }
+  };
+
+  /* ───────── Open/close ───────── */
   const isOpen = useCallback((eid) => openSet.has(eid), [openSet]);
   const toggleOpen = useCallback((eid) =>
     setOpenSet((prev) => {
@@ -367,28 +416,23 @@ export default function RoutineEditorScreen() {
       return next;
     }), []);
 
-  const openAllInDay = useCallback(
-    (diaKey) => {
-      setOpenSet((prev) => {
-        const next = new Set(prev);
-        for (const ej of rutina[diaKey] || []) next.add(ej.id);
-        return next;
-      });
-    },
-    [rutina]
-  );
-  const closeAllInDay = useCallback(
-    (diaKey) => {
-      setOpenSet((prev) => {
-        const next = new Set(prev);
-        for (const ej of rutina[diaKey] || []) next.delete(ej.id);
-        return next;
-      });
-    },
-    [rutina]
-  );
+  const openAllInDay = useCallback((diaKey) => {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      for (const ej of rutina[diaKey] || []) next.add(ej.id);
+      return next;
+    });
+  }, [rutina]);
 
-  /* ───────── DÍAS: mover/añadir/eliminar/toggle ───────── */
+  const closeAllInDay = useCallback((diaKey) => {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      for (const ej of rutina[diaKey] || []) next.delete(ej.id);
+      return next;
+    });
+  }, [rutina]);
+
+  /* ───────── DÍAS ───────── */
   const moveDay = useCallback((diaKey, dir) => {
     setRutina((prev) => {
       const entries = Object.entries(prev);
@@ -412,6 +456,7 @@ export default function RoutineEditorScreen() {
       const after = idx >= 0 ? idx + 1 : entries.length;
       const next = [...entries.slice(0, after), nuevo, ...entries.slice(after)];
       setDiasAbiertos((d) => ({ ...d, [newKey]: true }));
+      setDays(d => d + 1);
       return fromEntriesOrdered(next);
     });
   }, []);
@@ -422,11 +467,13 @@ export default function RoutineEditorScreen() {
       {
         text: 'Eliminar',
         style: 'destructive',
-        onPress: () =>
+        onPress: () => {
           setRutina((prev) => {
             const entries = Object.entries(prev).filter(([k]) => k !== diaKey);
+            setDays(d => Math.max(1, d - 1));
             return fromEntriesOrdered(entries);
-          }),
+          });
+        }
       },
     ]);
   }, []);
@@ -435,7 +482,7 @@ export default function RoutineEditorScreen() {
     setDiasAbiertos((prev) => ({ ...prev, [diaKey]: !prev[diaKey] }));
   }, []);
 
-  /* ───────── EJERCICIOS: mover/añadir/eliminar/editar ───────── */
+  /* ───────── EJERCICIOS ───────── */
   const moveExercise = useCallback((diaKey, ejercicioId, dir) => {
     setRutina((prev) => {
       const dayList = prev[diaKey] || [];
@@ -462,11 +509,11 @@ export default function RoutineEditorScreen() {
         id: newId,
         musculo: '',
         nombre: '',
-        extra: 'Ninguno',
+        dbId: null,
         series: [
-          { id: `s-${newId}-0`, repMin: '6', repMax: '8', extra: 'Ninguno' },
-          { id: `s-${newId}-1`, repMin: '6', repMax: '8', extra: 'Ninguno' },
-          { id: `s-${newId}-2`, repMin: '6', repMax: '8', extra: 'Ninguno' },
+          { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno' },
         ],
       };
 
@@ -476,7 +523,7 @@ export default function RoutineEditorScreen() {
         ...dayList.slice(insertPos),
       ];
 
-      setOpenSet((s) => new Set([...s, newId])); // abre el nuevo
+      setOpenSet((s) => new Set([...s, newId]));
       return { ...prev, [diaKey]: newList };
     });
   }, []);
@@ -489,17 +536,54 @@ export default function RoutineEditorScreen() {
         id: newId,
         musculo: '',
         nombre: '',
-        extra: 'Ninguno',
+        dbId: null,
         series: [
-          { id: `s-${newId}-0`, repMin: '6', repMax: '8', extra: 'Ninguno' },
-          { id: `s-${newId}-1`, repMin: '6', repMax: '8', extra: 'Ninguno' },
-          { id: `s-${newId}-2`, repMin: '6', repMax: '8', extra: 'Ninguno' },
+          { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno' },
         ],
       };
       setOpenSet((s) => new Set([...s, newId]));
       return { ...prev, [diaKey]: [...dayList, newEj] };
     });
   }, []);
+
+  const addExerciseFromSelector = useCallback(() => {
+    if (!addingToDay || !selectedMuscle || !selectedExercise) {
+      Alert.alert('Error', 'Selecciona músculo y ejercicio');
+      return;
+    }
+
+    const diaKey = `dia${addingToDay}`;
+    const exerciseObj = exercises.find(e => e._id === selectedExercise);
+    const name = exerciseObj ? exerciseObj.name : selectedExercise;
+
+    const newId = `ej-${uid()}`;
+    const newEj = {
+      id: newId,
+      musculo: selectedMuscle,
+      nombre: name,
+      dbId: exerciseObj?._id || null,
+      series: [
+        { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+        { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+        { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+        { id: `s-${newId}-3`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+      ],
+    };
+
+    setRutina(prev => ({
+      ...prev,
+      [diaKey]: [...(prev[diaKey] || []), newEj]
+    }));
+
+    setOpenSet(prev => new Set(prev).add(newId));
+
+    // Reset
+    setAddingToDay(null);
+    setSelectedMuscle('');
+    setSelectedExercise('');
+  }, [addingToDay, selectedMuscle, selectedExercise, exercises]);
 
   const deleteExercise = useCallback((diaKey, ejercicioId) => {
     setRutina((prev) => {
@@ -522,42 +606,57 @@ export default function RoutineEditorScreen() {
     });
   }, []);
 
-  /* ───────── SERIES: editar/toggle técnica/add/delete ───────── */
-  const updateSerieCampo = useCallback(
-    (diaKey, ejercicioId, serieId, campo, val) => {
-      setRutina((prev) => {
-        const newList = (prev[diaKey] || []).map((e) => {
-          if (e.id !== ejercicioId) return e;
-          const series = (e.series || []).map((s) =>
-            s.id === serieId ? { ...s, [campo]: val } : s
-          );
-          return { ...e, series };
-        });
-        return { ...prev, [diaKey]: newList };
-      });
-    },
-    []
-  );
+  const onMuscleChange = useCallback((diaKey, ejercicioId, muscle) => {
+    setRutina((prev) => {
+      const newList = (prev[diaKey] || []).map((e) =>
+        e.id === ejercicioId ? { ...e, musculo: muscle, nombre: '', dbId: null } : e
+      );
+      return { ...prev, [diaKey]: newList };
+    });
+  }, []);
 
-  const toggleSerieExtra = useCallback(
-    (diaKey, ejercicioId, serieId) => {
-      setRutina((prev) => {
-        const newList = (prev[diaKey] || []).map((e) => {
-          if (e.id !== ejercicioId) return e;
-          const series = (e.series || []).map((s) => {
-            if (s.id !== serieId) return s;
-            const curr = s.extra || 'Ninguno';
-            const i = EXTRA_OPCIONES.indexOf(curr);
-            const next = EXTRA_OPCIONES[(i + 1) % EXTRA_OPCIONES.length];
-            return { ...s, extra: next };
-          });
-          return { ...e, series };
-        });
-        return { ...prev, [diaKey]: newList };
+  const onExerciseChange = useCallback((diaKey, ejercicioId, exerciseDbId) => {
+    const exercise = exercises.find(e => e._id === exerciseDbId);
+    if (!exercise) return;
+
+    setRutina((prev) => {
+      const newList = (prev[diaKey] || []).map((e) =>
+        e.id === ejercicioId ? { ...e, nombre: exercise.name, dbId: exercise._id } : e
+      );
+      return { ...prev, [diaKey]: newList };
+    });
+  }, [exercises]);
+
+  /* ───────── SERIES ───────── */
+  const updateSerieCampo = useCallback((diaKey, ejercicioId, serieId, campo, val) => {
+    setRutina((prev) => {
+      const newList = (prev[diaKey] || []).map((e) => {
+        if (e.id !== ejercicioId) return e;
+        const series = (e.series || []).map((s) =>
+          s.id === serieId ? { ...s, [campo]: val } : s
+        );
+        return { ...e, series };
       });
-    },
-    []
-  );
+      return { ...prev, [diaKey]: newList };
+    });
+  }, []);
+
+  const toggleSerieExtra = useCallback((diaKey, ejercicioId, serieId) => {
+    setRutina((prev) => {
+      const newList = (prev[diaKey] || []).map((e) => {
+        if (e.id !== ejercicioId) return e;
+        const series = (e.series || []).map((s) => {
+          if (s.id !== serieId) return s;
+          const curr = s.extra || 'Ninguno';
+          const i = EXTRA_OPCIONES.indexOf(curr);
+          const next = EXTRA_OPCIONES[(i + 1) % EXTRA_OPCIONES.length];
+          return { ...s, extra: next };
+        });
+        return { ...e, series };
+      });
+      return { ...prev, [diaKey]: newList };
+    });
+  }, []);
 
   const deleteSerie = useCallback((diaKey, ejercicioId, serieId) => {
     setRutina((prev) => {
@@ -577,7 +676,7 @@ export default function RoutineEditorScreen() {
         const newId = `s-${ejercicioId}-${(e.series?.length || 0) + 1}-${uid()}`;
         const series = [
           ...(e.series || []),
-          { id: newId, repMin: '6', repMax: '8', extra: 'Ninguno' },
+          { id: newId, repMin: '8', repMax: '12', extra: 'Ninguno' },
         ];
         return { ...e, series };
       });
@@ -585,69 +684,301 @@ export default function RoutineEditorScreen() {
     });
   }, []);
 
-  /* ───────── Secciones para SectionList ───────── */
+  /* ───────── Save ───────── */
+const handleSaveRoutine = async () => {
+  if (!routineName.trim()) {
+    Alert.alert('Error', 'Ingresa un nombre para la rutina');
+    return;
+  }
+
+  setSaving(true);
+  
+  // VERIFICAR SI ES USUARIO FREE
+  const isFreeUser = user?.tipoUsuario === 'FREEUSER';
+
+  try {
+    const daysArray = [];
+    const entries = Object.entries(rutina);
+    for (let i = 0; i < entries.length; i++) {
+      daysArray.push(entries[i][1] || []);
+    }
+
+    // SI ES FREEUSER, GUARDAR SOLO EN LOCAL
+    if (isFreeUser) {
+      try {
+        // Guardar en AsyncStorage
+        await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
+        
+        // Actualizar la lista de rutinas en AsyncStorage
+        const rutinasStr = await AsyncStorage.getItem('rutinas');
+        let rutinas = rutinasStr ? JSON.parse(rutinasStr) : [];
+        
+        const existingIndex = rutinas.findIndex(r => r.id === id);
+        if (existingIndex >= 0) {
+          // Actualizar rutina existente
+          rutinas[existingIndex] = {
+            ...rutinas[existingIndex],
+            nombre: routineName,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          // Agregar nueva rutina
+          rutinas.push({
+            id: id,
+            nombre: routineName,
+            origen: 'local',
+            updatedAt: new Date().toISOString(),
+            folder: null
+          });
+        }
+        
+        await AsyncStorage.setItem('rutinas', JSON.stringify(rutinas));
+        
+      // Mostrar aviso de usuario FREE
+      if (Platform.OS === 'web') {
+        const goToPremium = window.confirm('⚠️ RUTINA GUARDADA LOCALMENTE\n\nComo usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.\n\n¿Quieres mejorar a Premium ahora?');
+        if (goToPremium) {
+          window.location.href = '../payment';
+        } else {
+          router.back();
+        }
+      } else {
+        Alert.alert(
+          '⚠️ Rutina Guardada Localmente',
+          'Como usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.',
+          [
+            { text: 'Ahora no', style: 'cancel', onPress: () => router.back() },
+            { text: 'Mejorar a Premium', style: 'default', onPress: () => router.push('../payment') }
+          ]
+        );
+        return;
+      }
+      } catch (error) {
+        console.error('Error guardando localmente:', error);
+        Alert.alert('Error', 'No se pudo guardar la rutina localmente');
+      }
+      setSaving(false);
+      return;
+    }
+
+    // SI NO ES FREEUSER, GUARDAR EN MONGODB (CÓDIGO EXISTENTE)
+    const payload = {
+      nombre: routineName,
+      dias: entries.length,
+      diasArr: daysArray,
+      division: 'Personalizada',
+      enfoque: 'General',
+      nivel: 'Intermedio'
+    };
+
+    // VERIFICAR SI EL ID ES LOCAL O DE MONGODB
+    const isLocalId = id && (id.startsWith('r-') || (id.length !== 24));
+    
+    // Si es ID local, siempre crear nueva rutina (POST)
+    // Si es ID de MongoDB válido (24 caracteres hex), intentar actualizar (PUT)
+    const endpoint = (id && !isLocalId) ? `${API_URL}/api/routines/${id}` : `${API_URL}/api/routines`;
+    const method = (id && !isLocalId) ? 'PUT' : 'POST';
+
+    const response = await fetch(endpoint, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    // Si el PUT falla con 404, intentar crear nueva rutina
+    if (response.status === 404 && id && !isLocalId) {
+      const retryResponse = await fetch(`${API_URL}/api/routines`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const retryData = await retryResponse.json();
+
+      if (retryData.success) {
+        // ACTUALIZAR AsyncStorage con el nuevo ID
+        if (isLocalId && retryData.routine?._id) {
+          const rutinasStr = await AsyncStorage.getItem('rutinas');
+          if (rutinasStr) {
+            const rutinas = JSON.parse(rutinasStr);
+            const updatedRutinas = rutinas.map(r => 
+              r.id === id ? { ...r, id: retryData.routine._id, origen: 'server' } : r
+            );
+            await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+            await AsyncStorage.removeItem(`routine_${id}`);
+          }
+        }
+        Alert.alert('Éxito', 'Rutina creada como nueva');
+        router.back();
+        return;
+      } else {
+        Alert.alert('Error', retryData.message || 'Error al guardar');
+        return;
+      }
+    }
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Si era ID local y se creó correctamente, actualizar AsyncStorage
+      if (isLocalId && data.routine?._id && method === 'POST') {
+        const rutinasStr = await AsyncStorage.getItem('rutinas');
+        if (rutinasStr) {
+          const rutinas = JSON.parse(rutinasStr);
+          const updatedRutinas = rutinas.map(r => 
+            r.id === id ? { ...r, id: data.routine._id, origen: 'server' } : r
+          );
+          await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+          // Eliminar el storage local con el ID viejo
+          await AsyncStorage.removeItem(`routine_${id}`);
+        }
+      }
+      Alert.alert('Éxito', 'Rutina guardada');
+      router.back();
+    } else {
+      Alert.alert('Error', data.message || 'Error al guardar');
+    }
+  } catch (error) {
+    console.error('Save error:', error);
+    Alert.alert('Error', 'Error de conexión');
+  } finally {
+    setSaving(false);
+  }
+};
+  /* ───────── Sections ───────── */
   const sections = useMemo(() => {
     return Object.entries(rutina).map(([key, list], idx) => ({
       key,
       title: key,
-      ord: idx + 1,                   // ← número de día por POSICIÓN (sin NaN)
+      ord: idx + 1,
       data: diasAbiertos[key] ? list : [],
     }));
   }, [rutina, diasAbiertos]);
 
   /* ───────── UI ───────── */
-  const HeaderApp = () => (
-    <View style={[styles.headerTop, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-      <Text style={[styles.title, { color: theme.text }]}>{routineName}</Text>
-      <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Editor de rutina</Text>
-    </View>
-  );
-
   const DiaHeader = ({ diaKey, ord }) => {
     const label = `Día ${Number.isFinite(Number(ord)) ? ord : 1}`;
     const expanded = !!diasAbiertos[diaKey];
     return (
-      <View style={[styles.sectionHeaderContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+      <View style={styles.sectionHeaderContainer}>
         <TouchableOpacity
           style={styles.sectionHeaderTitleContainer}
           onPress={() => onToggleDia(diaKey)}
           activeOpacity={0.8}
         >
-          <Text style={[styles.sectionHeader, { color: theme.text }]}>{label}</Text>
+          <Text style={styles.sectionHeader}>{label}</Text>
           <Ionicons
             name={expanded ? 'chevron-down-outline' : 'chevron-forward-outline'}
             size={20}
-            color={theme.textSecondary}
+            color="#64748b"
           />
         </TouchableOpacity>
         <View style={styles.sectionHeaderControls}>
-          <IconBtn onPress={() => openAllInDay(diaKey)} icon="expand-outline" tint={theme.textSecondary} />
-          <IconBtn onPress={() => closeAllInDay(diaKey)} icon="contract-outline" tint={theme.textSecondary} />
-          <IconBtn onPress={() => moveDay(diaKey, -1)} icon="arrow-up" tint={theme.primary} />
-          <IconBtn onPress={() => moveDay(diaKey, +1)} icon="arrow-down" tint={theme.primary} />
-          <IconBtn onPress={() => insertDayAfter(diaKey)} icon="add" tint={theme.success} />
-          <IconBtn onPress={() => onDeleteDay(diaKey)} icon="remove" tint={theme.danger} />
+          <IconBtn onPress={() => openAllInDay(diaKey)} icon="expand-outline" tint="#64748b" />
+          <IconBtn onPress={() => closeAllInDay(diaKey)} icon="contract-outline" tint="#64748b" />
+          <IconBtn onPress={() => moveDay(diaKey, -1)} icon="arrow-up" tint="#3b82f6" />
+          <IconBtn onPress={() => moveDay(diaKey, +1)} icon="arrow-down" tint="#3b82f6" />
+          <IconBtn onPress={() => insertDayAfter(diaKey)} icon="add" tint="#10b981" />
+          <IconBtn onPress={() => onDeleteDay(diaKey)} icon="remove" tint="#ef4444" />
         </View>
       </View>
     );
   };
 
-  const DiaFooter = ({ diaKey }) => (
-    <View style={[styles.dayFooter, { backgroundColor: theme.backgroundSecondary, borderColor: theme.borderLight }]}>
-      <TouchableOpacity
-        style={[styles.addExerciseCTA, { backgroundColor: theme.successLight, borderColor: theme.successBorder }]}
-        onPress={() => addExerciseAtEnd(diaKey)}
-        activeOpacity={0.88}
-      >
-        <Ionicons name="add-circle-outline" size={20} color={theme.successText} />
-        <Text style={[styles.addExerciseCTATxt, { color: theme.successText }]}>Añadir ejercicio</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const DiaFooter = ({ diaKey }) => {
+    const dayNum = parseInt(diaKey.replace('dia', ''));
+    const isAdding = addingToDay === dayNum;
+
+    return (
+      <View style={styles.dayFooter}>
+        {isAdding && (
+          <View style={styles.selectorContainer}>
+            <View style={styles.pickerGroup}>
+              <Text style={styles.pickerLabel}>Músculo</Text>
+              <View style={styles.pickerWrapper}>
+                <Picker
+                  selectedValue={selectedMuscle}
+                  onValueChange={(val) => {
+                    setSelectedMuscle(val);
+                    fetchExercisesForMuscle(val);
+                  }}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Seleccionar..." value="" />
+                  {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
+                </Picker>
+              </View>
+            </View>
+
+            {selectedMuscle && (
+              <View style={styles.pickerGroup}>
+                <Text style={styles.pickerLabel}>Ejercicio</Text>
+                <View style={styles.pickerWrapper}>
+                  {loadingExercises ? (
+                    <ActivityIndicator color="#3b82f6" style={{ padding: 14 }} />
+                  ) : (
+                    <Picker
+                      selectedValue={selectedExercise}
+                      onValueChange={setSelectedExercise}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Seleccionar..." value="" />
+                      {exercises.filter(e => e.muscle === selectedMuscle).map(e => (
+                        <Picker.Item key={e._id} label={e.name} value={e._id} />
+                      ))}
+                    </Picker>
+                  )}
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.confirmAddBtn, !selectedExercise && { backgroundColor: '#94a3b8' }]}
+              onPress={addExerciseFromSelector}
+              disabled={!selectedExercise}
+            >
+              <Text style={styles.confirmAddText}>Guardar Ejercicio</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.addExerciseCTA, isAdding && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }]}
+          onPress={() => {
+            if (isAdding) {
+              setAddingToDay(null);
+              setSelectedMuscle('');
+              setSelectedExercise('');
+            } else {
+              setAddingToDay(dayNum);
+            }
+          }}
+          activeOpacity={0.88}
+        >
+          <Ionicons name={isAdding ? "close-circle-outline" : "add-circle-outline"} size={20} color={isAdding ? "#ef4444" : "#10b981"} />
+          <Text style={[styles.addExerciseCTATxt, isAdding && { color: '#ef4444' }]}>
+            {isAdding ? 'Cancelar' : 'Añadir ejercicio'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <HeaderApp />
+    <View style={styles.container}>
       <SectionList
         sections={sections}
         keyExtractor={(item, index) => item?.id ?? `idx-${index}-${uid()}`}
@@ -665,7 +996,10 @@ export default function RoutineEditorScreen() {
             updateSerieCampo={updateSerieCampo}
             toggleSerieExtra={toggleSerieExtra}
             deleteSerie={deleteSerie}
-            theme={theme}
+            muscles={muscles}
+            exercises={exercises}
+            onMuscleChange={onMuscleChange}
+            onExerciseChange={onExerciseChange}
           />
         )}
         renderSectionHeader={({ section }) => (
@@ -677,13 +1011,24 @@ export default function RoutineEditorScreen() {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={{ paddingBottom: 100 }}
         extraData={{ openSetSize: openSet.size, diasAbiertos, rutina }}
+        ListHeaderComponent={
+          <View style={styles.headerTop}>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="Nombre de la rutina"
+              value={routineName}
+              onChangeText={setRoutineName}
+            />
+          </View>
+        }
         ListFooterComponent={
           <View style={{ padding: 16 }}>
             <TouchableOpacity
-              style={[styles.saveButton, { backgroundColor: theme.primary }]}
-              onPress={saveRoutine}
+              style={styles.saveButton}
+              onPress={handleSaveRoutine}
+              disabled={saving}
             >
-              <Text style={styles.saveButtonText}>Guardar Rutina</Text>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Rutina</Text>}
             </TouchableOpacity>
           </View>
         }
@@ -692,10 +1037,9 @@ export default function RoutineEditorScreen() {
   );
 }
 
-/* ───────────────────────── IconBtn ───────────────────────── */
+/* ───────── IconBtn ───────── */
 function IconBtn({ onPress, icon, tint }) {
-  const { theme } = useTheme();
-  const finalTint = tint || theme.textSecondary;
+  const finalTint = tint || '#64748b';
 
   const map = {
     'arrow-up': 'arrow-up-outline',
@@ -709,30 +1053,40 @@ function IconBtn({ onPress, icon, tint }) {
     'contract-outline': 'contract-outline',
   };
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={[styles.iconBtnRound, { backgroundColor: theme.iconButton, borderColor: theme.border }]}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.iconBtnRound}>
       <Ionicons name={map[icon]} size={18} color={finalTint} />
     </TouchableOpacity>
   );
 }
 
-/* ───────────────────────── Styles ───────────────────────── */
+/* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
 
   headerTop: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 10,
+    backgroundColor: '#fff',
     borderBottomWidth: 0.6,
+    borderBottomColor: '#e2e8f0',
   },
-  title: { fontSize: 20, fontWeight: '800' },
-  subtitle: { marginTop: 2, fontSize: 12 },
+  titleInput: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#cbd5e1',
+    paddingBottom: 4,
+  },
 
   /* Día */
   sectionHeaderContainer: {
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: '#fff',
     borderBottomWidth: 0.6,
+    borderBottomColor: '#e2e8f0',
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -742,13 +1096,15 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
-  sectionHeader: { fontSize: 16, fontWeight: '700' },
+  sectionHeader: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
   sectionHeaderControls: { flexDirection: 'row', alignItems: 'center' },
 
   dayFooter: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    backgroundColor: '#fff',
     borderTopWidth: 0.6,
+    borderTopColor: '#f1f5f9',
   },
   addExerciseCTA: {
     flexDirection: 'row',
@@ -759,15 +1115,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
   },
-  addExerciseCTATxt: { fontWeight: '700', fontSize: 13 },
+  addExerciseCTATxt: { fontWeight: '700', fontSize: 13, color: '#15803d' },
 
   iconBtnRound: {
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderRadius: 999,
     marginLeft: 6,
+    backgroundColor: '#f1f5f9',
     borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 
   /* Card ejercicio */
@@ -776,6 +1136,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 12,
     borderWidth: 0.6,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
     overflow: 'hidden',
   },
   cardHeaderContainer: {
@@ -784,25 +1146,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderBottomWidth: 0.6,
+    borderBottomColor: '#f1f5f9',
   },
   cardHeaderTouchable: { flex: 1 },
-  cardHeader: { fontSize: 14, fontWeight: '700' },
+  cardHeader: { fontSize: 14, fontWeight: '700', color: '#334155' },
   moveControls: { flexDirection: 'row', alignItems: 'center' },
 
-  /* Bloque edición musculo/nombre */
+  validationBadge: {
+    padding: 4,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+
+  /* Bloque edición */
   editBlock: {
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 6,
   },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  inlineLabel: { width: 70, fontSize: 12, fontWeight: '600' },
+  inlineLabel: { width: 70, fontSize: 12, fontWeight: '600', color: '#64748b', padding: 10 },
   inlineInput: {
     borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff',
+    color: '#1e293b',
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
     fontSize: 13,
+    padding: 10,
   },
 
   /* Series */
@@ -812,39 +1186,48 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingHorizontal: 4,
   },
-  headCol: { width: 70, textAlign: 'center', fontWeight: '700' },
+  headCol: { flex: 1, textAlign: 'center', fontWeight: '700', color: '#334155' },
 
   serieRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 0.6,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
     borderRadius: 10,
     padding: 8,
     marginTop: 8,
   },
-  serieLabel: { width: 70, fontSize: 12 },
+  serieLabel: { width: 50, fontSize: 12, color: '#334155' },
   serieInput: {
-    width: 64,
     borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff',
+    color: '#1e293b',
     borderRadius: 8,
     paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     fontSize: 12,
     textAlign: 'center',
+    width: 40,
+    marginLeft: 6,
   },
 
   extraPill: {
+    flex: 2,  // ✅ CAMBIAR de 1 a 2 para más espacio
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginLeft: 10,
-    paddingHorizontal: 12,
+    justifyContent: 'center',
+    gap: 4,  // ✅ CAMBIAR de 6 a 4
+    marginLeft: 8,  // ✅ CAMBIAR (eliminar duplicado)
+    paddingHorizontal: 8,  // ✅ CAMBIAR de 12 a 8
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
   },
-  extraPillTxt: { fontSize: 12, fontWeight: '700' },
-
+  extraPillTxt: { fontSize: 10, fontWeight: '600', color: '#334155' },
   addSerieBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -855,18 +1238,55 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
   },
-  addSerieTxt: { fontWeight: '800', fontSize: 13 },
+  addSerieTxt: { fontWeight: '800', fontSize: 13, color: '#15803d' },
 
   saveButton: {
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 20,
+    backgroundColor: '#3b82f6',
   },
   saveButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
   },
-});
+
+  // Selector
+  selectorContainer: {
+    backgroundColor: '#f0f9ff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  pickerGroup: { marginBottom: 12 },
+  pickerLabel: { fontSize: 14, fontWeight: '600', color: '#0369a1', marginBottom: 0 },
+  pickerWrapper: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#0073ffff',
+    overflow: 'hidden',
+    minHeight: 50,  // ✅ Altura mínima adecuada
+    justifyContent: 'center',  // ✅ Centrar contenido
+  },
+  picker: {
+    height: 50,
+    width: '100%',
+  },
+  confirmAddBtn: {
+    backgroundColor: '#10b981',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+})
+;

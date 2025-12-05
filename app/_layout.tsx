@@ -40,21 +40,44 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
+    const inModeSelect = (segments[0] as string) === 'mode-select';
+    const isRoot = (segments as string[]).length === 0 || ((segments as string[]).length === 1 && (segments[0] as string) === 'index');
+    const inLoginPage = segments[0] === '(auth)' && segments[1] === 'login';
+
+    // Si estamos en login, verificar AsyncStorage directamente para evitar race conditions
+    if (inLoginPage) {
+      (async () => {
+        const storedToken = await AsyncStorage.getItem('totalgains_token');
+        if (!storedToken) {
+          if (__DEV__) {
+            console.log('[Navigation] En login sin token en AsyncStorage, no redirigiendo');
+          }
+          return;
+        } else if (__DEV__) {
+          console.log('[Navigation] En login CON token en AsyncStorage, continuando con redirección');
+        }
+      })();
+      // Si no hay token en el estado de React, no redirigir
+      if (!token) {
+        return;
+      }
+    }
 
     // Usuario sin sesión → login
     if (!token && !inAuthGroup) {
       router.replace('/login');
       return;
     }
-    const inModeSelect = (segments[0] as string) === 'mode-select';
-    const isRoot = (segments as string[]).length === 0 || ((segments as string[]).length === 1 && (segments[0] as string) === 'index');
 
-    // Usuario con sesión en auth → redirigir según rol
+    // Usuario con sesión en auth o root → redirigir según rol
     if (token && (inAuthGroup || isRoot)) {
       const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR';
 
       if (isAdminOrCoach) {
         // Admin/Coach → mode-select para elegir
+        if (__DEV__) {
+          console.log('[Navigation] Redirecting admin/coach to mode-select');
+        }
         router.replace('/mode-select');
       } else {
         // Usuario normal → verificar onboarding
@@ -63,8 +86,14 @@ function RootLayoutNav() {
             const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
 
             if (!hasCompletedOnboarding) {
+              if (__DEV__) {
+                console.log('[Navigation] Redirecting to onboarding');
+              }
               router.replace('/onboarding');
             } else {
+              if (__DEV__) {
+                console.log('[Navigation] Redirecting to home');
+              }
               router.replace('/home');
             }
           } catch (error) {

@@ -129,6 +129,23 @@ export default function HomeScreen() {
       <View style={[styles.blob, styles.blobTop]} />
       <View style={[styles.blob, styles.blobBottom]} />
 
+      {/* Botón Mode Select para Admin/Entrenador */}
+      {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR') && (
+        <Link href="/mode-select" asChild>
+          <Pressable style={styles.modeSelectorButton}>
+            <LinearGradient
+              colors={['#3B82F6', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.modeSelectorGradient}
+            >
+              <Ionicons name="swap-horizontal-outline" size={20} color="#FFF" />
+              <Text style={styles.modeSelectorButtonText}>Cambiar Modo</Text>
+            </LinearGradient>
+          </Pressable>
+        </Link>
+      )}
+
       {showPaymentButton && (
         <Link href="/payment" asChild>
           <Pressable style={styles.paymentButton}>
@@ -315,6 +332,32 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   paymentButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  modeSelectorButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    left: 20,
+    zIndex: 999,
+    borderRadius: 20,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modeSelectorGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+  },
+  modeSelectorButtonText: {
     color: '#FFF',
     fontSize: 14,
     fontWeight: '700',

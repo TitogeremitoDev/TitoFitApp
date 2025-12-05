@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -20,14 +20,95 @@ const AVATARS = [
 
 export default function PerfilScreen() {
     const router = useRouter();
-    const { user, logout } = useAuth();
+    const { user, logout, token } = useAuth();
     const { theme, isDark } = useTheme();
 
     const [showAvatarModal, setShowAvatarModal] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
 
+    // Trainer code states
+    const [trainerCode, setTrainerCode] = useState('');
+    const [currentTrainer, setCurrentTrainer] = useState(null);
+    const [isLinkingTrainer, setIsLinkingTrainer] = useState(false);
+    const [isLoadingTrainer, setIsLoadingTrainer] = useState(true);
+
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+    // Fetch current trainer on mount
+    useEffect(() => {
+        fetchCurrentTrainer();
+    }, []);
+
+    const fetchCurrentTrainer = async () => {
+        try {
+            setIsLoadingTrainer(true);
+            const response = await fetch(`${API_URL}/api/clients/my-trainer`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data.success && data.trainer) {
+                setCurrentTrainer(data.trainer);
+            }
+        } catch (error) {
+            console.error('[Perfil] Error fetching trainer:', error);
+        } finally {
+            setIsLoadingTrainer(false);
+        }
+    };
+
+    const handleLinkTrainer = async () => {
+        if (!trainerCode.trim()) {
+            Alert.alert('Error', 'Por favor ingresa un código de entrenador');
+            return;
+        }
+
+        setIsLinkingTrainer(true);
+        try {
+            const response = await fetch(`${API_URL}/api/clients/select-trainer`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ trainerCode: trainerCode.trim() })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                Alert.alert(
+                    'Éxito',
+                    `¡Te has vinculado exitosamente con tu entrenador!`,
+                    [{
+                        text: 'OK', onPress: () => {
+                            setTrainerCode('');
+                            fetchCurrentTrainer();
+                        }
+                    }]
+                );
+            } else {
+                Alert.alert('Error', data.message || 'No se pudo vincular con el entrenador');
+            }
+        } catch (error) {
+            console.error('[Perfil] Error linking trainer:', error);
+            Alert.alert('Error', 'No se pudo completar la vinculación');
+        } finally {
+            setIsLinkingTrainer(false);
+        }
+    };
+
     const handleLogout = async () => {
-        await logout();
+        try {
+            console.log('[Perfil] Iniciando logout...');
+            await logout();
+            console.log('[Perfil] Logout completado, esperando limpieza de AsyncStorage...');
+            // Pequeño delay para asegurar que AsyncStorage se limpie completamente
+            await new Promise(resolve => setTimeout(resolve, 100));
+            console.log('[Perfil] Navegando a login...');
+            router.replace('/(auth)/login');
+        } catch (error) {
+            console.error('[Perfil] Error en logout:', error);
+        }
     };
 
     const menuItems = [
@@ -80,6 +161,57 @@ export default function PerfilScreen() {
                             <View style={[styles.badge, { backgroundColor: theme.successLight }]}>
                                 <Text style={[styles.badgeText, { color: theme.successText }]}>{user?.tipoUsuario || 'ADMINISTRADOR'}</Text>
                             </View>
+                        </View>
+
+                        {/* Trainer Section */}
+                        <View style={styles.trainerSection}>
+                            {isLoadingTrainer ? (
+                                <ActivityIndicator size="small" color={theme.primary} />
+                            ) : currentTrainer ? (
+                                <View style={[styles.currentTrainerCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}>
+                                    <Ionicons name="person-circle" size={24} color={theme.success} />
+                                    <View style={{ flex: 1, marginLeft: 8 }}>
+                                        <Text style={[styles.currentTrainerLabel, { color: theme.successText }]}>
+                                            Entrenador Actual
+                                        </Text>
+                                        <Text style={[styles.currentTrainerName, { color: theme.successText }]}>
+                                            {currentTrainer.brandName || currentTrainer.nombre}
+                                        </Text>
+                                    </View>
+                                </View>
+                            ) : (
+                                <View style={styles.trainerInputSection}>
+                                    <View style={styles.trainerInputRow}>
+                                        <TextInput
+                                            style={[styles.trainerInput, {
+                                                backgroundColor: theme.backgroundSecondary,
+                                                color: theme.text,
+                                                borderColor: theme.border
+                                            }]}
+                                            value={trainerCode}
+                                            onChangeText={setTrainerCode}
+                                            placeholder="INTRODUCIR CODIGO"
+                                            placeholderTextColor={theme.textSecondary}
+                                            autoCapitalize="characters"
+                                            editable={!isLinkingTrainer}
+                                        />
+                                        <TouchableOpacity
+                                            style={[styles.linkButton, {
+                                                backgroundColor: theme.primary,
+                                                opacity: isLinkingTrainer ? 0.6 : 1
+                                            }]}
+                                            onPress={handleLinkTrainer}
+                                            disabled={isLinkingTrainer}
+                                        >
+                                            {isLinkingTrainer ? (
+                                                <ActivityIndicator size="small" color="#fff" />
+                                            ) : (
+                                                <Ionicons name="link" size={20} color="#fff" />
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </View>
@@ -288,5 +420,56 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         paddingHorizontal: 20,
         borderRadius: 8,
+    },
+
+    // Trainer Section Styles
+    trainerSection: {
+        width: '100%',
+        minWidth: '60%',
+        marginTop: 16,
+        paddingHorizontal: 16,
+    },
+    currentTrainerCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    currentTrainerLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    currentTrainerName: {
+        fontSize: 14,
+        fontWeight: '700',
+        marginTop: 2,
+    },
+    trainerInputSection: {
+        width: '100%',
+        minWidth: '60%',
+    },
+    trainerInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    trainerInput: {
+        flex: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    linkButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

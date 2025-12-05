@@ -48,8 +48,7 @@ import Stopwatch from '../../components/Stopwatch';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-// ⚠️ Ajusta la ruta si tu JSON cambia de sitio:
-import rawDB from '../../src/data/exercises.json';
+
 
 const { width } = Dimensions.get('window');
 const ARROW_W = 56;
@@ -112,45 +111,33 @@ const normalizeStr = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-function buildExerciseIndex(db) {
-  // Estructura: { MUSCULO: { byName: {originalName: obj}, byNorm: {normName: obj} } }
+/**
+ * Construye un índice de ejercicios desde una lista plana de ejercicios de MongoDB
+ * Estructura MongoDB: [{ _id, name, muscle, tecnicaCorrecta, videoId }, ...]
+ * Resultado: { MUSCULO: { byName: {originalName: obj}, byNorm: {normName: obj} } }
+ */
+function buildExerciseIndex(exercises) {
   const out = {};
-  for (const grupo of db || []) {
-    const mus = String(grupo?.musculo || '').trim();
-    if (!mus) continue;
+  for (const ej of exercises || []) {
+    const mus = String(ej?.muscle || '').trim();
+    const name = String(ej?.name || '').trim();
+    if (!mus || !name) continue;
+
     if (!out[mus]) out[mus] = { byName: {}, byNorm: {} };
-    for (const ej of grupo?.ejercicios || []) {
-      const name = String(ej?.nombre || '').trim();
-      if (!name) continue;
-      out[mus].byName[name] = ej;
-      out[mus].byNorm[normalizeStr(name)] = ej;
-    }
+
+    // Adaptamos la estructura MongoDB a la esperada por el código existente
+    const adaptedExercise = {
+      nombre: ej.name,
+      musculo: ej.muscle,
+      tecnicaCorrecta: ej.tecnicaCorrecta || [],
+      videoId: ej.videoId || null,
+      _id: ej._id
+    };
+
+    out[mus].byName[name] = adaptedExercise;
+    out[mus].byNorm[normalizeStr(name)] = adaptedExercise;
   }
   return out;
-}
-const EX_INDEX = buildExerciseIndex(rawDB);
-
-function findExercise(musculo, nombre) {
-  const group = EX_INDEX[String(musculo || '').trim()];
-  if (!group) {
-    // Fallback: buscar por nombre en TODOS los músculos si el músculo no cuadra
-    const norm = normalizeStr(nombre);
-    for (const mus of Object.keys(EX_INDEX)) {
-      const g = EX_INDEX[mus];
-      if (g.byName[nombre]) return g.byName[nombre];
-      if (g.byNorm[norm]) return g.byNorm[norm];
-    }
-    return null;
-  }
-  // 1) exacto
-  if (group.byName[nombre]) return group.byName[nombre];
-  // 2) normalizado
-  const norm = normalizeStr(nombre);
-  if (group.byNorm[norm]) return group.byNorm[norm];
-  // 3) incluye/contiene (búsqueda tolerante)
-  const candidates = Object.keys(group.byNorm);
-  const hit = candidates.find((k) => k.includes(norm) || norm.includes(k));
-  return hit ? group.byNorm[hit] : null;
 }
 
 /* ───────── Carrusel reutilizable ───────── */
@@ -1512,6 +1499,54 @@ export default function Entreno() {
 
   const listRef = useRef(null);
 
+  // 🆕 Estado para ejercicios desde MongoDB
+  const [exercises, setExercises] = useState([]);
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
+  const { token } = useAuth();
+  // 🆕 Índice dinámico de ejercicios
+  const exercisesIndex = useMemo(() => {
+    return buildExerciseIndex(exercises);
+  }, [exercises]);
+  // 🆕 Función findExercise que usa el índice dinámico
+  const findExerciseInIndex = useCallback((musculo, nombre) => {
+    const group = exercisesIndex[String(musculo || '').trim()];
+    if (!group) {
+      // Fallback: buscar por nombre en TODOS los músculos
+      const norm = normalizeStr(nombre);
+      for (const mus of Object.keys(exercisesIndex)) {
+        const g = exercisesIndex[mus];
+        if (g.byName[nombre]) return g.byName[nombre];
+        if (g.byNorm[norm]) return g.byNorm[norm];
+      }
+      return null;
+    }
+    // 1) exacto
+    if (group.byName[nombre]) return group.byName[nombre];
+    // 2) normalizado
+    const norm = normalizeStr(nombre);
+    if (group.byNorm[norm]) return group.byNorm[norm];
+    // 3) incluye/contiene (búsqueda tolerante)
+    const candidates = Object.keys(group.byNorm);
+    const hit = candidates.find((k) => k.includes(norm) || norm.includes(k));
+    return hit ? group.byNorm[hit] : null;
+  }, [exercisesIndex]);
+  // 🆕 Fetch exercises from API
+  const fetchAllExercises = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/exercises`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setExercises(data.exercises);
+      }
+    } catch (error) {
+      console.error(' fetching exercises:', error);
+    }
+  }, [API_URL, token]);
+
+
+
   /* Guardado de última sesión (semana/día) — por RUTINA */
   const saveLastSession = useCallback(
     async (w, d) => {
@@ -1603,8 +1638,9 @@ export default function Entreno() {
 
   // Al montar
   useEffect(() => {
+    fetchAllExercises(); // 🆕 Fetch exercises from MongoDB
     hydrate();
-  }, [hydrate]);
+  }, [hydrate, fetchAllExercises])
 
   // Cada vez que la pantalla vuelve a foco
   useFocusEffect(
@@ -1859,6 +1895,87 @@ export default function Entreno() {
         ejerciciosProcesados++;
       }
 
+      // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
+// 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
+try {
+    // Construir los ejercicios para la API con el esquema del modelo Workout
+    const exercisesForAPI = ejerciciosDia.map((ejercicio, orderIndex) => {
+        const ejerKey = `${semana}|${diaIdx}|${ejercicio.id}`;
+        // Construir las series - solo incluir campos con valores válidos
+        const sets = (ejercicio.series || []).map((serie, idx) => {
+            const serieKey = `${ejerKey}|${idx}`;
+            const datosSerie = nextProg[serieKey] || {};
+            // Construir objeto solo con campos que tienen valores válidos
+            const set = {
+                setNumber: idx + 1,
+                status: 'inRange'
+            };
+            // Solo añadir campos numéricos si tienen valores válidos
+            const targetMin = Number(serie?.repMin);
+            const targetMax = Number(serie?.repMax);
+            const reps = Number(datosSerie.reps);
+            const peso = Number(datosSerie.peso);
+            if (!isNaN(targetMin) && targetMin > 0) set.targetRepsMin = targetMin;
+            if (!isNaN(targetMax) && targetMax > 0) set.targetRepsMax = targetMax;
+            if (!isNaN(reps) && reps > 0) set.actualReps = reps;
+            if (!isNaN(peso) && peso > 0) set.weight = peso;
+            return set;
+        });
+        return {
+            exerciseId: null,
+            exerciseName: ejercicio.nombre,
+            muscleGroup: ejercicio.musculo,
+            orderIndex: orderIndex,
+            sets: sets
+        };
+    });
+    // Calcular totalSets y totalVolume
+    let totalSets = 0;
+    let totalVolume = 0;
+    exercisesForAPI.forEach(exercise => {
+        totalSets += exercise.sets.length;
+        exercise.sets.forEach(set => {
+            if (set.actualReps && set.weight) {
+                totalVolume += set.actualReps * set.weight;
+            }
+        });
+    });
+    // Preparar payload para el API
+    const workoutPayload = {
+        routineId: (activeId && activeId.match(/^[0-9a-fA-F]{24}$/)) ? activeId : null,
+        routineNameSnapshot: rutina?.nombre || 'Rut Desconocida',
+        dayIndex: diaIdx + 1,
+        dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`,
+        date: now,
+        status: 'completed',
+        exercises: exercisesForAPI,
+        totalSets: totalSets,
+        totalVolume: totalVolume,
+        durationMinutes: 0
+    };
+    // Hacer la petición POST a la API
+    if (API_URL && token) {
+        const response = await fetch(`${API_URL}/api/workouts`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(workoutPayload)
+        });
+        if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Workout guardado en la base de datos:', result.workout?._id);
+        } else {
+            const errorData = await response.json();
+            console.error('❌ Error al guardar en la API:', errorData);
+        }
+    }
+} catch (apiError) {
+    // No interrumpir el flujo si falla la API, solo loguear
+    console.error('❌ Error en la llamada a la API:', apiError);
+}
+
       // Actualizar el estado con los nuevos datos
       setProg(nextProg);
 
@@ -2059,7 +2176,7 @@ export default function Entreno() {
 
   // Abrir Técnica Correcta (TC)
   const onOpenTC = (item) => {
-    const ej = findExercise(item.musculo, item.nombre);
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
     if (!ej || !Array.isArray(ej.tecnicaCorrecta) || ej.tecnicaCorrecta.length === 0) {
       Alert.alert('Técnica no disponible', 'No hay técnica registrada para este ejercicio.');
       return;
@@ -2074,7 +2191,7 @@ export default function Entreno() {
       return;
     }
 
-    const ej = findExercise(item.musculo, item.nombre);
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
     const id = ej?.videoId?.trim();
     if (!id) {
       Alert.alert('Vídeo no disponible', 'No hay vídeo asignado a este ejercicio.');

@@ -8,7 +8,10 @@ import {
     FlatList,
     ActivityIndicator,
     Alert,
-    RefreshControl
+    RefreshControl,
+    TextInput,
+    Modal,
+    ScrollView
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,8 +56,6 @@ const normalizeCSV = (parsedData) => {
         ej.series.push(normalizeCSVRow(row, ej.id, ej.series.length));
     });
 
-    // Convert object to array for backend: [[ej1, ej2], [ej3]]
-    // We need to know max days to create the array structure
     const daysKeys = Object.keys(rutina);
     const maxDay = daysKeys.reduce((max, key) => {
         const num = parseInt(key.replace('dia', ''));
@@ -73,10 +74,22 @@ export default function WorkoutsScreen() {
     const router = useRouter();
     const { token } = useAuth();
     const [routines, setRoutines] = useState([]);
+    const [folders, setFolders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [assignModalVisible, setAssignModalVisible] = useState(false);
     const [selectedRoutine, setSelectedRoutine] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedFolder, setSelectedFolder] = useState(null);
+    const [folderModalVisible, setFolderModalVisible] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
+    const [moveFolderModalVisible, setMoveFolderModalVisible] = useState(false);
+    const [routineToMove, setRoutineToMove] = useState(null);
+
+    // Client management states
+    const [expandedRoutines, setExpandedRoutines] = useState({});
+    const [routineClients, setRoutineClients] = useState({});
+    const [allClients, setAllClients] = useState([]);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -88,6 +101,9 @@ export default function WorkoutsScreen() {
             const data = await response.json();
             if (data.success) {
                 setRoutines(data.routines);
+                // Extract unique folders from routines
+                const uniqueFolders = [...new Set(data.routines.map(r => r.folder).filter(Boolean))];
+                setFolders(uniqueFolders);
             } else {
                 Alert.alert('Error', 'No se pudieron cargar las rutinas');
             }
@@ -100,9 +116,28 @@ export default function WorkoutsScreen() {
         }
     };
 
+    const fetchAllClients = async () => {
+        try {
+            const response = await fetch(`${API_URL}/api/trainers/clients`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.success) {
+                setAllClients(data.clients || []);
+                console.log('[Workouts] Total clients loaded:', data.clients?.length || 0);
+                console.log('[Workouts] Client data:', JSON.stringify(data.clients, null, 2));
+
+console.log('[Workouts] Clients with routines:', data.clients?.filter(c => c.rutinas?.length > 0).length || 0);
+            }
+        } catch (error) {
+            console.error('Error fetching clients:', error);
+        }
+    };
+
     useFocusEffect(
         useCallback(() => {
             fetchRoutines();
+            fetchAllClients();
         }, [])
     );
 
@@ -112,9 +147,6 @@ export default function WorkoutsScreen() {
     }, []);
 
     const handleDelete = async (id) => {
-        console.log('🗑️ handleDelete called with id:', id);
-
-        // En web, Alert.alert no funciona correctamente, usamos window.confirm
         const isWeb = typeof window !== 'undefined' && window.confirm;
 
         if (isWeb) {
@@ -122,29 +154,24 @@ export default function WorkoutsScreen() {
             if (!confirmed) return;
 
             try {
-                console.log('🗑️ Deleting routine:', id);
                 const response = await fetch(`${API_URL}/api/routines/${id}`, {
                     method: 'DELETE',
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                console.log('🗑️ Delete response:', response.status, response.ok);
                 if (response.ok) {
                     setRoutines(prev => prev.filter(r => r._id !== id));
                     window.alert('Rutina eliminada correctamente');
                 } else {
-                    const errorData = await response.json();
-                    console.error('🗑️ Delete failed:', errorData);
                     window.alert('Error: No se pudo eliminar la rutina');
                 }
             } catch (error) {
-                console.error('🗑️ Error deleting routine:', error);
+                console.error('Error deleting routine:', error);
                 window.alert('Error de conexión');
             }
         } else {
-            // Mobile: usar Alert.alert normal
             Alert.alert(
                 'Eliminar Rutina',
-                '¿Estás seguro de que quieres eliminar esta rutina? Esta acción no se puede deshacer.',
+                '¿Estás seguro de que quieres eliminar esta rutina?',
                 [
                     { text: 'Cancelar', style: 'cancel' },
                     {
@@ -152,22 +179,17 @@ export default function WorkoutsScreen() {
                         style: 'destructive',
                         onPress: async () => {
                             try {
-                                console.log('🗑️ Deleting routine:', id);
                                 const response = await fetch(`${API_URL}/api/routines/${id}`, {
                                     method: 'DELETE',
                                     headers: { Authorization: `Bearer ${token}` }
                                 });
-                                console.log('🗑️ Delete response:', response.status, response.ok);
                                 if (response.ok) {
                                     setRoutines(prev => prev.filter(r => r._id !== id));
                                     Alert.alert('Éxito', 'Rutina eliminada correctamente');
                                 } else {
-                                    const errorData = await response.json();
-                                    console.error('🗑️ Delete failed:', errorData);
                                     Alert.alert('Error', 'No se pudo eliminar la rutina');
                                 }
                             } catch (error) {
-                                console.error('🗑️ Error deleting routine:', error);
                                 Alert.alert('Error', 'Error de conexión');
                             }
                         }
@@ -235,7 +257,6 @@ export default function WorkoutsScreen() {
                     const { daysArr, days } = normalizeCSV(results.data);
                     const newRoutineName = fileName.replace(/\.(csv|txt)$/i, '') || 'Rutina Importada';
 
-                    // Send to backend
                     try {
                         const response = await fetch(`${API_URL}/api/routines`, {
                             method: 'POST',
@@ -279,65 +300,259 @@ export default function WorkoutsScreen() {
         setAssignModalVisible(true);
     };
 
-    const renderRoutineItem = ({ item }) => (
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim()) {
+            Alert.alert('Error', 'El nombre de la carpeta no puede estar vacío');
+            return;
+        }
+
+        if (folders.includes(newFolderName.trim())) {
+            Alert.alert('Error', 'Ya existe una carpeta con ese nombre');
+            return;
+        }
+
+        setFolders(prev => [...prev, newFolderName.trim()]);
+        setNewFolderName('');
+        setFolderModalVisible(false);
+        Alert.alert('Éxito', 'Carpeta creada correctamente');
+    };
+
+    const handleMoveToFolder = async (folder) => {
+        if (!routineToMove) return;
+
+        try {
+            const response = await fetch(`${API_URL}/api/routines/${routineToMove._id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    ...routineToMove,
+                    folder: folder
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setRoutines(prev => prev.map(r =>
+                    r._id === routineToMove._id ? { ...r, folder } : r
+                ));
+                setMoveFolderModalVisible(false);
+                setRoutineToMove(null);
+                Alert.alert('Éxito', 'Rutina movida correctamente');
+            } else {
+                Alert.alert('Error', 'No se pudo mover la rutina');
+            }
+        } catch (error) {
+            console.error('Error moving routine:', error);
+            Alert.alert('Error', 'Error de conexión');
+        }
+    };
+
+    const toggleRoutineExpansion = (routineId) => {
+        setExpandedRoutines(prev => ({
+            ...prev,
+            [routineId]: !prev[routineId]
+        }));
+    };
+
+    const getClientsForRoutine = (routineId) => {
+        return allClients.filter(client =>
+            client.rutinas && client.rutinas.some(r => r === routineId || r._id === routineId)
+        );
+    };
+
+    const handleRemoveRoutineFromClient = async (routineId, clientId, clientName) => {
+        Alert.alert(
+            'Eliminar Rutina',
+            `¿Eliminar esta rutina de ${clientName}?`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            // Fetch client's current routines
+                            const clientResponse = await fetch(`${API_URL}/api/users/${clientId}`, {
+                                headers: { Authorization: `Bearer ${token}` }
+                            });
+                            const clientData = await clientResponse.json();
+
+                            if (clientData.success) {
+                                // Remove the routine from the array
+                                const updatedRutinas = (clientData.user.rutinas || []).filter(
+                                    r => (r._id || r) !== routineId
+                                );
+
+                                // Update the client
+                                const updateResponse = await fetch(`${API_URL}/api/users/${clientId}`, {
+                                    method: 'PUT',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        Authorization: `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({ rutinas: updatedRutinas })
+                                });
+
+                                if (updateResponse.ok) {
+                                    Alert.alert('Éxito', 'Rutina eliminada del cliente');
+                                    fetchAllClients(); // Refresh clients list
+                                } else {
+                                    Alert.alert('Error', 'No se pudo eliminar la rutina');
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error removing routine:', error);
+                            Alert.alert('Error', 'Error de conexión');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const openMoveModal = (routine) => {
+        setRoutineToMove(routine);
+        setMoveFolderModalVisible(true);
+    };
+
+    // Filter routines
+    const filteredRoutines = routines.filter(routine => {
+        const matchesSearch = routine.nombre.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesFolder = selectedFolder === null || routine.folder === selectedFolder;
+        return matchesSearch && matchesFolder;
+    });
+
+    const renderRoutineItem = ({ item }) => {
+        const clientsWithRoutine = getClientsForRoutine(item._id);
+        const isExpanded = expandedRoutines[item._id];
+    
+        return (
         <View style={styles.card}>
-            <View style={styles.cardHeader}>
-                <View>
+            <TouchableOpacity
+                style={styles.cardContent}
+                onPress={() => router.push({
+                    pathname: '/(coach)/workouts/create',
+                    params: {
+                        id: item._id,
+                        name: item.nombre,
+                        days: item.dias,
+                        enfoque: item.enfoque,
+                        nivel: item.nivel
+                    }
+                })}
+            >
+                <View style={styles.cardLeft}>
                     <Text style={styles.routineName}>{item.nombre}</Text>
                     <Text style={styles.routineInfo}>
-                        {item.dias} Días • {item.enfoque || 'General'} • {item.nivel || 'Intermedio'}
+                        {item.dias} Días • {item.enfoque || 'General'}
                     </Text>
+                    {item.folder && (
+                        <View style={styles.folderTag}>
+                            <Ionicons name="folder" size={12} color="#64748b" />
+                            <Text style={styles.folderText}>{item.folder}</Text>
+                        </View>
+                    )}
                 </View>
-                {item.isTemplate && <Ionicons name="copy-outline" size={16} color="#64748b" />}
-            </View>
+                <View style={styles.cardActions}>
+                    <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            openMoveModal(item);
+                        }}
+                    >
+                        <Ionicons name="folder-outline" size={18} color="#64748b" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            handleDuplicate(item._id);
+                        }}
+                    >
+                        <Ionicons name="duplicate-outline" size={18} color="#8b5cf6" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            openAssignModal(item);
+                        }}
+                    >
+                        <Ionicons name="person-add-outline" size={18} color="#10b981" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            handleDelete(item._id);
+                        }}
+                    >
+                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                </View>
+            </TouchableOpacity>
+                        {/* Clients Collapsible Section */}
+            {clientsWithRoutine.length > 0 && (
+                <View style={styles.clientsSection}>
+                    <TouchableOpacity
+                        style={styles.clientsHeader}
+                        onPress={() => toggleRoutineExpansion(item._id)}
+                    >
+                        <View style={styles.clientsHeaderLeft}>
+                            <Ionicons name="people" size={16} color="#10b981" />
+                            <Text style={styles.clientsCount}>
+                                {clientsWithRoutine.length} {clientsWithRoutine.length === 1 ? 'cliente' : 'clientes'}
+                            </Text>
+                        </View>
+                        <Ionicons 
+                            name={isExpanded ? "chevron-up" : "chevron-down"} 
+                            size={20} 
+                            color="#64748b" 
+                        />
+                    </TouchableOpacity>
 
-            <View style={styles.cardActions}>
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => router.push({
-                        pathname: '/(coach)/workouts/create',
-                        params: {
-                            id: item._id,
-                            name: item.nombre,
-                            days: item.dias,
-                            enfoque: item.enfoque,
-                            nivel: item.nivel
-                        }
-                    })}
-                >
-                    <Ionicons name="pencil" size={20} color="#3b82f6" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleDuplicate(item._id)}
-                >
-                    <Ionicons name="duplicate-outline" size={20} color="#8b5cf6" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => openAssignModal(item)}
-                >
-                    <Ionicons name="person-add-outline" size={20} color="#10b981" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleDelete(item._id)}
-                >
-                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                </TouchableOpacity>
-            </View>
+                    {isExpanded && (
+                        <View style={styles.clientsList}>
+                            {clientsWithRoutine.map((client) => (
+                                <View key={client._id} style={styles.clientItem}>
+                                    <View style={styles.clientItemLeft}>
+                                        <Ionicons name="person-circle-outline" size={20} color="#64748b" />
+                                        <View style={styles.clientItemInfo}>
+                                            <Text style={styles.clientItemName}>{client.nombre}</Text>
+                                            <Text style={styles.clientItemEmail}>{client.email}</Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.removeClientBtn}
+                                        onPress={() => handleRemoveRoutineFromClient(item._id, client._id, client.nombre)}
+                                    >
+                                        <Ionicons name="close-circle" size={22} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+                </View>
+            )}
         </View>
-    );
+        )
+    };
 
     return (
         <SafeAreaView style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
+
+            {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.title}>Biblioteca de Rutinas</Text>
                 <View style={styles.headerButtons}>
+                    <TouchableOpacity onPress={() => setFolderModalVisible(true)} style={styles.iconButton}>
+                        <Ionicons name="folder-outline" size={20} color="#334155" />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={handleImportCSV} style={styles.iconButton}>
                         <Ionicons name="document-text-outline" size={20} color="#334155" />
                     </TouchableOpacity>
@@ -352,13 +567,61 @@ export default function WorkoutsScreen() {
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#94a3b8" style={styles.searchIcon} />
+                <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar rutinas..."
+                    placeholderTextColor="#94a3b8"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                />
+                {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                        <Ionicons name="close-circle" size={20} color="#94a3b8" />
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            {/* Folder Filter */}
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.folderScroll}
+                contentContainerStyle={styles.folderScrollContent}
+            >
+                <TouchableOpacity
+                    style={[styles.folderChip, selectedFolder === null && styles.folderChipActive]}
+                    onPress={() => setSelectedFolder(null)}
+                >
+                    <Text style={[styles.folderChipText, selectedFolder === null && styles.folderChipTextActive]}>
+                        Todas
+                    </Text>
+                </TouchableOpacity>
+                {folders.map((folder, index) => (
+                    <TouchableOpacity
+                        key={index}
+                        style={[styles.folderChip, selectedFolder === folder && styles.folderChipActive]}
+                        onPress={() => setSelectedFolder(folder)}
+                    >
+                        <Ionicons name="folder" size={14} color={selectedFolder === folder ? '#3b82f6' : '#64748b'} />
+                        <Text style={[styles.folderChipText, selectedFolder === folder && styles.folderChipTextActive]}>
+                            {folder}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+
+            {/* Routines List */}
             {loading ? (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#3b82f6" />
                 </View>
             ) : (
                 <FlatList
-                    data={routines}
+                    data={filteredRoutines}
                     renderItem={renderRoutineItem}
                     keyExtractor={item => item._id}
                     contentContainerStyle={styles.listContent}
@@ -368,17 +631,102 @@ export default function WorkoutsScreen() {
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Ionicons name="barbell-outline" size={64} color="#cbd5e1" />
-                            <Text style={styles.emptyText}>No has creado ninguna rutina aún</Text>
-                            <TouchableOpacity
-                                style={styles.createEmptyButton}
-                                onPress={() => router.push('/(coach)/workouts/create')}
-                            >
-                                <Text style={styles.createEmptyButtonText}>Crear mi primera rutina</Text>
-                            </TouchableOpacity>
+                            <Text style={styles.emptyText}>
+                                {searchQuery ? 'No se encontraron rutinas' : 'No has creado ninguna rutina aún'}
+                            </Text>
+                            {!searchQuery && (
+                                <TouchableOpacity
+                                    style={styles.createEmptyButton}
+                                    onPress={() => router.push('/(coach)/workouts/create')}
+                                >
+                                    <Text style={styles.createEmptyButtonText}>Crear mi primera rutina</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     }
                 />
             )}
+
+            {/* Create Folder Modal */}
+            <Modal
+                visible={folderModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setFolderModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Nueva Carpeta</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="Nombre de la carpeta"
+                            placeholderTextColor="#94a3b8"
+                            value={newFolderName}
+                            onChangeText={setNewFolderName}
+                            autoFocus
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalButtonCancel]}
+                                onPress={() => {
+                                    setFolderModalVisible(false);
+                                    setNewFolderName('');
+                                }}
+                            >
+                                <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalButtonConfirm]}
+                                onPress={handleCreateFolder}
+                            >
+                                <Text style={styles.modalButtonText}>Crear</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Move to Folder Modal */}
+            <Modal
+                visible={moveFolderModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setMoveFolderModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Mover a Carpeta</Text>
+                        <ScrollView style={styles.folderList}>
+                            <TouchableOpacity
+                                style={styles.folderItem}
+                                onPress={() => handleMoveToFolder(null)}
+                            >
+                                <Ionicons name="folder-outline" size={20} color="#64748b" />
+                                <Text style={styles.folderItemText}>Sin carpeta</Text>
+                            </TouchableOpacity>
+                            {folders.map((folder, index) => (
+                                <TouchableOpacity
+                                    key={index}
+                                    style={styles.folderItem}
+                                    onPress={() => handleMoveToFolder(folder)}
+                                >
+                                    <Ionicons name="folder" size={20} color="#3b82f6" />
+                                    <Text style={styles.folderItemText}>{folder}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        <TouchableOpacity
+                            style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 16 }]}
+                            onPress={() => {
+                                setMoveFolderModalVisible(false);
+                                setRoutineToMove(null);
+                            }}
+                        >
+                            <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             <AssignRoutineModal
                 visible={assignModalVisible}
@@ -395,7 +743,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#e2e8f0',
@@ -403,10 +752,9 @@ const styles = StyleSheet.create({
     headerButtons: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12
+        gap: 8
     },
-    backButton: { padding: 8 },
-    title: { fontSize: 20, fontWeight: '700', color: '#1e293b', flex: 1, marginLeft: 8 },
+    title: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
     iconButton: {
         padding: 8,
         backgroundColor: '#f1f5f9',
@@ -414,9 +762,9 @@ const styles = StyleSheet.create({
     },
     createButton: {
         backgroundColor: '#3b82f6',
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#3b82f6',
@@ -425,38 +773,94 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 4
     },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        marginHorizontal: 16,
+        marginTop: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    searchIcon: {
+        marginRight: 8
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1e293b',
+    },
+    folderScroll: {
+        marginTop: 12,
+        maxHeight: 44,
+    },
+    folderScrollContent: {
+        paddingHorizontal: 16,
+        gap: 8,
+    },
+    folderChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: '#f1f5f9',
+        gap: 6,
+    },
+    folderChipActive: {
+        backgroundColor: '#dbeafe',
+    },
+    folderChipText: {
+        fontSize: 14,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    folderChipTextActive: {
+        color: '#3b82f6',
+    },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     listContent: { padding: 16 },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
+        borderRadius: 12,
+        marginBottom: 10,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 8,
+        shadowRadius: 4,
         elevation: 2
     },
-    cardHeader: {
+    cardContent: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 16
+        padding: 12,
     },
-    routineName: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
-    routineInfo: { fontSize: 14, color: '#64748b' },
+    cardLeft: {
+        flex: 1,
+    },
+    routineName: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 2 },
+    routineInfo: { fontSize: 13, color: '#64748b' },
+    folderTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 4,
+    },
+    folderText: {
+        fontSize: 12,
+        color: '#64748b',
+    },
     cardActions: {
         flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: 12,
-        borderTopWidth: 1,
-        borderTopColor: '#f1f5f9',
-        paddingTop: 12
+        gap: 8,
     },
-    actionButton: {
-        padding: 8,
-        borderRadius: 8,
+    actionBtn: {
+        padding: 6,
+        borderRadius: 6,
         backgroundColor: '#f8fafc'
     },
     emptyContainer: {
@@ -482,5 +886,136 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: '600',
         fontSize: 16
-    }
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e293b',
+        marginBottom: 16,
+    },
+    modalInput: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 15,
+        color: '#1e293b',
+        marginBottom: 20,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    modalButton: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    modalButtonCancel: {
+        backgroundColor: '#f1f5f9',
+    },
+    modalButtonConfirm: {
+        backgroundColor: '#3b82f6',
+    },
+    modalButtonText: {
+        color: '#fff',
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    modalButtonTextCancel: {
+        color: '#64748b',
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    folderList: {
+        maxHeight: 300,
+    },
+    folderItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        marginBottom: 8,
+        backgroundColor: '#f8fafc',
+    },
+    folderItemText: {
+        fontSize: 15,
+        color: '#1e293b',
+        fontWeight: '500',
+    },
+    clientsSection: {
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        paddingTop: 8,
+    },
+    clientsHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+    },
+    clientsHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    clientsCount: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#10b981',
+    },
+    clientsList: {
+        paddingHorizontal: 12,
+        paddingBottom: 8,
+    },
+    clientItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        marginBottom: 6,
+    },
+    clientItemLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+    },
+    clientItemInfo: {
+        flex: 1,
+    },
+    clientItemName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    clientItemEmail: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    removeClientBtn: {
+        padding: 4,
+    },
 });

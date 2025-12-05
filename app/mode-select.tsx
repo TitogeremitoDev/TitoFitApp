@@ -18,7 +18,7 @@ interface Mode {
 }
 
 export default function ModeSelect() {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const { theme, isDark } = useTheme();
 
     const isAdmin = user?.tipoUsuario === 'ADMINISTRADOR';
@@ -66,7 +66,7 @@ export default function ModeSelect() {
                         borderColor: mode.color
                     }
                 ]}
-onPress={() => router.push(mode.route as any)}
+                onPress={() => router.push(mode.route as any)}
                 activeOpacity={0.8}
             >
                 <View style={[styles.iconContainer, { backgroundColor: mode.color }]}>
@@ -122,9 +122,18 @@ onPress={() => router.push(mode.route as any)}
 
             <TouchableOpacity
                 style={styles.logoutButton}
-                onPress={() => {
-                    // Aquí puedes añadir lógica de logout si quieres
-                    router.replace('/(auth)/login');
+                onPress={async () => {
+                    try {
+                        console.log('[ModeSelect] Iniciando logout...');
+                        await logout();
+                        console.log('[ModeSelect] Logout completado, esperando limpieza de AsyncStorage...');
+                        // Pequeño delay para asegurar que AsyncStorage se limpie completamente
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        console.log('[ModeSelect] Navegando a login...');
+                        router.replace('/(auth)/login');
+                    } catch (error) {
+                        console.error('[ModeSelect] Error en logout:', error);
+                    }
                 }}
             >
                 <Ionicons

@@ -1,6 +1,6 @@
 /* app/rutinas/index.jsx
    ────────────────────────────────────────────────
-   ▸ Pantalla de gestión de rutinas con SectionList
+   ▸ Pantalla de gestión de rutinas con SectionList, búsqueda y carpetas
    ▸ CORRECCIÓN: ListHeaderComponent fuera para evitar pérdida de foco en TextInput
 */
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
@@ -76,21 +76,27 @@ const normalizeCSV = (parsedData) => {
    (Para evitar re-renders y pérdida de foco)
    ───────────────────────────── */
 
-const ListHeaderComponent = React.memo(function ListHeaderComponent({ 
-  theme, 
-  newRoutineName, 
-  onNameChange, 
+const ListHeaderComponent = React.memo(function ListHeaderComponent({
+  theme,
+  newRoutineName,
+  onNameChange,
   onAddRoutine,
   onPickDocument,
   onSync,
   tipoUsuario,
   canSync,
-  isSyncing 
+  isSyncing,
+  searchQuery,
+  onSearchChange,
+  folders,
+  selectedFolder,
+  onFolderSelect,
+  onCreateFolder
 }) {
   return (
-    <View style={[styles.header, { 
-      backgroundColor: theme.cardBackground, 
-      borderBottomColor: theme.cardBorder 
+    <View style={[styles.header, {
+      backgroundColor: theme.cardBackground,
+      borderBottomColor: theme.cardBorder
     }]}>
       <Text style={[styles.headerTitle, { color: theme.text }]}>Crear Nueva Rutina</Text>
       <View style={styles.inputContainer}>
@@ -103,7 +109,7 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
           placeholder="Nombre de la nueva rutina..."
           placeholderTextColor={theme.placeholder}
           value={newRoutineName}
-          onChangeText={onNameChange} 
+          onChangeText={onNameChange}
         />
         <TouchableOpacity style={[styles.addButton, { backgroundColor: theme.success }]} onPress={onAddRoutine}>
           <Ionicons name="add" size={24} color="#fff" />
@@ -118,8 +124,8 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
         )}
 
         {canSync && (
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: theme.primary }, isSyncing && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.primary }, isSyncing && styles.buttonDisabled]}
             onPress={onSync}
             disabled={isSyncing}
           >
@@ -127,6 +133,78 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
             <Text style={styles.buttonText}>{isSyncing ? 'Sinc...' : 'Sincronizar'}</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Search Bar */}
+      <View style={[styles.searchContainer, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}>
+        <Ionicons name="search" size={18} color={theme.textSecondary} style={styles.searchIcon} />
+        <TextInput
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder="Buscar rutinas..."
+          placeholderTextColor={theme.placeholder}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => onSearchChange('')}>
+            <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Folder Filter with Fixed Icon */}
+      <View style={styles.folderContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.folderScroll}
+        contentContainerStyle={styles.folderScrollContent}
+      >
+        <TouchableOpacity
+          style={[
+            styles.folderChip,
+            { backgroundColor: theme.backgroundTertiary, borderColor: theme.border },
+            selectedFolder === null && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+          ]}
+          onPress={() => onFolderSelect(null)}
+        >
+          <Text style={[
+            styles.folderChipText,
+            { color: theme.text },
+            selectedFolder === null && { color: theme.primary, fontWeight: '600' }
+          ]}>
+            Todas
+          </Text>
+        </TouchableOpacity>
+        {folders.map((folder, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.folderChip,
+              { backgroundColor: theme.backgroundTertiary, borderColor: theme.border },
+              selectedFolder === folder && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+            ]}
+            onPress={() => onFolderSelect(folder)}
+          >
+            <Ionicons
+              name="folder"
+              size={14}
+              color={selectedFolder === folder ? theme.primary : theme.textSecondary}
+            />
+            <Text style={[
+              styles.folderChipText,
+              { color: theme.text },
+              selectedFolder === folder && { color: theme.primary, fontWeight: '600' }
+            ]}>
+              {folder}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+        {/* Fixed Create Folder Button */}
+        <TouchableOpacity onPress={onCreateFolder} style={[styles.fixedIconContainer, { backgroundColor: theme.backgroundTertiary, borderRadius: 8 }]}>
+          <Ionicons name="folder-outline" size={22} color={theme.text} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -137,13 +215,22 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
    ───────────────────────────── */
 export default function RutinasScreen() {
   const { theme } = useTheme();
-  const [rutinas, setRutinas] = useState([]); 
-  const [activeRoutineId, setActiveRoutineId] = useState(null); 
+  const [rutinas, setRutinas] = useState([]);
+  const [activeRoutineId, setActiveRoutineId] = useState(null);
   const [newRoutineName, setNewRoutineName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOfferModalVisible, setIsOfferModalVisible] = useState(false);
   const [isPremiumOfferModalVisible, setIsPremiumOfferModalVisible] = useState(false);
+
+  // Search and folder state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [folders, setFolders] = useState([]);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [folderModalVisible, setFolderModalVisible] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [moveFolderModalVisible, setMoveFolderModalVisible] = useState(false);
+  const [routineToMove, setRoutineToMove] = useState(null);
 
   const { user, token } = useAuth();
   const tipoUsuario = user?.tipoUsuario;
@@ -152,37 +239,82 @@ export default function RutinasScreen() {
   const showPremiumRoutines = tipoUsuario === PLAN.PREMIUM || tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
 
   /* Carga inicial */
-  const loadRutinasAndActiveId = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [storedRutinas, activeId] = await Promise.all([
-        AsyncStorage.getItem('rutinas'),
-        AsyncStorage.getItem('active_routine'),
-      ]);
-      
-      if (storedRutinas) {
-        const parsed = JSON.parse(storedRutinas);
-        const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
-        const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
-        
-        const staticIds = new Set([
-          ...safePredefined.map(r => r?.id).filter(Boolean),
-          ...safePremium.map(r => r?.id).filter(Boolean),
-        ]);
-        const filteredRutinas = Array.isArray(parsed) ? parsed.filter(r => r && !staticIds.has(r.id)) : [];
-        setRutinas(filteredRutinas);
-      }
-      if (activeId) {
-        setActiveRoutineId(activeId);
-      }
-    } catch (e) {
-      console.error('Error cargando rutinas:', e);
-      Alert.alert('Error', 'No se pudieron cargar las rutinas.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+const loadRutinasAndActiveId = useCallback(async () => {
+  setIsLoading(true);
+  try {
+    const [storedRutinas, activeId] = await Promise.all([
+      AsyncStorage.getItem('rutinas'),
+      AsyncStorage.getItem('active_routine'),
+    ]);
 
+    let localRutinas = [];
+    if (storedRutinas) {
+      const parsed = JSON.parse(storedRutinas);
+      localRutinas = Array.isArray(parsed) ? parsed : [];
+    }
+
+    // Cargar rutinas desde el servidor (MongoDB)
+    let serverRutinas = [];
+    if (token) {
+      try {
+        const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+        const response = await fetch(`${apiBaseUrl}/api/routines`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && Array.isArray(data.routines)) {
+            serverRutinas = data.routines.map(r => ({
+              id: r._id,
+              nombre: r.nombre,
+              origen: 'server',
+              updatedAt: r.updatedAt,
+              folder: r.folder || null,
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error cargando rutinas del servidor:', error);
+      }
+    }
+
+    // Filtrar rutinas estáticas (predefined y premium)
+    const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
+    const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
+    
+    const staticIds = new Set([
+      ...safePredefined.map(r => r?.id).filter(Boolean),
+      ...safePremium.map(r => r?.id).filter(Boolean),
+    ]);
+
+    // Combinar rutinas: solo locales que no sean estáticas + todas las del servidor
+    const filteredLocalRutinas = localRutinas.filter(r => r && !staticIds.has(r.id) && r.origen !== 'server');
+    
+    // Combinar y eliminar duplicados (priorizar servidor)
+    const serverIds = new Set(serverRutinas.map(r => r.id));
+    const finalLocalRutinas = filteredLocalRutinas.filter(r => !serverIds.has(r.id));
+    
+    const allRutinas = [...serverRutinas, ...finalLocalRutinas];
+    setRutinas(allRutinas);
+
+    // Actualizar AsyncStorage con la lista combinada
+    await AsyncStorage.setItem('rutinas', JSON.stringify(allRutinas));
+
+    // Extract folders
+    const uniqueFolders = [...new Set(allRutinas.map(r => r.folder).filter(Boolean))];
+    setFolders(uniqueFolders);
+
+    if (activeId) {
+      setActiveRoutineId(activeId);
+    }
+  } catch (e) {
+    console.error('Error cargando rutinas:', e);
+    Alert.alert('Error', 'No se pudieron cargar las rutinas.');
+  } finally {
+    setIsLoading(false);
+  }
+}, [token]);
   useEffect(() => {
     loadRutinasAndActiveId();
   }, [loadRutinasAndActiveId]);
@@ -198,6 +330,7 @@ export default function RutinasScreen() {
       nombre: newRoutineName.trim(),
       origen: 'local',
       updatedAt: new Date().toISOString(),
+      folder: selectedFolder || null,
     };
     try {
       const newRutinasList = [...rutinas, newRoutine];
@@ -210,7 +343,7 @@ export default function RutinasScreen() {
     } catch (e) {
       Alert.alert('Error', 'No se pudo guardar la rutina.');
     }
-  }, [newRoutineName, rutinas]);
+  }, [newRoutineName, rutinas, selectedFolder]);
 
   const handleDeleteRoutine = useCallback((idToDelete) => {
     Alert.alert(
@@ -244,7 +377,7 @@ export default function RutinasScreen() {
     try {
       const isGratis = section?.title === 'RUTINAS GRATIS';
       const isPremium = section?.title === 'RUTINAS PREMIUM';
-      
+
       if (isGratis || isPremium) {
         const sourceArray = isGratis ? predefinedRoutines : premiumRoutines;
         const rutinaCompleta = sourceArray.find(r => r.id === id);
@@ -266,7 +399,7 @@ export default function RutinasScreen() {
 
   /* Importación CSV */
   const handlePickDocument = useCallback(async () => {
-    if (tipoUsuario === PLAN.FREEUSER) return; 
+    if (tipoUsuario === PLAN.FREEUSER) return;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['text/csv', 'text/comma-separated-values'],
@@ -284,7 +417,7 @@ export default function RutinasScreen() {
         fileName = result.name;
       }
 
-      if (!fileUri) return; 
+      if (!fileUri) return;
 
       const fileContentBase64 = await FileSystem.readAsStringAsync(fileUri, {
         encoding: FileSystem.EncodingType.Base64,
@@ -316,6 +449,7 @@ export default function RutinasScreen() {
             nombre: newRoutineName,
             origen: 'local',
             updatedAt: new Date().toISOString(),
+            folder: selectedFolder || null,
           };
           const newRutinasList = [...rutinas, newRoutineMeta];
 
@@ -331,7 +465,7 @@ export default function RutinasScreen() {
     } catch (e) {
       Alert.alert('Error', `No se pudo importar el archivo: ${e.message}`);
     }
-  }, [tipoUsuario, rutinas]);
+  }, [tipoUsuario, rutinas, selectedFolder]);
 
   /* Sincronización */
   const onSync = useCallback(async () => {
@@ -340,7 +474,7 @@ export default function RutinasScreen() {
       return;
     }
     if (isSyncing) return;
-    
+
     setIsSyncing(true);
     try {
       const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -352,7 +486,7 @@ export default function RutinasScreen() {
         Alert.alert('Error de Sincronización', error);
       } else {
         Alert.alert('Sincronización Completa', `Se actualizaron ${synced.length} rutinas.`);
-        await loadRutinasAndActiveId(); 
+        await loadRutinasAndActiveId();
       }
     } catch (e) {
       Alert.alert('Error', `No se pudo completar la sincronización: ${e.message}`);
@@ -361,14 +495,64 @@ export default function RutinasScreen() {
     }
   }, [token, canSync, isSyncing, loadRutinasAndActiveId]);
 
+  /* Folder Management */
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      Alert.alert('Error', 'El nombre de la carpeta no puede estar vacío');
+      return;
+    }
+
+    if (folders.includes(newFolderName.trim())) {
+      Alert.alert('Error', 'Ya existe una carpeta con ese nombre');
+      return;
+    }
+
+    setFolders(prev => [...prev, newFolderName.trim()]);
+    setNewFolderName('');
+    setFolderModalVisible(false);
+    Alert.alert('Éxito', 'Carpeta creada correctamente');
+  };
+
+  const handleMoveToFolder = async (folder) => {
+    if (!routineToMove) return;
+
+    try {
+      const updatedRoutines = rutinas.map(r =>
+        r.id === routineToMove.id ? { ...r, folder } : r
+      );
+      setRutinas(updatedRoutines);
+      await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRoutines));
+
+      setMoveFolderModalVisible(false);
+      setRoutineToMove(null);
+      Alert.alert('Éxito', 'Rutina movida correctamente');
+    } catch (error) {
+      console.error('Error moving routine:', error);
+      Alert.alert('Error', 'Error al mover la rutina');
+    }
+  };
+
+  const openMoveModal = (routine) => {
+    setRoutineToMove(routine);
+    setMoveFolderModalVisible(true);
+  };
+
+  /* Filter routines */
+  const filteredRutinas = useMemo(() => {
+    return rutinas.filter(routine => {
+      const matchesSearch = routine.nombre.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesFolder = selectedFolder === null || routine.folder === selectedFolder;
+      return matchesSearch && matchesFolder;
+    });
+  }, [rutinas, searchQuery, selectedFolder]);
+
   /* Secciones */
   const sections = useMemo(() => {
     const data = [];
     const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
     const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
-    const safeRutinas = Array.isArray(rutinas) ? rutinas : [];
-    
-    data.push({ title: 'RUTINAS PROPIAS', data: safeRutinas });
+
+    data.push({ title: 'RUTINAS PROPIAS', data: filteredRutinas });
     data.push({ title: 'RUTINAS GRATIS', data: safePredefined });
 
     if (showPremiumRoutines) {
@@ -377,7 +561,7 @@ export default function RutinasScreen() {
       data.push({ title: 'RUTINAS PREMIUM', data: [] });
     }
     return data;
-  }, [rutinas, showPremiumRoutines, showPremiumTeaser]);
+  }, [filteredRutinas, showPremiumRoutines, showPremiumTeaser]);
 
   /* Renderizadores */
   const RenderSectionHeader = useCallback(({ title, data }) => {
@@ -406,41 +590,60 @@ export default function RutinasScreen() {
   const RenderRutina = useCallback(({ item, section }) => {
     const isActive = activeRoutineId === item.id;
     const isPropia = section.title === 'RUTINAS PROPIAS';
-    const canDelete = isPropia && item.origen !== 'server';
+const canDelete = isPropia;
     const canEdit = isPropia;
-    
+
     return (
       <View style={styles.rutinaContainer}>
         <TouchableOpacity
           style={[
-            styles.rutinaButton, 
+            styles.rutinaButton,
             { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder },
             isActive && [styles.rutinaButtonActive, { backgroundColor: theme.successLight, borderColor: theme.success }]
           ]}
           onPress={() => handleSelectRoutine(item.id, item.nombre, section)}
           activeOpacity={0.8}
         >
-          <Text style={[styles.rutinaNombre, { color: theme.text }, isActive && { color: theme.successText }]} numberOfLines={1}>
-            {item.origen === 'server' ? '🔒 ' : ''}{item.nombre}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.rutinaNombre, { color: theme.text }, isActive && { color: theme.successText }]} numberOfLines={1}>
+            {item.nombre}
+            </Text>
+            {item.folder && (
+              <View style={styles.folderTag}>
+                <Ionicons name="folder" size={11} color={theme.textSecondary} />
+                <Text style={[styles.folderText, { color: theme.textSecondary }]}>{item.folder}</Text>
+              </View>
+            )}
+          </View>
 
           <View style={styles.rutinaControles}>
+            {isPropia && (
+              <TouchableOpacity
+                style={[styles.rutinaBtn, { backgroundColor: theme.backgroundTertiary }]}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openMoveModal(item);
+                }}
+              >
+                <Ionicons name="folder-outline" size={16} color={theme.textSecondary} />
+              </TouchableOpacity>
+            )}
             {canEdit && (
-              <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnEdit]} onPress={() => router.push(`/rutinas/${item.id}`)}>
-                <Ionicons name="pencil" size={18} color={theme.primary} />
+  <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnEdit]} onPress={() => router.push(`/rutinas/${item.id}?name=${encodeURIComponent(item.nombre)}`)}>
+                <Ionicons name="pencil" size={16} color={theme.primary} />
               </TouchableOpacity>
             )}
             {canDelete && (
               <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnDelete, { backgroundColor: theme.dangerLight }]} onPress={() => handleDeleteRoutine(item.id)}>
-                <Ionicons name="trash" size={18} color={theme.danger} />
+                <Ionicons name="trash" size={16} color={theme.danger} />
               </TouchableOpacity>
             )}
           </View>
         </TouchableOpacity>
       </View>
     );
-  }, [theme, activeRoutineId, handleSelectRoutine, handleDeleteRoutine]);
-  
+  }, [theme, activeRoutineId, handleSelectRoutine, handleDeleteRoutine, openMoveModal]);
+
   const ListEmpty = useCallback(() => {
     if (isLoading) {
       return (
@@ -462,10 +665,9 @@ export default function RutinasScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item, section }) => <RenderRutina item={item} section={section} />}
         renderSectionHeader={({ section: { title, data } }) => <RenderSectionHeader title={title} data={data} />}
-        
-        /* CORRECCIÓN: Pasamos el componente externo y sus props aquí */
+
         ListHeaderComponent={
-          <ListHeaderComponent 
+          <ListHeaderComponent
             theme={theme}
             newRoutineName={newRoutineName}
             onNameChange={setNewRoutineName}
@@ -475,6 +677,12 @@ export default function RutinasScreen() {
             tipoUsuario={tipoUsuario}
             canSync={canSync}
             isSyncing={isSyncing}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            folders={folders}
+            selectedFolder={selectedFolder}
+            onFolderSelect={setSelectedFolder}
+            onCreateFolder={() => setFolderModalVisible(true)}
           />
         }
 
@@ -483,15 +691,100 @@ export default function RutinasScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         style={styles.container}
       />
-      
+
       {/* Banner */}
       <TouchableOpacity style={[styles.promoBanner, { backgroundColor: theme.backgroundSecondary, borderTopColor: theme.border }]} onPress={() => setIsOfferModalVisible(true)} activeOpacity={0.8}>
-        <Ionicons name="sparkles-outline" size={18} color={theme.premium} style={{ marginRight: 8 }}/>
+        <Ionicons name="sparkles-outline" size={18} color={theme.premium} style={{ marginRight: 8 }} />
         <Text style={[styles.promoBannerText, { color: theme.premium }]}>
           Rutinas genéricas... ¿Quieres dar el cambio? ¡Pincha aquí!
         </Text>
-        <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.premium} style={{ marginLeft: 8 }}/>
+        <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.premium} style={{ marginLeft: 8 }} />
       </TouchableOpacity>
+
+      {/* Create Folder Modal */}
+      <Modal
+        visible={folderModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFolderModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Nueva Carpeta</Text>
+            <TextInput
+              style={[styles.modalInput, {
+                borderColor: theme.inputBorder,
+                backgroundColor: theme.inputBackground,
+                color: theme.text
+              }]}
+              placeholder="Nombre de la carpeta"
+              placeholderTextColor={theme.placeholder}
+              value={newFolderName}
+              onChangeText={setNewFolderName}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: theme.backgroundTertiary }]}
+                onPress={() => {
+                  setFolderModalVisible(false);
+                  setNewFolderName('');
+                }}
+              >
+                <Text style={[styles.modalButtonTextCancel, { color: theme.textSecondary }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm, { backgroundColor: theme.primary }]}
+                onPress={handleCreateFolder}
+              >
+                <Text style={styles.modalButtonText}>Crear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Move to Folder Modal */}
+      <Modal
+        visible={moveFolderModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoveFolderModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Mover a Carpeta</Text>
+            <ScrollView style={styles.folderList}>
+              <TouchableOpacity
+                style={[styles.folderItem, { backgroundColor: theme.backgroundTertiary }]}
+                onPress={() => handleMoveToFolder(null)}
+              >
+                <Ionicons name="folder-outline" size={20} color={theme.textSecondary} />
+                <Text style={[styles.folderItemText, { color: theme.text }]}>Sin carpeta</Text>
+              </TouchableOpacity>
+              {folders.map((folder, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.folderItem, { backgroundColor: theme.backgroundTertiary }]}
+                  onPress={() => handleMoveToFolder(folder)}
+                >
+                  <Ionicons name="folder" size={20} color={theme.primary} />
+                  <Text style={[styles.folderItemText, { color: theme.text }]}>{folder}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 16, backgroundColor: theme.backgroundTertiary }]}
+              onPress={() => {
+                setMoveFolderModalVisible(false);
+                setRoutineToMove(null);
+              }}
+            >
+              <Text style={[styles.modalButtonTextCancel, { color: theme.textSecondary }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal Promo */}
       <Modal animationType="slide" transparent={false} visible={isOfferModalVisible} onRequestClose={() => setIsOfferModalVisible(false)} statusBarTranslucent={true}>
@@ -499,14 +792,14 @@ export default function RutinasScreen() {
           <TouchableOpacity style={styles.offerModalCloseButton} onPress={() => setIsOfferModalVisible(false)}>
             <Ionicons name="close-circle" size={32} color="#cccccc" />
           </TouchableOpacity>
-        <View style={styles.offerRoot}>
-          <ImageBackground source={require('../../../assets/images/fitness/promocion.png')} style={styles.offerBg} resizeMode="cover" />
-          <View style={styles.offerFooter}>
-            <TouchableOpacity style={styles.ctaBtn} onPress={() => Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8')} activeOpacity={0.9}>
-              <Text style={styles.ctaBtnText}>Quiero mi plan personalizado</Text>
-            </TouchableOpacity>
+          <View style={styles.offerRoot}>
+            <ImageBackground source={require('../../../assets/images/fitness/promocion.png')} style={styles.offerBg} resizeMode="cover" />
+            <View style={styles.offerFooter}>
+              <TouchableOpacity style={styles.ctaBtn} onPress={() => Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8')} activeOpacity={0.9}>
+                <Text style={styles.ctaBtnText}>Quiero mi plan personalizado</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
         </SafeAreaView>
       </Modal>
 
@@ -514,46 +807,46 @@ export default function RutinasScreen() {
       <Modal animationType="fade" transparent={true} visible={isPremiumOfferModalVisible} onRequestClose={() => setIsPremiumOfferModalVisible(false)}>
         <View style={styles.premiumOfferModalOverlay}>
           <ScrollView contentContainerStyle={styles.premiumOfferModalScroll}>
-          <View style={[styles.premiumOfferModalContent, { backgroundColor: theme.cardBackground }]}>
-            <TouchableOpacity style={styles.premiumOfferModalCloseButton} onPress={() => setIsPremiumOfferModalVisible(false)}>
-              <Ionicons name="close-circle" size={30} color={theme.textSecondary} />
-            </TouchableOpacity>
-            <Ionicons name="flash-sharp" size={60} color={theme.premium} style={{ marginBottom: 20 }} />
-            <Text style={[styles.premiumOfferModalTitle, { color: theme.text }]}>Desbloquea tu Potencial Ilimitado</Text>
-            <Text style={[styles.premiumOfferModalSubtitle, { color: theme.textSecondary }]}>
-              Las rutinas premium te esperan. Eleva tu entrenamiento al siguiente nivel.
-            </Text>
+            <View style={[styles.premiumOfferModalContent, { backgroundColor: theme.cardBackground }]}>
+              <TouchableOpacity style={styles.premiumOfferModalCloseButton} onPress={() => setIsPremiumOfferModalVisible(false)}>
+                <Ionicons name="close-circle" size={30} color={theme.textSecondary} />
+              </TouchableOpacity>
+              <Ionicons name="flash-sharp" size={60} color={theme.premium} style={{ marginBottom: 20 }} />
+              <Text style={[styles.premiumOfferModalTitle, { color: theme.text }]}>Desbloquea tu Potencial Ilimitado</Text>
+              <Text style={[styles.premiumOfferModalSubtitle, { color: theme.textSecondary }]}>
+                Las rutinas premium te esperan. Eleva tu entrenamiento al siguiente nivel.
+              </Text>
 
-            <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
-              <Ionicons name="medal-outline" size={30} color={theme.success} />
-              <View style={styles.premiumOptionTextContainer}>
-                <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Conviértete en Cliente VIP</Text>
-                <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
-                  ¿Buscas resultados garantizados y un seguimiento personalizado?
-                </Text>
-                <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.success }]} onPress={() => Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8')}>
-                  <Text style={styles.premiumCtaButtonText}>Hablar con un Experto</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#fff" />
-                </TouchableOpacity>
+              <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
+                <Ionicons name="medal-outline" size={30} color={theme.success} />
+                <View style={styles.premiumOptionTextContainer}>
+                  <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Conviértete en Cliente VIP</Text>
+                  <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
+                    ¿Buscas resultados garantizados y un seguimiento personalizado?
+                  </Text>
+                  <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.success }]} onPress={() => Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8')}>
+                    <Text style={styles.premiumCtaButtonText}>Hablar con un Experto</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={[styles.premiumOrText, { color: theme.textSecondary }]}>— O —</Text>
+
+              <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
+                <Ionicons name="diamond-outline" size={30} color={theme.primary} />
+                <View style={styles.premiumOptionTextContainer}>
+                  <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Suscríbete a Premium</Text>
+                  <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
+                    Accede al catálogo completo de rutinas avanzadas.
+                  </Text>
+                  <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.primary }]} onPress={() => Alert.alert('Suscripción', 'Próximamente...')}>
+                    <Text style={styles.premiumCtaButtonText}>Obtener Premium (6.99€/mes)</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-
-            <Text style={[styles.premiumOrText, { color: theme.textSecondary }]}>— O —</Text>
-
-            <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
-              <Ionicons name="diamond-outline" size={30} color={theme.primary} />
-              <View style={styles.premiumOptionTextContainer}>
-                <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Suscríbete a Premium</Text>
-                <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
-                  Accede al catálogo completo de rutinas avanzadas.
-                </Text>
-                <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.primary }]} onPress={() => Alert.alert('Suscripción', 'Próximamente...')}>
-                  <Text style={styles.premiumCtaButtonText}>Obtener Premium (6.99€/mes)</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
           </ScrollView>
         </View>
       </Modal>
@@ -573,30 +866,133 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', marginBottom: 12 },
   input: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
   addButton: { marginLeft: 10, borderRadius: 8, padding: 10, justifyContent: 'center', alignItems: 'center' },
-  buttonRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-start' },
+  buttonRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-start', marginBottom: 12 },
   button: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, gap: 8 },
+  iconButton: { padding: 10, borderRadius: 8 },
   buttonDisabled: { backgroundColor: '#9ca3af' },
   buttonText: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  
+
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15 },
+
+  folderContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 2,
+    gap: 12,
+  },
+  folderScroll: { flex: 1, maxHeight: 40 },  folderScrollContent: { gap: 8 },
+  folderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+  },
+  folderChipText: { fontSize: 13, fontWeight: '500' },
+  fixedIconContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
   sectionHeader: { paddingHorizontal: 16, paddingVertical: 10, paddingTop: 20, flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center' },
   sectionTitle: { fontSize: 16, fontWeight: '700', textTransform: 'uppercase' },
-  
+
   sectionHeaderTeaser: { marginTop: 20, paddingHorizontal: 16, paddingVertical: 12, paddingTop: 10, borderTopWidth: 2, borderBottomWidth: 2, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionHeaderTeaserLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitleTeaser: { padding:0, fontSize: 16, fontWeight: '700', textTransform: 'uppercase' },
+  sectionTitleTeaser: { padding: 0, fontSize: 16, fontWeight: '700', textTransform: 'uppercase' },
   premiumTeaserButton: { padding: 2 },
 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, marginTop: 20 },
   emptyText: { fontSize: 16, fontWeight: '500', marginTop: 12, textAlign: 'center' },
-  
+
   rutinaContainer: { paddingHorizontal: 12, marginVertical: 4 },
-  rutinaButton: { borderRadius: 12, borderWidth: 1, paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  rutinaButton: { borderRadius: 10, borderWidth: 1, paddingVertical: 8, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
   rutinaButtonActive: { borderWidth: 1.5 },
-  rutinaNombre: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 10 },
+  rutinaNombre: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
+  folderTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  folderText: { fontSize: 11 },
   rutinaControles: { flexDirection: 'row', gap: 6 },
-  rutinaBtn: { padding: 8, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  rutinaBtn: { padding: 6, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
   rutinaBtnEdit: { backgroundColor: '#dbeafe' },
   rutinaBtnDelete: {},
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {},
+  modalButtonConfirm: {},
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  modalButtonTextCancel: {
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  folderList: {
+    maxHeight: 300,
+  },
+  folderItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  folderItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
 
   promoBanner: { paddingVertical: 12, paddingHorizontal: 16, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 25 },
   promoBannerText: { fontSize: 13, fontWeight: '500', textAlign: 'center', flexShrink: 1, marginHorizontal: 5 },
@@ -608,8 +1004,8 @@ const styles = StyleSheet.create({
   offerFooter: { position: 'absolute', left: 16, right: 16, bottom: 100, alignItems: 'center' },
   ctaBtn: { width: '100%', maxWidth: 420, backgroundColor: '#3b82f6', paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, elevation: 3 },
   ctaBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  
-  premiumOfferModalOverlay: { flex: 1,width:'100%',backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+
+  premiumOfferModalOverlay: { flex: 1, width: '100%', backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   premiumOfferModalScroll: { justifyContent: 'center', alignItems: 'center', width: '100%' },
   premiumOfferModalContent: { width: '90%', maxWidth: "100%", borderRadius: 16, padding: 15, paddingTop: 25, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.30, shadowRadius: 12, elevation: 10, marginVertical: 20 },
   premiumOfferModalCloseButton: { position: 'absolute', top: 12, right: 12, zIndex: 10, padding: 6 },

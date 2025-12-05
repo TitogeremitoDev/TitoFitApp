@@ -66,6 +66,14 @@ const MENU_ITEMS = [
         color: ['#a18cd1', '#fbc2eb']
     },
     {
+        id: 'exercises',
+        title: 'BD Ejercicios',
+        icon: 'dumbbell',
+        iconType: 'FontAwesome5',
+        route: '/(admin)/exercises',
+        color: ['#667eea', '#764ba2']
+    },
+    {
         id: 'settings',
         title: 'Ajustes',
         icon: 'settings',
