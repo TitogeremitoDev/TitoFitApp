@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function NutritionScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Nutrición</Text>
-            </View>
+            <CoachHeader
+                title="Nutrición"
+                subtitle="Planes y macros"
+                icon="nutrition"
+                iconColor="#22c55e"
+            />
             <View style={styles.content}>
                 <Ionicons name="nutrition-outline" size={80} color="#22c55e" />
                 <Text style={styles.placeholderText}>Planes Nutricionales</Text>

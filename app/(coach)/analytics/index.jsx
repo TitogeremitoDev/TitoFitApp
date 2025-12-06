@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function AnalyticsScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Analítica</Text>
-            </View>
+            <CoachHeader
+                title="Analítica"
+                subtitle="Estadísticas de negocio"
+                icon="bar-chart"
+                iconColor="#a855f7"
+            />
             <View style={styles.content}>
                 <Ionicons name="bar-chart-outline" size={80} color="#a855f7" />
                 <Text style={styles.placeholderText}>Analíticas de Negocio</Text>

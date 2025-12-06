@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function MultimediaScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Multimedia</Text>
-            </View>
+            <CoachHeader
+                title="Multimedia"
+                subtitle="Videos y demostraciones"
+                icon="film"
+                iconColor="#ec4899"
+            />
             <View style={styles.content}>
                 <Ionicons name="film-outline" size={80} color="#ec4899" />
                 <Text style={styles.placeholderText}>Biblioteca Multimedia</Text>

@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function CommunicationScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Comunicación</Text>
-            </View>
+            <CoachHeader
+                title="Comunicación"
+                subtitle="Mensajes y notificaciones"
+                icon="chatbubbles"
+                iconColor="#8b5cf6"
+            />
 
             <View style={styles.content}>
                 <Ionicons name="chatbubbles-outline" size={80} color="#8b5cf6" />

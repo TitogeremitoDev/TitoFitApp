@@ -20,7 +20,7 @@ const AVATARS = [
 
 export default function PerfilScreen() {
     const router = useRouter();
-    const { user, logout, token } = useAuth();
+    const { user, logout, token, refreshUser } = useAuth();
     const { theme, isDark } = useTheme();
 
     const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -76,6 +76,13 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
+                // Refrescar datos del usuario para actualizar tipoUsuario
+                try {
+                    await refreshUser();
+                } catch (refreshError) {
+                    console.error('[Perfil] Error refreshing user:', refreshError);
+                }
+
                 Alert.alert(
                     'Éxito',
                     `¡Te has vinculado exitosamente con tu entrenador!`,
@@ -155,9 +162,6 @@ export default function PerfilScreen() {
                         <Text style={[styles.username, { color: theme.textSecondary }]}>@{user?.username || 'usuario'}</Text>
 
                         <View style={styles.badgesRow}>
-                            <View style={[styles.badge, { backgroundColor: theme.primaryLight }]}>
-                                <Text style={[styles.badgeText, { color: theme.primary }]}>{user?.role || 'ENTRENADOR'}</Text>
-                            </View>
                             <View style={[styles.badge, { backgroundColor: theme.successLight }]}>
                                 <Text style={[styles.badgeText, { color: theme.successText }]}>{user?.tipoUsuario || 'ADMINISTRADOR'}</Text>
                             </View>

@@ -7,8 +7,8 @@ export default function CoachLayout() {
     const { user } = useAuth();
 
     useEffect(() => {
-        if (!user || user.tipoUsuario !== 'ADMINISTRADOR') {
-            Alert.alert('Acceso denegado', 'Solo administradores pueden acceder');
+        if (!user || (user.tipoUsuario !== 'ADMINISTRADOR' && user.tipoUsuario !== 'ENTRENADOR')) {
+            Alert.alert('Acceso denegado', 'Solo administradores y entrenadores pueden acceder');
             router.replace('/(app)');
         }
     }, [user]);
@@ -16,13 +16,12 @@ export default function CoachLayout() {
     return (
         <Stack
             screenOptions={{
-                headerStyle: { backgroundColor: '#3b82f6' },
-                headerTintColor: '#fff',
-                headerTitleStyle: { fontWeight: 'bold' }
+                headerShown: false
             }}
         >
-            <Stack.Screen name="index" options={{ title: 'Panel Entrenador' }} />
-            <Stack.Screen name="workouts/create" options={{ title: 'Diseño Rutina' }} />
+            <Stack.Screen name="index" />
+            <Stack.Screen name="clients_coach/index" />
+            <Stack.Screen name="workouts/create" />
         </Stack>
     );
 }

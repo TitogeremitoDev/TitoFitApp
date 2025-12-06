@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function ProgressScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Progreso</Text>
-            </View>
+            <CoachHeader
+                title="Progreso"
+                subtitle="Seguimiento de evolución"
+                icon="stats-chart"
+                iconColor="#ef4444"
+            />
             <View style={styles.content}>
                 <Ionicons name="stats-chart-outline" size={80} color="#ef4444" />
                 <Text style={styles.placeholderText}>Seguimiento de Progreso</Text>

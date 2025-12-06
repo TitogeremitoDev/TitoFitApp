@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function CommunityScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Comunidad</Text>
-            </View>
+            <CoachHeader
+                title="Comunidad"
+                subtitle="Grupos y foros"
+                icon="people"
+                iconColor="#06b6d4"
+            />
             <View style={styles.content}>
                 <Ionicons name="people-circle-outline" size={80} color="#06b6d4" />
                 <Text style={styles.placeholderText}>Comunidad y Grupos</Text>

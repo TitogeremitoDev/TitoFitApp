@@ -80,8 +80,8 @@ export default function TrainerDashboard() {
 
     const dashboardSections = [
         { icon: 'person', name: 'Perfil Profesional', route: '/(coach)/profile', color: '#3b82f6' },
-        { icon: 'people', name: 'Clientes', route: '/(coach)/clients', color: '#10b981' },
-        { icon: 'dumbbell', name: 'BD Ejercicios', route: '/(coach)/exercises', color: '#667eea' },
+        { icon: 'people', name: 'Clientes', route: '/(coach)/clients_coach', color: '#10b981' },
+        { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
         { icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6' },
         { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
         { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899' },

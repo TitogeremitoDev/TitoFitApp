@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function GoalsScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Objetivos</Text>
-            </View>
+            <CoachHeader
+                title="Objetivos"
+                subtitle="Metas y seguimiento"
+                icon="trophy"
+                iconColor="#eab308"
+            />
             <View style={styles.content}>
                 <Ionicons name="trophy-outline" size={80} color="#eab308" />
                 <Text style={styles.placeholderText}>Metas y Objetivos</Text>

@@ -16,6 +16,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import CoachHeader from '../components/CoachHeader';
 
 const SPECIALTIES_LIST = [
     'Hipertrofia',
@@ -212,20 +213,25 @@ export default function ProfileScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Editar Perfil Profesional</Text>
-                <TouchableOpacity
-                    onPress={handleSave}
-                    style={styles.saveButton}
-                    disabled={saving}
-                >
-                    {saving ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                        <Text style={styles.saveButtonText}>Guardar</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
+            <CoachHeader
+                title="Mi Perfil"
+                subtitle="Configuración profesional"
+                icon="person"
+                iconColor="#3b82f6"
+                rightContent={
+                    <TouchableOpacity
+                        onPress={handleSave}
+                        style={styles.saveButton}
+                        disabled={saving}
+                    >
+                        {saving ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <Text style={styles.saveButtonText}>Guardar</Text>
+                        )}
+                    </TouchableOpacity>
+                }
+            />
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

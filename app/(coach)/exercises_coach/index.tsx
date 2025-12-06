@@ -12,11 +12,13 @@ import {
     FlatList,
     Dimensions,
     Platform,
+    SafeAreaView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../../../context/AuthContext';
+import CoachHeader from '../components/CoachHeader';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -198,17 +200,25 @@ export default function ExercisesCoach() {
     );
 
     return (
-        <View style={styles.container}>
-            <StatusBar style="light" />
-            <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                style={styles.header}
-            >
-                <Text style={styles.headerTitle}>BD Ejercicios</Text>
-                <Text style={styles.headerSubtitle}>
-                    {filteredExercises.length} ejercicio{filteredExercises.length !== 1 ? 's' : ''}
-                </Text>
-            </LinearGradient>
+        <SafeAreaView style={styles.container}>
+            <StatusBar style="dark" />
+            <CoachHeader
+                title="Base de Datos"
+                subtitle="Biblioteca de ejercicios"
+                icon="library"
+                iconColor="#667eea"
+                badge={`${filteredExercises.length}`}
+                badgeColor="#ede9fe"
+                badgeTextColor="#7c3aed"
+                rightContent={
+                    <TouchableOpacity
+                        onPress={handleAddNew}
+                        style={styles.addButton}
+                    >
+                        <Ionicons name="add" size={24} color="#fff" />
+                    </TouchableOpacity>
+                }
+            />
 
             {/* Filters */}
             <View style={styles.filtersContainer}>
@@ -271,19 +281,7 @@ export default function ExercisesCoach() {
                 />
             )}
 
-            {/* Add Button */}
-            <TouchableOpacity
-                onPress={handleAddNew}
-                style={styles.fab}
-                activeOpacity={0.8}
-            >
-                <LinearGradient
-                    colors={['#667eea', '#764ba2']}
-                    style={styles.fabGradient}
-                >
-                    <Ionicons name="add" size={28} color="#FFF" />
-                </LinearGradient>
-            </TouchableOpacity>
+
 
             {/* Modal for Add Only */}
             <Modal
@@ -363,31 +361,27 @@ export default function ExercisesCoach() {
                     </View>
                 </View>
             </Modal>
-        </View>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#111827',
+        backgroundColor: '#f8fafc',
     },
-    header: {
-        paddingTop: 60,
-        paddingBottom: 30,
-        paddingHorizontal: 20,
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#fff',
-        marginBottom: 5,
-    },
-    headerSubtitle: {
-        fontSize: 16,
-        color: 'rgba(255,255,255,0.8)',
+    addButton: {
+        backgroundColor: '#667eea',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#667eea',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 4,
     },
     filtersContainer: {
         padding: 15,
@@ -445,12 +439,17 @@ const styles = StyleSheet.create({
     },
     exerciseCard: {
         flexDirection: 'row',
-        backgroundColor: '#1F2937',
+        backgroundColor: '#fff',
         borderRadius: 12,
         padding: 15,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: '#374151',
+        borderColor: '#e2e8f0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 2,
     },
     exerciseInfo: {
         flex: 1,
@@ -458,12 +457,12 @@ const styles = StyleSheet.create({
     exerciseName: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#E5E7EB',
+        color: '#1e293b',
         marginBottom: 4,
     },
     exerciseMuscle: {
         fontSize: 14,
-        color: '#9CA3AF',
+        color: '#64748b',
         marginBottom: 8,
     },
     techniqueContainer: {
@@ -524,27 +523,7 @@ const styles = StyleSheet.create({
     emptyText: {
         marginTop: 16,
         fontSize: 16,
-        color: '#9CA3AF',
-    },
-    fab: {
-        position: 'absolute',
-        bottom: 30,
-        right: 20,
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        shadowColor: '#667eea',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    fabGradient: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        justifyContent: 'center',
-        alignItems: 'center',
+        color: '#64748b',
     },
     modalOverlay: {
         flex: 1,

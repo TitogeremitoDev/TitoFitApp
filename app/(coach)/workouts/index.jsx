@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import AssignRoutineModal from './assign-modal';
+import CoachHeader from '../components/CoachHeader';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import Papa from 'papaparse';
@@ -127,7 +128,7 @@ export default function WorkoutsScreen() {
                 console.log('[Workouts] Total clients loaded:', data.clients?.length || 0);
                 console.log('[Workouts] Client data:', JSON.stringify(data.clients, null, 2));
 
-console.log('[Workouts] Clients with routines:', data.clients?.filter(c => c.rutinas?.length > 0).length || 0);
+                console.log('[Workouts] Clients with routines:', data.clients?.filter(c => c.rutinas?.length > 0).length || 0);
             }
         } catch (error) {
             console.error('Error fetching clients:', error);
@@ -428,117 +429,117 @@ console.log('[Workouts] Clients with routines:', data.clients?.filter(c => c.rut
     const renderRoutineItem = ({ item }) => {
         const clientsWithRoutine = getClientsForRoutine(item._id);
         const isExpanded = expandedRoutines[item._id];
-    
-        return (
-        <View style={styles.card}>
-            <TouchableOpacity
-                style={styles.cardContent}
-                onPress={() => router.push({
-                    pathname: '/(coach)/workouts/create',
-                    params: {
-                        id: item._id,
-                        name: item.nombre,
-                        days: item.dias,
-                        enfoque: item.enfoque,
-                        nivel: item.nivel
-                    }
-                })}
-            >
-                <View style={styles.cardLeft}>
-                    <Text style={styles.routineName}>{item.nombre}</Text>
-                    <Text style={styles.routineInfo}>
-                        {item.dias} Días • {item.enfoque || 'General'}
-                    </Text>
-                    {item.folder && (
-                        <View style={styles.folderTag}>
-                            <Ionicons name="folder" size={12} color="#64748b" />
-                            <Text style={styles.folderText}>{item.folder}</Text>
-                        </View>
-                    )}
-                </View>
-                <View style={styles.cardActions}>
-                    <TouchableOpacity
-                        style={styles.actionBtn}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            openMoveModal(item);
-                        }}
-                    >
-                        <Ionicons name="folder-outline" size={18} color="#64748b" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.actionBtn}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleDuplicate(item._id);
-                        }}
-                    >
-                        <Ionicons name="duplicate-outline" size={18} color="#8b5cf6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.actionBtn}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            openAssignModal(item);
-                        }}
-                    >
-                        <Ionicons name="person-add-outline" size={18} color="#10b981" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.actionBtn}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleDelete(item._id);
-                        }}
-                    >
-                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                    </TouchableOpacity>
-                </View>
-            </TouchableOpacity>
-                        {/* Clients Collapsible Section */}
-            {clientsWithRoutine.length > 0 && (
-                <View style={styles.clientsSection}>
-                    <TouchableOpacity
-                        style={styles.clientsHeader}
-                        onPress={() => toggleRoutineExpansion(item._id)}
-                    >
-                        <View style={styles.clientsHeaderLeft}>
-                            <Ionicons name="people" size={16} color="#10b981" />
-                            <Text style={styles.clientsCount}>
-                                {clientsWithRoutine.length} {clientsWithRoutine.length === 1 ? 'cliente' : 'clientes'}
-                            </Text>
-                        </View>
-                        <Ionicons 
-                            name={isExpanded ? "chevron-up" : "chevron-down"} 
-                            size={20} 
-                            color="#64748b" 
-                        />
-                    </TouchableOpacity>
 
-                    {isExpanded && (
-                        <View style={styles.clientsList}>
-                            {clientsWithRoutine.map((client) => (
-                                <View key={client._id} style={styles.clientItem}>
-                                    <View style={styles.clientItemLeft}>
-                                        <Ionicons name="person-circle-outline" size={20} color="#64748b" />
-                                        <View style={styles.clientItemInfo}>
-                                            <Text style={styles.clientItemName}>{client.nombre}</Text>
-                                            <Text style={styles.clientItemEmail}>{client.email}</Text>
+        return (
+            <View style={styles.card}>
+                <TouchableOpacity
+                    style={styles.cardContent}
+                    onPress={() => router.push({
+                        pathname: '/(coach)/workouts/create',
+                        params: {
+                            id: item._id,
+                            name: item.nombre,
+                            days: item.dias,
+                            enfoque: item.enfoque,
+                            nivel: item.nivel
+                        }
+                    })}
+                >
+                    <View style={styles.cardLeft}>
+                        <Text style={styles.routineName}>{item.nombre}</Text>
+                        <Text style={styles.routineInfo}>
+                            {item.dias} Días • {item.enfoque || 'General'}
+                        </Text>
+                        {item.folder && (
+                            <View style={styles.folderTag}>
+                                <Ionicons name="folder" size={12} color="#64748b" />
+                                <Text style={styles.folderText}>{item.folder}</Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={styles.cardActions}>
+                        <TouchableOpacity
+                            style={styles.actionBtn}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                openMoveModal(item);
+                            }}
+                        >
+                            <Ionicons name="folder-outline" size={18} color="#64748b" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.actionBtn}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                handleDuplicate(item._id);
+                            }}
+                        >
+                            <Ionicons name="duplicate-outline" size={18} color="#8b5cf6" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.actionBtn}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                openAssignModal(item);
+                            }}
+                        >
+                            <Ionicons name="person-add-outline" size={18} color="#10b981" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.actionBtn}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                handleDelete(item._id);
+                            }}
+                        >
+                            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+                {/* Clients Collapsible Section */}
+                {clientsWithRoutine.length > 0 && (
+                    <View style={styles.clientsSection}>
+                        <TouchableOpacity
+                            style={styles.clientsHeader}
+                            onPress={() => toggleRoutineExpansion(item._id)}
+                        >
+                            <View style={styles.clientsHeaderLeft}>
+                                <Ionicons name="people" size={16} color="#10b981" />
+                                <Text style={styles.clientsCount}>
+                                    {clientsWithRoutine.length} {clientsWithRoutine.length === 1 ? 'cliente' : 'clientes'}
+                                </Text>
+                            </View>
+                            <Ionicons
+                                name={isExpanded ? "chevron-up" : "chevron-down"}
+                                size={20}
+                                color="#64748b"
+                            />
+                        </TouchableOpacity>
+
+                        {isExpanded && (
+                            <View style={styles.clientsList}>
+                                {clientsWithRoutine.map((client) => (
+                                    <View key={client._id} style={styles.clientItem}>
+                                        <View style={styles.clientItemLeft}>
+                                            <Ionicons name="person-circle-outline" size={20} color="#64748b" />
+                                            <View style={styles.clientItemInfo}>
+                                                <Text style={styles.clientItemName}>{client.nombre}</Text>
+                                                <Text style={styles.clientItemEmail}>{client.email}</Text>
+                                            </View>
                                         </View>
+                                        <TouchableOpacity
+                                            style={styles.removeClientBtn}
+                                            onPress={() => handleRemoveRoutineFromClient(item._id, client._id, client.nombre)}
+                                        >
+                                            <Ionicons name="close-circle" size={22} color="#ef4444" />
+                                        </TouchableOpacity>
                                     </View>
-                                    <TouchableOpacity
-                                        style={styles.removeClientBtn}
-                                        onPress={() => handleRemoveRoutineFromClient(item._id, client._id, client.nombre)}
-                                    >
-                                        <Ionicons name="close-circle" size={22} color="#ef4444" />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </View>
-                    )}
-                </View>
-            )}
-        </View>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+                )}
+            </View>
         )
     };
 
@@ -547,26 +548,35 @@ console.log('[Workouts] Clients with routines:', data.clients?.filter(c => c.rut
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* Header */}
-            <View style={styles.header}>
-                <Text style={styles.title}>Biblioteca de Rutinas</Text>
-                <View style={styles.headerButtons}>
-                    <TouchableOpacity onPress={() => setFolderModalVisible(true)} style={styles.iconButton}>
-                        <Ionicons name="folder-outline" size={20} color="#334155" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleImportCSV} style={styles.iconButton}>
-                        <Ionicons name="document-text-outline" size={20} color="#334155" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleImportIA} style={styles.iconButton}>
-                        <Ionicons name="sparkles-outline" size={20} color="#334155" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => router.push('/(coach)/workouts/create')}
-                        style={styles.createButton}
-                    >
-                        <Ionicons name="add" size={24} color="#fff" />
-                    </TouchableOpacity>
-                </View>
-            </View>
+            {/* Header */}
+            <CoachHeader
+                title="Rutinas"
+                subtitle="Biblioteca de entrenamientos"
+                icon="fitness"
+                iconColor="#f59e0b"
+                badge={`${filteredRoutines.length}`}
+                badgeColor="#fef3c7"
+                badgeTextColor="#d97706"
+                rightContent={
+                    <View style={styles.headerButtons}>
+                        <TouchableOpacity onPress={() => setFolderModalVisible(true)} style={styles.iconButton}>
+                            <Ionicons name="folder-outline" size={20} color="#334155" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleImportCSV} style={styles.iconButton}>
+                            <Ionicons name="document-text-outline" size={20} color="#334155" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleImportIA} style={styles.iconButton}>
+                            <Ionicons name="sparkles-outline" size={20} color="#334155" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => router.push('/(coach)/workouts/create')}
+                            style={styles.createButton}
+                        >
+                            <Ionicons name="add" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                }
+            />
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>

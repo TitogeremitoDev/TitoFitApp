@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function SettingsScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Configuración</Text>
-            </View>
+            <CoachHeader
+                title="Configuración"
+                subtitle="Ajustes del sistema"
+                icon="settings"
+                iconColor="#64748b"
+            />
 
             <View style={styles.content}>
                 <Ionicons name="settings-outline" size={80} color="#64748b" />

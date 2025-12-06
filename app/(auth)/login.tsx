@@ -54,19 +54,6 @@ export default function LoginScreen() {
         ? ANDROID_INTERNAL
         : ANDROID_DEV;
 
-  // Logging para debugging
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[Auth Config] Platform:', Platform.OS);
-      console.log('[Auth Config] DEV Mode:', __DEV__);
-      console.log('[Auth Config] APP_ENV:', APP_ENV);
-      console.log('[Auth Config] Android Client ID:', androidClientId);
-      console.log('[Auth Config] Web Client ID:', WEB_CLIENT_ID);
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    }
-  }, []);
-
   // ════════════════════════════════════════════════════════════════════════
   // CONFIGURACIÓN DEL HOOK DE GOOGLE
   // ════════════════════════════════════════════════════════════════════════

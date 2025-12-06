@@ -17,7 +17,7 @@ import { useAuth } from '../../../context/AuthContext';
 
 export default function AddTrainerScreen() {
     const router = useRouter();
-    const { token } = useAuth();
+    const { token, refreshUser } = useAuth();
     const [code, setCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [linking, setLinking] = useState(false);
@@ -80,6 +80,13 @@ export default function AddTrainerScreen() {
             const data = await response.json();
 
             if (data.success) {
+                // Refrescar datos del usuario para actualizar tipoUsuario
+                try {
+                    await refreshUser();
+                } catch (refreshError) {
+                    console.error('[AddTrainer] Error refreshing user:', refreshError);
+                }
+
                 Alert.alert(
                     'Éxito',
                     `¡Te has vinculado exitosamente con ${trainer.brandName}!`,

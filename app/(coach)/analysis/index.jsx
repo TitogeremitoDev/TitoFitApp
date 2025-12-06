@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CoachHeader from '../components/CoachHeader';
 
 export default function AnalysisScreen() {
     const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Análisis</Text>
-            </View>
+            <CoachHeader
+                title="Análisis Técnico"
+                subtitle="Revisión de ejercicios"
+                icon="videocam"
+                iconColor="#f97316"
+            />
             <View style={styles.content}>
                 <Ionicons name="analytics-outline" size={80} color="#f97316" />
                 <Text style={styles.placeholderText}>Análisis de Técnica</Text>
