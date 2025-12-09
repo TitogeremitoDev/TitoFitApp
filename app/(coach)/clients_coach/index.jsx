@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Alert, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
-    ActivityIndicator, TouchableOpacity } from 'react-native';
+import {
+    Modal, Alert, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
+    ActivityIndicator, TouchableOpacity
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -17,8 +19,8 @@ export default function ClientsScreen() {
     const [confirmModal, setConfirmModal] = useState({
         visible: false,
         clientId: null,
-    clientName: ''
-});
+        clientName: ''
+    });
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     useEffect(() => {
@@ -47,45 +49,45 @@ export default function ClientsScreen() {
     };
 
     const handleDeleteClient = (clientId, clientName) => {
-    console.log('[DELETE CLIENT] Button pressed for:', clientId, clientName);
-    setConfirmModal({
-        visible: true,
-        clientId,
-        clientName
-    });
-};
+        console.log('[DELETE CLIENT] Button pressed for:', clientId, clientName);
+        setConfirmModal({
+            visible: true,
+            clientId,
+            clientName
+        });
+    };
 
-const confirmDelete = async () => {
-    const { clientId, clientName } = confirmModal;
-    
-    // Cerrar modal
-    setConfirmModal({ visible: false, clientId: null, clientName: '' });
-    
-    try {
-        console.log('[DELETE] Making DELETE request to:', `${API_URL}/api/trainers/clients/${clientId}`);
-        const response = await fetch(
-            `${API_URL}/api/trainers/clients/${clientId}`,
-            {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` }
+    const confirmDelete = async () => {
+        const { clientId, clientName } = confirmModal;
+
+        // Cerrar modal
+        setConfirmModal({ visible: false, clientId: null, clientName: '' });
+
+        try {
+            console.log('[DELETE] Making DELETE request to:', `${API_URL}/api/trainers/clients/${clientId}`);
+            const response = await fetch(
+                `${API_URL}/api/trainers/clients/${clientId}`,
+                {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            console.log('[DELETE] Response status:', response.status);
+            const data = await response.json();
+            console.log('[DELETE] Response data:', data);
+
+            if (data.success) {
+                fetchClients();
             }
-        );
-        
-        console.log('[DELETE] Response status:', response.status);
-        const data = await response.json();
-        console.log('[DELETE] Response data:', data);
-        
-        if (data.success) {
-            fetchClients();
+        } catch (error) {
+            console.error('[DELETE] Error deleting client:', error);
         }
-    } catch (error) {
-        console.error('[DELETE] Error deleting client:', error);
-    }
-};
+    };
 
-const cancelDelete = () => {
-    setConfirmModal({ visible: false, clientId: null, clientName: '' });
-};
+    const cancelDelete = () => {
+        setConfirmModal({ visible: false, clientId: null, clientName: '' });
+    };
 
     const handleMessageClient = (client) => {
         router.push({
@@ -172,14 +174,17 @@ const cancelDelete = () => {
 
                 <TouchableOpacity
                     style={[styles.actionButton, styles.evolutionButton]}
-                    onPress={() => handleClientEvolution(item)}
+                    onPress={() => router.push({
+                        pathname: '/(coach)/progress/[clientId]',
+                        params: { clientId: item._id, clientName: item.nombre }
+                    })}
                 >
                     <Ionicons name="trending-up-outline" size={18} color="#8b5cf6" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={[styles.actionButton, styles.nutritionButton]}
-                    onPress={() => handleClientNutrition(item)}
+
                 >
                     <Ionicons name="nutrition-outline" size={18} color="#f59e0b" />
                 </TouchableOpacity>
@@ -222,7 +227,7 @@ const cancelDelete = () => {
     }
 
     return (
-    
+
         <SafeAreaView style={styles.container}>
             <CoachHeader
                 title="Clientes"
@@ -245,7 +250,7 @@ const cancelDelete = () => {
                     />
                 }
             />
-            
+
             {/* Modal de Confirmación */}
             <Modal
                 transparent={true}
@@ -259,20 +264,20 @@ const cancelDelete = () => {
                             <Ionicons name="warning" size={48} color="#ef4444" />
                             <Text style={styles.modalTitle}>Eliminar Cliente</Text>
                         </View>
-                        
+
                         <Text style={styles.modalMessage}>
                             ¿Desvincular a {confirmModal.clientName}? El cliente podrá volver a vincularse con otro entrenador.
                         </Text>
-                        
+
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.modalButton, styles.cancelButton]}
                                 onPress={cancelDelete}
                             >
                                 <Text style={styles.cancelButtonText}>Cancelar</Text>
                             </TouchableOpacity>
-                            
-                            <TouchableOpacity 
+
+                            <TouchableOpacity
                                 style={[styles.modalButton, styles.deleteButtonModal]}
                                 onPress={confirmDelete}
                             >
@@ -433,10 +438,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center'
     },
-        loadingContainer: { 
-        flex: 1, 
-        alignItems: 'center', 
-        justifyContent: 'center' 
+    loadingContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center'
     },
     // Modal styles
     modalOverlay: {

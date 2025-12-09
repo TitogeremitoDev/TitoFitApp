@@ -86,6 +86,8 @@ export default function WorkoutsScreen() {
     const [newFolderName, setNewFolderName] = useState('');
     const [moveFolderModalVisible, setMoveFolderModalVisible] = useState(false);
     const [routineToMove, setRoutineToMove] = useState(null);
+    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+    const [routineToDelete, setRoutineToDelete] = useState(null);
 
     // Client management states
     const [expandedRoutines, setExpandedRoutines] = useState({});
@@ -147,56 +149,30 @@ export default function WorkoutsScreen() {
         fetchRoutines();
     }, []);
 
-    const handleDelete = async (id) => {
-        const isWeb = typeof window !== 'undefined' && window.confirm;
+    const handleDelete = (id) => {
+        setRoutineToDelete(id);
+        setDeleteModalVisible(true);
+    };
 
-        if (isWeb) {
-            const confirmed = window.confirm('¿Estás seguro de que quieres eliminar esta rutina? Esta acción no se puede deshacer.');
-            if (!confirmed) return;
+    const confirmDelete = async () => {
+        if (!routineToDelete) return;
 
-            try {
-                const response = await fetch(`${API_URL}/api/routines/${id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    setRoutines(prev => prev.filter(r => r._id !== id));
-                    window.alert('Rutina eliminada correctamente');
-                } else {
-                    window.alert('Error: No se pudo eliminar la rutina');
-                }
-            } catch (error) {
-                console.error('Error deleting routine:', error);
-                window.alert('Error de conexión');
+        try {
+            const response = await fetch(`${API_URL}/api/routines/${routineToDelete}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                setRoutines(prev => prev.filter(r => r._id !== routineToDelete));
+                setDeleteModalVisible(false);
+                setRoutineToDelete(null);
+                Alert.alert('Éxito', 'Rutina eliminada correctamente');
+            } else {
+                Alert.alert('Error', 'No se pudo eliminar la rutina');
             }
-        } else {
-            Alert.alert(
-                'Eliminar Rutina',
-                '¿Estás seguro de que quieres eliminar esta rutina?',
-                [
-                    { text: 'Cancelar', style: 'cancel' },
-                    {
-                        text: 'Eliminar',
-                        style: 'destructive',
-                        onPress: async () => {
-                            try {
-                                const response = await fetch(`${API_URL}/api/routines/${id}`, {
-                                    method: 'DELETE',
-                                    headers: { Authorization: `Bearer ${token}` }
-                                });
-                                if (response.ok) {
-                                    setRoutines(prev => prev.filter(r => r._id !== id));
-                                    Alert.alert('Éxito', 'Rutina eliminada correctamente');
-                                } else {
-                                    Alert.alert('Error', 'No se pudo eliminar la rutina');
-                                }
-                            } catch (error) {
-                                Alert.alert('Error', 'Error de conexión');
-                            }
-                        }
-                    }
-                ]
-            );
+        } catch (error) {
+            console.error('Error deleting routine:', error);
+            Alert.alert('Error', 'Error de conexión');
         }
     };
 
@@ -738,6 +714,40 @@ export default function WorkoutsScreen() {
                 </View>
             </Modal>
 
+            {/* Delete Confirmation Modal */}
+            <Modal
+                visible={deleteModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setDeleteModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Confirmar eliminación</Text>
+                        <Text style={styles.modalDescription}>
+                            ¿Estás seguro de que quieres eliminar esta rutina? Esta acción no se puede deshacer.
+                        </Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalButtonCancel]}
+                                onPress={() => {
+                                    setDeleteModalVisible(false);
+                                    setRoutineToDelete(null);
+                                }}
+                            >
+                                <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalButtonDelete]}
+                                onPress={confirmDelete}
+                            >
+                                <Text style={styles.modalButtonText}>Eliminar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             <AssignRoutineModal
                 visible={assignModalVisible}
                 onClose={() => setAssignModalVisible(false)}
@@ -915,7 +925,14 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: '700',
         color: '#1e293b',
-        marginBottom: 16,
+        marginBottom: 12,
+    },
+    modalDescription: {
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#64748b',
+        marginBottom: 20,
+        textAlign: 'center',
     },
     modalInput: {
         borderWidth: 1,
@@ -942,6 +959,9 @@ const styles = StyleSheet.create({
     },
     modalButtonConfirm: {
         backgroundColor: '#3b82f6',
+    },
+    modalButtonDelete: {
+        backgroundColor: '#ef4444',
     },
     modalButtonText: {
         color: '#fff',

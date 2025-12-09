@@ -48,6 +48,7 @@ import Stopwatch from '../../components/Stopwatch';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useAchievements } from '../../context/AchievementsContext';
 
 
 const { width } = Dimensions.get('window');
@@ -280,29 +281,17 @@ function DaysCarousel({ total, selected, onChange }) {
 /* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
 function StatsModal({ visible, onClose, stats }) {
   const { theme } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // We use layoutReady to know when the specific view dimensions are set
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [modalHeight, setModalHeight] = useState(0);
 
+  // Reset state when visibility changes
   useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      scaleAnim.setValue(0);
-      fadeAnim.setValue(0);
+    if (!visible) {
+      setLayoutReady(false);
+      setModalHeight(0);
     }
-  }, [visible, scaleAnim, fadeAnim]);
+  }, [visible]);
 
   if (!stats) return null;
 
@@ -344,165 +333,182 @@ function StatsModal({ visible, onClose, stats }) {
       onRequestClose={onClose}
     >
       <View style={styles.statsModalOverlay}>
-        <Animated.View
+        <View
+          // Force collapsable false for Android to ensure onLayout fires reliably
+          collapsable={false}
           style={[
             styles.statsModalCard,
             {
               backgroundColor: theme.backgroundSecondary,
               borderColor: theme.border,
-              transform: [{ scale: scaleAnim }],
-              opacity: fadeAnim,
+              // Only simple opacity transition once we are ready
+              opacity: layoutReady ? 1 : 0,
             },
           ]}
+          onLayout={(event) => {
+            const { height } = event.nativeEvent.layout;
+            if (height > 0) {
+              setModalHeight(height);
+              setLayoutReady(true);
+            }
+          }}
         >
           {/* Icono de cierre */}
-          <Pressable onPress={onClose} style={styles.statsModalClose}>
-            <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+          <Pressable onPress={onClose} style={styles.statsModalClose} pointerEvents="box-none">
+            <View pointerEvents="auto">
+              <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+            </View>
           </Pressable>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            style={styles.statsScrollView}
-            contentContainerStyle={styles.statsScrollContent}
-          >
-            {/* 🏆 Encabezado con trofeo */}
-            <View style={styles.statsHeader}>
-              <View style={styles.trophyContainer}>
-                <Ionicons name="trophy" size={64} color="#fbbf24" />
-              </View>
-              <Text style={[styles.statsTitle, { color: theme.text }]}>
-                ¡Enhorabuena!
-              </Text>
-              <Text style={[styles.statsSubtitle, { color: theme.primary }]}>
-                Has superado tus metas
-              </Text>
-            </View>
-
-            {/* 💪 Imagen motivacional */}
-            <View style={styles.motivationalSection}>
-              <View style={styles.dumbbellContainer}>
-                <Ionicons name="barbell" size={80} color={theme.primary} />
-              </View>
-            </View>
-
-            {/* 📊 Estadísticas comparativas */}
-            <View style={styles.statsSection}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                {previous ? '📊 Comparación con Semana Anterior' : '📊 Estadísticas de Hoy'}
-              </Text>
-              {/* Volumen Total */}
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                <View style={styles.statHeader}>
-                  <Ionicons name="cube" size={24} color="#8b5cf6" />
-                  <Text style={[styles.statTitle, { color: theme.text }]}>Volumen Total</Text>
-                </View>
-                <View style={styles.statRow}>
-                  <Text style={[styles.statValue, { color: theme.primary }]}>
-                    {formatNumber(current.volume)} kg
-                  </Text>
-                  {previous && (
-                    <View style={styles.statDiff}>
-                      <Ionicons
-                        name={getDiffIcon(current.volume - previous.volume)}
-                        size={20}
-                        color={getDiffColor(current.volume - previous.volume)}
-                      />
-                      <Text style={[styles.statDiffText, { color: getDiffColor(current.volume - previous.volume) }]}>
-                        {formatDiff(current.volume - previous.volume)}
-                        {formatPercent(current.volume - previous.volume, previous.volume)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                {previous && (
-                  <Text style={[styles.statPrevious, { color: theme.textSecondary }]}>
-                    Anterior: {formatNumber(previous.volume)} kg
-                  </Text>
-                )}
-              </View>
-              {/* 1RM Estimado */}
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                <View style={styles.statHeader}>
-                  <Ionicons name="flash" size={24} color="#f59e0b" />
-                  <Text style={[styles.statTitle, { color: theme.text }]}>1RM Estimado</Text>
-                </View>
-                <View style={styles.statRow}>
-
-                  {previous && (
-                    <View style={styles.statDiff}>
-                      <Ionicons
-                        name={getDiffIcon(current.oneRM - previous.oneRM)}
-                        size={20}
-                        color={getDiffColor(current.oneRM - previous.oneRM)}
-                      />
-                      <Text style={[styles.statDiffText, { color: getDiffColor(current.oneRM - previous.oneRM) }]}>
-                        {formatDiff(current.oneRM - previous.oneRM)}
-                        {formatPercent(current.oneRM - previous.oneRM, previous.oneRM)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-
-
-
-              {/* Carga Media */}
-              <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                <View style={styles.statHeader}>
-                  <Ionicons name="analytics" size={24} color="#06b6d4" />
-                  <Text style={[styles.statTitle, { color: theme.text }]}>Carga Media</Text>
-                </View>
-                <View style={styles.statRow}>
-                  {previous && (
-                    <View style={styles.statDiff}>
-                      <Ionicons
-                        name={getDiffIcon(current.avgLoad - previous.avgLoad)}
-                        size={20}
-                        color={getDiffColor(current.avgLoad - previous.avgLoad)}
-                      />
-                      <Text style={[styles.statDiffText, { color: getDiffColor(current.avgLoad - previous.avgLoad) }]}>
-                        {formatDiff(current.avgLoad - previous.avgLoad)}
-                        {formatPercent(current.avgLoad - previous.avgLoad, previous.avgLoad)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-
-            {/* 🌟 Mayor mejora */}
-            {bestImprovement && (
-              <View style={[styles.bestImprovementSection, { backgroundColor: theme.success + '20', borderColor: theme.success }]}>
-                <View style={styles.bestImprovementHeader}>
-                  <Ionicons name="star" size={28} color="#fbbf24" />
-                  <Text style={[styles.bestImprovementTitle, { color: theme.text }]}>
-                    ¡Tu Mayor Mejora!
-                  </Text>
-                </View>
-                <Text style={[styles.bestImprovementExercise, { color: theme.primary }]}>
-                  {bestImprovement.exercise}
-                </Text>
-                <Text style={[styles.bestImprovementText, { color: theme.text }]}>
-                  {bestImprovement.metric}: {formatDiff(bestImprovement.improvement)}{' '}
-                  {bestImprovement.unit}
-                  {formatPercent(bestImprovement.improvement, bestImprovement.previous)}
-                </Text>
-                <Text style={[styles.motivationalText, { color: theme.success }]}>
-                  ¡Sigue así! 💪
-                </Text>
-              </View>
-            )}
-
-            {/* Botón de cerrar */}
-            <TouchableOpacity
-              style={[styles.closeButton, { backgroundColor: theme.primary }]}
-              onPress={onClose}
-              activeOpacity={0.85}
+          {/* Only render ScrollView if we have dimensions to avoid 0-height glitch */}
+          {layoutReady && (
+            <ScrollView
+              style={[styles.statsScrollView, { maxHeight: modalHeight - 40 }]}
+              contentContainerStyle={styles.statsScrollContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              bounces={true}
+              removeClippedSubviews={false}
             >
-              <Text style={styles.closeButtonText}>¡Genial! 🎉</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </Animated.View>
+              {/* 🏆 Encabezado con trofeo */}
+              <View style={styles.statsHeader}>
+                <View style={styles.trophyContainer}>
+                  <Ionicons name="trophy" size={64} color="#fbbf24" />
+                </View>
+                <Text style={[styles.statsTitle, { color: theme.text }]}>
+                  ¡Enhorabuena!
+                </Text>
+                <Text style={[styles.statsSubtitle, { color: theme.primary }]}>
+                  Has superado tus metas
+                </Text>
+              </View>
+
+              {/* 💪 Imagen motivacional */}
+              <View style={styles.motivationalSection}>
+                <View style={styles.dumbbellContainer}>
+                  <Ionicons name="barbell" size={80} color={theme.primary} />
+                </View>
+              </View>
+
+              {/* 📊 Estadísticas comparativas */}
+              <View style={styles.statsSection}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                  {previous ? '📊 Comparación con Semana Anterior' : '📊 Estadísticas de Hoy'}
+                </Text>
+                {/* Volumen Total */}
+                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <View style={styles.statHeader}>
+                    <Ionicons name="cube" size={24} color="#8b5cf6" />
+                    <Text style={[styles.statTitle, { color: theme.text }]}>Volumen Total</Text>
+                  </View>
+                  <View style={styles.statRow}>
+                    <Text style={[styles.statValue, { color: theme.primary }]}>
+                      {formatNumber(current.volume)} kg
+                    </Text>
+                    {previous && (
+                      <View style={styles.statDiff}>
+                        <Ionicons
+                          name={getDiffIcon(current.volume - previous.volume)}
+                          size={20}
+                          color={getDiffColor(current.volume - previous.volume)}
+                        />
+                        <Text style={[styles.statDiffText, { color: getDiffColor(current.volume - previous.volume) }]}>
+                          {formatDiff(current.volume - previous.volume)}
+                          {formatPercent(current.volume - previous.volume, previous.volume)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {previous && (
+                    <Text style={[styles.statPrevious, { color: theme.textSecondary }]}>
+                      Anterior: {formatNumber(previous.volume)} kg
+                    </Text>
+                  )}
+                </View>
+                {/* 1RM Estimado */}
+                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <View style={styles.statHeader}>
+                    <Ionicons name="flash" size={24} color="#f59e0b" />
+                    <Text style={[styles.statTitle, { color: theme.text }]}>1RM Estimado</Text>
+                  </View>
+                  <View style={styles.statRow}>
+
+                    {previous && (
+                      <View style={styles.statDiff}>
+                        <Ionicons
+                          name={getDiffIcon(current.oneRM - previous.oneRM)}
+                          size={20}
+                          color={getDiffColor(current.oneRM - previous.oneRM)}
+                        />
+                        <Text style={[styles.statDiffText, { color: getDiffColor(current.oneRM - previous.oneRM) }]}>
+                          {formatDiff(current.oneRM - previous.oneRM)}
+                          {formatPercent(current.oneRM - previous.oneRM, previous.oneRM)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+
+
+                {/* Carga Media */}
+                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                  <View style={styles.statHeader}>
+                    <Ionicons name="analytics" size={24} color="#06b6d4" />
+                    <Text style={[styles.statTitle, { color: theme.text }]}>Carga Media</Text>
+                  </View>
+                  <View style={styles.statRow}>
+                    {previous && (
+                      <View style={styles.statDiff}>
+                        <Ionicons
+                          name={getDiffIcon(current.avgLoad - previous.avgLoad)}
+                          size={20}
+                          color={getDiffColor(current.avgLoad - previous.avgLoad)}
+                        />
+                        <Text style={[styles.statDiffText, { color: getDiffColor(current.avgLoad - previous.avgLoad) }]}>
+                          {formatDiff(current.avgLoad - previous.avgLoad)}
+                          {formatPercent(current.avgLoad - previous.avgLoad, previous.avgLoad)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* 🌟 Mayor mejora */}
+              {bestImprovement && (
+                <View style={[styles.bestImprovementSection, { backgroundColor: theme.success + '20', borderColor: theme.success }]}>
+                  <View style={styles.bestImprovementHeader}>
+                    <Ionicons name="star" size={28} color="#fbbf24" />
+                    <Text style={[styles.bestImprovementTitle, { color: theme.text }]}>
+                      ¡Tu Mayor Mejora!
+                    </Text>
+                  </View>
+                  <Text style={[styles.bestImprovementExercise, { color: theme.primary }]}>
+                    {bestImprovement.exercise}
+                  </Text>
+                  <Text style={[styles.bestImprovementText, { color: theme.text }]}>
+                    {bestImprovement.metric}: {formatDiff(bestImprovement.improvement)}{' '}
+                    {bestImprovement.unit}
+                    {formatPercent(bestImprovement.improvement, bestImprovement.previous)}
+                  </Text>
+                  <Text style={[styles.motivationalText, { color: theme.success }]}>
+                    ¡Sigue así! 💪
+                  </Text>
+                </View>
+              )}
+
+              {/* Botón de cerrar */}
+              <TouchableOpacity
+                style={[styles.closeButton, { backgroundColor: theme.primary }]}
+                onPress={onClose}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.closeButtonText}>¡Genial! 🎉</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </View>
       </View>
     </Modal>
   );
@@ -1471,6 +1477,7 @@ const tutorialStyles = StyleSheet.create({
 export default function Entreno() {
   const { theme } = useTheme();
   const { user } = useAuth();
+  const { processWorkoutCompletion } = useAchievements();
   const navigation = useNavigation();
   const [activeId, setActiveId] = useState(null);  // rutina activa
   const [hydrated, setHydrated] = useState(false); // ya cargamos última sesión
@@ -1831,6 +1838,9 @@ export default function Entreno() {
       // Crear una copia del progreso actual
       const nextProg = { ...prog };
 
+      // VERIFICAR SI ES USUARIO FREE - Solo usuarios premium guardan en la nube
+      const isFreeUser = user?.tipoUsuario === 'FREEUSER';
+
       // Recorrer cada ejercicio del día
       for (const ejercicio of ejerciciosDia) {
         const ejerKey = `${semana}|${diaIdx}|${ejercicio.id}`;
@@ -1896,19 +1906,19 @@ export default function Entreno() {
       }
 
       // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
-// 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
-try {
-    // Construir los ejercicios para la API con el esquema del modelo Workout
-    const exercisesForAPI = ejerciciosDia.map((ejercicio, orderIndex) => {
-        const ejerKey = `${semana}|${diaIdx}|${ejercicio.id}`;
-        // Construir las series - solo incluir campos con valores válidos
-        const sets = (ejercicio.series || []).map((serie, idx) => {
+      // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
+      try {
+        // Construir los ejercicios para la API con el esquema del modelo Workout
+        const exercisesForAPI = ejerciciosDia.map((ejercicio, orderIndex) => {
+          const ejerKey = `${semana}|${diaIdx}|${ejercicio.id}`;
+          // Construir las series - solo incluir campos con valores válidos
+          const sets = (ejercicio.series || []).map((serie, idx) => {
             const serieKey = `${ejerKey}|${idx}`;
             const datosSerie = nextProg[serieKey] || {};
             // Construir objeto solo con campos que tienen valores válidos
             const set = {
-                setNumber: idx + 1,
-                status: 'inRange'
+              setNumber: idx + 1,
+              status: 'inRange'
             };
             // Solo añadir campos numéricos si tienen valores válidos
             const targetMin = Number(serie?.repMin);
@@ -1920,61 +1930,64 @@ try {
             if (!isNaN(reps) && reps > 0) set.actualReps = reps;
             if (!isNaN(peso) && peso > 0) set.weight = peso;
             return set;
-        });
-        return {
+          });
+          return {
             exerciseId: null,
             exerciseName: ejercicio.nombre,
             muscleGroup: ejercicio.musculo,
             orderIndex: orderIndex,
             sets: sets
-        };
-    });
-    // Calcular totalSets y totalVolume
-    let totalSets = 0;
-    let totalVolume = 0;
-    exercisesForAPI.forEach(exercise => {
-        totalSets += exercise.sets.length;
-        exercise.sets.forEach(set => {
-            if (set.actualReps && set.weight) {
-                totalVolume += set.actualReps * set.weight;
-            }
+          };
         });
-    });
-    // Preparar payload para el API
-    const workoutPayload = {
-        routineId: (activeId && activeId.match(/^[0-9a-fA-F]{24}$/)) ? activeId : null,
-        routineNameSnapshot: rutina?.nombre || 'Rut Desconocida',
-        dayIndex: diaIdx + 1,
-        dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`,
-        date: now,
-        status: 'completed',
-        exercises: exercisesForAPI,
-        totalSets: totalSets,
-        totalVolume: totalVolume,
-        durationMinutes: 0
-    };
-    // Hacer la petición POST a la API
-    if (API_URL && token) {
-        const response = await fetch(`${API_URL}/api/workouts`, {
+        // Calcular totalSets y totalVolume
+        let totalSets = 0;
+        let totalVolume = 0;
+        exercisesForAPI.forEach(exercise => {
+          totalSets += exercise.sets.length;
+          exercise.sets.forEach(set => {
+            if (set.actualReps && set.weight) {
+              totalVolume += set.actualReps * set.weight;
+            }
+          });
+        });
+        // Preparar payload para el API
+        const workoutPayload = {
+          routineId: (activeId && activeId.match(/^[0-9a-fA-F]{24}$/)) ? activeId : null,
+          routineNameSnapshot: rutina?.nombre || 'Rut Desconocida',
+          dayIndex: diaIdx + 1,
+          dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`,
+          week: semana, // 🔥 Added week number for uniqueness
+          date: now,
+          status: 'completed',
+          exercises: exercisesForAPI,
+          totalSets: totalSets,
+          totalVolume: totalVolume,
+          durationMinutes: 0
+        };
+
+
+        if (API_URL && token && !isFreeUser) {
+          const response = await fetch(`${API_URL}/api/workouts`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(workoutPayload)
-        });
-        if (response.ok) {
+          });
+
+          if (response.ok) {
             const result = await response.json();
-            console.log('✅ Workout guardado en la base de datos:', result.workout?._id);
-        } else {
+            console.log(result.updated ? '✅ Workout actualizado:' : '✅ Workout creado:', result.workout?._id);
+          } else {
             const errorData = await response.json();
             console.error('❌ Error al guardar en la API:', errorData);
+          }
         }
-    }
-} catch (apiError) {
-    // No interrumpir el flujo si falla la API, solo loguear
-    console.error('❌ Error en la llamada a la API:', apiError);
-}
+      } catch (apiError) {
+        // No interrumpir el flujo si falla la API, solo loguear
+        console.error('❌ Error en la llamada a la API:', apiError);
+      }
 
       // Actualizar el estado con los nuevos datos
       setProg(nextProg);
@@ -2008,6 +2021,19 @@ try {
       const previousStats = semana > 1 ? calculateSessionStats(ejerciciosDia, semana - 1) : null;
       const bestImprovement = findBestImprovement(currentStats, previousStats);
 
+      // 🏆 PROCESAR LOGROS - Estilo Steam
+      // Extraer grupos musculares únicos del día
+      const muscleGroupsWorked = [...new Set(
+        ejerciciosDia.map(ej => ej.musculo).filter(Boolean)
+      )];
+
+      processWorkoutCompletion({
+        totalVolumeKg: currentStats.volume || 0,
+        totalReps: currentStats.totalReps || 0,
+        muscleGroups: muscleGroupsWorked,
+        durationMinutes: 0, // TODO: integrar cronómetro si disponible
+      });
+
       setStatsModal({
         visible: true,
         stats: {
@@ -2016,6 +2042,27 @@ try {
           bestImprovement,
         },
       });
+
+      // Mostrar aviso para usuarios FREE después del modal de estadísticas
+      if (isFreeUser) {
+        setTimeout(() => {
+          if (Platform.OS === 'web') {
+            const goToPremium = window.confirm('⚠️ PROGRESO GUARDADO LOCALMENTE\n\nComo usuario gratuito, tu progreso se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.\n\n¿Quieres mejorar a Premium ahora?');
+            if (goToPremium) {
+              window.location.href = '../payment';
+            }
+          } else {
+            Alert.alert(
+              '⚠️ Progreso Guardado Localmente',
+              'Como usuario gratuito, tu progreso se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.',
+              [
+                { text: 'Ahora no', style: 'cancel' },
+                { text: 'Mejorar a Premium', style: 'default', onPress: () => navigation.navigate('payment') }
+              ]
+            );
+          }
+        }, 500); // Delay para que el modal de stats se muestre primero
+      }
 
     } catch (e) {
       console.error('Error al guardar el día:', e);
@@ -2727,11 +2774,11 @@ const styles = StyleSheet.create({
   serieLabel: { width: 70, fontSize: 12, flexShrink: 0 },
 
   /* Cabeceras de columna */
-  inputCol: { width: 60, alignItems: 'center' },
+  inputCol: { width: 60, alignItems: 'center', marginRight: 42 },
 
   inputWithTrend: {
     position: 'relative',
-    width: 90,
+    width: 100,
     paddingRight: 22,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2741,7 +2788,7 @@ const styles = StyleSheet.create({
   },
   trendIcon: {
     position: 'absolute',
-    right: 200,
+    right: 20,
     top: '50%',
     transform: [{ translateY: -7 }],
   },
@@ -2802,16 +2849,15 @@ const styles = StyleSheet.create({
     width: '95%',
     height: '95%',
     maxWidth: 500,
-    maxHeight: '90%',
     borderRadius: 24,
-    padding: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderWidth: 2,
     shadowColor: '#000',
     shadowOpacity: 0.5,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
-    overflow: 'hidden',
     flexShrink: 0,
   },
   statsModalClose: {
@@ -2822,10 +2868,9 @@ const styles = StyleSheet.create({
   },
   statsScrollView: {
     flex: 1,
-    maxHeight: '100%',
   },
   statsScrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 80,
   },
   statsHeader: {
     alignItems: 'center',
@@ -2867,7 +2912,7 @@ const styles = StyleSheet.create({
   statCard: {
     padding: 16,
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 8,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.1,
@@ -2878,7 +2923,7 @@ const styles = StyleSheet.create({
   statHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 2,
     gap: 8,
   },
   statTitle: {
@@ -2889,7 +2934,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   statValue: {
     fontSize: 28,
@@ -2911,7 +2956,7 @@ const styles = StyleSheet.create({
   bestImprovementSection: {
     padding: 20,
     borderRadius: 20,
-    marginBottom: 24,
+    marginBottom: 12,
     borderWidth: 2,
     alignItems: 'center',
   },
@@ -2919,7 +2964,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 6,
   },
   bestImprovementTitle: {
     fontSize: 20,
@@ -2943,6 +2988,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   closeButton: {
+    marginTop: 2,
+    marginBottom: 50,
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 16,
@@ -3098,6 +3145,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 24,
+
   },
   upgradeButton: {
     flexDirection: 'row',

@@ -20,6 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ActionButton from '../../components/ActionButton';
 import { useAuth } from '../../context/AuthContext';
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
 const FRASES = [
   "La disciplina es el puente entre metas y logros.",
   "El dolor que sientes hoy será la fuerza que sientas mañana.",
@@ -53,17 +55,62 @@ const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showPerfilUpgradeModal, setShowPerfilUpgradeModal] = useState(false);
+
+  // Estado para el tooltip promocional de FREEUSER
+  const [showPromoTooltip, setShowPromoTooltip] = useState(false);
+
+  // Estado para el entrenador del cliente
+  const [currentTrainer, setCurrentTrainer] = useState(null);
 
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
   }, []);
 
+  // Mostrar tooltip promocional para FREEUSER (solo una vez por sesión)
+  useEffect(() => {
+    const showPromo = async () => {
+      if (user?.tipoUsuario === 'FREEUSER') {
+        const lastPromoShown = await AsyncStorage.getItem('last_promo_session');
+        const currentSession = new Date().toDateString();
+        if (lastPromoShown !== currentSession) {
+          // Delay de 1.5s para que no sea intrusivo
+          setTimeout(() => {
+            setShowPromoTooltip(true);
+            AsyncStorage.setItem('last_promo_session', currentSession);
+          }, 1500);
+        }
+      }
+    };
+    showPromo();
+  }, [user?.tipoUsuario]);
+
+  // Obtener datos del entrenador si el usuario es CLIENTE
+  useEffect(() => {
+    const fetchTrainer = async () => {
+      if (user?.tipoUsuario === 'CLIENTE' && token) {
+        try {
+          const response = await fetch(`${API_URL}/api/clients/my-trainer`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (data.success && data.trainer) {
+            setCurrentTrainer(data.trainer);
+          }
+        } catch (error) {
+          console.error('[Home] Error fetching trainer:', error);
+        }
+      }
+    };
+    fetchTrainer();
+  }, [user?.tipoUsuario, token]);
+
+  // Verificar changelog
   useEffect(() => {
     (async () => {
       try {
@@ -117,6 +164,12 @@ export default function HomeScreen() {
     user?.tipoUsuario === 'PREMIUM' ||
     user?.tipoUsuario === 'ADMIN';
 
+  // Determinar si es usuario premium para efectos VIP
+  const isPremiumUser = user?.tipoUsuario === 'CLIENTE' ||
+    user?.tipoUsuario === 'ENTRENADOR' ||
+    user?.tipoUsuario === 'ADMINISTRADOR' ||
+    user?.tipoUsuario === 'PREMIUM';
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
@@ -149,27 +202,62 @@ export default function HomeScreen() {
       {showPaymentButton && (
         <Link href="/payment" asChild>
           <Pressable style={styles.paymentButton}>
+            {/* Corona inclinada FUERA del botón */}
+            <Text style={styles.crownOutside}>👑</Text>
             <LinearGradient
-              colors={['#10B981', '#059669']}
+              colors={['#FFD700', '#FFA500', '#FF8C00']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.paymentGradient}
             >
-              <Ionicons name={user?.tipoUsuario === 'PREMIUM' || "ADMIN" || "ENTRENADOR" || "CLIENTE" ? "trending-up-outline" : "card-outline"} size={20} color="#FFF" />
               <Text style={styles.paymentButtonText}>Subir de Nivel</Text>
+              <Ionicons name="chevron-forward" size={16} color="#000" />
             </LinearGradient>
           </Pressable>
         </Link>
       )}
 
+      {/* Tooltip promocional para FREEUSER */}
+      {showPromoTooltip && user?.tipoUsuario === 'FREEUSER' && (
+        <Pressable
+          style={styles.promoTooltipContainer}
+          onPress={() => setShowPromoTooltip(false)}
+        >
+          {/* Flecha apuntando al botón */}
+          <View style={styles.promoArrow} />
+          <View style={styles.promoTooltip}>
+            <Text style={styles.promoEmoji}>🚀✨</Text>
+            <Text style={styles.promoTitle}>¡Desbloquea tu potencial!</Text>
+            <Text style={styles.promoText}>
+              Rutinas ilimitadas • Videos HD • Sin límites
+            </Text>
+            <Text style={styles.promoSubtext}>
+              Toca aquí para cerrar o ¡dale al botón dorado!
+            </Text>
+          </View>
+        </Pressable>
+      )}
+
       <View style={styles.contentContainer}>
         <View style={styles.card}>
-          <Image
-            source={require('../../assets/logo.png')}
-            resizeMode="contain"
-            style={styles.logo}
-          />
-          <Text style={styles.title}>TitoGeremito</Text>
+          {/* Logo: mostrar logo del entrenador si es cliente con trainer */}
+          {currentTrainer?.profile?.logoUrl ? (
+            <Image
+              source={{ uri: currentTrainer.profile.logoUrl }}
+              resizeMode="contain"
+              style={[styles.logo, styles.logoVIP]}
+            />
+          ) : (
+            <Image
+              source={require('../../assets/logo.png')}
+              resizeMode="contain"
+              style={[styles.logo, isPremiumUser && styles.logoVIP]}
+            />
+          )}
+          {/* Título: mostrar nombre del entrenador si es cliente con trainer */}
+          <Text style={styles.title}>
+            {currentTrainer?.profile?.brandName || currentTrainer?.nombre || 'TotalGains'}
+          </Text>
           <Text style={styles.subtitle}>Tu progreso, bien medido.</Text>
 
           <Link href="/entreno" asChild>
@@ -316,25 +404,97 @@ const styles = StyleSheet.create({
     top: Platform.OS === 'ios' ? 50 : 40,
     right: 20,
     zIndex: 999,
-    borderRadius: 20,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    borderRadius: 22,
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: '#FFD700',
   },
   paymentGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
     gap: 6,
   },
+  crownOutside: {
+    position: 'absolute',
+    top: -12,
+    left: -8,
+    fontSize: 24,
+    transform: [{ rotate: '-20deg' }],
+    zIndex: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  // Estilos del tooltip promocional
+  promoTooltipContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 95 : 85,
+    right: 15,
+    zIndex: 998,
+    alignItems: 'flex-end',
+  },
+  promoArrow: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 12,
+    borderRightWidth: 12,
+    borderBottomWidth: 12,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#1F2937',
+    marginRight: 30,
+    marginBottom: -1,
+  },
+  promoTooltip: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 16,
+    maxWidth: 220,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  promoEmoji: {
+    fontSize: 28,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  promoTitle: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  promoText: {
+    color: '#E5E7EB',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  promoSubtext: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   paymentButtonText: {
-    color: '#FFF',
+    color: '#000',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.3,
   },
   modeSelectorButton: {
@@ -387,6 +547,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 10,
     elevation: 10,
+  },
+  logoVIP: {
+    // Sombra dorada difuminada profesional (glow effect)
+    borderWidth: 3,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderColor: '#ffd90079',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 25,
+    elevation: 20,
+    // Sin borde para look más limpio
   },
   title: { color: '#E5E7EB', fontSize: 22, fontWeight: '800', letterSpacing: 0.5 },
   subtitle: { color: '#9CA3AF', marginTop: 2, marginBottom: 16 },

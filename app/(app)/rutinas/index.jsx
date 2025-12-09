@@ -154,53 +154,53 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
 
       {/* Folder Filter with Fixed Icon */}
       <View style={styles.folderContainer}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.folderScroll}
-        contentContainerStyle={styles.folderScrollContent}
-      >
-        <TouchableOpacity
-          style={[
-            styles.folderChip,
-            { backgroundColor: theme.backgroundTertiary, borderColor: theme.border },
-            selectedFolder === null && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
-          ]}
-          onPress={() => onFolderSelect(null)}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.folderScroll}
+          contentContainerStyle={styles.folderScrollContent}
         >
-          <Text style={[
-            styles.folderChipText,
-            { color: theme.text },
-            selectedFolder === null && { color: theme.primary, fontWeight: '600' }
-          ]}>
-            Todas
-          </Text>
-        </TouchableOpacity>
-        {folders.map((folder, index) => (
           <TouchableOpacity
-            key={index}
             style={[
               styles.folderChip,
               { backgroundColor: theme.backgroundTertiary, borderColor: theme.border },
-              selectedFolder === folder && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+              selectedFolder === null && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
             ]}
-            onPress={() => onFolderSelect(folder)}
+            onPress={() => onFolderSelect(null)}
           >
-            <Ionicons
-              name="folder"
-              size={14}
-              color={selectedFolder === folder ? theme.primary : theme.textSecondary}
-            />
             <Text style={[
               styles.folderChipText,
               { color: theme.text },
-              selectedFolder === folder && { color: theme.primary, fontWeight: '600' }
+              selectedFolder === null && { color: theme.primary, fontWeight: '600' }
             ]}>
-              {folder}
+              Todas
             </Text>
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+          {folders.map((folder, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.folderChip,
+                { backgroundColor: theme.backgroundTertiary, borderColor: theme.border },
+                selectedFolder === folder && { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+              ]}
+              onPress={() => onFolderSelect(folder)}
+            >
+              <Ionicons
+                name="folder"
+                size={14}
+                color={selectedFolder === folder ? theme.primary : theme.textSecondary}
+              />
+              <Text style={[
+                styles.folderChipText,
+                { color: theme.text },
+                selectedFolder === folder && { color: theme.primary, fontWeight: '600' }
+              ]}>
+                {folder}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         {/* Fixed Create Folder Button */}
         <TouchableOpacity onPress={onCreateFolder} style={[styles.fixedIconContainer, { backgroundColor: theme.backgroundTertiary, borderRadius: 8 }]}>
           <Ionicons name="folder-outline" size={22} color={theme.text} />
@@ -231,6 +231,8 @@ export default function RutinasScreen() {
   const [newFolderName, setNewFolderName] = useState('');
   const [moveFolderModalVisible, setMoveFolderModalVisible] = useState(false);
   const [routineToMove, setRoutineToMove] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [routineToDelete, setRoutineToDelete] = useState(null);
 
   const { user, token } = useAuth();
   const tipoUsuario = user?.tipoUsuario;
@@ -239,82 +241,82 @@ export default function RutinasScreen() {
   const showPremiumRoutines = tipoUsuario === PLAN.PREMIUM || tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
 
   /* Carga inicial */
-const loadRutinasAndActiveId = useCallback(async () => {
-  setIsLoading(true);
-  try {
-    const [storedRutinas, activeId] = await Promise.all([
-      AsyncStorage.getItem('rutinas'),
-      AsyncStorage.getItem('active_routine'),
-    ]);
+  const loadRutinasAndActiveId = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [storedRutinas, activeId] = await Promise.all([
+        AsyncStorage.getItem('rutinas'),
+        AsyncStorage.getItem('active_routine'),
+      ]);
 
-    let localRutinas = [];
-    if (storedRutinas) {
-      const parsed = JSON.parse(storedRutinas);
-      localRutinas = Array.isArray(parsed) ? parsed : [];
-    }
-
-    // Cargar rutinas desde el servidor (MongoDB)
-    let serverRutinas = [];
-    if (token) {
-      try {
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-        const response = await fetch(`${apiBaseUrl}/api/routines`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && Array.isArray(data.routines)) {
-            serverRutinas = data.routines.map(r => ({
-              id: r._id,
-              nombre: r.nombre,
-              origen: 'server',
-              updatedAt: r.updatedAt,
-              folder: r.folder || null,
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('Error cargando rutinas del servidor:', error);
+      let localRutinas = [];
+      if (storedRutinas) {
+        const parsed = JSON.parse(storedRutinas);
+        localRutinas = Array.isArray(parsed) ? parsed : [];
       }
+
+      // Cargar rutinas desde el servidor (MongoDB)
+      let serverRutinas = [];
+      if (token) {
+        try {
+          const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+          const response = await fetch(`${apiBaseUrl}/api/routines`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && Array.isArray(data.routines)) {
+              serverRutinas = data.routines.map(r => ({
+                id: r._id,
+                nombre: r.nombre,
+                origen: 'server',
+                updatedAt: r.updatedAt,
+                folder: r.folder || null,
+              }));
+            }
+          }
+        } catch (error) {
+          console.error('Error cargando rutinas del servidor:', error);
+        }
+      }
+
+      // Filtrar rutinas estáticas (predefined y premium)
+      const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
+      const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
+
+      const staticIds = new Set([
+        ...safePredefined.map(r => r?.id).filter(Boolean),
+        ...safePremium.map(r => r?.id).filter(Boolean),
+      ]);
+
+      // Combinar rutinas: solo locales que no sean estáticas + todas las del servidor
+      const filteredLocalRutinas = localRutinas.filter(r => r && !staticIds.has(r.id) && r.origen !== 'server');
+
+      // Combinar y eliminar duplicados (priorizar servidor)
+      const serverIds = new Set(serverRutinas.map(r => r.id));
+      const finalLocalRutinas = filteredLocalRutinas.filter(r => !serverIds.has(r.id));
+
+      const allRutinas = [...serverRutinas, ...finalLocalRutinas];
+      setRutinas(allRutinas);
+
+      // Actualizar AsyncStorage con la lista combinada
+      await AsyncStorage.setItem('rutinas', JSON.stringify(allRutinas));
+
+      // Extract folders
+      const uniqueFolders = [...new Set(allRutinas.map(r => r.folder).filter(Boolean))];
+      setFolders(uniqueFolders);
+
+      if (activeId) {
+        setActiveRoutineId(activeId);
+      }
+    } catch (e) {
+      console.error('Error cargando rutinas:', e);
+      Alert.alert('Error', 'No se pudieron cargar las rutinas.');
+    } finally {
+      setIsLoading(false);
     }
-
-    // Filtrar rutinas estáticas (predefined y premium)
-    const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
-    const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
-    
-    const staticIds = new Set([
-      ...safePredefined.map(r => r?.id).filter(Boolean),
-      ...safePremium.map(r => r?.id).filter(Boolean),
-    ]);
-
-    // Combinar rutinas: solo locales que no sean estáticas + todas las del servidor
-    const filteredLocalRutinas = localRutinas.filter(r => r && !staticIds.has(r.id) && r.origen !== 'server');
-    
-    // Combinar y eliminar duplicados (priorizar servidor)
-    const serverIds = new Set(serverRutinas.map(r => r.id));
-    const finalLocalRutinas = filteredLocalRutinas.filter(r => !serverIds.has(r.id));
-    
-    const allRutinas = [...serverRutinas, ...finalLocalRutinas];
-    setRutinas(allRutinas);
-
-    // Actualizar AsyncStorage con la lista combinada
-    await AsyncStorage.setItem('rutinas', JSON.stringify(allRutinas));
-
-    // Extract folders
-    const uniqueFolders = [...new Set(allRutinas.map(r => r.folder).filter(Boolean))];
-    setFolders(uniqueFolders);
-
-    if (activeId) {
-      setActiveRoutineId(activeId);
-    }
-  } catch (e) {
-    console.error('Error cargando rutinas:', e);
-    Alert.alert('Error', 'No se pudieron cargar las rutinas.');
-  } finally {
-    setIsLoading(false);
-  }
-}, [token]);
+  }, [token]);
   useEffect(() => {
     loadRutinasAndActiveId();
   }, [loadRutinasAndActiveId]);
@@ -346,32 +348,30 @@ const loadRutinasAndActiveId = useCallback(async () => {
   }, [newRoutineName, rutinas, selectedFolder]);
 
   const handleDeleteRoutine = useCallback((idToDelete) => {
-    Alert.alert(
-      'Confirmar eliminación',
-      '¿Seguro que quieres eliminar esta rutina?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const newRutinasList = rutinas.filter((r) => r.id !== idToDelete);
-              setRutinas(newRutinasList);
-              await AsyncStorage.setItem('rutinas', JSON.stringify(newRutinasList));
-              await AsyncStorage.multiRemove([`routine_${idToDelete}`, `last_session_${idToDelete}`]);
-              if (activeRoutineId === idToDelete) {
-                await AsyncStorage.multiRemove(['active_routine', 'active_routine_name']);
-                setActiveRoutineId(null);
-              }
-            } catch (e) {
-              Alert.alert('Error', 'No se pudo eliminar la rutina.');
-            }
-          },
-        },
-      ]
-    );
-  }, [rutinas, activeRoutineId]);
+    setRoutineToDelete(idToDelete);
+    setDeleteModalVisible(true);
+  }, []);
+
+  const confirmDeleteRoutine = useCallback(async () => {
+    if (!routineToDelete) return;
+
+    try {
+      const newRutinasList = rutinas.filter((r) => r.id !== routineToDelete);
+      setRutinas(newRutinasList);
+      await AsyncStorage.setItem('rutinas', JSON.stringify(newRutinasList));
+      await AsyncStorage.multiRemove([`routine_${routineToDelete}`, `last_session_${routineToDelete}`]);
+      if (activeRoutineId === routineToDelete) {
+        await AsyncStorage.multiRemove(['active_routine', 'active_routine_name']);
+        setActiveRoutineId(null);
+      }
+      setDeleteModalVisible(false);
+      setRoutineToDelete(null);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo eliminar la rutina.');
+      setDeleteModalVisible(false);
+      setRoutineToDelete(null);
+    }
+  }, [rutinas, activeRoutineId, routineToDelete]);
 
   const handleSelectRoutine = useCallback(async (id, nombre, section) => {
     try {
@@ -590,7 +590,7 @@ const loadRutinasAndActiveId = useCallback(async () => {
   const RenderRutina = useCallback(({ item, section }) => {
     const isActive = activeRoutineId === item.id;
     const isPropia = section.title === 'RUTINAS PROPIAS';
-const canDelete = isPropia;
+    const canDelete = isPropia;
     const canEdit = isPropia;
 
     return (
@@ -606,7 +606,7 @@ const canDelete = isPropia;
         >
           <View style={{ flex: 1 }}>
             <Text style={[styles.rutinaNombre, { color: theme.text }, isActive && { color: theme.successText }]} numberOfLines={1}>
-            {item.nombre}
+              {item.nombre}
             </Text>
             {item.folder && (
               <View style={styles.folderTag}>
@@ -629,12 +629,18 @@ const canDelete = isPropia;
               </TouchableOpacity>
             )}
             {canEdit && (
-  <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnEdit]} onPress={() => router.push(`/rutinas/${item.id}?name=${encodeURIComponent(item.nombre)}`)}>
+              <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnEdit]} onPress={() => router.push(`/rutinas/${item.id}?name=${encodeURIComponent(item.nombre)}`)}>
                 <Ionicons name="pencil" size={16} color={theme.primary} />
               </TouchableOpacity>
             )}
             {canDelete && (
-              <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnDelete, { backgroundColor: theme.dangerLight }]} onPress={() => handleDeleteRoutine(item.id)}>
+              <TouchableOpacity
+                style={[styles.rutinaBtn, styles.rutinaBtnDelete, { backgroundColor: theme.dangerLight }]}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleDeleteRoutine(item.id);
+                }}
+              >
                 <Ionicons name="trash" size={16} color={theme.danger} />
               </TouchableOpacity>
             )}
@@ -786,6 +792,40 @@ const canDelete = isPropia;
         </View>
       </Modal>
 
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirmar eliminación</Text>
+            <Text style={[styles.modalDescription, { color: theme.textSecondary }]}>
+              ¿Seguro que quieres eliminar esta rutina? Esta acción no se puede deshacer.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: theme.backgroundTertiary }]}
+                onPress={() => {
+                  setDeleteModalVisible(false);
+                  setRoutineToDelete(null);
+                }}
+              >
+                <Text style={[styles.modalButtonTextCancel, { color: theme.textSecondary }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm, { backgroundColor: theme.danger }]}
+                onPress={confirmDeleteRoutine}
+              >
+                <Text style={styles.modalButtonText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal Promo */}
       <Modal animationType="slide" transparent={false} visible={isOfferModalVisible} onRequestClose={() => setIsOfferModalVisible(false)} statusBarTranslucent={true}>
         <SafeAreaView style={styles.offerModalContainer}>
@@ -803,51 +843,96 @@ const canDelete = isPropia;
         </SafeAreaView>
       </Modal>
 
-      {/* Modal Premium */}
+      {/* Modal Premium - Diseño Mejorado */}
       <Modal animationType="fade" transparent={true} visible={isPremiumOfferModalVisible} onRequestClose={() => setIsPremiumOfferModalVisible(false)}>
-        <View style={styles.premiumOfferModalOverlay}>
-          <ScrollView contentContainerStyle={styles.premiumOfferModalScroll}>
-            <View style={[styles.premiumOfferModalContent, { backgroundColor: theme.cardBackground }]}>
-              <TouchableOpacity style={styles.premiumOfferModalCloseButton} onPress={() => setIsPremiumOfferModalVisible(false)}>
-                <Ionicons name="close-circle" size={30} color={theme.textSecondary} />
-              </TouchableOpacity>
-              <Ionicons name="flash-sharp" size={60} color={theme.premium} style={{ marginBottom: 20 }} />
-              <Text style={[styles.premiumOfferModalTitle, { color: theme.text }]}>Desbloquea tu Potencial Ilimitado</Text>
-              <Text style={[styles.premiumOfferModalSubtitle, { color: theme.textSecondary }]}>
-                Las rutinas premium te esperan. Eleva tu entrenamiento al siguiente nivel.
-              </Text>
+        <View style={styles.premiumModalOverlay}>
+          <View style={[styles.premiumModalContainer, { backgroundColor: theme.cardBackground }]}>
+            {/* Botón cerrar */}
+            <TouchableOpacity
+              style={styles.premiumModalCloseBtn}
+              onPress={() => setIsPremiumOfferModalVisible(false)}
+            >
+              <Ionicons name="close" size={24} color={theme.textSecondary} />
+            </TouchableOpacity>
 
-              <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
-                <Ionicons name="medal-outline" size={30} color={theme.success} />
-                <View style={styles.premiumOptionTextContainer}>
-                  <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Conviértete en Cliente VIP</Text>
-                  <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
-                    ¿Buscas resultados garantizados y un seguimiento personalizado?
-                  </Text>
-                  <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.success }]} onPress={() => Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8')}>
-                    <Text style={styles.premiumCtaButtonText}>Hablar con un Experto</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#fff" />
-                  </TouchableOpacity>
-                </View>
+            {/* Header con icono */}
+            <View style={styles.premiumModalHeader}>
+              <View style={[styles.premiumIconBg, { backgroundColor: theme.premiumLight || 'rgba(234, 179, 8, 0.15)' }]}>
+                <Ionicons name="diamond" size={40} color={theme.premium || '#EAB308'} />
               </View>
+              <Text style={[styles.premiumModalTitle, { color: theme.text }]}>
+                🚀 ¡Desbloquea Premium!
+              </Text>
+              <Text style={[styles.premiumModalDesc, { color: theme.textSecondary }]}>
+                Accede a rutinas avanzadas diseñadas por expertos
+              </Text>
+            </View>
 
-              <Text style={[styles.premiumOrText, { color: theme.textSecondary }]}>— O —</Text>
-
-              <View style={[styles.premiumOptionCard, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
-                <Ionicons name="diamond-outline" size={30} color={theme.primary} />
-                <View style={styles.premiumOptionTextContainer}>
-                  <Text style={[styles.premiumOptionTitle, { color: theme.text }]}>Suscríbete a Premium</Text>
-                  <Text style={[styles.premiumOptionDescription, { color: theme.textSecondary }]}>
-                    Accede al catálogo completo de rutinas avanzadas.
-                  </Text>
-                  <TouchableOpacity style={[styles.premiumCtaButton, { backgroundColor: theme.primary }]} onPress={() => Alert.alert('Suscripción', 'Próximamente...')}>
-                    <Text style={styles.premiumCtaButtonText}>Obtener Premium (6.99€/mes)</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#fff" />
-                  </TouchableOpacity>
-                </View>
+            {/* Beneficios */}
+            <View style={[styles.premiumBenefitsList, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
+              <View style={styles.premiumBenefitItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />
+                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Rutinas premium ilimitadas</Text>
+              </View>
+              <View style={styles.premiumBenefitItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />
+                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Vídeos de técnica correcta</Text>
+              </View>
+              <View style={styles.premiumBenefitItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />
+                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Sincronización en la nube</Text>
+              </View>
+              <View style={styles.premiumBenefitItem}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />
+                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Estadísticas avanzadas</Text>
               </View>
             </View>
-          </ScrollView>
+
+            {/* Botón principal */}
+            <TouchableOpacity
+              style={[styles.premiumMainBtn, { backgroundColor: theme.premium || '#EAB308' }]}
+              onPress={() => {
+                setIsPremiumOfferModalVisible(false);
+                router.push('/payment');
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="flash" size={20} color="#fff" />
+              <Text style={styles.premiumMainBtnText}>Ver Planes Premium</Text>
+            </TouchableOpacity>
+
+            {/* Separador */}
+            <View style={styles.premiumSeparator}>
+              <View style={[styles.premiumSeparatorLine, { backgroundColor: theme.border }]} />
+              <Text style={[styles.premiumSeparatorText, { color: theme.textSecondary }]}>o</Text>
+              <View style={[styles.premiumSeparatorLine, { backgroundColor: theme.border }]} />
+            </View>
+
+            {/* Opción VIP */}
+            <TouchableOpacity
+              style={[styles.premiumVipBtn, { borderColor: theme.success || '#22C55E' }]}
+              onPress={() => {
+                setIsPremiumOfferModalVisible(false);
+                Linking.openURL('https://forms.gle/MGM5xtFx7hYgSGNW8');
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="medal" size={18} color={theme.success || '#22C55E'} />
+              <Text style={[styles.premiumVipBtnText, { color: theme.success || '#22C55E' }]}>
+                Quiero un entrenador personal
+              </Text>
+            </TouchableOpacity>
+
+            {/* Botón cancelar */}
+            <TouchableOpacity
+              style={styles.premiumCancelBtn}
+              onPress={() => setIsPremiumOfferModalVisible(false)}
+            >
+              <Text style={[styles.premiumCancelText, { color: theme.textSecondary }]}>
+                Tal vez más tarde
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -884,13 +969,13 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15 },
 
-  folderContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  folderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 2,
     gap: 12,
   },
-  folderScroll: { flex: 1, maxHeight: 40 },  folderScrollContent: { gap: 8 },
+  folderScroll: { flex: 1, maxHeight: 40 }, folderScrollContent: { gap: 8 },
   folderChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -947,6 +1032,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 16,
+  },
+  modalDescription: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   modalInput: {
     borderWidth: 1,
@@ -1018,4 +1109,124 @@ const styles = StyleSheet.create({
   premiumCtaButton: { borderRadius: 8, paddingVertical: 12, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   premiumCtaButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   premiumOrText: { fontSize: 14, fontWeight: '600', marginVertical: 8 },
+
+  // Nuevos estilos para el modal premium mejorado
+  premiumModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  premiumModalContainer: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  premiumModalCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    padding: 4,
+  },
+  premiumModalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  premiumIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  premiumModalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  premiumModalDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  premiumBenefitsList: {
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  premiumBenefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  premiumBenefitText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  premiumMainBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  premiumMainBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  premiumSeparator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+    gap: 12,
+  },
+  premiumSeparatorLine: {
+    flex: 1,
+    height: 1,
+  },
+  premiumSeparatorText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  premiumVipBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 12,
+  },
+  premiumVipBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  premiumCancelBtn: {
+    paddingVertical: 8,
+  },
+  premiumCancelText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
 });

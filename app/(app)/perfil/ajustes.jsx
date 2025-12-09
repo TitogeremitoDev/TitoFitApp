@@ -28,13 +28,10 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 export default function AjustesScreen() {
   const router = useRouter();
   const { theme, themeMode, setThemeMode } = useTheme();
-  const { user, upgradeByCode } = useAuth();
+  const { user } = useAuth();
 
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [loadingSub, setLoadingSub] = useState(true);
-  const [showRedeemModal, setShowRedeemModal] = useState(false);
-  const [redeemCode, setRedeemCode] = useState('');
-  const [redeeming, setRedeeming] = useState(false);
 
   // Estados para cambio de contraseña
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -45,6 +42,10 @@ export default function AjustesScreen() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Estado para modal de cancelar suscripción
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   const themeOptions = [
     {
@@ -95,64 +96,40 @@ export default function AjustesScreen() {
     }
   };
 
-  // Cancelar suscripción
-  const handleCancelSubscription = async () => {
-    Alert.alert(
-      'Cancelar Suscripción',
-      '¿Estás seguro de que deseas cancelar tu suscripción? Mantendrás el acceso hasta la fecha de expiración, pero no se renovará automáticamente.',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Sí, Cancelar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const token = await AsyncStorage.getItem('totalgains_token');
-              const response = await fetch(`${API_URL}/api/subscription/cancel`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
-                }
-              });
-
-              const data = await response.json();
-              if (data.success) {
-                Alert.alert('Cancelada', 'Tu suscripción ha sido cancelada.');
-                loadSubscriptionStatus(); // Recargar estado
-              } else {
-                Alert.alert('Error', data.message || 'No se pudo cancelar la suscripción.');
-              }
-            } catch (error) {
-              console.error('[Ajustes] Error cancelando suscripción:', error);
-              Alert.alert('Error', 'No se pudo cancelar la suscripción.');
-            }
-          }
-        }
-      ]
-    );
+  // Cancelar suscripción - abre el modal de confirmación
+  const handleCancelSubscription = () => {
+    setShowCancelModal(true);
   };
 
-  // Canjear código
-  const handleRedeem = async () => {
-    if (!redeemCode.trim()) {
-      Alert.alert('Código vacío', 'Introduce tu código de cliente.');
-      return;
-    }
-    setRedeeming(true);
+  // Confirmar cancelación de suscripción
+  const confirmCancelSubscription = async () => {
+    setCancellingSubscription(true);
     try {
-      const updated = await upgradeByCode(redeemCode.trim());
-      setShowRedeemModal(false);
-      setRedeemCode('');
-      Alert.alert('Hecho', `Tu cuenta ahora es: ${updated.tipoUsuario}`);
-      loadSubscriptionStatus();
-    } catch (e) {
-      const msg = (e?.response?.data?.message) || e?.message || 'No se pudo canjear el código';
-      Alert.alert('Error', String(msg));
+      const token = await AsyncStorage.getItem('totalgains_token');
+      const response = await fetch(`${API_URL}/api/subscription/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setShowCancelModal(false);
+        loadSubscriptionStatus(); // Recargar estado
+      } else {
+        // Mostrar error en consola, el modal permanece abierto
+        console.error('[Ajustes] Error:', data.message);
+      }
+    } catch (error) {
+      console.error('[Ajustes] Error cancelando suscripción:', error);
     } finally {
-      setRedeeming(false);
+      setCancellingSubscription(false);
     }
   };
+
+
 
   // Cambiar contraseña
   const handleChangePassword = async () => {
@@ -341,8 +318,8 @@ export default function AjustesScreen() {
           </View>
         )}
 
-        {/* Sección de Suscripción */}
-        {subscriptionData?.active && (
+        {/* Sección de Suscripción - Visible para usuarios con plan activo o premium */}
+        {(subscriptionData || user?.tipoUsuario === 'PREMIUM' || user?.tipoUsuario === 'CLIENTE') && (
           <View style={styles.section}>
             <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
               <Ionicons name="card-outline" size={20} color={theme.text} />
@@ -352,54 +329,80 @@ export default function AjustesScreen() {
             </View>
 
             <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
-              <View style={styles.subsInfoContainer}>
-                <Text style={[styles.subsInfoLabel, { color: theme.textSecondary }]}>
-                  Plan Activo
-                </Text>
-                <Text style={[styles.subsInfoValue, { color: theme.text }]}>
-                  {subscriptionData.plan}
-                </Text>
-              </View>
-
-              {subscriptionData.expiresAt && (
+              {loadingSub ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <Text style={[{ color: theme.textSecondary, marginTop: 8 }]}>Cargando...</Text>
+                </View>
+              ) : subscriptionData ? (
                 <>
-                  <View style={[styles.subsInfoContainer, { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                  <View style={styles.subsInfoContainer}>
                     <Text style={[styles.subsInfoLabel, { color: theme.textSecondary }]}>
-                      Próxima renovación
+                      Plan Activo
                     </Text>
                     <Text style={[styles.subsInfoValue, { color: theme.text }]}>
-                      {new Date(subscriptionData.expiresAt).toLocaleDateString()}
+                      {subscriptionData.plan || user?.tipoUsuario || 'Premium'}
                     </Text>
                   </View>
-                  <View style={[styles.subsInfoContainer, { borderTopWidth: 1, borderTopColor: theme.border }]}>
-                    <Text style={[styles.subsInfoLabel, { color: theme.textSecondary }]}>
-                      Días restantes
-                    </Text>
-                    <Text style={[styles.subsInfoValue, { color: theme.text }]}>
-                      {subscriptionData.daysRemaining}
-                    </Text>
-                  </View>
+
+                  {subscriptionData.expiresAt && (
+                    <>
+                      <View style={[styles.subsInfoContainer, { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                        <Text style={[styles.subsInfoLabel, { color: theme.textSecondary }]}>
+                          {subscriptionData.status === 'cancelled' ? 'Acceso hasta' : 'Próxima renovación'}
+                        </Text>
+                        <Text style={[styles.subsInfoValue, { color: theme.text }]}>
+                          {new Date(subscriptionData.expiresAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={[styles.subsInfoContainer, { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                        <Text style={[styles.subsInfoLabel, { color: theme.textSecondary }]}>
+                          Días restantes
+                        </Text>
+                        <Text style={[styles.subsInfoValue, { color: theme.text }]}>
+                          {subscriptionData.daysRemaining || 0}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+
+                  {/* Botón Cancelar - Solo si la suscripción está activa */}
+                  {subscriptionData.active && subscriptionData.status === 'active' && (
+                    <TouchableOpacity
+                      style={[styles.cancelButton, { backgroundColor: theme.dangerLight || '#FEE2E2', borderColor: theme.dangerBorder || '#FECACA' }]}
+                      onPress={handleCancelSubscription}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="close-circle-outline" size={20} color={theme.danger || '#EF4444'} />
+                      <Text style={[styles.cancelButtonText, { color: theme.danger || '#EF4444' }]}>
+                        Cancelar Suscripción
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {subscriptionData.status === 'cancelled' && (
+                    <View style={[styles.cancelledBanner, { backgroundColor: theme.warningLight || '#FEF3C7' }]}>
+                      <Ionicons name="alert-circle-outline" size={20} color={theme.warning || '#F59E0B'} />
+                      <Text style={[styles.cancelledText, { color: theme.warning || '#F59E0B' }]}>
+                        Suscripción cancelada. Acceso hasta {new Date(subscriptionData.expiresAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  )}
+
+                  {subscriptionData.status === 'expired' && (
+                    <View style={[styles.cancelledBanner, { backgroundColor: theme.dangerLight || '#FEE2E2' }]}>
+                      <Ionicons name="alert-circle-outline" size={20} color={theme.danger || '#EF4444'} />
+                      <Text style={[styles.cancelledText, { color: theme.danger || '#EF4444' }]}>
+                        Suscripción expirada. Renueva para mantener el acceso.
+                      </Text>
+                    </View>
+                  )}
                 </>
-              )}
-
-              {subscriptionData.status === 'active' && (
-                <TouchableOpacity
-                  style={[styles.cancelButton, { backgroundColor: theme.dangerLight, borderColor: theme.dangerBorder }]}
-                  onPress={handleCancelSubscription}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="close-circle-outline" size={20} color={theme.danger} />
-                  <Text style={[styles.cancelButtonText, { color: theme.danger }]}>
-                    Cancelar Suscripción
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {subscriptionData.status === 'cancelled' && (
-                <View style={[styles.cancelledBanner, { backgroundColor: theme.warningLight }]}>
-                  <Ionicons name="alert-circle-outline" size={20} color={theme.warning} />
-                  <Text style={[styles.cancelledText, { color: theme.warning }]}>
-                    Suscripción cancelada. Acceso hasta {new Date(subscriptionData.expiresAt).toLocaleDateString()}
+              ) : (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Ionicons name="card-outline" size={32} color={theme.textSecondary} />
+                  <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
+                    No tienes una suscripción activa
                   </Text>
                 </View>
               )}
@@ -407,24 +410,7 @@ export default function AjustesScreen() {
           </View>
         )}
 
-        {/* Sección de Canje de Código (Siempre visible o solo si no es premium?) */}
-        <View style={styles.section}>
-          <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
-            <Ionicons name="key-outline" size={20} color={theme.text} />
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Código Promocional
-            </Text>
-          </View>
-          <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
-            <TouchableOpacity
-              style={[styles.themeOption, { borderBottomWidth: 0 }]}
-              onPress={() => setShowRedeemModal(true)}
-            >
-              <Text style={{ color: theme.text }}>Canjear código de cliente</Text>
-              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
+
 
         {/* Sección de Información */}
         <View style={styles.section}>
@@ -441,7 +427,7 @@ export default function AjustesScreen() {
                 Versión de la app
               </Text>
               <Text style={[styles.infoValue, { color: theme.text }]}>
-                0.8.0
+                0.9.0
               </Text>
             </View>
             <View style={[styles.infoRow, styles.infoRowLast]}>
@@ -459,72 +445,7 @@ export default function AjustesScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Modal Canjear Código */}
-      <Modal
-        visible={showRedeemModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowRedeemModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Canjear Código</Text>
-            <Text style={[styles.modalDescription, { color: theme.textSecondary }]}>
-              Introduce tu código de cliente para actualizar tu cuenta
-            </Text>
 
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  backgroundColor: theme.background,
-                  borderColor: theme.border,
-                  color: theme.text,
-                },
-              ]}
-              placeholder="Código de cliente"
-              placeholderTextColor={theme.textSecondary}
-              value={redeemCode}
-              onChangeText={setRedeemCode}
-              autoCapitalize="characters"
-              editable={!redeeming}
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: theme.border }]}
-                onPress={() => {
-                  setShowRedeemModal(false);
-                  setRedeemCode('');
-                }}
-                disabled={redeeming}
-              >
-                <Text style={[styles.modalButtonText, { color: theme.text }]}>
-                  Cancelar
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  styles.modalButtonPrimary,
-                  { backgroundColor: theme.primary },
-                ]}
-                onPress={handleRedeem}
-                disabled={redeeming}
-              >
-                {redeeming ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
-                    Canjear
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Modal Cambiar Contraseña */}
       <Modal
@@ -640,6 +561,61 @@ export default function AjustesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Cancelar Suscripción */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <View style={styles.cancelModalIconContainer}>
+              <Ionicons name="warning-outline" size={48} color={theme.danger || '#EF4444'} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Cancelar Suscripción
+            </Text>
+
+            <Text style={[styles.modalDescription, { color: theme.textSecondary, textAlign: 'center' }]}>
+              ¿Estás seguro de que deseas cancelar tu suscripción?{'\n\n'}
+              IMPORTANTE: Mantendrás tu estatus PREMIUM y todos los beneficios hasta el final de tu periodo actual. No se te volverá a cobrar.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: theme.border }]}
+                onPress={() => setShowCancelModal(false)}
+                disabled={cancellingSubscription}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text }]}>
+                  No, mantener
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonPrimary,
+                  { backgroundColor: theme.danger || '#EF4444' },
+                ]}
+                onPress={confirmCancelSubscription}
+                disabled={cancellingSubscription}
+              >
+                {cancellingSubscription ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                    Sí, cancelar
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -690,6 +666,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   sectionContent: {
+    marginTop: 8,
     marginHorizontal: 12,
     borderRadius: 12,
     overflow: 'hidden',
@@ -701,8 +678,8 @@ const styles = StyleSheet.create({
   },
   sectionDescription: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 6,
+    paddingBottom: 6,
     fontSize: 13,
   },
   themeOption: {
@@ -710,7 +687,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 8,
     borderBottomWidth: 1,
   },
   themeOptionLast: {
@@ -787,7 +764,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 6,
     paddingHorizontal: 16,
   },
   settingItemLeft: {
@@ -837,7 +814,7 @@ const styles = StyleSheet.create({
   },
   subsInfoContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 8,
   },
   subsInfoLabel: {
     fontSize: 13,
@@ -867,9 +844,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginVertical: 6,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   cancelledText: {
@@ -891,6 +868,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
   },
   modalTitle: {
     fontSize: 18,
@@ -924,5 +907,15 @@ const styles = StyleSheet.create({
   },
   btnSolid: {
     // backgroundColor set inline
+  },
+  cancelModalIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    alignSelf: 'center',
   },
 });

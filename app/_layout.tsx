@@ -1,4 +1,3 @@
-// app/_layout.tsx
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -9,12 +8,13 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import { StripeProvider } from '../utils/stripeWrapper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
 
 function RootLayoutNav() {
-  const { token, isLoading, user } = useAuth();
+  const { token, isLoading, user, refreshUser } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const navState = useRootNavigationState(); // router listo cuando tiene key
@@ -85,16 +85,46 @@ function RootLayoutNav() {
           try {
             const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
 
-            if (!hasCompletedOnboarding) {
+            // Si ya tiene flag local, ir directo a home
+            if (hasCompletedOnboarding) {
               if (__DEV__) {
-                console.log('[Navigation] Redirecting to onboarding');
-              }
-              router.replace('/onboarding');
-            } else {
-              if (__DEV__) {
-                console.log('[Navigation] Redirecting to home');
+                console.log('[Navigation] Redirecting to home (local flag exists)');
               }
               router.replace('/home');
+              return;
+            }
+
+            // Si no hay flag local, verificar en MongoDB
+            let hasMongoData = false;
+            try {
+              // Obtener datos frescos del usuario desde el backend
+              const freshUser = await refreshUser();
+              hasMongoData = Boolean(freshUser?.info_user && (
+                freshUser.info_user.edad ||
+                freshUser.info_user.peso ||
+                freshUser.info_user.objetivos ||
+                freshUser.info_user.genero
+              ));
+              if (__DEV__) {
+                console.log('[Navigation] MongoDB info_user check:', hasMongoData, freshUser?.info_user);
+              }
+            } catch (e) {
+              console.error('[Navigation] Error fetching user data:', e);
+            }
+
+            if (hasMongoData) {
+              // Tiene datos en Mongo, guardar flag y ir a home
+              await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+              if (__DEV__) {
+                console.log('[Navigation] Redirecting to home (mongo data exists)');
+              }
+              router.replace('/home');
+            } else {
+              // No hay datos en ningún lado, mostrar onboarding
+              if (__DEV__) {
+                console.log('[Navigation] Redirecting to onboarding (no data found)');
+              }
+              router.replace('/onboarding');
             }
           } catch (error) {
             console.error('Error verificando onboarding:', error);

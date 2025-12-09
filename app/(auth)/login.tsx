@@ -22,6 +22,32 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
 
+// ═══════════════════════════════════════════════════════════════════════════
+// WEB: Manejar OAuth en popup - Si estamos en un popup con token, enviar a padre y cerrar
+// ═══════════════════════════════════════════════════════════════════════════
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  // Verificar si estamos en un popup (tenemos window.opener)
+  if (window.opener && window.location.hash) {
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const accessToken = params.get('access_token');
+
+    if (accessToken) {
+      // Enviar el token a la ventana padre
+      try {
+        window.opener.postMessage({
+          type: 'GOOGLE_AUTH_SUCCESS',
+          accessToken: accessToken
+        }, window.location.origin);
+      } catch (e) {
+        console.error('Error sending message to opener:', e);
+      }
+      // Cerrar este popup
+      window.close();
+    }
+  }
+}
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
@@ -34,6 +60,81 @@ export default function LoginScreen() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const processedResponseRef = useRef<string | null>(null); // ✅ Para trackear respuestas ya procesadas
+  const urlTokenProcessedRef = useRef(false); // ✅ Para evitar procesar URL token múltiples veces
+
+  // ════════════════════════════════════════════════════════════════════════
+  // WEB: Detectar token de OAuth en URL hash al cargar la página
+  // ════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (Platform.OS !== 'web' || urlTokenProcessedRef.current) return;
+
+    // Verificar si hay token en el hash de la URL
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1); // Quitar el #
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get('access_token');
+
+      if (accessToken) {
+        urlTokenProcessedRef.current = true;
+        console.log('[Login] Token detectado en URL hash, procesando...');
+        setIsGoogleLoading(true);
+
+        // Limpiar el hash de la URL
+        window.history.replaceState(null, '', window.location.pathname);
+
+        // Procesar el token
+        (async () => {
+          try {
+            await loginWithGoogle(accessToken);
+            console.log('[Login] Login con Google desde URL completado');
+          } catch (e) {
+            console.error('[Login] Error procesando token de URL:', e);
+            let msg = 'No se pudo completar el login con Google.';
+            if (axios.isAxiosError(e)) {
+              msg = e.response?.data?.message || e.message || msg;
+            }
+            Alert.alert('Error', msg);
+          } finally {
+            setIsGoogleLoading(false);
+          }
+        })();
+      }
+    }
+  }, [loginWithGoogle]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // WEB: Escuchar mensajes del popup de OAuth
+  // ════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const handleMessage = async (event: MessageEvent) => {
+      // Verificar origen por seguridad
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS' && event.data?.accessToken) {
+        console.log('[Login] Token recibido desde popup');
+        setIsGoogleLoading(true);
+
+        try {
+          await loginWithGoogle(event.data.accessToken);
+          console.log('[Login] Login con Google desde popup completado');
+        } catch (e) {
+          console.error('[Login] Error procesando token de popup:', e);
+          let msg = 'No se pudo completar el login con Google.';
+          if (axios.isAxiosError(e)) {
+            msg = e.response?.data?.message || e.message || msg;
+          }
+          Alert.alert('Error', msg);
+        } finally {
+          setIsGoogleLoading(false);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [loginWithGoogle]);
 
 
   // ════════════════════════════════════════════════════════════════════════
@@ -58,11 +159,25 @@ export default function LoginScreen() {
   // CONFIGURACIÓN DEL HOOK DE GOOGLE
   // ════════════════════════════════════════════════════════════════════════
 
+  // Determinar redirectUri para web
+  const getRedirectUri = () => {
+    if (Platform.OS === 'web') {
+      // En producción, usar la URL con el baseUrl /app
+      if (typeof window !== 'undefined' && window.location.hostname === 'totalgains.es') {
+        return 'https://totalgains.es/app';
+      }
+      // En desarrollo local
+      return undefined; // expo-auth-session lo maneja automáticamente
+    }
+    return undefined;
+  };
+
   const [request, response, promptAsync] = Google.useAuthRequest({
     androidClientId: Platform.OS === 'android' ? androidClientId : undefined,
     iosClientId: Platform.OS === 'ios' ? WEB_CLIENT_ID : undefined,
     webClientId: WEB_CLIENT_ID,
     scopes: ['openid', 'profile', 'email'],
+    redirectUri: getRedirectUri(),
   });
 
   // ════════════════════════════════════════════════════════════════════════

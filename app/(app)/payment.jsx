@@ -42,6 +42,14 @@ const COMMON_BENEFITS = [
   '1 Consulta mensual con Titogeremito'
 ];
 
+const COACH_BENEFITS = [
+  'Seguimiento síncrono de clientes',
+  'Asignación automática de rutinas',
+  'Potenciado con IA para análisis',
+  'Gestión centralizada de pagos',
+  'Chat directo con atletas'
+];
+
 // URL CUESTIONARIO HIGH TICKET
 const COACHING_FORM_URL = 'https://docs.google.com/forms/d/1-KNo9I1GEeaoeIAegtyYoPG9BqaBAP5OmOvCllQ96Ck/edit';
 
@@ -53,7 +61,8 @@ export default function PaymentScreen() {
   const { user, refreshUser } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
-  // Estado para planes
+  const isPremium = user?.tipoUsuario === 'PREMIUM';
+
   const [planes, setPlanes] = useState([]);
   const [loadingPlanes, setLoadingPlanes] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -65,6 +74,13 @@ export default function PaymentScreen() {
   const [userToken, setUserToken] = useState(null);
   const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
   const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20 clientes
+
+  // Debug logs (Safe to remove or comment out now)
+  // useEffect(() => {
+  //   console.log('[Payment] User:', user?._id, user?.tipoUsuario);
+  //   console.log('[Payment] isPremium:', isPremium);
+  //   console.log('[Payment] current userType:', userType);
+  // }, [user, isPremium, userType]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CARGAR PLANES DESDE LA API
@@ -125,6 +141,13 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
+    if (isPremium && userType !== 'coach') {
+      console.log('[Payment] Force switching to coach because user is PREMIUM');
+      setUserType('coach');
+    }
+  }, [isPremium, userType]); // Added userType to dependency to ensure it sticks
+
+  useEffect(() => {
     (async () => {
       try {
         const token = await AsyncStorage.getItem('totalgains_token');
@@ -133,6 +156,149 @@ export default function PaymentScreen() {
         console.error('Error token:', error);
       }
     })();
+  }, []);
+
+  // Detectar retorno de Stripe Checkout en web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    const canceled = urlParams.get('canceled');
+    const sessionId = urlParams.get('session_id');
+
+    if (success === 'true' && sessionId) {
+      // Usuario volvió exitosamente de Stripe Checkout
+      console.log('[Payment] Retorno exitoso de Stripe Checkout, verificando pago...');
+      setLoading(true);
+
+      (async () => {
+        try {
+          const token = await AsyncStorage.getItem('totalgains_token');
+          const response = await fetch(`${API_URL}/api/payments/stripe/verify-checkout-session`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ sessionId })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            if (refreshUser) await refreshUser();
+            Alert.alert(
+              '¡Bienvenido al Team! 🚀',
+              'Tu suscripción ha sido activada correctamente.',
+              [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]
+            );
+          } else {
+            Alert.alert('Atención', data.message || 'Error verificando el pago. Contacta con soporte.');
+          }
+        } catch (error) {
+          console.error('[Payment] Error verificando pago:', error);
+          Alert.alert('Error', 'No se pudo verificar el pago. Contacta con soporte.');
+        } finally {
+          setLoading(false);
+          // Limpiar parámetros de URL
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })();
+    } else if (canceled === 'true') {
+      // Usuario canceló el pago
+      console.log('[Payment] Usuario canceló el pago');
+      Alert.alert('Pago cancelado', 'Has cancelado el proceso de pago.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Detectar retorno de PayPal en web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const paypalSuccess = urlParams.get('paypal_success');
+    const paypalCanceled = urlParams.get('paypal_canceled');
+    const planIdFromUrl = urlParams.get('plan_id');
+    const subscriptionIdFromUrl = urlParams.get('subscription_id');
+
+    if (paypalSuccess === 'true' && planIdFromUrl) {
+      console.log('[Payment] Retorno exitoso de PayPal, buscando suscripción activa...');
+      setLoading(true);
+
+      (async () => {
+        try {
+          const token = await AsyncStorage.getItem('totalgains_token');
+
+          if (!token) {
+            Alert.alert('Error', 'No se encontró la sesión. Por favor, inicia sesión de nuevo.');
+            setLoading(false);
+            return;
+          }
+
+
+          // Si tenemos el subscription_id, usarlo directamente
+          let subscriptionId = subscriptionIdFromUrl;
+          let confirmUrl = subscriptionId
+            ? `${API_URL}/api/payments/paypal/confirm-subscription/${subscriptionId}`
+            : `${API_URL}/api/payments/paypal/confirm-latest`;
+
+          console.log(`[Payment] Usando endpoint: ${confirmUrl}`);
+
+          // Confirmar la suscripción
+          const confirmRes = await fetch(
+            confirmUrl,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ planId: planIdFromUrl })
+            }
+          );
+
+          const confirmData = await confirmRes.json();
+          console.log('[PayPal] Confirmación automática:', confirmData);
+
+
+          if (confirmData.success) {
+            if (refreshUser) await refreshUser();
+            Alert.alert(
+              '¡Bienvenido al Team! 🚀',
+              'Tu suscripción PayPal ha sido activada correctamente.',
+              [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]
+            );
+          } else {
+            // La suscripción puede no estar activa aún
+            if (confirmData.status === 'APPROVAL_PENDING') {
+              Alert.alert(
+                'Pago Pendiente',
+                'Tu pago aún no ha sido procesado por PayPal. Por favor espera unos momentos y vuelve a intentar.',
+                [{ text: 'Entendido' }]
+              );
+            } else {
+              Alert.alert(
+                'Atención',
+                confirmData.message || 'No se pudo verificar el pago. Si ya pagaste, contacta con soporte.',
+                [{ text: 'OK' }]
+              );
+            }
+          }
+        } catch (error) {
+          console.error('[Payment] Error verificando pago PayPal:', error);
+          Alert.alert('Error', 'No se pudo verificar el pago. Si ya pagaste, contacta con soporte.');
+        } finally {
+          setLoading(false);
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })();
+    } else if (paypalCanceled === 'true') {
+      console.log('[Payment] Usuario canceló el pago de PayPal');
+      Alert.alert('Pago cancelado', 'Has cancelado el proceso de pago con PayPal.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   useEffect(() => {
@@ -214,21 +380,6 @@ export default function PaymentScreen() {
       return Alert.alert('Selecciona un plan', 'Debes seleccionar un plan de suscripción');
     }
 
-    if (selectedPlan.isCoach) {
-      const duracion = selectedPlan.duracionMeses === 1 ? 'mensual' : 'anual';
-      const precio = selectedPlan.precioActual;
-      const clientes = selectedPlan.clientRange || 5;
-
-      return Alert.alert(
-        'Plan Entrenador',
-        `Para activar el plan ${duracion} para ${clientes} clientes (${precio}€), por favor contáctame directamente para más información.`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Contactar', onPress: openCoaching }
-        ]
-      );
-    }
-
     if (paymentMethod === 'stripe') {
       setLoading(true);
       const initResult = await initializePaymentSheet(selectedPlan);
@@ -300,7 +451,8 @@ export default function PaymentScreen() {
           return;
         }
 
-        console.log('[PayPal] Suscripción creada:', data.subscriptionId);
+        const paypalSubscriptionId = data.subscriptionId;
+        console.log('[PayPal] Suscripción creada:', paypalSubscriptionId);
 
         // Abrir URL de aprobación en navegador
         if (data.approvalUrl) {
@@ -308,27 +460,95 @@ export default function PaymentScreen() {
           if (canOpen) {
             await Linking.openURL(data.approvalUrl);
 
-            // Mostrar instrucciones al usuario
+            // Mostrar instrucciones al usuario con opción de verificar
             Alert.alert(
               'Completar Pago',
-              'Se ha abierto PayPal en tu navegador. Completa el pago y vuelve a la app.',
+              'Se ha abierto PayPal en tu navegador. Completa el pago y luego pulsa "Ya he pagado" para activar tu suscripción.',
               [
-                { text: 'Pago Completado', onPress: () => router.back() },
-                { text: 'Cancelar', style: 'cancel' }
+                {
+                  text: 'Ya he pagado',
+                  onPress: async () => {
+                    // Verificar y confirmar la suscripción
+                    try {
+                      setLoading(true);
+                      console.log('[PayPal] Verificando suscripción:', paypalSubscriptionId);
+
+                      const confirmRes = await fetch(
+                        `${API_URL}/api/payments/paypal/confirm-subscription/${paypalSubscriptionId}`,
+                        {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${userToken}`
+                          },
+                          body: JSON.stringify({ planId: selectedPlan.id })
+                        }
+                      );
+
+                      const confirmData = await confirmRes.json();
+                      console.log('[PayPal] Confirmación:', confirmData);
+
+                      if (confirmData.success) {
+                        // Refrescar datos del usuario
+                        if (refreshUser) {
+                          await refreshUser();
+                        }
+
+                        Alert.alert(
+                          '¡Bienvenido al Team! 🚀',
+                          `Suscripción ${selectedPlan.nombre} activada correctamente.`,
+                          [{ text: 'Empezar a Entrenar', onPress: () => router.back() }]
+                        );
+                      } else {
+                        // La suscripción existe pero no está activa aún
+                        if (confirmData.status === 'APPROVAL_PENDING') {
+                          Alert.alert(
+                            'Pago Pendiente',
+                            'Tu pago aún no ha sido procesado por PayPal. Por favor completa el pago en PayPal e intenta de nuevo.',
+                            [
+                              { text: 'Entendido' }
+                            ]
+                          );
+                        } else {
+                          Alert.alert(
+                            'Atención',
+                            confirmData.message || 'El pago no se pudo verificar. Si ya pagaste, contacta con soporte.',
+                            [{ text: 'OK' }]
+                          );
+                        }
+                      }
+                    } catch (confirmError) {
+                      console.error('[PayPal] Error confirmando:', confirmError);
+                      Alert.alert(
+                        'Error',
+                        'No se pudo verificar el pago. Si ya pagaste, contacta con soporte.'
+                      );
+                    } finally {
+                      setLoading(false);
+                    }
+                  }
+                },
+                {
+                  text: 'Cancelar',
+                  style: 'cancel',
+                  onPress: () => setLoading(false)
+                }
               ]
             );
           } else {
             Alert.alert('Error', 'No se pudo abrir PayPal. Inténtalo desde un navegador.');
+            setLoading(false);
           }
+        } else {
+          setLoading(false);
         }
-
-        setLoading(false);
 
       } catch (error) {
         console.error('[PayPal] Error:', error);
         Alert.alert('Error', error.message || 'Error al procesar el pago con PayPal');
         setLoading(false);
       }
+
     } else {
       Alert.alert('Próximamente', 'Google Pay estará disponible en breve.');
     }
@@ -395,7 +615,7 @@ export default function PaymentScreen() {
           style={StyleSheet.absoluteFill}
         />
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/home')} style={styles.backButton}>
             <Ionicons name="chevron-back" size={24} color="#FFF" />
           </Pressable>
           <Text style={styles.headerTitle}>Suscripción Premium</Text>
@@ -425,7 +645,7 @@ export default function PaymentScreen() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/home')} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#FFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Suscripción Premium</Text>
@@ -447,17 +667,19 @@ export default function PaymentScreen() {
         <View style={styles.toggleContainer}>
           <Text style={styles.toggleLabel}>¿Qué eres?</Text>
           <View style={styles.toggleWrapper}>
-            <Pressable
-              style={[styles.toggleOption, userType === 'athlete' && styles.toggleOptionActive]}
-              onPress={() => {
-                setUserType('athlete');
-                const filtered = planes.filter(p => !p.isCoach);
-                const planDestacado = filtered.find(p => p.destacado);
-                setSelectedPlan(planDestacado || filtered[0]);
-              }}
-            >
-              <Text style={[styles.toggleText, userType === 'athlete' && styles.toggleTextActive]}>Atleta</Text>
-            </Pressable>
+            {!isPremium && (
+              <Pressable
+                style={[styles.toggleOption, userType === 'athlete' && styles.toggleOptionActive]}
+                onPress={() => {
+                  setUserType('athlete');
+                  const filtered = planes.filter(p => !p.isCoach);
+                  const planDestacado = filtered.find(p => p.destacado);
+                  setSelectedPlan(planDestacado || filtered[0]);
+                }}
+              >
+                <Text style={[styles.toggleText, userType === 'athlete' && styles.toggleTextActive]}>Atleta</Text>
+              </Pressable>
+            )}
             <Pressable
               style={[styles.toggleOption, userType === 'coach' && styles.toggleOptionActive]}
               onPress={() => {
@@ -513,9 +735,13 @@ export default function PaymentScreen() {
 
         {/* SECCIÓN 1: TITULO DE ALTO IMPACTO */}
         <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Desbloquea tu mejor versión</Text>
+          <Text style={styles.heroTitle}>
+            {userType === 'coach' ? 'Potencia tu Negocio de Coaching' : 'Desbloquea tu mejor versión'}
+          </Text>
           <Text style={styles.heroSubtitle}>
-            Elige el plan que se adapte a ti. Cancela cuando quieras.
+            {userType === 'coach'
+              ? 'Herramientas profesionales para escalar, automatizar y fidelizar a tus atletas.'
+              : 'Elige el plan que se adapte a ti. Cancela cuando quieras.'}
           </Text>
         </View>
 
@@ -602,8 +828,8 @@ export default function PaymentScreen() {
 
         {/* SECCIÓN 3: BENEFICIOS */}
         <View style={styles.benefitsCard}>
-          <Text style={styles.benefitsTitle}>INCLUYE</Text>
-          {COMMON_BENEFITS.map((benefit, idx) => (
+          <Text style={styles.benefitsTitle}>INCLUYE {userType === 'coach' ? '(MODO ENTRENADOR)' : ''}</Text>
+          {(userType === 'coach' ? COACH_BENEFITS : COMMON_BENEFITS).map((benefit, idx) => (
             <View key={idx} style={styles.benefitRow}>
               <Ionicons name="checkmark-circle" size={20} color="#10B981" />
               <Text style={styles.benefitText}>{benefit}</Text>
@@ -757,15 +983,45 @@ export default function PaymentScreen() {
                   if (initError) throw new Error(initError.message);
 
                   // 3. Presentar Sheet
-                  const { error: presentError } = await presentPaymentSheet();
+                  const presentResult = await presentPaymentSheet();
 
-                  if (presentError) {
-                    // El usuario canceló o hubo error
-                    if (presentError.code !== 'Canceled') {
-                      Alert.alert('Error', presentError.message);
+                  // En WEB: detectar señal de redirección a Stripe Checkout
+                  if (presentResult.useWebRedirect || presentResult.error?.code === 'WebRedirect') {
+                    console.log('[Payment Web] Detectada web, redirigiendo a Stripe Checkout...');
+
+                    // Llamar al endpoint de Checkout Session
+                    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://totalgains.es';
+                    const checkoutResponse = await fetch(`${API_URL}/api/payments/stripe/create-checkout-session`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}`
+                      },
+                      body: JSON.stringify({
+                        planId: selectedPlan.id,
+                        successUrl: `${baseUrl}/app/payment?success=true&session_id={CHECKOUT_SESSION_ID}`,
+                        cancelUrl: `${baseUrl}/app/payment?canceled=true`
+                      })
+                    });
+
+                    const checkoutData = await checkoutResponse.json();
+
+                    if (checkoutData.success && checkoutData.url) {
+                      console.log('[Payment Web] Redirigiendo a:', checkoutData.url);
+                      window.location.href = checkoutData.url;
+                      return; // Mantener loading mientras redirige
+                    } else {
+                      throw new Error(checkoutData.error?.message || 'Error al crear sesión de pago');
+                    }
+                  }
+
+                  if (presentResult.error) {
+                    // El usuario canceló o hubo error (en nativo)
+                    if (presentResult.error.code !== 'Canceled') {
+                      Alert.alert('Error', presentResult.error.message);
                     }
                   } else {
-                    // 4. Confirmar en Backend
+                    // 4. Confirmar en Backend (solo para flujo nativo)
                     const confirmRes = await fetch(`${API_URL}/api/payments/stripe/confirm/${paymentIntentId}`, {
                       method: 'POST',
                       headers: {

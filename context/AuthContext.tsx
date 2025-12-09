@@ -22,6 +22,31 @@ export type User = {
   username: string;
   tipoUsuario: 'FREEUSER' | 'CLIENTE' | 'PREMIUM' | 'ADMINISTRADOR' | 'ENTRENADOR';
   token?: string;
+  // Campos de referidos
+  referralCode?: string;
+  subscriptionExpiry?: string;
+  referralPremiumDays?: number;
+  referredUsersCount?: number;
+  // ⭐ AGREGAR ESTE CAMPO:
+  info_user?: {
+    edad?: number;
+    peso?: number;
+    altura?: number;
+    genero?: string;
+    objetivos?: string;
+    compromiso?: string;
+    experiencia?: number;
+    conocimientoTecnico?: number;
+    tipoEntreno?: string;
+    lesiones?: string;
+    ejerciciosFavoritos?: string;
+    ejerciciosEvitados?: string;
+    cardio?: string;
+    dieta?: string;
+    comidasDia?: number;
+    alergias?: string;
+    cocina?: string;
+  };
 };
 
 type AuthContextData = {
