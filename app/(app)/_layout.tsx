@@ -1,19 +1,19 @@
 /* app/_layout.tsx */
 
 // --- 1. IMPORTACIONES AÑADIDAS ---
-import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useState } from 'react';
 // --- ¡CAMBIO! Importamos el ARRAY COMPLETO de rutinas ---
 import { predefinedRoutines } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
 
 // --- 2. IMPORTACIONES EXISTENTES ---
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, SplashScreen } from 'expo-router';
+import { SplashScreen, Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Platform, Pressable, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Platform, View, Pressable } from 'react-native';
 // Asegúrate de que la importación de Ionicons sea correcta para tu proyecto
 // Puede ser '@expo/vector-icons' o '@react-vector-icons/ionicons'
 import { Ionicons } from '@expo/vector-icons';
@@ -24,8 +24,8 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { ThemeProvider as CustomThemeProvider } from '../../context/ThemeContext';
 
 // AÑADIDO: Sistema de logros estilo Steam
-import { AchievementsProvider } from '../../context/AchievementsContext';
 import AchievementToast from '../../components/AchievementToast';
+import { AchievementsProvider } from '../../context/AchievementsContext';
 
 // --- 3. CLAVES Y FUNCIÓN DE SEEDING (¡ACTUALIZADA!) ---
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
@@ -202,6 +202,11 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerShown: false,
+                  // Habilitar gesto de swipe back en iOS
+                  gestureEnabled: true,
+                  // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
+                  fullScreenGestureEnabled: true,
+                  animation: 'slide_from_right',
                   // Tus screenOptions existentes para el header
                   headerTransparent: true,
                   ...(Platform.OS === 'android'
@@ -226,7 +231,14 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="home" options={{ headerShown: false }} />
                 <Stack.Screen name="entreno" />
-                <Stack.Screen name="rutinas/[id]" />
+                <Stack.Screen
+                  name="rutinas/[id]"
+                  options={{
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                    animation: 'slide_from_right',
+                  }}
+                />
                 <Stack.Screen name="perfil/evolucion" />
                 <Stack.Screen name="videos" />
                 <Stack.Screen name="+not-found" />

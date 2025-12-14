@@ -5,6 +5,10 @@ export default function AdminLayout() {
         <Stack
             screenOptions={{
                 headerShown: false,
+                // Habilitar gesto de swipe back en iOS
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
+                animation: 'slide_from_right',
             }}
         />
     );

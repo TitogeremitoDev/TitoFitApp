@@ -1,14 +1,13 @@
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFonts } from 'expo-font';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useRef } from 'react';
-import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
-import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as SplashScreen from 'expo-splash-screen';
-import { useFonts } from 'expo-font';
-import { Ionicons } from '@expo/vector-icons';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import { StripeProvider } from '../utils/stripeWrapper';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
@@ -144,7 +143,13 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{
+      headerShown: false,
+      // Habilitar gesto de swipe back en iOS
+      gestureEnabled: true,
+      fullScreenGestureEnabled: true,
+      animation: 'slide_from_right',
+    }}>
       <Stack.Screen name="mode-select" />
       <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
       <Stack.Screen name="(app)" />

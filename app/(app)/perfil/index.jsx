@@ -343,47 +343,26 @@ export default function PerfilScreen() {
                             </View>
                         </View>
 
-                        {/* Referral Code Section */}
-                        <View style={styles.referralSection}>
-                            <Text style={[styles.referralLabel, { color: theme.textSecondary }]}>
-                                Tu código de invitación:
-                            </Text>
-                            <View style={styles.referralCodeRow}>
-                                <View style={[styles.referralCodeBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.primary }]}>
-                                    <Ionicons name="gift" size={16} color={theme.primary} />
-                                    <Text style={[styles.referralCodeText, { color: theme.primary }]}>
-                                        {user?.referralCode || 'Cargando...'}
+                        {/* Simplified Referral Banner - Links to Comunidad */}
+                        <TouchableOpacity
+                            style={[styles.referralBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: theme.primary }]}
+                            onPress={() => router.push('/perfil/comunidad')}
+                        >
+                            <View style={styles.referralBannerContent}>
+                                <Ionicons name="gift" size={22} color={theme.primary} />
+                                <View style={styles.referralBannerText}>
+                                    <Text style={[styles.referralBannerTitle, { color: theme.primary }]}>
+                                        Invita amigos, gana premium
+                                    </Text>
+                                    <Text style={[styles.referralBannerSubtitle, { color: theme.textSecondary }]}>
+                                        1 semana gratis por cada amigo
                                     </Text>
                                 </View>
-                                <TouchableOpacity
-                                    style={[styles.referralButton, { backgroundColor: codeCopied ? theme.success : theme.primary }]}
-                                    onPress={handleCopyReferralCode}
-                                >
-                                    <Ionicons name={codeCopied ? "checkmark" : "copy-outline"} size={18} color="#fff" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.referralButton, { backgroundColor: '#25D366' }]}
-                                    onPress={handleShareReferralCode}
-                                >
-                                    <Ionicons name="share-social" size={18} color="#fff" />
-                                </TouchableOpacity>
                             </View>
+                            <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+                        </TouchableOpacity>
 
-                            {/* Button to enter friend's code */}
-                            {!user?.referredBy && (
-                                <TouchableOpacity
-                                    style={[styles.enterReferralButton, { borderColor: theme.primary, backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}
-                                    onPress={() => setShowReferralModal(true)}
-                                >
-                                    <Ionicons name="people" size={16} color={theme.primary} />
-                                    <Text style={[styles.enterReferralButtonText, { color: theme.primary }]}>
-                                        ¿Tienes el código de un amigo?
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        {/* Trainer Section */}
+                        {/* Trainer Section - Simplified */}
                         <View style={styles.trainerSection}>
                             {isLoadingTrainer ? (
                                 <ActivityIndicator size="small" color={theme.primary} />
@@ -392,7 +371,7 @@ export default function PerfilScreen() {
                                     <Ionicons name="person-circle" size={24} color={theme.success} />
                                     <View style={{ flex: 1, marginLeft: 8 }}>
                                         <Text style={[styles.currentTrainerLabel, { color: theme.successText }]}>
-                                            Entrenador Actual
+                                            Entrenador
                                         </Text>
                                         <Text style={[styles.currentTrainerName, { color: theme.successText }]}>
                                             {currentTrainer.brandName || currentTrainer.nombre}
@@ -400,49 +379,34 @@ export default function PerfilScreen() {
                                     </View>
                                 </View>
                             ) : (
-                                <View style={styles.trainerInputSection}>
-                                    <View style={styles.trainerInputRow}>
-                                        <TextInput
-                                            style={[styles.trainerInput, {
-                                                backgroundColor: theme.backgroundSecondary,
-                                                color: theme.text,
-                                                borderColor: theme.border
-                                            }]}
-                                            value={trainerCode}
-                                            onChangeText={setTrainerCode}
-                                            placeholder="CÓDIGO ENTRENADOR"
-                                            placeholderTextColor={theme.textSecondary}
-                                            autoCapitalize="characters"
-                                            editable={!isLinkingTrainer}
-                                        />
-                                        <TouchableOpacity
-                                            style={[styles.linkButton, {
-                                                backgroundColor: theme.primary,
-                                                opacity: isLinkingTrainer ? 0.6 : 1
-                                            }]}
-                                            onPress={handleLinkTrainer}
-                                            disabled={isLinkingTrainer}
-                                        >
-                                            {isLinkingTrainer ? (
-                                                <ActivityIndicator size="small" color="#fff" />
-                                            ) : (
-                                                <Ionicons name="link" size={20} color="#fff" />
-                                            )}
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    {/* Premium Code Button */}
-                                    {!isPremiumUser && (
-                                        <TouchableOpacity
-                                            style={[styles.premiumCodeButton, { borderColor: '#FFD700', backgroundColor: 'rgba(255, 215, 0, 0.1)' }]}
-                                            onPress={() => setShowPremiumCodeModal(true)}
-                                        >
-                                            <Ionicons name="gift" size={18} color="#FFD700" />
-                                            <Text style={[styles.premiumCodeButtonText, { color: '#FFD700' }]}>
-                                                ¿Tienes un código premium?
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )}
+                                <View style={styles.trainerInputRow}>
+                                    <TextInput
+                                        style={[styles.trainerInput, {
+                                            backgroundColor: theme.backgroundSecondary,
+                                            color: theme.text,
+                                            borderColor: theme.border
+                                        }]}
+                                        value={trainerCode}
+                                        onChangeText={setTrainerCode}
+                                        placeholder="Código entrenador"
+                                        placeholderTextColor={theme.textSecondary}
+                                        autoCapitalize="characters"
+                                        editable={!isLinkingTrainer}
+                                    />
+                                    <TouchableOpacity
+                                        style={[styles.linkButton, {
+                                            backgroundColor: theme.primary,
+                                            opacity: isLinkingTrainer ? 0.6 : 1
+                                        }]}
+                                        onPress={handleLinkTrainer}
+                                        disabled={isLinkingTrainer}
+                                    >
+                                        {isLinkingTrainer ? (
+                                            <ActivityIndicator size="small" color="#fff" />
+                                        ) : (
+                                            <Ionicons name="link" size={20} color="#fff" />
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
                             )}
                         </View>
@@ -530,10 +494,10 @@ export default function PerfilScreen() {
                         </Pressable>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Success Modal */}
-            <Modal visible={showSuccessModal} transparent animationType="fade" onRequestClose={handleCloseSuccessModal}>
+            < Modal visible={showSuccessModal} transparent animationType="fade" onRequestClose={handleCloseSuccessModal} >
                 <View style={styles.modalOverlay}>
                     <View style={[styles.successModalCard, { backgroundColor: theme.backgroundSecondary }]}>
                         {/* Trophy Icon */}
@@ -582,10 +546,10 @@ export default function PerfilScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Premium Code Modal */}
-            <Modal visible={showPremiumCodeModal} transparent animationType="fade" onRequestClose={() => setShowPremiumCodeModal(false)}>
+            < Modal visible={showPremiumCodeModal} transparent animationType="fade" onRequestClose={() => setShowPremiumCodeModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
                         <View style={[styles.premiumCodeIconContainer, { backgroundColor: theme.primaryLight }]}>
@@ -637,10 +601,10 @@ export default function PerfilScreen() {
                         </View>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Premium Success Modal */}
-            <Modal visible={showPremiumSuccessModal} transparent animationType="fade" onRequestClose={() => setShowPremiumSuccessModal(false)}>
+            < Modal visible={showPremiumSuccessModal} transparent animationType="fade" onRequestClose={() => setShowPremiumSuccessModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.premiumSuccessModalCard, { backgroundColor: theme.backgroundSecondary }]}>
                         {/* Confetti decoration */}
@@ -719,10 +683,10 @@ export default function PerfilScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Referral Code Modal - Enter friend's code */}
-            <Modal visible={showReferralModal} transparent animationType="fade" onRequestClose={() => setShowReferralModal(false)}>
+            < Modal visible={showReferralModal} transparent animationType="fade" onRequestClose={() => setShowReferralModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
                         <View style={[styles.premiumCodeIconContainer, { backgroundColor: theme.primaryLight }]}>
@@ -774,10 +738,10 @@ export default function PerfilScreen() {
                         </View>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
             {/* Referral Success Modal */}
-            <Modal visible={showReferralSuccessModal} transparent animationType="fade" onRequestClose={() => setShowReferralSuccessModal(false)}>
+            < Modal visible={showReferralSuccessModal} transparent animationType="fade" onRequestClose={() => setShowReferralSuccessModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.successModalCard, { backgroundColor: theme.backgroundSecondary }]}>
                         {/* Trophy Icon */}
@@ -818,8 +782,8 @@ export default function PerfilScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </Modal>
-        </View>
+            </Modal >
+        </View >
     );
 }
 
@@ -973,6 +937,35 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '600',
     },
+
+    // Referral Banner Styles (simplified)
+    referralBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 16,
+        marginHorizontal: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1.5,
+    },
+    referralBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    referralBannerText: {
+        gap: 2,
+    },
+    referralBannerTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    referralBannerSubtitle: {
+        fontSize: 12,
+    },
+
     divider: {
         width: '90%',
         height: 1,

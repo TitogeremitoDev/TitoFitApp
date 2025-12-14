@@ -278,6 +278,295 @@ function DaysCarousel({ total, selected, onChange }) {
   );
 }
 
+/* ───────── Selector Colapsable de Semana/Día ───────── */
+function CollapsibleWeekDaySelector({ semana, diaIdx, totalDias, onSemanaChange, onDiaChange }) {
+  const { theme } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleExpand = () => {
+    Animated.timing(rotateAnim, {
+      toValue: expanded ? 0 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    setExpanded(!expanded);
+  };
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
+  return (
+    <View>
+      {/* Botón colapsado */}
+      <TouchableOpacity
+        onPress={toggleExpand}
+        activeOpacity={0.85}
+        style={[
+          collapsibleStyles.collapsedButton,
+          {
+            backgroundColor: theme.cardBackground,
+            borderColor: theme.cardBorder,
+          },
+        ]}
+      >
+        <View style={collapsibleStyles.labelContainer}>
+          <Ionicons name="calendar-outline" size={18} color={theme.primary} />
+          <Text style={[collapsibleStyles.collapsedText, { color: theme.text }]}>
+            S{semana}-D{diaIdx + 1}
+          </Text>
+        </View>
+        <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+          <Ionicons name="chevron-down" size={20} color={theme.textSecondary} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {/* Carruseles expandidos */}
+      {expanded && (
+        <View style={collapsibleStyles.expandedContainer}>
+          <WeeksCarousel
+            selected={semana}
+            onChange={onSemanaChange}
+          />
+          <View style={{ height: 8 }} />
+          <DaysCarousel
+            total={totalDias}
+            selected={diaIdx}
+            onChange={onDiaChange}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const collapsibleStyles = StyleSheet.create({
+  collapsedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    gap: 10,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsedText: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  expandedContainer: {
+    marginTop: 8,
+
+  },
+});
+
+/* ───────── 📝 Modal de Notas por Serie ───────── */
+const NOTE_VALUES = [
+  { key: 'high', label: 'Alta', color: '#ef4444', emoji: '🔴' },
+  { key: 'normal', label: 'Media', color: '#f97316', emoji: '🟠' },
+  { key: 'low', label: 'Ok', color: '#22c55e', emoji: '🟢' },
+  { key: 'custom', label: 'Nota', color: '#3b82f6', emoji: '🔵' },
+];
+
+function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, onSave, theme }) {
+  const [value, setValue] = useState(initialValue || 'normal');
+  const [noteText, setNoteText] = useState(initialNote || '');
+
+  useEffect(() => {
+    if (visible) {
+      setValue(initialValue || 'normal');
+      setNoteText(initialNote || '');
+    }
+  }, [visible, initialValue, initialNote]);
+
+  const handleSave = () => {
+    onSave(serieKey, value, noteText);
+    onClose();
+  };
+
+  const handleDelete = () => {
+    onSave(serieKey, null, null);
+    onClose();
+  };
+
+  // Detectar si es modo noche
+  const isDarkMode = theme.background === '#0d0d0d';
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={notesModalStyles.overlay}>
+        <View style={[notesModalStyles.card, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+          <View style={notesModalStyles.header}>
+            <Text style={[notesModalStyles.title, { color: theme.text }]}>Nota de Serie</Text>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <Ionicons name="close" size={22} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+
+          {/* Selector de valor - Grid 2x2 minimalista */}
+          <View style={notesModalStyles.valueRow}>
+            {NOTE_VALUES.map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                onPress={() => setValue(item.key)}
+                activeOpacity={0.7}
+                style={[
+                  notesModalStyles.valueBtn,
+                  {
+                    borderColor: value === item.key ? item.color : theme.border,
+                    backgroundColor: value === item.key ? item.color + '15' : 'transparent',
+                  }
+                ]}
+              >
+                <Text style={notesModalStyles.emoji}>{item.emoji}</Text>
+                <Text style={[
+                  notesModalStyles.valueTxt,
+                  { color: value === item.key ? item.color : theme.textSecondary }
+                ]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Input de texto */}
+          <TextInput
+            style={[notesModalStyles.input, {
+              backgroundColor: theme.inputBackground,
+              borderColor: theme.inputBorder,
+              color: theme.inputText
+            }]}
+            placeholder="Escribe tu nota aquí..."
+            placeholderTextColor={theme.placeholder}
+            value={noteText}
+            onChangeText={setNoteText}
+            multiline
+            maxLength={500}
+          />
+
+          {/* Botones */}
+          <View style={notesModalStyles.actions}>
+            {(initialValue || initialNote) && (
+              <TouchableOpacity
+                onPress={handleDelete}
+                style={[notesModalStyles.deleteBtn, { borderColor: theme.border }]}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 16 }}>🗑️</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={handleSave}
+              style={[notesModalStyles.saveBtn, {
+                backgroundColor: isDarkMode ? '#ffffff' : '#1a1a1a'
+              }]}
+              activeOpacity={0.85}
+            >
+              <Text style={[notesModalStyles.saveTxt, { color: isDarkMode ? '#1a1a1a' : '#ffffff' }]}>
+                Guardar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const notesModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  valueRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  valueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '48%',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  emoji: {
+    fontSize: 14,
+  },
+  valueTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontSize: 14,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 16,
+  },
+  deleteBtn: {
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  saveBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  saveTxt: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});
+
 /* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
 function StatsModal({ visible, onClose, stats }) {
   const { theme } = useTheme();
@@ -1504,6 +1793,15 @@ export default function Entreno() {
   // Modal de Upgrade para FREEUSER
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // 📝 Sistema de Notas por Serie
+  const [notes, setNotes] = useState({}); // { serieKey: { value: 'high'|'low'|'normal'|'custom', note: 'texto' } }
+  const [notesModal, setNotesModal] = useState({
+    visible: false,
+    serieKey: null,
+    value: 'normal',
+    note: ''
+  });
+
   const listRef = useRef(null);
 
   // 🆕 Estado para ejercicios desde MongoDB
@@ -1552,7 +1850,63 @@ export default function Entreno() {
     }
   }, [API_URL, token]);
 
+  // 🆕 Recuperar datos de workout desde la nube (usuarios premium)
+  const fetchCloudProgress = useCallback(async (routineId, week, dayIdx, exercisesList) => {
+    // Solo para usuarios premium y con routineId válido de MongoDB
+    if (!token || user?.tipoUsuario === 'FREEUSER' || !routineId?.match(/^[0-9a-fA-F]{24}$/)) {
+      return null;
+    }
 
+    try {
+      const response = await fetch(
+        `${API_URL}/api/workouts?routineId=${routineId}&week=${week}&dayIndex=${dayIdx + 1}&limit=1`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+
+      if (data.success && data.workouts?.length > 0) {
+        const workout = data.workouts[0];
+        console.log('[Entreno] ☁️ Workout encontrado en la nube:', workout._id);
+
+        // Transformar workout de API a formato de progreso local
+        const cloudProg = {};
+        const cloudNotes = {}; // 📝 Notas desde la nube
+
+        workout.exercises?.forEach((ex, orderIdx) => {
+          // Buscar ejercicio correspondiente en la rutina local por orden
+          const localEx = exercisesList[orderIdx];
+          if (!localEx) return;
+
+          // 🆕 Marcar el ejercicio como completado si el workout está completado
+          if (workout.status === 'completed') {
+            const ejerKey = `${week}|${dayIdx}|${localEx.id}`;
+            cloudProg[ejerKey] = 'C';
+          }
+
+          ex.sets?.forEach((set, setIdx) => {
+            const serieKey = `${week}|${dayIdx}|${localEx.id}|${setIdx}`;
+            cloudProg[serieKey] = {
+              reps: set.actualReps?.toString() || '',
+              peso: set.weight?.toString() || ''
+            };
+
+            // 📝 Extraer notas si existen
+            if (set.notes && (set.notes.value || set.notes.note)) {
+              cloudNotes[serieKey] = {
+                value: set.notes.value || null,
+                note: set.notes.note || ''
+              };
+            }
+          });
+        });
+
+        return { cloudProg, cloudNotes };
+      }
+    } catch (error) {
+      console.warn('[Entreno] Error fetching cloud progress:', error);
+    }
+    return null;
+  }, [API_URL, token, user?.tipoUsuario]);
 
   /* Guardado de última sesión (semana/día) — por RUTINA */
   const saveLastSession = useCallback(
@@ -1599,7 +1953,14 @@ export default function Entreno() {
 
     setRutina({ ...metaBase, dias: diasNorm.length || 1 });
     setDiasEj(diasNorm);
-    setProg(JSON.parse(progStr || '{}'));
+
+    // Cargar progreso local primero
+    const localProg = JSON.parse(progStr || '{}');
+    setProg(localProg);
+
+    // Variables para semana y día
+    let currentSemana = 1;
+    let currentDiaIdx = 0;
 
     try {
       const sessionStr = await AsyncStorage.getItem(sessionKeyFor(idAct));
@@ -1608,6 +1969,8 @@ export default function Entreno() {
         const total = diasNorm.length || 1;
         const safeDia = Math.max(0, Math.min(Number(lastDiaIdx) || 0, total - 1));
         const safeSem = Math.max(1, Math.min(Number(lastSemana) || 1, SEMANAS_MAX));
+        currentSemana = safeSem;
+        currentDiaIdx = safeDia;
         setSemana(safeSem);
         setDiaIdx(safeDia);
       } else {
@@ -1616,8 +1979,44 @@ export default function Entreno() {
       }
     } catch { }
 
+    // 🆕 Para usuarios premium: intentar recuperar datos de la API
+    // Soporta IDs directos de MongoDB (24 hex chars) o IDs con prefijo srv_ 
+    const extractMongoId = (id) => {
+      if (!id) return null;
+      // ID directo de MongoDB
+      if (/^[0-9a-fA-F]{24}$/.test(id)) return id;
+      // ID con prefijo srv_
+      if (id.startsWith('srv_')) {
+        const mongoId = id.replace('srv_', '');
+        if (/^[0-9a-fA-F]{24}$/.test(mongoId)) return mongoId;
+      }
+      return null;
+    };
+
+    const mongoRoutineId = extractMongoId(idAct);
+    if (token && user?.tipoUsuario !== 'FREEUSER' && mongoRoutineId) {
+      const ejerciciosDia = diasNorm[currentDiaIdx] || [];
+      const cloudData = await fetchCloudProgress(mongoRoutineId, currentSemana, currentDiaIdx, ejerciciosDia);
+
+      if (cloudData) {
+        const { cloudProg, cloudNotes } = cloudData;
+
+        if (cloudProg && Object.keys(cloudProg).length > 0) {
+          // Fusionar: priorizar datos de la nube sobre locales
+          setProg(prev => ({ ...prev, ...cloudProg }));
+          console.log('[Entreno] ☁️ Datos recuperados y fusionados de la nube');
+        }
+
+        // 📝 Cargar notas desde la nube
+        if (cloudNotes && Object.keys(cloudNotes).length > 0) {
+          setNotes(prev => ({ ...prev, ...cloudNotes }));
+          console.log('[Entreno] 📝 Notas recuperadas de la nube');
+        }
+      }
+    }
+
     setHydrated(true);
-  }, []);
+  }, [token, user?.tipoUsuario, fetchCloudProgress]);
 
   // Verificar si es primera vez (mostrar tutorial)
   useEffect(() => {
@@ -1863,6 +2262,7 @@ export default function Entreno() {
               return {
                 id: `${now}-${ejercicio.id}-${idx}`,
                 date: now,
+                routineId: activeId || null,
                 routineName: rutina?.nombre || 'Rutina Desconocida',
                 week: semana,
                 muscle: ejercicio.musculo,
@@ -1929,6 +2329,16 @@ export default function Entreno() {
             if (!isNaN(targetMax) && targetMax > 0) set.targetRepsMax = targetMax;
             if (!isNaN(reps) && reps > 0) set.actualReps = reps;
             if (!isNaN(peso) && peso > 0) set.weight = peso;
+
+            // 📝 Añadir notas si existen
+            const serieNote = notes[serieKey];
+            if (serieNote && (serieNote.value || serieNote.note)) {
+              set.notes = {
+                value: serieNote.value || null,
+                note: serieNote.note || ''
+              };
+            }
+
             return set;
           });
           return {
@@ -1951,8 +2361,20 @@ export default function Entreno() {
           });
         });
         // Preparar payload para el API
+        // Función para extraer ObjectId de MongoDB (soporta prefijo srv_)
+        const extractMongoId = (id) => {
+          if (!id) return null;
+          if (/^[0-9a-fA-F]{24}$/.test(id)) return id;
+          if (id.startsWith('srv_')) {
+            const mongoId = id.replace('srv_', '');
+            if (/^[0-9a-fA-F]{24}$/.test(mongoId)) return mongoId;
+          }
+          return null;
+        };
+
         const workoutPayload = {
-          routineId: (activeId && activeId.match(/^[0-9a-fA-F]{24}$/)) ? activeId : null,
+          routineId: extractMongoId(activeId),
+          trainerId: rutina?.trainerId || null, // 🆕 Agregar trainerId de la rutina
           routineNameSnapshot: rutina?.nombre || 'Rut Desconocida',
           dayIndex: diaIdx + 1,
           dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`,
@@ -2260,35 +2682,36 @@ export default function Entreno() {
     >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: theme.text }]}>{rutina.nombre}</Text>
+          <View style={styles.headerSide}>
+            <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{rutina.nombre}</Text>
+          </View>
 
-          <View style={styles.center}>
+          <View style={styles.headerCenter}>
             <Stopwatch />
           </View>
 
-          <TouchableOpacity
-            style={[styles.exportBtn, { backgroundColor: theme.primary }]}
-            onPress={exportWeekToExcel}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="download-outline" size={16} color="#fff" />
-            <Text style={styles.exportTxt}>Excel S</Text>
-          </TouchableOpacity>
+          <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>
+            <TouchableOpacity
+              style={[styles.exportBtn, { backgroundColor: theme.primary }]}
+              onPress={exportWeekToExcel}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="download-outline" size={16} color="#fff" />
+              <Text style={styles.exportTxt}>Excel S</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Carruseles */}
-        <WeeksCarousel
-          selected={semana}
-          onChange={(w) => {
+        {/* Selector Colapsable de Semana/Día */}
+        <CollapsibleWeekDaySelector
+          semana={semana}
+          diaIdx={diaIdx}
+          totalDias={totalDias}
+          onSemanaChange={(w) => {
             setSemana(w);
             if (hydrated) saveLastSession(w, diaIdx);
           }}
-        />
-        <View style={{ height: 8 }} />
-        <DaysCarousel
-          total={totalDias}
-          selected={diaIdx}
-          onChange={(d) => {
+          onDiaChange={(d) => {
             setDiaIdx(d);
             if (hydrated) saveLastSession(semana, d);
           }}
@@ -2495,6 +2918,30 @@ export default function Entreno() {
                           <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
                             {EXTRA_ABBR[serie?.extra] || ''}
                           </Text>
+
+                          {/* 📝 Botón de Notas */}
+                          <TouchableOpacity
+                            onPress={() => {
+                              const existingNote = notes[serieKey];
+                              setNotesModal({
+                                visible: true,
+                                serieKey,
+                                value: existingNote?.value || 'normal',
+                                note: existingNote?.note || '',
+                              });
+                            }}
+                            style={styles.noteBtn}
+                            activeOpacity={0.7}
+                          >
+                            {notes[serieKey] ? (
+                              <View style={[
+                                styles.noteDot,
+                                { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
+                              ]} />
+                            ) : (
+                              <Ionicons name="chatbubble" size={14} color={theme.background === '#0d0d0d' ? '#1a1a1a' : '#ffffff'} />
+                            )}
+                          </TouchableOpacity>
                         </View>
                       );
                     })}
@@ -2526,6 +2973,52 @@ export default function Entreno() {
         visible={statsModal.visible}
         onClose={() => setStatsModal({ visible: false, stats: null })}
         stats={statsModal.stats}
+      />
+
+      {/* 📝 Modal de Notas por Serie */}
+      <NotesModal
+        visible={notesModal.visible}
+        onClose={() => setNotesModal(s => ({ ...s, visible: false }))}
+        serieKey={notesModal.serieKey}
+        initialValue={notesModal.value}
+        initialNote={notesModal.note}
+        theme={theme}
+        onSave={async (serieKey, value, noteText) => {
+          if (!serieKey) return;
+
+          if (value === null && noteText === null) {
+            // Delete note
+            setNotes(prev => {
+              const copy = { ...prev };
+              delete copy[serieKey];
+              return copy;
+            });
+          } else {
+            // Save note
+            setNotes(prev => ({
+              ...prev,
+              [serieKey]: { value, note: noteText }
+            }));
+          }
+
+          // Persist based on user plan
+          const notesKey = `workout_notes_${activeId}`;
+          try {
+            const updatedNotes = value === null
+              ? (() => { const copy = { ...notes }; delete copy[serieKey]; return copy; })()
+              : { ...notes, [serieKey]: { value, note: noteText } };
+
+            if (userData?.plan === 'FREEUSER' || !userData?.plan) {
+              // Save locally
+              await AsyncStorage.setItem(notesKey, JSON.stringify(updatedNotes));
+            } else {
+              // For premium users, notes will be synced with workout data on saveAllDayData
+              await AsyncStorage.setItem(notesKey, JSON.stringify(updatedNotes));
+            }
+          } catch (e) {
+            console.error('Error saving note:', e);
+          }
+        }}
       />
 
       {/* Modal Técnica Correcta */}
@@ -2645,8 +3138,10 @@ export default function Entreno() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, zIndex: 10 },
-  title: { flexShrink: 1, fontSize: 18, fontWeight: 'bold', marginRight: 10, maxWidth: '45%' },
-  center: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
+  headerSide: { flex: 1 },
+  headerCenter: { alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 16, fontWeight: 'bold' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   exportBtn: {
     marginLeft: 8,
     flexShrink: 0,
@@ -2774,12 +3269,12 @@ const styles = StyleSheet.create({
   serieLabel: { width: 70, fontSize: 12, flexShrink: 0 },
 
   /* Cabeceras de columna */
-  inputCol: { width: 60, alignItems: 'center', marginRight: 42 },
+  inputCol: { width: 55, alignItems: 'center', marginRight: 20 },
 
   inputWithTrend: {
     position: 'relative',
-    width: 100,
-    paddingRight: 22,
+    width: 75,
+    paddingRight: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
@@ -2788,22 +3283,32 @@ const styles = StyleSheet.create({
   },
   trendIcon: {
     position: 'absolute',
-    right: 20,
+    right: 2,
     top: '50%',
     transform: [{ translateY: -7 }],
   },
   serieInput: {
-    width: 60,
+    width: 50,
     borderWidth: 1,
     borderRadius: 6,
     paddingVertical: 4,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     fontSize: 12,
     textAlign: 'center',
   },
 
-  extraTxt: { marginLeft: 'auto', fontSize: 12, fontWeight: '600' },
-  sp: { marginLeft: 8, fontSize: 12, fontWeight: '700', flexShrink: 0 },
+  extraTxt: { fontSize: 11, fontWeight: '600', marginRight: 4 },
+  sp: { marginLeft: 4, fontSize: 11, fontWeight: '700', flexShrink: 0 },
+  noteBtn: {
+    marginLeft: 'auto',
+    padding: 6,
+    borderRadius: 8,
+  },
+  noteDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
 
   // Botón al final de la lista (no flotante) ✅
   footerButtonContainer: {

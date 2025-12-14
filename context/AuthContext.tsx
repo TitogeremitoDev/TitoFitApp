@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { syncRoutinesFromServer } from '../src/lib/syncRoutines';
+import { handlePlanTransition, getSyncDirection, SyncResult } from '../src/lib/dataSyncService';
 
 const DEFAULT_KOYEB = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 const API_BASE = ((process.env.EXPO_PUBLIC_API_URL as string) || DEFAULT_KOYEB).replace(/\/+$/, '');
@@ -59,6 +60,10 @@ type AuthContextData = {
   loginWithGoogle: (googleAccessToken: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | undefined>;
+  // 🔄 Sincronización de datos al cambiar de plan
+  syncDataOnPlanChange: (previousType: string | undefined, newType: string) => Promise<SyncResult | null>;
+  pendingSyncResult: SyncResult | null;
+  clearSyncResult: () => void;
 };
 
 const AuthContext = createContext<AuthContextData | null>(null);
@@ -90,6 +95,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setLoading] = useState(true);
+  // 🔄 Estado para resultado de sincronización pendiente
+  const [pendingSyncResult, setPendingSyncResult] = useState<SyncResult | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -268,8 +275,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           throw error;
         }
       },
+
+      // 🔄 Sincronización de datos al cambiar de plan
+      async syncDataOnPlanChange(previousType: string | undefined, newType: string) {
+        if (!token) {
+          console.warn('[Auth] No hay token para sincronizar');
+          return null;
+        }
+        try {
+          console.log(`[Auth] Sincronizando datos por cambio de plan: ${previousType} → ${newType}`);
+          const result = await handlePlanTransition(previousType, newType, token);
+          if (result) {
+            setPendingSyncResult(result);
+          }
+          return result;
+        } catch (error) {
+          console.error('[Auth] Error en sincronización:', error);
+          return null;
+        }
+      },
+
+      pendingSyncResult,
+
+      clearSyncResult() {
+        setPendingSyncResult(null);
+      },
     }),
-    [user, token, isLoading]
+    [user, token, isLoading, pendingSyncResult]
+
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

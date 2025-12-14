@@ -94,6 +94,10 @@ export default function WorkoutsScreen() {
     const [routineClients, setRoutineClients] = useState({});
     const [allClients, setAllClients] = useState([]);
 
+    // Summary expansion states
+    const [expandedSummaries, setExpandedSummaries] = useState({});
+    const [expandedMuscleSummaries, setExpandedMuscleSummaries] = useState({});
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
     const fetchRoutines = async () => {
@@ -340,6 +344,48 @@ export default function WorkoutsScreen() {
         );
     };
 
+    // Calculate routine summary (total series, per day, per muscle)
+    const calculateRoutineSummary = (routine) => {
+        const diasArr = routine.diasArr || [];
+        let totalSeries = 0;
+        const seriesPerDay = [];
+        const seriesPerMuscle = {};
+
+        diasArr.forEach((dayExercises, dayIdx) => {
+            let dayTotal = 0;
+            (dayExercises || []).forEach(exercise => {
+                const numSeries = (exercise.series || []).length;
+                dayTotal += numSeries;
+                totalSeries += numSeries;
+
+                const muscle = (exercise.musculo || 'SIN GRUPO').toUpperCase();
+                seriesPerMuscle[muscle] = (seriesPerMuscle[muscle] || 0) + numSeries;
+            });
+            seriesPerDay.push({ day: dayIdx + 1, series: dayTotal });
+        });
+
+        // Sort muscles by series count descending
+        const muscleList = Object.entries(seriesPerMuscle)
+            .map(([muscle, series]) => ({ muscle, series }))
+            .sort((a, b) => b.series - a.series);
+
+        return { totalSeries, seriesPerDay, muscleList };
+    };
+
+    const toggleSummaryExpansion = (routineId) => {
+        setExpandedSummaries(prev => ({
+            ...prev,
+            [routineId]: !prev[routineId]
+        }));
+    };
+
+    const toggleMuscleSummaryExpansion = (routineId) => {
+        setExpandedMuscleSummaries(prev => ({
+            ...prev,
+            [routineId]: !prev[routineId]
+        }));
+    };
+
     const handleRemoveRoutineFromClient = async (routineId, clientId, clientName) => {
         Alert.alert(
             'Eliminar Rutina',
@@ -405,6 +451,9 @@ export default function WorkoutsScreen() {
     const renderRoutineItem = ({ item }) => {
         const clientsWithRoutine = getClientsForRoutine(item._id);
         const isExpanded = expandedRoutines[item._id];
+        const summary = calculateRoutineSummary(item);
+        const isSummaryExpanded = expandedSummaries[item._id];
+        const isMuscleExpanded = expandedMuscleSummaries[item._id];
 
         return (
             <View style={styles.card}>
@@ -472,6 +521,75 @@ export default function WorkoutsScreen() {
                         </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
+
+                {/* Routine Summary Collapsible Section */}
+                {summary.totalSeries > 0 && (
+                    <View style={styles.summarySection}>
+                        <TouchableOpacity
+                            style={styles.summaryHeader}
+                            onPress={() => toggleSummaryExpansion(item._id)}
+                        >
+                            <View style={styles.summaryHeaderLeft}>
+                                <Ionicons name="stats-chart" size={16} color="#8b5cf6" />
+                                <Text style={styles.summaryTitle}>
+                                    Resumen • {summary.totalSeries} Series totales
+                                </Text>
+                            </View>
+                            <Ionicons
+                                name={isSummaryExpanded ? "chevron-up" : "chevron-down"}
+                                size={20}
+                                color="#64748b"
+                            />
+                        </TouchableOpacity>
+
+                        {isSummaryExpanded && (
+                            <View style={styles.summaryContent}>
+                                {/* Series per day row */}
+                                <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    style={styles.daySeriesScroll}
+                                    contentContainerStyle={styles.daySeriesContainer}
+                                >
+                                    {summary.seriesPerDay.map((dayData) => (
+                                        <View key={dayData.day} style={styles.daySeriesChip}>
+                                            <Text style={styles.daySeriesLabel}>D{dayData.day}</Text>
+                                            <Text style={styles.daySeriesValue}>{dayData.series}S</Text>
+                                        </View>
+                                    ))}
+                                </ScrollView>
+
+                                {/* Muscle summary dropdown */}
+                                <TouchableOpacity
+                                    style={styles.muscleDropdownHeader}
+                                    onPress={() => toggleMuscleSummaryExpansion(item._id)}
+                                >
+                                    <View style={styles.muscleDropdownLeft}>
+                                        <Ionicons name="body" size={14} color="#64748b" />
+                                        <Text style={styles.muscleDropdownTitle}>Series por músculo</Text>
+                                    </View>
+                                    <Ionicons
+                                        name={isMuscleExpanded ? "chevron-up" : "chevron-down"}
+                                        size={16}
+                                        color="#64748b"
+                                    />
+                                </TouchableOpacity>
+
+                                {isMuscleExpanded && (
+                                    <View style={styles.muscleList}>
+                                        {summary.muscleList.map((muscleData, idx) => (
+                                            <View key={idx} style={styles.muscleItem}>
+                                                <Text style={styles.muscleName}>{muscleData.muscle}</Text>
+                                                <Text style={styles.muscleSeries}>{muscleData.series}S</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+                        )}
+                    </View>
+                )}
+
                 {/* Clients Collapsible Section */}
                 {clientsWithRoutine.length > 0 && (
                     <View style={styles.clientsSection}>
@@ -1047,5 +1165,103 @@ const styles = StyleSheet.create({
     },
     removeClientBtn: {
         padding: 4,
+    },
+    // Summary section styles
+    summarySection: {
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        paddingTop: 4,
+    },
+    summaryHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+    },
+    summaryHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    summaryTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#8b5cf6',
+    },
+    summaryContent: {
+        paddingHorizontal: 12,
+        paddingBottom: 8,
+    },
+    daySeriesScroll: {
+        marginBottom: 8,
+    },
+    daySeriesContainer: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    daySeriesChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: '#f0e7fe',
+        borderRadius: 16,
+    },
+    daySeriesLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#7c3aed',
+    },
+    daySeriesValue: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#8b5cf6',
+    },
+    muscleDropdownHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+    },
+    muscleDropdownLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    muscleDropdownTitle: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#64748b',
+    },
+    muscleList: {
+        marginTop: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        padding: 8,
+    },
+    muscleItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    muscleName: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#475569',
+        flex: 1,
+    },
+    muscleSeries: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#7c3aed',
     },
 });

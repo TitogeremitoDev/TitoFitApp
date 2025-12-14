@@ -29,6 +29,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../context/AuthContext';
 import { useStripe } from '../../utils/stripeWrapper';
+import SyncProgressModal from '../../components/SyncProgressModal';
+import { syncLocalToCloud } from '../../src/lib/dataSyncService';
 
 // API URL - Usa la variable de entorno
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -74,6 +76,14 @@ export default function PaymentScreen() {
   const [userToken, setUserToken] = useState(null);
   const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
   const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20 clientes
+
+  // 🔄 Estado para modal de sincronización de datos
+  const [syncModal, setSyncModal] = useState({
+    visible: false,
+    direction: 'upload', // 'upload' | 'download'
+    isComplete: false,
+    itemsSynced: 0,
+  });
 
   // Debug logs (Safe to remove or comment out now)
   // useEffect(() => {
@@ -187,6 +197,20 @@ export default function PaymentScreen() {
           const data = await response.json();
 
           if (data.success) {
+            // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+            const previousType = user?.tipoUsuario;
+            if (previousType === 'FREEUSER') {
+              setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+              try {
+                const syncResult = await syncLocalToCloud(token);
+                setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                // Esperar a que el modal se cierre
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              } catch (syncErr) {
+                console.warn('[Payment] Error sincronizando datos:', syncErr);
+              }
+              setSyncModal(prev => ({ ...prev, visible: false }));
+            }
             if (refreshUser) await refreshUser();
             Alert.alert(
               '¡Bienvenido al Team! 🚀',
@@ -264,6 +288,19 @@ export default function PaymentScreen() {
 
 
           if (confirmData.success) {
+            // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+            const previousType = user?.tipoUsuario;
+            if (previousType === 'FREEUSER') {
+              setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+              try {
+                const syncResult = await syncLocalToCloud(token);
+                setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              } catch (syncErr) {
+                console.warn('[Payment] Error sincronizando datos:', syncErr);
+              }
+              setSyncModal(prev => ({ ...prev, visible: false }));
+            }
             if (refreshUser) await refreshUser();
             Alert.alert(
               '¡Bienvenido al Team! 🚀',
@@ -1093,6 +1130,15 @@ export default function PaymentScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView >
+
+      {/* 🔄 Modal de sincronización de datos */}
+      <SyncProgressModal
+        visible={syncModal.visible}
+        direction={syncModal.direction}
+        isComplete={syncModal.isComplete}
+        itemsSynced={syncModal.itemsSynced}
+        onDismiss={() => setSyncModal(prev => ({ ...prev, visible: false }))}
+      />
     </View >
   );
 }

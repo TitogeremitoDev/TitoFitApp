@@ -234,7 +234,7 @@ const ExerciseCard = React.memo(({
 export default function UserRoutineEditorScreen() {
   const router = useRouter();
   const { id, name, days: paramDays } = useLocalSearchParams();
-const { token, user } = useAuth();
+  const { token, user } = useAuth();
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   const [routineName, setRoutineName] = useState(name || '');
@@ -254,6 +254,9 @@ const { token, user } = useAuth();
   const [loadingExercises, setLoadingExercises] = useState(false);
   const [addingToDay, setAddingToDay] = useState(null);
 
+  // 🔒 Estado para detectar si es rutina de entrenador (no editable)
+  const [isTrainerRoutine, setIsTrainerRoutine] = useState(false);
+
   const isFirstLoad = useRef(true);
 
   /* ───────── Initial Load ───────── */
@@ -261,6 +264,10 @@ const { token, user } = useAuth();
     fetchMuscles();
     fetchAllExercises();
     if (id) {
+      // 🔒 Detectar si es rutina de entrenador (prefijo srv_)
+      if (id.startsWith('srv_')) {
+        setIsTrainerRoutine(true);
+      }
       loadRoutine(id);
     } else {
       const init = normalizeRoutine({});
@@ -371,6 +378,11 @@ const { token, user } = useAuth();
     const open = {};
     Object.keys(loadedData).forEach((k) => (open[k] = true));
     setDiasAbiertos(open);
+
+    // 🔒 Detectar si tiene trainerId (rutina asignada por entrenador)
+    if (r.trainerId) {
+      setIsTrainerRoutine(true);
+    }
   };
 
   const fetchAllExercises = async () => {
@@ -685,171 +697,181 @@ const { token, user } = useAuth();
   }, []);
 
   /* ───────── Save ───────── */
-const handleSaveRoutine = async () => {
-  if (!routineName.trim()) {
-    Alert.alert('Error', 'Ingresa un nombre para la rutina');
-    return;
-  }
-
-  setSaving(true);
-  
-  // VERIFICAR SI ES USUARIO FREE
-  const isFreeUser = user?.tipoUsuario === 'FREEUSER';
-
-  try {
-    const daysArray = [];
-    const entries = Object.entries(rutina);
-    for (let i = 0; i < entries.length; i++) {
-      daysArray.push(entries[i][1] || []);
-    }
-
-    // SI ES FREEUSER, GUARDAR SOLO EN LOCAL
-    if (isFreeUser) {
-      try {
-        // Guardar en AsyncStorage
-        await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
-        
-        // Actualizar la lista de rutinas en AsyncStorage
-        const rutinasStr = await AsyncStorage.getItem('rutinas');
-        let rutinas = rutinasStr ? JSON.parse(rutinasStr) : [];
-        
-        const existingIndex = rutinas.findIndex(r => r.id === id);
-        if (existingIndex >= 0) {
-          // Actualizar rutina existente
-          rutinas[existingIndex] = {
-            ...rutinas[existingIndex],
-            nombre: routineName,
-            updatedAt: new Date().toISOString()
-          };
-        } else {
-          // Agregar nueva rutina
-          rutinas.push({
-            id: id,
-            nombre: routineName,
-            origen: 'local',
-            updatedAt: new Date().toISOString(),
-            folder: null
-          });
-        }
-        
-        await AsyncStorage.setItem('rutinas', JSON.stringify(rutinas));
-        
-      // Mostrar aviso de usuario FREE
-      if (Platform.OS === 'web') {
-        const goToPremium = window.confirm('⚠️ RUTINA GUARDADA LOCALMENTE\n\nComo usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.\n\n¿Quieres mejorar a Premium ahora?');
-        if (goToPremium) {
-          window.location.href = '../payment';
-        } else {
-          router.back();
-        }
-      } else {
-        Alert.alert(
-          '⚠️ Rutina Guardada Localmente',
-          'Como usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.',
-          [
-            { text: 'Ahora no', style: 'cancel', onPress: () => router.back() },
-            { text: 'Mejorar a Premium', style: 'default', onPress: () => router.push('../payment') }
-          ]
-        );
-        return;
-      }
-      } catch (error) {
-        console.error('Error guardando localmente:', error);
-        Alert.alert('Error', 'No se pudo guardar la rutina localmente');
-      }
-      setSaving(false);
+  const handleSaveRoutine = async () => {
+    // 🔒 Bloquear si es rutina de entrenador
+    if (isTrainerRoutine) {
+      Alert.alert(
+        '🔒 Rutina Bloqueada',
+        'Esta rutina fue asignada por tu entrenador y no puede ser modificada. Contacta con tu entrenador si necesitas cambios.',
+        [{ text: 'Entendido', style: 'default' }]
+      );
       return;
     }
 
-    // SI NO ES FREEUSER, GUARDAR EN MONGODB (CÓDIGO EXISTENTE)
-    const payload = {
-      nombre: routineName,
-      dias: entries.length,
-      diasArr: daysArray,
-      division: 'Personalizada',
-      enfoque: 'General',
-      nivel: 'Intermedio'
-    };
+    if (!routineName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la rutina');
+      return;
+    }
 
-    // VERIFICAR SI EL ID ES LOCAL O DE MONGODB
-    const isLocalId = id && (id.startsWith('r-') || (id.length !== 24));
-    
-    // Si es ID local, siempre crear nueva rutina (POST)
-    // Si es ID de MongoDB válido (24 caracteres hex), intentar actualizar (PUT)
-    const endpoint = (id && !isLocalId) ? `${API_URL}/api/routines/${id}` : `${API_URL}/api/routines`;
-    const method = (id && !isLocalId) ? 'PUT' : 'POST';
+    setSaving(true);
 
-    const response = await fetch(endpoint, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify(payload)
-    });
+    // VERIFICAR SI ES USUARIO FREE
+    const isFreeUser = user?.tipoUsuario === 'FREEUSER';
 
-    // Si el PUT falla con 404, intentar crear nueva rutina
-    if (response.status === 404 && id && !isLocalId) {
-      const retryResponse = await fetch(`${API_URL}/api/routines`, {
-        method: 'POST',
+    try {
+      const daysArray = [];
+      const entries = Object.entries(rutina);
+      for (let i = 0; i < entries.length; i++) {
+        daysArray.push(entries[i][1] || []);
+      }
+
+      // SI ES FREEUSER, GUARDAR SOLO EN LOCAL
+      if (isFreeUser) {
+        try {
+          // Guardar en AsyncStorage
+          await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
+
+          // Actualizar la lista de rutinas en AsyncStorage
+          const rutinasStr = await AsyncStorage.getItem('rutinas');
+          let rutinas = rutinasStr ? JSON.parse(rutinasStr) : [];
+
+          const existingIndex = rutinas.findIndex(r => r.id === id);
+          if (existingIndex >= 0) {
+            // Actualizar rutina existente
+            rutinas[existingIndex] = {
+              ...rutinas[existingIndex],
+              nombre: routineName,
+              updatedAt: new Date().toISOString()
+            };
+          } else {
+            // Agregar nueva rutina
+            rutinas.push({
+              id: id,
+              nombre: routineName,
+              origen: 'local',
+              updatedAt: new Date().toISOString(),
+              folder: null
+            });
+          }
+
+          await AsyncStorage.setItem('rutinas', JSON.stringify(rutinas));
+
+          // Mostrar aviso de usuario FREE
+          if (Platform.OS === 'web') {
+            const goToPremium = window.confirm('⚠️ RUTINA GUARDADA LOCALMENTE\n\nComo usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.\n\n¿Quieres mejorar a Premium ahora?');
+            if (goToPremium) {
+              window.location.href = '../payment';
+            } else {
+              router.back();
+            }
+          } else {
+            Alert.alert(
+              '⚠️ Rutina Guardada Localmente',
+              'Como usuario gratuito, tu rutina se ha guardado solo en tu dispositivo. Para sincronizar en la nube y acceder desde cualquier lugar, mejora a Premium.',
+              [
+                { text: 'Ahora no', style: 'cancel', onPress: () => router.back() },
+                { text: 'Mejorar a Premium', style: 'default', onPress: () => router.push('../payment') }
+              ]
+            );
+            return;
+          }
+        } catch (error) {
+          console.error('Error guardando localmente:', error);
+          Alert.alert('Error', 'No se pudo guardar la rutina localmente');
+        }
+        setSaving(false);
+        return;
+      }
+
+      // SI NO ES FREEUSER, GUARDAR EN MONGODB (CÓDIGO EXISTENTE)
+      const payload = {
+        nombre: routineName,
+        dias: entries.length,
+        diasArr: daysArray,
+        division: 'Personalizada',
+        enfoque: 'General',
+        nivel: 'Intermedio'
+      };
+
+      // VERIFICAR SI EL ID ES LOCAL O DE MONGODB
+      const isLocalId = id && (id.startsWith('r-') || (id.length !== 24));
+
+      // Si es ID local, siempre crear nueva rutina (POST)
+      // Si es ID de MongoDB válido (24 caracteres hex), intentar actualizar (PUT)
+      const endpoint = (id && !isLocalId) ? `${API_URL}/api/routines/${id}` : `${API_URL}/api/routines`;
+      const method = (id && !isLocalId) ? 'PUT' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
-      const retryData = await retryResponse.json();
 
-      if (retryData.success) {
-        // ACTUALIZAR AsyncStorage con el nuevo ID
-        if (isLocalId && retryData.routine?._id) {
+      // Si el PUT falla con 404, intentar crear nueva rutina
+      if (response.status === 404 && id && !isLocalId) {
+        const retryResponse = await fetch(`${API_URL}/api/routines`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+        const retryData = await retryResponse.json();
+
+        if (retryData.success) {
+          // ACTUALIZAR AsyncStorage con el nuevo ID
+          if (isLocalId && retryData.routine?._id) {
+            const rutinasStr = await AsyncStorage.getItem('rutinas');
+            if (rutinasStr) {
+              const rutinas = JSON.parse(rutinasStr);
+              const updatedRutinas = rutinas.map(r =>
+                r.id === id ? { ...r, id: retryData.routine._id, origen: 'server' } : r
+              );
+              await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+              await AsyncStorage.removeItem(`routine_${id}`);
+            }
+          }
+          Alert.alert('Éxito', 'Rutina creada como nueva');
+          router.back();
+          return;
+        } else {
+          Alert.alert('Error', retryData.message || 'Error al guardar');
+          return;
+        }
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Si era ID local y se creó correctamente, actualizar AsyncStorage
+        if (isLocalId && data.routine?._id && method === 'POST') {
           const rutinasStr = await AsyncStorage.getItem('rutinas');
           if (rutinasStr) {
             const rutinas = JSON.parse(rutinasStr);
-            const updatedRutinas = rutinas.map(r => 
-              r.id === id ? { ...r, id: retryData.routine._id, origen: 'server' } : r
+            const updatedRutinas = rutinas.map(r =>
+              r.id === id ? { ...r, id: data.routine._id, origen: 'server' } : r
             );
             await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+            // Eliminar el storage local con el ID viejo
             await AsyncStorage.removeItem(`routine_${id}`);
           }
         }
-        Alert.alert('Éxito', 'Rutina creada como nueva');
+        Alert.alert('Éxito', 'Rutina guardada');
         router.back();
-        return;
       } else {
-        Alert.alert('Error', retryData.message || 'Error al guardar');
-        return;
+        Alert.alert('Error', data.message || 'Error al guardar');
       }
+    } catch (error) {
+      console.error('Save error:', error);
+      Alert.alert('Error', 'Error de conexión');
+    } finally {
+      setSaving(false);
     }
-
-    const data = await response.json();
-
-    if (data.success) {
-      // Si era ID local y se creó correctamente, actualizar AsyncStorage
-      if (isLocalId && data.routine?._id && method === 'POST') {
-        const rutinasStr = await AsyncStorage.getItem('rutinas');
-        if (rutinasStr) {
-          const rutinas = JSON.parse(rutinasStr);
-          const updatedRutinas = rutinas.map(r => 
-            r.id === id ? { ...r, id: data.routine._id, origen: 'server' } : r
-          );
-          await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
-          // Eliminar el storage local con el ID viejo
-          await AsyncStorage.removeItem(`routine_${id}`);
-        }
-      }
-      Alert.alert('Éxito', 'Rutina guardada');
-      router.back();
-    } else {
-      Alert.alert('Error', data.message || 'Error al guardar');
-    }
-  } catch (error) {
-    console.error('Save error:', error);
-    Alert.alert('Error', 'Error de conexión');
-  } finally {
-    setSaving(false);
-  }
-};
+  };
   /* ───────── Sections ───────── */
   const sections = useMemo(() => {
     return Object.entries(rutina).map(([key, list], idx) => ({
@@ -1289,4 +1311,4 @@ const styles = StyleSheet.create({
   },
   confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
 })
-;
+  ;

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { Stack, router } from 'expo-router';
+import { useEffect } from 'react';
 import { Alert } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 
@@ -16,7 +16,11 @@ export default function CoachLayout() {
     return (
         <Stack
             screenOptions={{
-                headerShown: false
+                headerShown: false,
+                // Habilitar gesto de swipe back en iOS
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
+                animation: 'slide_from_right',
             }}
         >
             <Stack.Screen name="index" />

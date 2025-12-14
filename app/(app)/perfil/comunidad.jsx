@@ -8,7 +8,10 @@ import {
     TouchableOpacity,
     RefreshControl,
     Platform,
-    Share
+    Share,
+    Modal,
+    TextInput,
+    Alert
 } from 'react-native';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -17,6 +20,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useAchievements } from '../../../context/AchievementsContext';
+import SyncProgressModal from '../../../components/SyncProgressModal';
+import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
 
 // Constantes para cálculo de ahorro
 const MONTHLY_PRICE_ORIGINAL = 4.99; // €/mes (precio sin descuento)
@@ -39,6 +44,19 @@ export default function Comunidad() {
     const [refreshing, setRefreshing] = useState(false);
     const [codeCopied, setCodeCopied] = useState(false);
 
+    // Modal para canjear código de amigo
+    const [showRedeemModal, setShowRedeemModal] = useState(false);
+    const [redeemCode, setRedeemCode] = useState('');
+    const [isRedeeming, setIsRedeeming] = useState(false);
+
+    // 🔄 Estado para modal de sincronización de datos
+    const [syncModal, setSyncModal] = useState({
+        visible: false,
+        direction: 'upload',
+        isComplete: false,
+        itemsSynced: 0,
+    });
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     const gradientColors = isDark
@@ -46,6 +64,8 @@ export default function Comunidad() {
         : ['#f0f4f8', '#e0e7ef', '#d1dce6'];
 
     useEffect(() => {
+        // Refrescar usuario para obtener código de referido actualizado
+        refreshUser();
         fetchMyReferrals();
     }, []);
 
@@ -114,6 +134,97 @@ export default function Comunidad() {
         });
     };
 
+    // Función unificada: intenta canjear como referido, si falla intenta como código promocional
+    const handleRedeemCode = async () => {
+        if (!redeemCode.trim()) {
+            Alert.alert('Error', 'Por favor ingresa un código');
+            return;
+        }
+
+        setIsRedeeming(true);
+        const codeToRedeem = redeemCode.trim().toUpperCase();
+
+        try {
+            // Primero intentar como código de referido
+            const referralResponse = await fetch(`${API_URL}/api/referrals/redeem`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ code: codeToRedeem })
+            });
+
+            const referralData = await referralResponse.json();
+
+            if (referralData.success) {
+                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                const previousType = user?.tipoUsuario;
+                if (previousType === 'FREEUSER') {
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) {
+                        console.warn('[Comunidad] Error sincronizando:', syncErr);
+                    }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+                }
+                await refreshUser();
+                setShowRedeemModal(false);
+                setRedeemCode('');
+                Alert.alert('¡Genial! 🎉', referralData.message || '¡Has conseguido 7 días de premium gratis!');
+                fetchMyReferrals();
+                return;
+            }
+
+            // Si no es código de referido, intentar como código promocional
+            console.log('[Comunidad] No es código de referido, probando como promo...');
+
+            const promoResponse = await fetch(`${API_URL}/api/promo-codes/redeem`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ code: codeToRedeem })
+            });
+
+            const promoData = await promoResponse.json();
+
+            if (promoData.success) {
+                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan  
+                const previousType = user?.tipoUsuario;
+                if (previousType === 'FREEUSER') {
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) {
+                        console.warn('[Comunidad] Error sincronizando:', syncErr);
+                    }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+                }
+                await refreshUser();
+                setShowRedeemModal(false);
+                setRedeemCode('');
+                Alert.alert('¡Felicidades! 🌟', promoData.message || '¡Código promocional canjeado con éxito!');
+                return;
+            }
+
+            // Ninguno de los dos funcionó
+            Alert.alert('Código inválido', promoData.message || referralData.message || 'Este código no existe o ya ha sido usado');
+
+        } catch (error) {
+            console.error('[Comunidad] Error redeeming:', error);
+            Alert.alert('Error', 'No se pudo canjear el código. Verifica tu conexión.');
+        } finally {
+            setIsRedeeming(false);
+        }
+    };
+
     return (
         <View style={styles.root}>
             <Stack.Screen options={{ headerShown: false }} />
@@ -177,6 +288,21 @@ export default function Comunidad() {
                     <Text style={[styles.codeHint, { color: theme.textSecondary }]}>
                         Por cada amigo que use tu código, ambos recibiréis 7 días de premium 🎉
                     </Text>
+
+                    {/* VIP Button to redeem codes (referral or promo) */}
+                    <TouchableOpacity
+                        style={[styles.vipRedeemButton, {
+                            borderColor: '#FFD700',
+                            backgroundColor: 'rgba(255, 215, 0, 0.1)'
+                        }]}
+                        onPress={() => setShowRedeemModal(true)}
+                    >
+                        <Ionicons name="star" size={18} color="#FFD700" />
+                        <Text style={[styles.vipRedeemButtonText, { color: '#FFD700' }]}>
+                            Canjear código VIP
+                        </Text>
+                        <Ionicons name="chevron-forward" size={16} color="#FFD700" />
+                    </TouchableOpacity>
                 </View>
 
                 {/* Stats Section */}
@@ -268,6 +394,68 @@ export default function Comunidad() {
                 </View>
 
             </ScrollView>
+
+            {/* VIP Code Redemption Modal */}
+            <Modal visible={showRedeemModal} transparent animationType="fade" onRequestClose={() => setShowRedeemModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalCard, { backgroundColor: theme.backgroundSecondary }]}>
+                        {/* VIP Icon */}
+                        <View style={[styles.modalVipIcon, { backgroundColor: 'rgba(255, 215, 0, 0.2)' }]}>
+                            <Ionicons name="star" size={32} color="#FFD700" />
+                        </View>
+
+                        <Text style={[styles.modalTitle, { color: '#FFD700' }]}>Canjear Código VIP</Text>
+                        <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+                            Introduce tu código de amigo o código promocional para obtener beneficios premium
+                        </Text>
+
+                        <TextInput
+                            style={[styles.modalInput, {
+                                backgroundColor: theme.background,
+                                color: theme.text,
+                                borderColor: '#FFD700'
+                            }]}
+                            value={redeemCode}
+                            onChangeText={setRedeemCode}
+                            placeholder="Ej: TOTALGAIN... o PROMO..."
+                            placeholderTextColor={theme.textSecondary}
+                            autoCapitalize="characters"
+                            editable={!isRedeeming}
+                        />
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                                onPress={() => { setShowRedeemModal(false); setRedeemCode(''); }}
+                                disabled={isRedeeming}
+                            >
+                                <Text style={{ color: theme.text }}>Cancelar</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.modalSubmitBtn, { backgroundColor: '#FFD700', opacity: isRedeeming ? 0.6 : 1 }]}
+                                onPress={handleRedeemCode}
+                                disabled={isRedeeming}
+                            >
+                                {isRedeeming ? (
+                                    <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                    <Text style={styles.modalSubmitText}>Canjear</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 🔄 Modal de sincronización de datos */}
+            <SyncProgressModal
+                visible={syncModal.visible}
+                direction={syncModal.direction}
+                isComplete={syncModal.isComplete}
+                itemsSynced={syncModal.itemsSynced}
+                onDismiss={() => setSyncModal(prev => ({ ...prev, visible: false }))}
+            />
         </View>
     );
 }
@@ -466,5 +654,109 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
         lineHeight: 20,
+    },
+
+    // Redeem Button
+    redeemButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 12,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        borderWidth: 1.5,
+    },
+    redeemButtonText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+
+    // Modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalCard: {
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 16,
+        padding: 24,
+        alignItems: 'center',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        marginBottom: 8,
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    modalInput: {
+        width: '100%',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderRadius: 10,
+        borderWidth: 1,
+        fontSize: 16,
+        textAlign: 'center',
+        fontWeight: '600',
+        letterSpacing: 1,
+        marginBottom: 20,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+    },
+    modalCancelBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        alignItems: 'center',
+    },
+    modalSubmitBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    modalSubmitText: {
+        color: '#000',
+        fontWeight: '700',
+    },
+
+    // VIP Styles
+    vipRedeemButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 18,
+        borderRadius: 10,
+        borderWidth: 2,
+    },
+    vipRedeemButtonText: {
+        fontSize: 14,
+        fontWeight: '700',
+        flex: 1,
+        textAlign: 'center',
+    },
+    modalVipIcon: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
     },
 });

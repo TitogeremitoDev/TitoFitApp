@@ -15,6 +15,7 @@ import {
     Animated,
     Dimensions,
     Pressable,
+    Platform,
 } from 'react-native';
 import { useAchievements } from '../context/AchievementsContext';
 import { ACHIEVEMENT_CATEGORIES } from '../src/data/achievements';

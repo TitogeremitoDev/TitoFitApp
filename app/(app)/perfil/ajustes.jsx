@@ -22,6 +22,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -46,6 +48,151 @@ export default function AjustesScreen() {
   // Estado para modal de cancelar suscripción
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
+
+  // Estado para exportar datos
+  const [exportingData, setExportingData] = useState(false);
+
+  // Función para exportar todos los datos del usuario
+  const handleExportData = async () => {
+    setExportingData(true);
+    try {
+      const token = await AsyncStorage.getItem('totalgains_token');
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        userId: user?._id || user?.id,
+        userEmail: user?.email,
+        userName: user?.nombre,
+        localData: {},
+        cloudData: {}
+      };
+
+      // 1. Obtener datos locales de AsyncStorage
+      const allKeys = await AsyncStorage.getAllKeys();
+      const userRelatedKeys = allKeys.filter(key =>
+        key.startsWith('routine_') ||
+        key.startsWith('rutinas') ||
+        key.startsWith('progress_') ||
+        key.startsWith('workout_') ||
+        key.startsWith('exercises_') ||
+        key.startsWith('info_user') ||
+        key.startsWith('totalgains_') ||
+        key.startsWith('activeRoutineId')
+      );
+
+      for (const key of userRelatedKeys) {
+        try {
+          const value = await AsyncStorage.getItem(key);
+          if (value) {
+            try {
+              exportData.localData[key] = JSON.parse(value);
+            } catch {
+              exportData.localData[key] = value;
+            }
+          }
+        } catch (e) {
+          console.warn(`Error reading key ${key}:`, e);
+        }
+      }
+
+      // 2. Obtener datos de la nube si hay token
+      if (token) {
+        try {
+          // Obtener rutinas del usuario
+          const routinesRes = await fetch(`${API_URL}/api/routines`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const routinesData = await routinesRes.json();
+          if (routinesData.success) {
+            exportData.cloudData.routines = routinesData.routines;
+          }
+
+          // Obtener workouts/sesiones de entrenamiento
+          const workoutsRes = await fetch(`${API_URL}/api/workouts`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const workoutsData = await workoutsRes.json();
+          if (workoutsData.success) {
+            exportData.cloudData.workouts = workoutsData.workouts;
+          }
+
+          // Obtener ejercicios creados por el usuario
+          const exercisesRes = await fetch(`${API_URL}/api/exercises`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const exercisesData = await exercisesRes.json();
+          if (exercisesData.success) {
+            exportData.cloudData.exercises = exercisesData.exercises;
+          }
+
+          // Obtener info del usuario
+          const userRes = await fetch(`${API_URL}/api/users/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const userData = await userRes.json();
+          if (userData.success || userData.user) {
+            exportData.cloudData.userProfile = userData.user || userData;
+          }
+        } catch (cloudError) {
+          console.warn('Error fetching cloud data:', cloudError);
+          exportData.cloudData.error = 'No se pudieron obtener algunos datos de la nube';
+        }
+      }
+
+      // 3. Guardar como archivo JSON
+      const fileName = `TotalGains_Export_${new Date().toISOString().split('T')[0]}.json`;
+      const jsonString = JSON.stringify(exportData, null, 2);
+
+      // Detectar si estamos en web
+      if (Platform.OS === 'web') {
+        // Web: Crear un Blob y descargarlo
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        Alert.alert(
+          'Exportación completada',
+          `Archivo "${fileName}" descargado correctamente.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        // Mobile: Usar FileSystem y Sharing
+        const fileUri = FileSystem.documentDirectory + fileName;
+
+        await FileSystem.writeAsStringAsync(
+          fileUri,
+          jsonString,
+          { encoding: FileSystem.EncodingType.UTF8 }
+        );
+
+        // 4. Compartir el archivo
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/json',
+            dialogTitle: 'Exportar datos de TotalGains'
+          });
+        } else {
+          Alert.alert(
+            'Archivo guardado',
+            `Tus datos han sido exportados a: ${fileName}`,
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+    } catch (error) {
+      console.error('[Ajustes] Error exportando datos:', error);
+      Alert.alert('Error', 'No se pudieron exportar los datos. Inténtalo de nuevo.');
+    } finally {
+      setExportingData(false);
+    }
+  };
 
   const themeOptions = [
     {
@@ -411,6 +558,48 @@ export default function AjustesScreen() {
         )}
 
 
+
+        {/* Sección de Datos */}
+        <View style={styles.section}>
+          <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
+            <Ionicons name="download-outline" size={20} color={theme.text} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Mis Datos
+            </Text>
+          </View>
+
+          <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={handleExportData}
+              activeOpacity={0.7}
+              disabled={exportingData}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: theme.iconButton }]}>
+                  {exportingData ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Ionicons name="cloud-download-outline" size={20} color={theme.primary} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingItemTitle, { color: theme.text }]}>
+                    Exportar Datos
+                  </Text>
+                  <Text style={[styles.settingItemSubtitle, { color: theme.textSecondary }]}>
+                    Descarga todos tus datos en formato JSON
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+            </TouchableOpacity>
+
+            <Text style={[styles.exportDescription, { color: theme.textSecondary }]}>
+              Incluye rutinas, entrenamientos, ejercicios y perfil (local + nube)
+            </Text>
+          </View>
+        </View>
 
         {/* Sección de Información */}
         <View style={styles.section}>
@@ -917,5 +1106,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     alignSelf: 'center',
+  },
+  exportDescription: {
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    paddingTop: 4,
+    fontStyle: 'italic',
   },
 });
