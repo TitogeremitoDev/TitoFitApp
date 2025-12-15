@@ -60,30 +60,5 @@ target 'TotalGains' do
         end
       end
     end
-
-    # Fix for Swift 6 / Xcode 16 concurrency errors in Stripe and other pods
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
-        config.build_settings['SWIFT_VERSION'] = '5.0'
-        config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
-      end
-    end
-
-    # Patch StripePayments PassiveCaptcha.swift to fix Swift 6 concurrency errors
-    passive_captcha_path = "#{installer.sandbox.root}/StripePayments/StripePayments/StripePayments/Source/Captcha/PassiveCaptcha.swift"
-    if File.exist?(passive_captcha_path)
-      content = File.read(passive_captcha_path)
-      # Only patch if not already patched (check for nonisolated prefix)
-      if content.include?('var nillableContinuation: CheckedContinuation<String, Error>?') && !content.include?('nonisolated(unsafe) var nillableContinuation')
-        patched_content = content.gsub(
-          'var nillableContinuation: CheckedContinuation<String, Error>? = continuation',
-          'nonisolated(unsafe) var nillableContinuation: CheckedContinuation<String, Error>? = continuation'
-        )
-        File.chmod(0644, passive_captcha_path) rescue nil
-        File.write(passive_captcha_path, patched_content)
-        puts "[Podfile] Patched PassiveCaptcha.swift for Swift 6 compatibility"
-      end
-    end
   end
 end

@@ -159,10 +159,13 @@ export default function HomeScreen() {
     router.push('/payment');
   };
 
+  // Mostrar botón de pagos: FREEUSER (para premium), PREMIUM/CLIENTE/ENTRENADOR (para plan coach)
   const showPaymentButton =
     user?.tipoUsuario === 'FREEUSER' ||
     user?.tipoUsuario === 'PREMIUM' ||
-    user?.tipoUsuario === 'ADMIN';
+    user?.tipoUsuario === 'CLIENTE' ||
+    user?.tipoUsuario === 'ENTRENADOR' ||
+    user?.tipoUsuario === 'ADMINISTRADOR';
 
   // Determinar si es usuario premium para efectos VIP
   const isPremiumUser = user?.tipoUsuario === 'CLIENTE' ||
@@ -183,7 +186,7 @@ export default function HomeScreen() {
       <View style={[styles.blob, styles.blobBottom]} />
 
       {/* Botón Mode Select para Admin/Entrenador */}
-      {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR') && (
+      {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
         <Link href="/mode-select" asChild>
           <Pressable style={styles.modeSelectorButton}>
             <LinearGradient
@@ -268,6 +271,10 @@ export default function HomeScreen() {
             <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
           </Link>
           <View style={{ height: 10 }} />
+          <Link href="/seguimiento" asChild>
+            <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" />
+          </Link>
+          <View style={{ height: 10 }} />
           <ActionButton
             title="Perfil"
             icon="person-outline"
@@ -282,7 +289,11 @@ export default function HomeScreen() {
             onPress={handleVideosPress}
           />
 
-          <Text style={styles.version}>v{APP_VERSION} • APK Fitness</Text>
+          <Text style={styles.version}>v{APP_VERSION} • TotalGains</Text>
+          {/* Enlace a la web */}
+          <Link href="https://totalgains.es/app" asChild>
+            <Text style={styles.website}>www.TotalGains.es</Text>
+          </Link>
         </View>
 
         <View style={styles.bannerContainer}>
@@ -685,5 +696,17 @@ const styles = StyleSheet.create({
   upgradeCancelText: {
     color: '#6B7280',
     fontSize: 14,
+  },
+  website: {
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    color: 'gold',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 10,
+    marginBottom: 20,
   },
 });

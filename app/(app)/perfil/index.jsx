@@ -11,6 +11,8 @@ import ActionButton from '../../../components/ActionButton';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAchievements } from '../../../context/AchievementsContext';
+import SyncProgressModal from '../../../components/SyncProgressModal';
+import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
 
 const AVATARS = [
     // Avatares Gratuitos
@@ -65,6 +67,14 @@ export default function PerfilScreen() {
     const [showReferralSuccessModal, setShowReferralSuccessModal] = useState(false);
     const [referralSuccessMessage, setReferralSuccessMessage] = useState('');
     const [codeCopied, setCodeCopied] = useState(false);
+
+    // 🔄 Estado para modal de sincronización de datos
+    const [syncModal, setSyncModal] = useState({
+        visible: false,
+        direction: 'upload',
+        isComplete: false,
+        itemsSynced: 0,
+    });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -144,6 +154,20 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
+                // 🔄 FREE → CLIENTE: Subir datos locales antes de cambiar de plan
+                const previousType = user?.tipoUsuario;
+                if (previousType === 'FREEUSER') {
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) {
+                        console.warn('[Perfil] Error sincronizando:', syncErr);
+                    }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+                }
+
                 // Refrescar datos del usuario para actualizar tipoUsuario
                 try {
                     await refreshUser();
@@ -192,6 +216,20 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
+                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                const previousType = user?.tipoUsuario;
+                if (previousType === 'FREEUSER') {
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) {
+                        console.warn('[Perfil] Error sincronizando:', syncErr);
+                    }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+                }
+
                 // Refresh user data to get updated tipoUsuario
                 await refreshUser();
                 setShowPremiumCodeModal(false);
@@ -252,6 +290,20 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
+                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                const previousType = user?.tipoUsuario;
+                if (previousType === 'FREEUSER') {
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) {
+                        console.warn('[Perfil] Error sincronizando:', syncErr);
+                    }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+                }
+
                 await refreshUser();
                 setShowReferralModal(false);
                 setReferralCodeInput('');
@@ -287,7 +339,8 @@ export default function PerfilScreen() {
         { title: 'Evolución', icon: 'trending-up-outline', route: '/perfil/evolucion' },
         { title: 'Mi Transformación', icon: 'body-outline', route: '/perfil/transformacion' },
         { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros' },
-        { title: 'Comunidad', icon: 'people-outline', route: '/perfil/comunidad' },
+        { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos' },
+        { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad' },
         { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes' },
     ];
 
@@ -343,10 +396,10 @@ export default function PerfilScreen() {
                             </View>
                         </View>
 
-                        {/* Simplified Referral Banner - Links to Comunidad */}
+                        {/* Simplified Referral Banner - Links to Amigos */}
                         <TouchableOpacity
                             style={[styles.referralBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: theme.primary }]}
-                            onPress={() => router.push('/perfil/comunidad')}
+                            onPress={() => router.push('/perfil/amigos')}
                         >
                             <View style={styles.referralBannerContent}>
                                 <Ionicons name="gift" size={22} color={theme.primary} />
@@ -783,6 +836,15 @@ export default function PerfilScreen() {
                     </View>
                 </View>
             </Modal >
+
+            {/* 🔄 Modal de sincronización de datos */}
+            <SyncProgressModal
+                visible={syncModal.visible}
+                direction={syncModal.direction}
+                isComplete={syncModal.isComplete}
+                itemsSynced={syncModal.itemsSynced}
+                onDismiss={() => setSyncModal(prev => ({ ...prev, visible: false }))}
+            />
         </View >
     );
 }
@@ -809,7 +871,8 @@ const styles = StyleSheet.create({
 
     header: {
         alignItems: 'center',
-        paddingVertical: 30,
+        paddingTop: 30,
+        paddingBottom: 10,
         width: '100%',
     },
     avatarContainer: {
@@ -970,12 +1033,12 @@ const styles = StyleSheet.create({
         width: '90%',
         height: 1,
         backgroundColor: 'rgba(150,150,150,0.2)',
-        marginVertical: 10,
+        marginVertical: 8,
     },
     menuContainer: {
         width: '100%',
         paddingHorizontal: 20,
-        marginTop: 10,
+        marginTop: 4,
         alignItems: 'center',
     },
     menuItemWrapper: {

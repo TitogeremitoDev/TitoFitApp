@@ -25,7 +25,8 @@ import { ThemeProvider as CustomThemeProvider } from '../../context/ThemeContext
 
 // AÑADIDO: Sistema de logros estilo Steam
 import AchievementToast from '../../components/AchievementToast';
-import { AchievementsProvider } from '../../context/AchievementsContext';
+import { AchievementsProvider, useAchievements } from '../../context/AchievementsContext';
+import { useAuth } from '../../context/AuthContext';
 
 // --- 3. CLAVES Y FUNCIÓN DE SEEDING (¡ACTUALIZADA!) ---
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
@@ -127,6 +128,29 @@ const checkAndSeedPredefinedRoutines = async () => {
 // --- FIN FUNCIÓN SEEDING ---
 
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPONENTE PARA SINCRONIZAR ACHIEVEMENTS CON ESTADO PREMIUM
+// ═══════════════════════════════════════════════════════════════════════════
+function AchievementsSyncWrapper({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { setIsPremium, loadFromCloud, isLoading: achievementsLoading } = useAchievements();
+
+  useEffect(() => {
+    // Determinar si el usuario es premium
+    const isPremium = user?.tipoUsuario && user.tipoUsuario !== 'FREEUSER';
+
+    // Configurar el estado premium en el contexto de achievements
+    setIsPremium(isPremium);
+
+    // Si es premium y no estamos cargando, sincronizar con la nube
+    if (isPremium && !achievementsLoading) {
+      loadFromCloud();
+    }
+  }, [user?.tipoUsuario, achievementsLoading, setIsPremium, loadFromCloud]);
+
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded, fontError] = useFonts({ // Capturamos error de fuentes
@@ -196,67 +220,69 @@ export default function RootLayout() {
     // AÑADIDO: Envolvemos todo con CustomThemeProvider
     <CustomThemeProvider>
       <AchievementsProvider>
-        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-          <SafeAreaProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  // Habilitar gesto de swipe back en iOS
-                  gestureEnabled: true,
-                  // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
-                  fullScreenGestureEnabled: true,
-                  animation: 'slide_from_right',
-                  // Tus screenOptions existentes para el header
-                  headerTransparent: true,
-                  ...(Platform.OS === 'android'
-                    ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
-                    : {}),
-                  headerTitle: '',
-                  headerTintColor: 'black',
-                  headerShadowVisible: true,
-                  headerLeft: (props) => { // Tu headerLeft personalizado
-                    if (!props.canGoBack) return null;
-                    return (
-                      <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                        <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                          <Ionicons name="arrow-back" size={24} color="black" />
-                        </Pressable>
-                      </View>
-                    );
-                  },
-                }}
-              >
-                {/* Tus Stack.Screen existentes */}
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="home" options={{ headerShown: false }} />
-                <Stack.Screen name="entreno" />
-                <Stack.Screen
-                  name="rutinas/[id]"
-                  options={{
+        <AchievementsSyncWrapper>
+          <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+            <SafeAreaProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    // Habilitar gesto de swipe back en iOS
                     gestureEnabled: true,
+                    // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
                     fullScreenGestureEnabled: true,
                     animation: 'slide_from_right',
+                    // Tus screenOptions existentes para el header
+                    headerTransparent: true,
+                    ...(Platform.OS === 'android'
+                      ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
+                      : {}),
+                    headerTitle: '',
+                    headerTintColor: 'black',
+                    headerShadowVisible: true,
+                    headerLeft: (props) => { // Tu headerLeft personalizado
+                      if (!props.canGoBack) return null;
+                      return (
+                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                          <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                            <Ionicons name="arrow-back" size={24} color="black" />
+                          </Pressable>
+                        </View>
+                      );
+                    },
                   }}
+                >
+                  {/* Tus Stack.Screen existentes */}
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="home" options={{ headerShown: false }} />
+                  <Stack.Screen name="entreno" />
+                  <Stack.Screen
+                    name="rutinas/[id]"
+                    options={{
+                      gestureEnabled: true,
+                      fullScreenGestureEnabled: true,
+                      animation: 'slide_from_right',
+                    }}
+                  />
+                  <Stack.Screen name="perfil/evolucion" />
+                  <Stack.Screen name="videos" />
+                  <Stack.Screen name="+not-found" />
+
+                </Stack>
+
+                <StatusBar
+                  style="auto"
+                  translucent={Platform.OS === 'android' ? false : undefined}
+                  backgroundColor="transparent"
                 />
-                <Stack.Screen name="perfil/evolucion" />
-                <Stack.Screen name="videos" />
-                <Stack.Screen name="+not-found" />
 
-              </Stack>
-
-              <StatusBar
-                style="auto"
-                translucent={Platform.OS === 'android' ? false : undefined}
-                backgroundColor="transparent"
-              />
-
-              {/* 🏆 Toast de logros estilo Steam */}
-              <AchievementToast />
-            </ThemeProvider>
-          </SafeAreaProvider>
-        </View>
+                {/* 🏆 Toast de logros estilo Steam */}
+                <AchievementToast />
+              </ThemeProvider>
+            </SafeAreaProvider>
+          </View>
+        </AchievementsSyncWrapper>
       </AchievementsProvider>
-    </CustomThemeProvider>
+    </CustomThemeProvider >
   );
 }

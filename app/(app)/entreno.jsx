@@ -1850,55 +1850,64 @@ export default function Entreno() {
     }
   }, [API_URL, token]);
 
-  // 🆕 Recuperar datos de workout desde la nube (usuarios premium)
-  const fetchCloudProgress = useCallback(async (routineId, week, dayIdx, exercisesList) => {
+  // 🆕 Recuperar TODOS los datos de workout desde la nube (usuarios premium)
+  // Carga todos los workouts de la rutina de una vez para evitar múltiples llamadas
+  const fetchAllCloudProgress = useCallback(async (routineId, diasNorm) => {
     // Solo para usuarios premium y con routineId válido de MongoDB
     if (!token || user?.tipoUsuario === 'FREEUSER' || !routineId?.match(/^[0-9a-fA-F]{24}$/)) {
       return null;
     }
 
     try {
+      // Cargar TODOS los workouts de esta rutina de una vez
       const response = await fetch(
-        `${API_URL}/api/workouts?routineId=${routineId}&week=${week}&dayIndex=${dayIdx + 1}&limit=1`,
+        `${API_URL}/api/workouts?routineId=${routineId}&limit=100`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
 
       if (data.success && data.workouts?.length > 0) {
-        const workout = data.workouts[0];
-        console.log('[Entreno] ☁️ Workout encontrado en la nube:', workout._id);
+        console.log(`[Entreno] ☁️ ${data.workouts.length} workouts encontrados en la nube para esta rutina`);
 
-        // Transformar workout de API a formato de progreso local
+        // Transformar TODOS los workouts de API a formato de progreso local
         const cloudProg = {};
         const cloudNotes = {}; // 📝 Notas desde la nube
 
-        workout.exercises?.forEach((ex, orderIdx) => {
-          // Buscar ejercicio correspondiente en la rutina local por orden
-          const localEx = exercisesList[orderIdx];
-          if (!localEx) return;
+        for (const workout of data.workouts) {
+          const workoutWeek = workout.week || 1;
+          const workoutDayIdx = (workout.dayIndex || 1) - 1; // API usa 1-indexed, convertir a 0-indexed
 
-          // 🆕 Marcar el ejercicio como completado si el workout está completado
-          if (workout.status === 'completed') {
-            const ejerKey = `${week}|${dayIdx}|${localEx.id}`;
-            cloudProg[ejerKey] = 'C';
-          }
+          // Obtener ejercicios de este día específico
+          const exercisesList = diasNorm[workoutDayIdx] || [];
 
-          ex.sets?.forEach((set, setIdx) => {
-            const serieKey = `${week}|${dayIdx}|${localEx.id}|${setIdx}`;
-            cloudProg[serieKey] = {
-              reps: set.actualReps?.toString() || '',
-              peso: set.weight?.toString() || ''
-            };
+          workout.exercises?.forEach((ex, orderIdx) => {
+            // Buscar ejercicio correspondiente en la rutina local por orden
+            const localEx = exercisesList[orderIdx];
+            if (!localEx) return;
 
-            // 📝 Extraer notas si existen
-            if (set.notes && (set.notes.value || set.notes.note)) {
-              cloudNotes[serieKey] = {
-                value: set.notes.value || null,
-                note: set.notes.note || ''
-              };
+            // 🆕 Marcar el ejercicio como completado si el workout está completado
+            if (workout.status === 'completed') {
+              const ejerKey = `${workoutWeek}|${workoutDayIdx}|${localEx.id}`;
+              cloudProg[ejerKey] = 'C';
             }
+
+            ex.sets?.forEach((set, setIdx) => {
+              const serieKey = `${workoutWeek}|${workoutDayIdx}|${localEx.id}|${setIdx}`;
+              cloudProg[serieKey] = {
+                reps: set.actualReps?.toString() || '',
+                peso: set.weight?.toString() || ''
+              };
+
+              // 📝 Extraer notas si existen
+              if (set.notes && (set.notes.value || set.notes.note)) {
+                cloudNotes[serieKey] = {
+                  value: set.notes.value || null,
+                  note: set.notes.note || ''
+                };
+              }
+            });
           });
-        });
+        }
 
         return { cloudProg, cloudNotes };
       }
@@ -1907,6 +1916,7 @@ export default function Entreno() {
     }
     return null;
   }, [API_URL, token, user?.tipoUsuario]);
+
 
   /* Guardado de última sesión (semana/día) — por RUTINA */
   const saveLastSession = useCallback(
@@ -1995,8 +2005,8 @@ export default function Entreno() {
 
     const mongoRoutineId = extractMongoId(idAct);
     if (token && user?.tipoUsuario !== 'FREEUSER' && mongoRoutineId) {
-      const ejerciciosDia = diasNorm[currentDiaIdx] || [];
-      const cloudData = await fetchCloudProgress(mongoRoutineId, currentSemana, currentDiaIdx, ejerciciosDia);
+      // 🆕 Cargar TODOS los workouts de la rutina de una vez
+      const cloudData = await fetchAllCloudProgress(mongoRoutineId, diasNorm);
 
       if (cloudData) {
         const { cloudProg, cloudNotes } = cloudData;
@@ -2016,7 +2026,8 @@ export default function Entreno() {
     }
 
     setHydrated(true);
-  }, [token, user?.tipoUsuario, fetchCloudProgress]);
+  }, [token, user?.tipoUsuario, fetchAllCloudProgress]);
+
 
   // Verificar si es primera vez (mostrar tutorial)
   useEffect(() => {

@@ -22,7 +22,8 @@ export default function ModeSelect() {
     const { theme, isDark } = useTheme();
 
     const isAdmin = user?.tipoUsuario === 'ADMINISTRADOR';
-    const isCoach = isAdmin || user?.tipoUsuario === 'ENTRENADOR';
+    // Acceso coach: es admin, tiene tipo ENTRENADOR, O tiene código de entrenador configurado
+    const isCoach = isAdmin || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode;
 
     const modes: Mode[] = [
         {

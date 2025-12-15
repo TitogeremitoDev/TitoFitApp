@@ -1,9 +1,10 @@
 /* coach/progress/[clientId].jsx
    ═══════════════════════════════════════════════════════════════════════════
-   ANÁLISIS DETALLADO DE CLIENTE
-   - Selectores de músculo y ejercicio (como evolucion.jsx)
-   - Gráfico de evolución por semana/mes
-   - Tabla comparativa con colores verde/rojo
+   ANÁLISIS DETALLADO DE CLIENTE - CHARTS 2.0
+   - Sistema de KPIs avanzado con 6 métricas
+   - Selector modal de KPI (cross-platform)
+   - Filtro de periodo (7d/30d/90d/all)
+   - Tarjetas de resumen + gráficos por semana
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -16,12 +17,30 @@ import {
     ActivityIndicator,
     Pressable,
     Dimensions,
+    Modal,
+    TouchableOpacity,
+    FlatList,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart } from 'react-native-chart-kit';
-import { Picker } from '@react-native-picker/picker';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+import { Picker } from '@react-native-picker/picker'
 import { useAuth } from '../../../context/AuthContext';
+
+// KPI Utilities
+import {
+    KPI_OPTIONS,
+    PERIOD_OPTIONS,
+    filterByPeriod,
+    filterExercises,
+    calcVolumeByWeek,
+    calcIntensityByWeek,
+    calcPlanComplianceByWeek,
+    calcPlanComplianceTotal,
+    calcHeavySetsByWeek,
+    calcMuscleBalance,
+    calcPRCountByWeek,
+} from '../../../src/utils/calculateKPIs';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -32,8 +51,28 @@ const chartConfig = {
     backgroundGradientTo: '#ffffff',
     decimalPlaces: 0,
     color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(71, 85, 105, ${opacity})`,
     propsForDots: { r: '5', strokeWidth: '2', stroke: '#3b82f6' },
+    fillShadowGradient: '#3b82f6',
+    fillShadowGradientOpacity: 0.3,
+};
+
+// Configuración para BarChart - colores más vibrantes
+const barChartConfig = {
+    backgroundColor: '#ffffff',
+    backgroundGradientFrom: '#f8fafc',
+    backgroundGradientTo: '#ffffff',
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`, // Indigo más vibrante
+    labelColor: (opacity = 1) => `rgba(71, 85, 105, ${opacity})`,
+    barPercentage: 0.65,
+    fillShadowGradient: '#6366f1',
+    fillShadowGradientOpacity: 1,
+    propsForBackgroundLines: {
+        strokeDasharray: '',
+        stroke: '#e2e8f0',
+        strokeWidth: 1,
+    },
 };
 
 export default function ClientProgressDetail() {
@@ -45,9 +84,20 @@ export default function ClientProgressDetail() {
     const [isLoading, setIsLoading] = useState(true);
     const [temporalidad, setTemporalidad] = useState('semanas');
 
+    // 📊 KPI System 2.0
+    const [selectedKpi, setSelectedKpi] = useState('volume');
+    const [kpiModalVisible, setKpiModalVisible] = useState(false);
+    const [selectedPeriod, setSelectedPeriod] = useState('30d');
+
     // Nuevos estados para filtros
     const [selMusculo, setSelMusculo] = useState('TOTAL'); // 'TOTAL' = todos
     const [selEjercicio, setSelEjercicio] = useState('');
+
+    // 📊 Vista: gráfica o tabla detallada
+    const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table'
+
+    // 📝 Modal de notas del cliente
+    const [noteModal, setNoteModal] = useState({ visible: false, note: null });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -189,23 +239,36 @@ export default function ClientProgressDetail() {
     }, [sessions, temporalidad, selMusculo, selEjercicio]);
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // DATOS PARA GRÁFICO (por fecha individual de cada sesión)
+    // DATOS PARA GRÁFICO (ordenados por week cuando hay misma fecha)
     // ═══════════════════════════════════════════════════════════════════════════
     const datosGrafico = useMemo(() => {
         if (!sessions || sessions.length === 0) return null;
 
-        // Agrupar por fecha (día)
-        const porFecha = new Map();
+        // Agrupar por week (semana de la rutina) en lugar de solo fecha
+        const porWeek = new Map();
 
         sessions.forEach((session) => {
             const fecha = new Date(session.date);
-            const fechaStr = fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+            const week = session.week ?? 1;
 
-            if (!porFecha.has(fechaStr)) {
-                porFecha.set(fechaStr, { fecha, volumen: 0 });
+            // Usar week como clave principal para agrupar
+            const weekKey = `S${week}`;
+
+            if (!porWeek.has(weekKey)) {
+                porWeek.set(weekKey, {
+                    fecha,
+                    week,
+                    volumen: 0,
+                    label: weekKey
+                });
             }
 
-            const grupo = porFecha.get(fechaStr);
+            const grupo = porWeek.get(weekKey);
+
+            // Mantener la fecha más reciente para ordenar si hay empate
+            if (fecha > grupo.fecha) {
+                grupo.fecha = fecha;
+            }
 
             session.exercises?.forEach((ej) => {
                 const musc = ej.muscleGroup || 'SIN GRUPO';
@@ -222,9 +285,9 @@ export default function ClientProgressDetail() {
             });
         });
 
-        const datos = Array.from(porFecha.entries())
-            .map(([label, data]) => ({ label, ...data }))
-            .sort((a, b) => a.fecha - b.fecha);
+        // Convertir a array y ordenar por week (ascendente)
+        const datos = Array.from(porWeek.values())
+            .sort((a, b) => a.week - b.week);
 
         if (datos.length === 0 || datos.every(d => d.volumen === 0)) return null;
 
@@ -243,6 +306,103 @@ export default function ClientProgressDetail() {
             datasets: [{ data: values, strokeWidth: 3 }],
         };
     }, [sessions, selMusculo, selEjercicio]);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // KPI CALCULATIONS 2.0
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Sesiones filtradas por periodo
+    const filteredSessions = useMemo(() => {
+        return filterByPeriod(sessions, selectedPeriod);
+    }, [sessions, selectedPeriod]);
+
+    // NUEVO: KPI Volumen (% mejora semanal) - CON FILTROS
+    const volumeData = useMemo(() => {
+        const data = calcVolumeByWeek(filteredSessions, selMusculo, selEjercicio);
+        if (data.length === 0) return null;
+        const lastValue = data[data.length - 1]?.value || 0;
+        const totalVol = data.reduce((sum, d) => sum + (d.volume || 0), 0);
+        return {
+            labels: data.map(d => d.label),
+            datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+            rawData: data,
+            lastValue,
+            totalVolK: (totalVol / 1000).toFixed(1)
+        };
+    }, [filteredSessions, selMusculo, selEjercicio]);
+
+    // KPI: Intensidad Relativa (semanal) - CON FILTROS
+    const intensityData = useMemo(() => {
+        const data = calcIntensityByWeek(filteredSessions, selMusculo, selEjercicio);
+        if (data.length === 0) return null;
+        const lastValue = data[data.length - 1]?.value || 0;
+        return {
+            labels: data.map(d => d.label),
+            datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+            lastValue,
+            lastAvgLoad: data[data.length - 1]?.avgLoad || 0
+        };
+    }, [filteredSessions, selMusculo, selEjercicio]);
+
+    // KPI: Cumplimiento del Plan (semanal)
+    const complianceWeeklyData = useMemo(() => {
+        const data = calcPlanComplianceByWeek(filteredSessions);
+        if (data.length === 0) return null;
+        const lastValue = data[data.length - 1]?.value || 0;
+        const avgValue = data.reduce((sum, d) => sum + d.value, 0) / data.length;
+        return {
+            labels: data.map(d => d.label),
+            datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+            lastValue,
+            avgValue: avgValue.toFixed(1)
+        };
+    }, [filteredSessions]);
+
+    const complianceTotalData = useMemo(() => {
+        return calcPlanComplianceTotal(filterByPeriod(sessions, '30d'));
+    }, [sessions]);
+
+    // KPI: Carga Alta (semanal) - CON FILTROS
+    const heavySetsData = useMemo(() => {
+        const data = calcHeavySetsByWeek(filteredSessions, selMusculo, selEjercicio);
+        if (data.length === 0) return null;
+        const lastValue = data[data.length - 1]?.value || 0;
+        const avgValue = data.reduce((sum, d) => sum + d.value, 0) / data.length;
+        return {
+            labels: data.map(d => d.label),
+            datasets: [{ data: data.map(d => d.value) }],
+            lastValue,
+            avgValue: avgValue.toFixed(0)
+        };
+    }, [filteredSessions, selMusculo, selEjercicio]);
+
+    // KPI: Balance Muscular (periodo)
+    const muscleBalanceData = useMemo(() => {
+        const data = calcMuscleBalance(filteredSessions);
+        if (data.length === 0) return null;
+        return {
+            labels: data.map(d => d.muscle.substring(0, 4)),
+            datasets: [{ data: data.map(d => d.share) }],
+            fullData: data
+        };
+    }, [filteredSessions]);
+
+    // KPI: PR Count (semanal) - CON FILTROS
+    const prCountData = useMemo(() => {
+        const data = calcPRCountByWeek(filteredSessions);
+        if (data.length === 0) return null;
+        const totalPRs = data.reduce((sum, d) => sum + d.value, 0);
+        return {
+            labels: data.map(d => d.label),
+            datasets: [{ data: data.map(d => d.value) }],
+            totalPRs
+        };
+    }, [filteredSessions]);
+
+    // Obtener info del KPI seleccionado
+    const currentKpi = useMemo(() => {
+        return KPI_OPTIONS.find(k => k.id === selectedKpi) || KPI_OPTIONS[0];
+    }, [selectedKpi]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
@@ -275,6 +435,313 @@ export default function ClientProgressDetail() {
         const anterior = datosAgrupados[1]?.volumen || 0;
         return calcularCambio(actual, anterior);
     }, [datosAgrupados]);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 📊 DATOS PARA TABLA DETALLADA DE EJERCICIOS
+    // ═══════════════════════════════════════════════════════════════════════════
+    const NOTE_COLORS = {
+        high: '#ef4444',   // 🔴
+        normal: '#f97316', // 🟠
+        low: '#22c55e',    // 🟢
+        custom: '#3b82f6', // 🔵
+    };
+
+    const getRepStatus = (actual, min, max) => {
+        if (!actual) return 'none';
+        if (min && actual < min) return 'below';  // 🔴
+        if (max && actual > max) return 'above';  // 🔵
+        return 'inRange'; // 🟢
+    };
+
+    const getRepStatusColor = (status) => {
+        switch (status) {
+            case 'below': return '#ef4444';  // Rojo
+            case 'above': return '#3b82f6';  // Azul
+            case 'inRange': return '#22c55e'; // Verde
+            default: return '#6b7280';
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 📅 DATOS AGRUPADOS POR DÍA DE LA RUTINA
+    // Estructura: Día 1 → ejercicios → sesiones de cada ejercicio
+    // ═══════════════════════════════════════════════════════════════════════════
+    const datosPorDia = useMemo(() => {
+        if (!sessions || sessions.length === 0) return [];
+
+        // Agrupar sesiones por dayIndex
+        const diasMap = new Map();
+
+        sessions.forEach((session) => {
+            const dayIdx = session.dayIndex ?? 0;
+            const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
+
+            if (!diasMap.has(dayIdx)) {
+                diasMap.set(dayIdx, {
+                    dayIndex: dayIdx,
+                    dayLabel,
+                    routineName: session.routineNameSnapshot || 'Rutina',
+                    sessionsData: [], // Array de sesiones de este día
+                });
+            }
+
+            // Añadir esta sesión a las sesiones de este día
+            diasMap.get(dayIdx).sessionsData.push({
+                sessionId: session._id,
+                date: new Date(session.date),
+                week: session.week ?? 1, // Semana de la rutina
+                exercises: session.exercises || [],
+            });
+        });
+
+        // Procesar cada día
+        const resultado = Array.from(diasMap.values()).map(dia => {
+            // Ordenar sesiones: primero por fecha (más antigua primero), luego por week
+            dia.sessionsData.sort((a, b) => {
+                const dateDiff = a.date - b.date; // Más antigua primero
+                if (dateDiff !== 0) return dateDiff;
+                return (a.week ?? 1) - (b.week ?? 1); // Menor week primero
+            });
+
+            // Obtener ejercicios únicos de la primera sesión (orden de la rutina)
+            const primeraSession = dia.sessionsData[0];
+            const ejerciciosUnicos = [];
+            const ejerciciosVistos = new Set();
+
+            // Recorrer todas las sesiones para obtener todos los ejercicios
+            dia.sessionsData.forEach(s => {
+                s.exercises.forEach(ex => {
+                    if (!ejerciciosVistos.has(ex.exerciseName)) {
+                        ejerciciosVistos.add(ex.exerciseName);
+                        ejerciciosUnicos.push({
+                            exerciseName: ex.exerciseName,
+                            muscleGroup: ex.muscleGroup || 'SIN GRUPO',
+                        });
+                    }
+                });
+            });
+
+            // Para cada ejercicio, recopilar datos de todas las sesiones
+            const ejerciciosConSesiones = ejerciciosUnicos
+                .filter(ej => {
+                    // Aplicar filtros
+                    if (selMusculo !== 'TOTAL' && ej.muscleGroup !== selMusculo) return false;
+                    if (selEjercicio && ej.exerciseName !== selEjercicio) return false;
+                    return true;
+                })
+                .map(ej => {
+                    // Obtener datos de este ejercicio en cada sesión
+                    // Las sesiones ya están ordenadas: fecha asc + week asc (más antigua primero)
+                    const sesionesEjercicio = dia.sessionsData.map((s, sIdx) => {
+                        const exData = s.exercises.find(e => e.exerciseName === ej.exerciseName);
+                        if (!exData) return null;
+
+                        // Obtener sesión ANTERIOR (más antigua, índice menor)
+                        // La Sesión 1 (sIdx=0) no tiene anterior, así que no tendrá flechas
+                        const prevSession = sIdx > 0 ? dia.sessionsData[sIdx - 1] : null;
+                        const prevExData = prevSession?.exercises?.find(e => e.exerciseName === ej.exerciseName);
+
+                        const setsConTrend = (exData.sets || []).map((set, setIdx) => {
+                            const prevSet = prevExData?.sets?.[setIdx];
+                            return {
+                                setNumber: set.setNumber || setIdx + 1,
+                                reps: set.actualReps,
+                                weight: set.weight,
+                                targetMin: set.targetRepsMin,
+                                targetMax: set.targetRepsMax,
+                                status: getRepStatus(set.actualReps, set.targetRepsMin, set.targetRepsMax),
+                                notes: set.notes || null,
+                                // Flecha UP solo si mejora respecto a sesión anterior
+                                repTrend: (prevSet?.actualReps && set.actualReps && set.actualReps > prevSet.actualReps)
+                                    ? 'up' : null,
+                                weightTrend: (prevSet?.weight && set.weight && set.weight > prevSet.weight)
+                                    ? 'up' : null,
+                            };
+                        });
+
+                        return {
+                            sessionIdx: sIdx + 1, // Sesión 1 = más antigua
+                            week: s.week,
+                            date: s.date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+                            sets: setsConTrend,
+                        };
+                    }).filter(Boolean);
+
+                    return {
+                        ...ej,
+                        sesiones: sesionesEjercicio,
+                    };
+                });
+
+            return {
+                ...dia,
+                exercises: ejerciciosConSesiones,
+                totalSessions: dia.sessionsData.length,
+            };
+        });
+
+        // Ordenar por dayIndex
+        return resultado.sort((a, b) => a.dayIndex - b.dayIndex);
+    }, [sessions, selMusculo, selEjercicio]);
+
+    // Estado para días expandidos
+    const [expandedDays, setExpandedDays] = useState({});
+
+    const toggleDay = (routineId, dayIndex) => {
+        const key = `${routineId}-${dayIndex}`;
+        setExpandedDays(prev => ({
+            ...prev,
+            [key]: !prev[key]
+        }));
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 📋 DATOS AGRUPADOS POR RUTINA → DÍA (PARA VISTA TABLA)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const datosPorRutina = useMemo(() => {
+        if (!sessions || sessions.length === 0) return { current: null, old: [] };
+
+        // Agrupar sesiones por routineId
+        const rutinasMap = new Map();
+
+        sessions.forEach((session) => {
+            const routineId = session.routineId || session.routineNameSnapshot || 'unknown';
+            const routineName = session.routineNameSnapshot || 'Rutina';
+
+            if (!rutinasMap.has(routineId)) {
+                rutinasMap.set(routineId, {
+                    routineId,
+                    routineName,
+                    lastDate: new Date(session.date),
+                    sessionsData: [],
+                });
+            }
+
+            const rutina = rutinasMap.get(routineId);
+            const sessionDate = new Date(session.date);
+            if (sessionDate > rutina.lastDate) {
+                rutina.lastDate = sessionDate;
+            }
+            rutina.sessionsData.push(session);
+        });
+
+        // Ordenar por fecha más reciente
+        const rutinasArray = Array.from(rutinasMap.values())
+            .sort((a, b) => b.lastDate - a.lastDate);
+
+        // Procesar cada rutina
+        const procesarRutina = (rutina) => {
+            const diasMap = new Map();
+
+            rutina.sessionsData.forEach((session) => {
+                const dayIdx = session.dayIndex ?? 0;
+                const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
+
+                if (!diasMap.has(dayIdx)) {
+                    diasMap.set(dayIdx, {
+                        dayIndex: dayIdx,
+                        dayLabel,
+                        sessionsData: [],
+                    });
+                }
+
+                diasMap.get(dayIdx).sessionsData.push({
+                    sessionId: session._id,
+                    date: new Date(session.date),
+                    week: session.week ?? 1,
+                    exercises: session.exercises || [],
+                });
+            });
+
+            // Procesar cada día
+            const dias = Array.from(diasMap.values()).map(dia => {
+                dia.sessionsData.sort((a, b) => {
+                    const dateDiff = a.date - b.date;
+                    if (dateDiff !== 0) return dateDiff;
+                    return (a.week ?? 1) - (b.week ?? 1);
+                });
+
+                // Ejercicios únicos
+                const ejerciciosVistos = new Set();
+                const ejerciciosUnicos = [];
+                dia.sessionsData.forEach(s => {
+                    s.exercises.forEach(ex => {
+                        if (!ejerciciosVistos.has(ex.exerciseName)) {
+                            ejerciciosVistos.add(ex.exerciseName);
+                            ejerciciosUnicos.push({
+                                exerciseName: ex.exerciseName,
+                                muscleGroup: ex.muscleGroup || 'SIN GRUPO',
+                            });
+                        }
+                    });
+                });
+
+                // Ejercicios con sesiones y trends
+                const ejerciciosConSesiones = ejerciciosUnicos.map(ej => {
+                    const sesionesEjercicio = dia.sessionsData.map((s, sIdx) => {
+                        const exData = s.exercises.find(e => e.exerciseName === ej.exerciseName);
+                        if (!exData) return null;
+
+                        const prevSession = sIdx > 0 ? dia.sessionsData[sIdx - 1] : null;
+                        const prevExData = prevSession?.exercises?.find(e => e.exerciseName === ej.exerciseName);
+
+                        const setsConTrend = (exData.sets || []).map((set, setIdx) => {
+                            const prevSet = prevExData?.sets?.[setIdx];
+                            return {
+                                setNumber: set.setNumber || setIdx + 1,
+                                reps: set.actualReps,
+                                weight: set.weight,
+                                targetMin: set.targetRepsMin,
+                                targetMax: set.targetRepsMax,
+                                status: getRepStatus(set.actualReps, set.targetRepsMin, set.targetRepsMax),
+                                notes: set.notes || null,
+                                repTrend: (prevSet?.actualReps && set.actualReps && set.actualReps > prevSet.actualReps) ? 'up' : null,
+                                weightTrend: (prevSet?.weight && set.weight && set.weight > prevSet.weight) ? 'up' : null,
+                            };
+                        });
+
+                        return {
+                            sessionIdx: sIdx + 1,
+                            week: s.week,
+                            date: s.date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+                            sets: setsConTrend,
+                        };
+                    }).filter(Boolean);
+
+                    return { ...ej, sesiones: sesionesEjercicio };
+                });
+
+                return {
+                    ...dia,
+                    exercises: ejerciciosConSesiones,
+                    totalSessions: dia.sessionsData.length,
+                };
+            }).sort((a, b) => a.dayIndex - b.dayIndex);
+
+            return {
+                routineId: rutina.routineId,
+                routineName: rutina.routineName,
+                lastDate: rutina.lastDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+                dias,
+            };
+        };
+
+        // Rutina actual = la más reciente
+        const current = rutinasArray.length > 0 ? procesarRutina(rutinasArray[0]) : null;
+        const old = rutinasArray.slice(1).map(procesarRutina);
+
+        return { current, old };
+    }, [sessions]);
+
+    // Estado para rutinas expandidas
+    const [expandedRoutines, setExpandedRoutines] = useState({ current: true });
+
+    const toggleRoutine = (routineId) => {
+        setExpandedRoutines(prev => ({
+            ...prev,
+            [routineId]: !prev[routineId]
+        }));
+    };
 
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
@@ -319,237 +786,727 @@ export default function ClientProgressDetail() {
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
 
-                {/* === FILTROS CON SELECTORES ESTILIZADOS === */}
-                <View style={styles.filtersCard}>
-                    {/* Músculo Selector */}
-                    <View style={styles.filterGroup}>
-                        <View style={styles.filterLabelRow}>
-                            <Ionicons name="body" size={16} color="#3b82f6" />
-                            <Text style={styles.filterLabel}>Músculo</Text>
-                        </View>
-                        <View style={styles.selectWrapper}>
-                            <Picker
-                                selectedValue={selMusculo}
-                                onValueChange={handleMusculoChange}
-                                style={styles.picker}
-                                dropdownIconColor="#3b82f6"
-                            >
-                                {listaMusculos.map((m) => (
-                                    <Picker.Item
-                                        key={m}
-                                        label={m === 'TOTAL' ? '📊 TOTAL - Todos los músculos' : m}
-                                        value={m}
-                                    />
-                                ))}
-                            </Picker>
-                            <View style={styles.selectIcon}>
-                                <Ionicons name="chevron-down" size={18} color="#64748b" />
-                            </View>
-                        </View>
-                    </View>
+                {/* === TOGGLE GRÁFICA / TABLA === */}
+                <View style={styles.viewModeContainer}>
+                    <Pressable
+                        style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
+                        onPress={() => setViewMode('chart')}
+                    >
+                        <Ionicons name="analytics" size={18} color={viewMode === 'chart' ? '#fff' : '#64748b'} />
+                        <Text style={[styles.viewModeText, viewMode === 'chart' && styles.viewModeTextActive]}>
+                            Gráfica
+                        </Text>
+                    </Pressable>
+                    <Pressable
+                        style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+                        onPress={() => setViewMode('table')}
+                    >
+                        <Ionicons name="grid" size={18} color={viewMode === 'table' ? '#fff' : '#64748b'} />
+                        <Text style={[styles.viewModeText, viewMode === 'table' && styles.viewModeTextActive]}>
+                            Tabla
+                        </Text>
+                    </Pressable>
+                </View>
 
-                    {/* Ejercicio Selector */}
-                    {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
-                        <View style={styles.filterGroup}>
-                            <View style={styles.filterLabelRow}>
-                                <Ionicons name="barbell" size={16} color="#10b981" />
-                                <Text style={styles.filterLabel}>Ejercicio</Text>
-                            </View>
-                            <View style={styles.selectWrapper}>
-                                <Picker
-                                    selectedValue={selEjercicio}
-                                    onValueChange={setSelEjercicio}
-                                    style={styles.picker}
-                                    dropdownIconColor="#10b981"
+                {/* ════════════════════════════════════════════════════════════════
+                    CHARTS 2.0 - SISTEMA DE KPIs
+                   ════════════════════════════════════════════════════════════════ */}
+                {viewMode === 'chart' && (
+                    <>
+                        {/* ═══ PERIOD FILTER ═══ */}
+                        <View style={styles.periodFilter}>
+                            {PERIOD_OPTIONS.map(p => (
+                                <Pressable
+                                    key={p.id}
+                                    style={[
+                                        styles.periodBtn,
+                                        selectedPeriod === p.id && styles.periodBtnActive
+                                    ]}
+                                    onPress={() => setSelectedPeriod(p.id)}
                                 >
-                                    <Picker.Item label="📋 Todos los ejercicios" value="" />
-                                    {listaEjercicios.map((e) => (
-                                        <Picker.Item key={e} label={e} value={e} />
-                                    ))}
-                                </Picker>
-                                <View style={styles.selectIcon}>
-                                    <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                    <Text style={[
+                                        styles.periodBtnText,
+                                        selectedPeriod === p.id && styles.periodBtnTextActive
+                                    ]}>
+                                        {p.label}
+                                    </Text>
+                                </Pressable>
+                            ))}
+                        </View>
+
+                        {/* ═══ KPI SELECTOR ═══ */}
+                        <Pressable
+                            style={styles.kpiSelector}
+                            onPress={() => setKpiModalVisible(true)}
+                        >
+                            <View style={styles.kpiSelectorLeft}>
+                                <View style={styles.kpiSelectorIconWrap}>
+                                    <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
+                                    <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
                                 </View>
                             </View>
-                        </View>
-                    )}
+                            <View style={styles.kpiSelectorChevron}>
+                                <Ionicons name="chevron-down" size={18} color="#fff" />
+                            </View>
+                        </Pressable>
 
-                    {/* Filtro activo indicator */}
-                    {selMusculo !== 'TOTAL' && (
-                        <View style={styles.activeFilterBadge}>
-                            <Ionicons name="funnel" size={14} color="#3b82f6" />
-                            <Text style={styles.activeFilterText}>
-                                {selMusculo}{selEjercicio ? ` → ${selEjercicio}` : ''}
-                            </Text>
+                        {/* ═══ FILTROS MÚSCULO/EJERCICIO (solo para KPIs que lo usen) ═══ */}
+                        {currentKpi.useFilters && (
+                            <View style={styles.kpiFilters}>
+                                <View style={styles.kpiFilterRow}>
+                                    <Text style={styles.kpiFilterLabel}>Músculo:</Text>
+                                    <View style={styles.kpiFilterPicker}>
+                                        <Picker
+                                            selectedValue={selMusculo}
+                                            onValueChange={handleMusculoChange}
+                                            style={styles.kpiPickerStyle}
+                                        >
+                                            {listaMusculos.map(m => (
+                                                <Picker.Item key={m} label={m === 'TOTAL' ? 'Todos' : m} value={m} />
+                                            ))}
+                                        </Picker>
+                                    </View>
+                                </View>
+                                {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
+                                    <View style={styles.kpiFilterRow}>
+                                        <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                                        <View style={styles.kpiFilterPicker}>
+                                            <Picker
+                                                selectedValue={selEjercicio}
+                                                onValueChange={setSelEjercicio}
+                                                style={styles.kpiPickerStyle}
+                                            >
+                                                <Picker.Item label="Todos" value="" />
+                                                {listaEjercicios.map(e => (
+                                                    <Picker.Item key={e} label={e} value={e} />
+                                                ))}
+                                            </Picker>
+                                        </View>
+                                    </View>
+                                )}
+                            </View>
+                        )}
+
+                        {/* ═══ CHART RENDERING ═══ */}
+                        <View style={styles.chartContainer}>
+
+                            {/* KPI: VOLUMEN */}
+                            {selectedKpi === 'volume' && volumeData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>
+                                            Volumen {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                        </Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={[styles.chartSummaryValue, {
+                                                color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444'
+                                            }]}>
+                                                {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                                        </View>
+                                    </View>
+                                    <LineChart
+                                        data={volumeData}
+                                        width={screenWidth - 32}
+                                        height={220}
+                                        chartConfig={{
+                                            ...chartConfig,
+                                            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                        }}
+                                        bezier
+                                        style={styles.chart}
+                                        yAxisSuffix="%"
+                                    />
+                                    <Text style={styles.chartSubInfo}>
+                                        Total período: {volumeData.totalVolK}k kg
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* KPI: INTENSIDAD */}
+                            {selectedKpi === 'intensity' && intensityData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>
+                                            Intensidad {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                        </Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={[styles.chartSummaryValue, {
+                                                color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444'
+                                            }]}>
+                                                {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                                        </View>
+                                    </View>
+                                    <LineChart
+                                        data={intensityData}
+                                        width={screenWidth - 32}
+                                        height={220}
+                                        chartConfig={chartConfig}
+                                        bezier
+                                        style={styles.chart}
+                                        yAxisSuffix="%"
+                                    />
+                                    <Text style={styles.chartSubInfo}>
+                                        Carga media: {intensityData.lastAvgLoad} kg/rep
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* KPI: CUMPLIMIENTO */}
+                            {selectedKpi === 'compliance' && complianceWeeklyData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>Cumplimiento del Plan</Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={[styles.chartSummaryValue, {
+                                                color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
+                                                    complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
+                                            }]}>
+                                                {complianceWeeklyData.lastValue}%
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                        </View>
+                                    </View>
+                                    <LineChart
+                                        data={complianceWeeklyData}
+                                        width={screenWidth - 32}
+                                        height={220}
+                                        chartConfig={{
+                                            ...chartConfig,
+                                            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                        }}
+                                        bezier
+                                        style={styles.chart}
+                                        yAxisSuffix="%"
+                                    />
+                                    <Text style={styles.chartSubInfo}>
+                                        Media: {complianceWeeklyData.avgValue}% de sets en rango
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* KPI: CARGA ALTA */}
+                            {selectedKpi === 'heavySets' && heavySetsData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>
+                                            Carga Alta {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                        </Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={styles.chartSummaryValue}>
+                                                {heavySetsData.lastValue}%
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                        </View>
+                                    </View>
+                                    <BarChart
+                                        data={heavySetsData}
+                                        width={screenWidth - 32}
+                                        height={220}
+                                        chartConfig={{
+                                            ...barChartConfig,
+                                            color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+                                        }}
+                                        style={styles.chart}
+                                        yAxisSuffix="%"
+                                        showValuesOnTopOfBars
+                                    />
+                                    <Text style={styles.chartSubInfo}>
+                                        Media: {heavySetsData.avgValue}% sets con ≥85% del máximo
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* KPI: BALANCE MUSCULAR */}
+                            {selectedKpi === 'muscleBalance' && muscleBalanceData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>Balance Muscular</Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={styles.chartSummaryValue}>
+                                                {muscleBalanceData.fullData?.[0]?.share || 0}%
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>
+                                                {muscleBalanceData.fullData?.[0]?.muscle || '-'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <ScrollView
+                                        horizontal
+                                        showsHorizontalScrollIndicator={true}
+                                        style={styles.horizontalChartScroll}
+                                    >
+                                        <BarChart
+                                            data={muscleBalanceData}
+                                            width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                                            height={220}
+                                            chartConfig={{
+                                                ...barChartConfig,
+                                                barPercentage: 0.6,
+                                            }}
+                                            style={styles.chart}
+                                            yAxisSuffix="%"
+                                            showValuesOnTopOfBars
+                                        />
+                                    </ScrollView>
+                                    <View style={styles.muscleBalanceLegend}>
+                                        {muscleBalanceData.fullData?.slice(0, 8).map((m, i) => (
+                                            <View key={i} style={styles.muscleBalanceItem}>
+                                                <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
+                                                <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                </>
+                            )}
+
+                            {/* KPI: PRs */}
+                            {selectedKpi === 'prCount' && prCountData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>PRs (Récords Personales)</Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>
+                                                {prCountData.totalPRs}
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>en el período</Text>
+                                        </View>
+                                    </View>
+                                    <BarChart
+                                        data={prCountData}
+                                        width={screenWidth - 32}
+                                        height={220}
+                                        chartConfig={{
+                                            ...barChartConfig,
+                                            color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})`,
+                                        }}
+                                        style={styles.chart}
+                                        showValuesOnTopOfBars
+                                    />
+                                    <Text style={styles.chartSubInfo}>
+                                        {currentKpi.description}
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* No data fallback */}
+                            {((selectedKpi === 'volume' && !volumeData) ||
+                                (selectedKpi === 'intensity' && !intensityData) ||
+                                (selectedKpi === 'compliance' && !complianceWeeklyData) ||
+                                (selectedKpi === 'heavySets' && !heavySetsData) ||
+                                (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+                                (selectedKpi === 'prCount' && !prCountData)) && (
+                                    <View style={styles.noDataContainer}>
+                                        <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
+                                        <Text style={styles.noDataText}>Sin datos para este período</Text>
+                                    </View>
+                                )}
+                        </View>
+
+                        {/* Selector de agrupación para tabla */}
+                        <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
+                        <View style={styles.selectorContainer}>
                             <Pressable
-                                onPress={() => { setSelMusculo('TOTAL'); setSelEjercicio(''); }}
-                                style={styles.clearFilterBtn}
+                                style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
+                                onPress={() => setTemporalidad('semanas')}
                             >
-                                <Ionicons name="close-circle" size={18} color="#ef4444" />
+                                <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
+                                    Semanas
+                                </Text>
+                            </Pressable>
+                            <Pressable
+                                style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
+                                onPress={() => setTemporalidad('meses')}
+                            >
+                                <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
+                                    Meses
+                                </Text>
+                            </Pressable>
+                            <Pressable
+                                style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
+                                onPress={() => setTemporalidad('total')}
+                            >
+                                <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
+                                    Total
+                                </Text>
                             </Pressable>
                         </View>
-                    )}
-                </View>
 
-                {/* Gráfico */}
-                {datosGrafico && (
-                    <View style={styles.chartContainer}>
-                        <Text style={styles.sectionTitle}>
-                            📈 Evolución {selMusculo === 'TOTAL' ? 'Total' : selMusculo}
-                            {selEjercicio ? ` - ${selEjercicio}` : ''}
-                        </Text>
-                        <LineChart
-                            data={datosGrafico}
-                            width={screenWidth - 32}
-                            height={220}
-                            chartConfig={chartConfig}
-                            bezier
-                            style={styles.chart}
-                        />
-                    </View>
-                )}
-
-                {/* Sin datos */}
-                {!datosGrafico && (
-                    <View style={styles.noDataContainer}>
-                        <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
-                        <Text style={styles.noDataText}>Sin datos para este filtro</Text>
-                    </View>
-                )}
-
-                {/* Selector de agrupación para tabla */}
-                <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
-                <View style={styles.selectorContainer}>
-                    <Pressable
-                        style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
-                        onPress={() => setTemporalidad('semanas')}
-                    >
-                        <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
-                            Semanas
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
-                        onPress={() => setTemporalidad('meses')}
-                    >
-                        <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
-                            Meses
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
-                        onPress={() => setTemporalidad('total')}
-                    >
-                        <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
-                            Total
-                        </Text>
-                    </Pressable>
-                </View>
-
-                {/* Tabla comparativa */}
-                {datosAgrupados.length > 0 && (
-                    <View style={styles.tableContainer}>
+                        {/* Tabla comparativa */}
+                        {datosAgrupados.length > 0 && (
+                            <View style={styles.tableContainer}>
 
 
-                        <View style={styles.tableHeader}>
-                            <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
-                            <Text style={styles.tableHeaderCell}>Volumen</Text>
-                            <Text style={styles.tableHeaderCell}>Reps</Text>
-                            <Text style={styles.tableHeaderCell}>Carga</Text>
-                            <Text style={styles.tableHeaderCell}>Ses.</Text>
-                        </View>
+                                <View style={styles.tableHeader}>
+                                    <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
+                                    <Text style={styles.tableHeaderCell}>Volumen</Text>
+                                    <Text style={styles.tableHeaderCell}>Reps</Text>
+                                    <Text style={styles.tableHeaderCell}>Carga</Text>
+                                    <Text style={styles.tableHeaderCell}>Ses.</Text>
+                                </View>
 
-                        {datosAgrupados.map((dato, index) => {
-                            const anterior = datosAgrupados[index + 1];
-                            const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
-                            const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
-                            const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
-                            const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
+                                {datosAgrupados.map((dato, index) => {
+                                    const anterior = datosAgrupados[index + 1];
+                                    const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
+                                    const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
+                                    const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
+                                    const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
 
-                            return (
-                                <View key={dato.periodo} style={styles.tableRow}>
-                                    <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
-                                        {dato.periodo}
-                                    </Text>
-
-                                    <View style={styles.tableCellValue}>
-                                        <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
-                                        {anterior && (
-                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
-                                                <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
-                                                <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
-                                                    {cambioVol > 0 ? '+' : ''}{cambioVol}%
-                                                </Text>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    <View style={styles.tableCellValue}>
-                                        <Text style={styles.tableValue}>{dato.reps}</Text>
-                                        {anterior && (
-                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
-                                                <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    <View style={styles.tableCellValue}>
-                                        <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
-                                        {anterior && (
-                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
-                                                <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    <View style={styles.tableCellValue}>
-                                        <Text style={styles.tableValue}>{dato.numSesiones}</Text>
-                                        {anterior && cambioSes !== 0 && (
-                                            <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
-                                                {cambioSes > 0 ? '+' : ''}{cambioSes}
+                                    return (
+                                        <View key={dato.periodo} style={styles.tableRow}>
+                                            <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
+                                                {dato.periodo}
                                             </Text>
-                                        )}
+
+                                            <View style={styles.tableCellValue}>
+                                                <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
+                                                {anterior && (
+                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
+                                                        <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
+                                                        <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
+                                                            {cambioVol > 0 ? '+' : ''}{cambioVol}%
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+
+                                            <View style={styles.tableCellValue}>
+                                                <Text style={styles.tableValue}>{dato.reps}</Text>
+                                                {anterior && (
+                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
+                                                        <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
+                                                    </View>
+                                                )}
+                                            </View>
+
+                                            <View style={styles.tableCellValue}>
+                                                <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
+                                                {anterior && (
+                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
+                                                        <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
+                                                    </View>
+                                                )}
+                                            </View>
+
+                                            <View style={styles.tableCellValue}>
+                                                <Text style={styles.tableValue}>{dato.numSesiones}</Text>
+                                                {anterior && cambioSes !== 0 && (
+                                                    <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
+                                                        {cambioSes > 0 ? '+' : ''}{cambioSes}
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        )}
+
+                        {/* Resumen de totales */}
+                        <View style={styles.totalesContainer}>
+                            <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
+                            <View style={styles.totalesGrid}>
+                                <View style={styles.totalItem}>
+                                    <Text style={styles.totalLabel}>Volumen Total</Text>
+                                    <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
+                                </View>
+                                <View style={styles.totalItem}>
+                                    <Text style={styles.totalLabel}>Reps Totales</Text>
+                                    <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
+                                </View>
+                                <View style={styles.totalItem}>
+                                    <Text style={styles.totalLabel}>Sesiones</Text>
+                                    <Text style={styles.totalValue}>{totales.sesiones}</Text>
+                                </View>
+                                <View style={styles.totalItem}>
+                                    <Text style={styles.totalLabel}>Tendencia</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <Ionicons
+                                            name={getCambioStyle(tendenciaGeneral).icon}
+                                            size={20}
+                                            color={getCambioStyle(tendenciaGeneral).color}
+                                        />
+                                        <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
+                                            {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
+                                        </Text>
                                     </View>
                                 </View>
-                            );
-                        })}
-                    </View>
-                )}
-
-                {/* Resumen de totales */}
-                <View style={styles.totalesContainer}>
-                    <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
-                    <View style={styles.totalesGrid}>
-                        <View style={styles.totalItem}>
-                            <Text style={styles.totalLabel}>Volumen Total</Text>
-                            <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
-                        </View>
-                        <View style={styles.totalItem}>
-                            <Text style={styles.totalLabel}>Reps Totales</Text>
-                            <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
-                        </View>
-                        <View style={styles.totalItem}>
-                            <Text style={styles.totalLabel}>Sesiones</Text>
-                            <Text style={styles.totalValue}>{totales.sesiones}</Text>
-                        </View>
-                        <View style={styles.totalItem}>
-                            <Text style={styles.totalLabel}>Tendencia</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                <Ionicons
-                                    name={getCambioStyle(tendenciaGeneral).icon}
-                                    size={20}
-                                    color={getCambioStyle(tendenciaGeneral).color}
-                                />
-                                <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
-                                    {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
-                                </Text>
                             </View>
                         </View>
+                    </>
+                )}
+
+                {/* ════════════════════════════════════════════════════════════════
+                   VISTA TABLA DETALLADA
+                   ════════════════════════════════════════════════════════════════ */}
+                {viewMode === 'table' && (
+                    <View style={styles.detailedTableContainer}>
+                        {/* Sin datos */}
+                        {!datosPorRutina.current && datosPorRutina.old.length === 0 ? (
+                            <View style={styles.noDataContainer}>
+                                <Ionicons name="calendar-outline" size={48} color="#cbd5e1" />
+                                <Text style={styles.noDataText}>Sin sesiones registradas</Text>
+                            </View>
+                        ) : (
+                            <>
+                                {/* RUTINA ACTUAL */}
+                                {datosPorRutina.current && (
+                                    <View style={styles.routineSection}>
+                                        <Text style={styles.routineSectionTitle}>📋 Rutina Actual</Text>
+                                        <View style={styles.routineCard}>
+                                            <Pressable onPress={() => toggleRoutine('current')} style={styles.routineHeader}>
+                                                <View style={styles.routineHeaderLeft}>
+                                                    <Text style={styles.routineName}>{datosPorRutina.current.routineName}</Text>
+                                                    <Text style={styles.routineDate}>Última: {datosPorRutina.current.lastDate}</Text>
+                                                </View>
+                                                <Ionicons name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'} size={22} color="#3b82f6" />
+                                            </Pressable>
+
+                                            {expandedRoutines['current'] && (
+                                                <View style={styles.routineContent}>
+                                                    {datosPorRutina.current.dias.map((dia) => {
+                                                        const dayKey = `current-${dia.dayIndex}`;
+                                                        const isDayExpanded = expandedDays[dayKey];
+                                                        return (
+                                                            <View key={dia.dayIndex} style={styles.dayCard}>
+                                                                <Pressable onPress={() => toggleDay('current', dia.dayIndex)} style={styles.dayHeader}>
+                                                                    <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                                                                    <View style={styles.dayHeaderRight}>
+                                                                        <Text style={styles.dayStats}>{dia.exercises.length} ej. • {dia.totalSessions} ses.</Text>
+                                                                        <Ionicons name={isDayExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                                                                    </View>
+                                                                </Pressable>
+                                                                {isDayExpanded && (
+                                                                    <View style={styles.dayContent}>
+                                                                        {dia.exercises.map((exercise, exIdx) => (
+                                                                            <View key={exIdx} style={styles.exerciseBlock}>
+                                                                                <View style={styles.exerciseBlockHeader}>
+                                                                                    <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                                                                                    <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                                                                </View>
+                                                                                <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.sessionsCarousel} contentContainerStyle={styles.sessionsCarouselContent}>
+                                                                                    {exercise.sesiones.map((sesion, sIdx) => (
+                                                                                        <View key={sIdx} style={styles.sessionBox}>
+                                                                                            <View style={styles.sessionBoxHeader}>
+                                                                                                <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                                                                                <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                                                                            </View>
+                                                                                            <View style={styles.setHeaderRow}>
+                                                                                                <Text style={styles.setHeaderCell}>S</Text>
+                                                                                                <Text style={styles.setHeaderCellData}>Rep</Text>
+                                                                                                <Text style={styles.setHeaderCellData}>Kg</Text>
+                                                                                                <Text style={styles.setHeaderCellNote}>📝</Text>
+                                                                                            </View>
+                                                                                            {sesion.sets.map((set, setIdx) => (
+                                                                                                <View key={setIdx} style={styles.setTableRow}>
+                                                                                                    <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                                                                                    <View style={styles.setColData}>
+                                                                                                        <Text style={[styles.setColReps, { color: getRepStatusColor(set.status) }]}>{set.reps ?? '-'}</Text>
+                                                                                                        {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                    </View>
+                                                                                                    <View style={styles.setColData}>
+                                                                                                        <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                                                                                        {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                    </View>
+                                                                                                    <TouchableOpacity
+                                                                                                        onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                                                                                        style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                                                                                        activeOpacity={set.notes?.value ? 0.6 : 1}
+                                                                                                    >
+                                                                                                        {set.notes?.value && <Ionicons name="chatbubble" size={8} color="#fff" />}
+                                                                                                    </TouchableOpacity>
+                                                                                                </View>
+                                                                                            ))}
+                                                                                        </View>
+                                                                                    ))}
+                                                                                </ScrollView>
+                                                                            </View>
+                                                                        ))}
+                                                                    </View>
+                                                                )}
+                                                            </View>
+                                                        );
+                                                    })}
+                                                </View>
+                                            )}
+                                        </View>
+                                    </View>
+                                )}
+
+                                {/* RUTINAS ANTIGUAS */}
+                                {datosPorRutina.old.length > 0 && (
+                                    <View style={styles.routineSection}>
+                                        <Text style={styles.routineSectionTitle}>📦 Rutinas Antiguas</Text>
+                                        {datosPorRutina.old.map((rutina) => (
+                                            <View key={rutina.routineId} style={styles.routineCardOld}>
+                                                <Pressable onPress={() => toggleRoutine(rutina.routineId)} style={styles.routineHeaderOld}>
+                                                    <View style={styles.routineHeaderLeft}>
+                                                        <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
+                                                        <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                                                    </View>
+                                                    <Ionicons name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'} size={20} color="#64748b" />
+                                                </Pressable>
+                                                {expandedRoutines[rutina.routineId] && (
+                                                    <View style={styles.routineContent}>
+                                                        {rutina.dias.map((dia) => {
+                                                            const dayKey = `${rutina.routineId}-${dia.dayIndex}`;
+                                                            const isDayExpanded = expandedDays[dayKey];
+                                                            return (
+                                                                <View key={dia.dayIndex} style={styles.dayCard}>
+                                                                    <Pressable onPress={() => toggleDay(rutina.routineId, dia.dayIndex)} style={styles.dayHeader}>
+                                                                        <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                                                                        <View style={styles.dayHeaderRight}>
+                                                                            <Text style={styles.dayStats}>{dia.exercises.length} ej. • {dia.totalSessions} ses.</Text>
+                                                                            <Ionicons name={isDayExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                                                                        </View>
+                                                                    </Pressable>
+                                                                    {isDayExpanded && (
+                                                                        <View style={styles.dayContent}>
+                                                                            {dia.exercises.map((exercise, exIdx) => (
+                                                                                <View key={exIdx} style={styles.exerciseBlock}>
+                                                                                    <View style={styles.exerciseBlockHeader}>
+                                                                                        <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                                                                                        <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                                                                    </View>
+                                                                                    <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.sessionsCarousel} contentContainerStyle={styles.sessionsCarouselContent}>
+                                                                                        {exercise.sesiones.map((sesion, sIdx) => (
+                                                                                            <View key={sIdx} style={styles.sessionBox}>
+                                                                                                <View style={styles.sessionBoxHeader}>
+                                                                                                    <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                                                                                    <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                                                                                </View>
+                                                                                                <View style={styles.setHeaderRow}>
+                                                                                                    <Text style={styles.setHeaderCell}>S</Text>
+                                                                                                    <Text style={styles.setHeaderCellData}>Rep</Text>
+                                                                                                    <Text style={styles.setHeaderCellData}>Kg</Text>
+                                                                                                    <Text style={styles.setHeaderCellNote}>📝</Text>
+                                                                                                </View>
+                                                                                                {sesion.sets.map((set, setIdx) => (
+                                                                                                    <View key={setIdx} style={styles.setTableRow}>
+                                                                                                        <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                                                                                        <View style={styles.setColData}>
+                                                                                                            <Text style={[styles.setColReps, { color: getRepStatusColor(set.status) }]}>{set.reps ?? '-'}</Text>
+                                                                                                            {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                        </View>
+                                                                                                        <View style={styles.setColData}>
+                                                                                                            <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                                                                                            {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                        </View>
+                                                                                                        <TouchableOpacity
+                                                                                                            onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                                                                                            style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                                                                                            activeOpacity={set.notes?.value ? 0.6 : 1}
+                                                                                                        >
+                                                                                                            {set.notes?.value && <Ionicons name="chatbubble" size={8} color="#fff" />}
+                                                                                                        </TouchableOpacity>
+                                                                                                    </View>
+                                                                                                ))}
+                                                                                            </View>
+                                                                                        ))}
+                                                                                    </ScrollView>
+                                                                                </View>
+                                                                            ))}
+                                                                        </View>
+                                                                    )}
+                                                                </View>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                            </>
+                        )}
                     </View>
-                </View>
+                )}
 
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* ═══ KPI SELECTOR MODAL ═══ */}
+            <Modal
+                visible={kpiModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setKpiModalVisible(false)}
+            >
+                <Pressable
+                    style={styles.kpiModalOverlay}
+                    onPress={() => setKpiModalVisible(false)}
+                >
+                    <View style={styles.kpiModalContent}>
+                        <View style={styles.kpiModalHeader}>
+                            <Text style={styles.kpiModalTitle}>📊 Seleccionar KPI</Text>
+                            <Pressable onPress={() => setKpiModalVisible(false)}>
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </Pressable>
+                        </View>
+                        <FlatList
+                            data={KPI_OPTIONS}
+                            keyExtractor={(item) => item.id}
+                            renderItem={({ item }) => (
+                                <Pressable
+                                    style={[
+                                        styles.kpiModalItem,
+                                        selectedKpi === item.id && styles.kpiModalItemActive
+                                    ]}
+                                    onPress={() => {
+                                        setSelectedKpi(item.id);
+                                        setKpiModalVisible(false);
+                                    }}
+                                >
+                                    <Text style={styles.kpiModalItemIcon}>{item.icon}</Text>
+                                    <View style={styles.kpiModalItemText}>
+                                        <Text style={[
+                                            styles.kpiModalItemName,
+                                            selectedKpi === item.id && styles.kpiModalItemNameActive
+                                        ]}>
+                                            {item.name}
+                                        </Text>
+                                        <Text style={styles.kpiModalItemDesc}>{item.description}</Text>
+                                    </View>
+                                    {selectedKpi === item.id && (
+                                        <Ionicons name="checkmark-circle" size={24} color="#3b82f6" />
+                                    )}
+                                </Pressable>
+                            )}
+                        />
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Modal de Nota del Cliente */}
+            <Modal visible={noteModal.visible} transparent animationType="fade" onRequestClose={() => setNoteModal({ visible: false, note: null })}>
+                <View style={styles.noteModalOverlay}>
+                    <View style={styles.noteModalCard}>
+                        <View style={styles.noteModalHeader}>
+                            <View style={[styles.noteModalBadge, { backgroundColor: NOTE_COLORS[noteModal.note?.value] || '#6b7280' }]}>
+                                <Text style={styles.noteModalBadgeText}>
+                                    {noteModal.note?.value === 'high' ? '🔴 Alta' :
+                                        noteModal.note?.value === 'normal' ? '🟠 Media' :
+                                            noteModal.note?.value === 'low' ? '🟢 Ok' : '🔵 Nota'}
+                                </Text>
+                            </View>
+                            <Pressable onPress={() => setNoteModal({ visible: false, note: null })}>
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </Pressable>
+                        </View>
+                        <Text style={styles.noteModalLabel}>Nota del cliente:</Text>
+                        <Text style={styles.noteModalText}>{noteModal.note?.note || 'Sin texto'}</Text>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -837,6 +1794,855 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#1e293b',
+    },
+
+    // === TOGGLE GRÁFICA / TABLA ===
+    viewModeContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#e2e8f0',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 20,
+    },
+    viewModeBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 10,
+        borderRadius: 8,
+    },
+    viewModeBtnActive: {
+        backgroundColor: '#3b82f6',
+        shadowColor: '#3b82f6',
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    viewModeText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    viewModeTextActive: {
+        color: '#fff',
+    },
+
+    // === TABLA DETALLADA ===
+    detailedTableContainer: {
+        marginBottom: 16,
+    },
+    exerciseCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    exerciseHeader: {
+        marginBottom: 10,
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    exerciseMuscle: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#3b82f6',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    exerciseName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+        marginTop: 2,
+    },
+    sessionCarousel: {
+        flexDirection: 'row',
+    },
+    sessionColumn: {
+        minWidth: 70,
+        marginRight: 8,
+        padding: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+    },
+    sessionDate: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#64748b',
+        textAlign: 'center',
+        marginBottom: 8,
+        paddingBottom: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    setRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        paddingVertical: 4,
+    },
+    setCell: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+    },
+    setCellValue: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    setCellValueWeight: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    noteDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    noteDotEmpty: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        backgroundColor: 'transparent',
+    },
+
+    // === MODAL DE NOTAS ===
+    noteModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    noteModalCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        width: '100%',
+        maxWidth: 320,
+    },
+    noteModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    noteModalBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    noteModalBadgeText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    noteModalLabel: {
+        fontSize: 12,
+        color: '#64748b',
+        marginBottom: 8,
+    },
+    noteModalText: {
+        fontSize: 15,
+        color: '#1e293b',
+        lineHeight: 22,
+    },
+
+    // === SESSION ACCORDION STYLES ===
+    sessionCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        overflow: 'hidden',
+    },
+    sessionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
+        backgroundColor: '#f8fafc',
+    },
+    sessionHeaderLeft: {
+        flex: 1,
+    },
+    sessionDateHeader: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+        textTransform: 'capitalize',
+    },
+    sessionDayLabel: {
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    sessionHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    sessionExCount: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    sessionContent: {
+        padding: 12,
+        paddingTop: 8,
+    },
+    exerciseRow: {
+        marginBottom: 12,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    exerciseInfo: {
+        marginBottom: 8,
+    },
+    exerciseMuscleSmall: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#3b82f6',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    exerciseNameSmall: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    setsContainer: {
+        gap: 6,
+    },
+    setRowNew: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        borderRadius: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        gap: 12,
+    },
+    setNumber: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#94a3b8',
+        width: 20,
+    },
+    setCellNew: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+    },
+    setCellValueNew: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    setCellWeightNew: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    noteDotNew: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginLeft: 'auto',
+    },
+    noteDotEmptyNew: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        borderWidth: 1.5,
+        borderColor: '#cbd5e1',
+        backgroundColor: 'transparent',
+        marginLeft: 'auto',
+    },
+
+    // === ROUTINE SECTION STYLES ===
+    routineSection: {
+        marginBottom: 20,
+    },
+    routineSectionTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+        marginBottom: 12,
+    },
+    routineCard: {
+        backgroundColor: '#fff',
+        borderRadius: 14,
+        borderWidth: 2,
+        borderColor: '#3b82f6',
+        overflow: 'hidden',
+        shadowColor: '#3b82f6',
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    routineHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        backgroundColor: '#eff6ff',
+    },
+    routineHeaderLeft: {
+        flex: 1,
+    },
+    routineName: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e40af',
+    },
+    routineDate: {
+        fontSize: 11,
+        color: '#3b82f6',
+        marginTop: 2,
+    },
+    routineContent: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    routineCardOld: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginBottom: 10,
+        overflow: 'hidden',
+    },
+    routineHeaderOld: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
+        backgroundColor: '#f8fafc',
+    },
+    routineNameOld: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    routineDateOld: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 2,
+    },
+
+    // === DAY ACCORDION STYLES ===
+    dayCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        overflow: 'hidden',
+    },
+    dayHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
+        backgroundColor: '#f1f5f9',
+    },
+    dayHeaderLeft: {
+        flex: 1,
+    },
+    dayLabel: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    dayRoutine: {
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    dayHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    dayStats: {
+        fontSize: 11,
+        color: '#64748b',
+    },
+    dayContent: {
+        padding: 12,
+    },
+    exerciseBlock: {
+        marginBottom: 16,
+    },
+    exerciseBlockHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+    },
+    exerciseMuscleTag: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#fff',
+        backgroundColor: '#3b82f6',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        textTransform: 'uppercase',
+    },
+    exerciseBlockName: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#1e293b',
+        flex: 1,
+    },
+    sessionsCarousel: {
+        flexDirection: 'row',
+    },
+    sessionBox: {
+        minWidth: 100,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        padding: 10,
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    sessionsCarouselContent: {
+        paddingRight: 16,
+    },
+    sessionBoxHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        marginBottom: 8,
+        paddingBottom: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    sessionBoxNum: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#3b82f6',
+    },
+    sessionBoxDate: {
+        fontSize: 10,
+        fontWeight: '500',
+        color: '#64748b',
+    },
+    setHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingBottom: 4,
+        marginBottom: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    setHeaderCell: {
+        width: 24, // S column
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#94a3b8',
+        textAlign: 'center',
+    },
+    setHeaderCellData: {
+        width: 42, // Rep/Kg columns - matches setColData
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#94a3b8',
+        textAlign: 'left',
+        paddingLeft: 4,
+    },
+    setHeaderCellNote: {
+        width: 24,
+        fontSize: 9,
+        textAlign: 'center',
+    },
+    setTableRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f8fafc',
+    },
+    setColNum: {
+        width: 24,
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#94a3b8',
+        textAlign: 'center',
+    },
+    setColData: {
+        width: 42, // Ancho fijo que reserva espacio para número + flecha
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        paddingLeft: 4,
+    },
+    setColReps: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    setColKg: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    setColNoteBtn: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        marginLeft: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    setColNoteBtnEmpty: {
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // KPI 2.0 STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // KPI Cards
+    kpiCardsContainer: {
+        marginBottom: 16,
+        paddingLeft: 4,
+    },
+    kpiCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        marginRight: 12,
+        minWidth: 100,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    kpiCardIcon: {
+        fontSize: 24,
+        marginBottom: 4,
+    },
+    kpiCardValue: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#1e293b',
+    },
+    kpiCardLabel: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+        marginTop: 2,
+    },
+
+    // Period Filter
+    periodFilter: {
+        flexDirection: 'row',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    periodBtn: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    periodBtnActive: {
+        backgroundColor: '#3b82f6',
+    },
+    periodBtnText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    periodBtnTextActive: {
+        color: '#fff',
+    },
+
+    // Horizontal scrollable chart
+    horizontalChartScroll: {
+        marginHorizontal: -16,
+        paddingHorizontal: 16,
+    },
+
+    // Chart Header & Summary
+    chartHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    chartSummary: {
+        alignItems: 'flex-end',
+    },
+    chartSummaryValue: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#3b82f6',
+    },
+    chartSummaryLabel: {
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    chartDescription: {
+        fontSize: 12,
+        color: '#64748b',
+        textAlign: 'center',
+        marginTop: 12,
+        paddingHorizontal: 16,
+        fontStyle: 'italic',
+    },
+    chartSubInfo: {
+        fontSize: 13,
+        color: '#64748b',
+        textAlign: 'center',
+        marginTop: 8,
+        fontWeight: '500',
+    },
+
+    // KPI Filters
+    kpiFilters: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    kpiFilterRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    kpiFilterLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+        width: 70,
+    },
+    kpiFilterPicker: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        height: 40,
+        justifyContent: 'center',
+    },
+    kpiPickerStyle: {
+        height: 40,
+    },
+
+    // KPI Selector - Estilo de botón más visible
+    kpiSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#f0f9ff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 2,
+        borderColor: '#3b82f6',
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 4,
+    },
+    kpiSelectorLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        flex: 1,
+    },
+    kpiSelectorIconWrap: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    kpiSelectorIcon: {
+        fontSize: 24,
+    },
+    kpiSelectorTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e40af',
+    },
+    kpiSelectorDesc: {
+        fontSize: 11,
+        color: '#3b82f6',
+        marginTop: 2,
+    },
+    kpiSelectorChevron: {
+        backgroundColor: '#3b82f6',
+        borderRadius: 20,
+        padding: 8,
+    },
+
+    // KPI Modal
+    kpiModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    kpiModalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '70%',
+        paddingBottom: 32,
+    },
+    kpiModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    kpiModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    kpiModalItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        gap: 12,
+    },
+    kpiModalItemActive: {
+        backgroundColor: '#eff6ff',
+    },
+    kpiModalItemIcon: {
+        fontSize: 28,
+    },
+    kpiModalItemText: {
+        flex: 1,
+    },
+    kpiModalItemName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    kpiModalItemNameActive: {
+        color: '#3b82f6',
+    },
+    kpiModalItemDesc: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2,
+    },
+
+    // Donut Chart (Volumen Útil)
+    donutContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 32,
+        paddingVertical: 24,
+    },
+    donutCircle: {
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        borderWidth: 16,
+        borderColor: '#10b981',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f0fdf4',
+    },
+    donutValue: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#10b981',
+    },
+    donutLabel: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    donutLegend: {
+        gap: 12,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    legendDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+    },
+    legendText: {
+        fontSize: 14,
+        color: '#374151',
+        fontWeight: '500',
+    },
+
+    // Muscle Balance Legend
+    muscleBalanceLegend: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        gap: 12,
+        marginTop: 12,
+    },
+    muscleBalanceItem: {
+        alignItems: 'center',
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    muscleBalanceShare: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#3b82f6',
+    },
+    muscleBalanceName: {
+        fontSize: 11,
+        color: '#64748b',
+    },
+
+    // PR Count
+    prTotal: {
+        textAlign: 'center',
+        fontSize: 14,
+        color: '#64748b',
+        marginTop: 8,
     },
 });
 

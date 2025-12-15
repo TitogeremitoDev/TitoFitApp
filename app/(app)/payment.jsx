@@ -63,7 +63,8 @@ export default function PaymentScreen() {
   const { user, refreshUser } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
-  const isPremium = user?.tipoUsuario === 'PREMIUM';
+  // Usuarios con acceso premium: PREMIUM, CLIENTE (vinculado a entrenador), ENTRENADOR
+  const isPremium = ['PREMIUM', 'CLIENTE', 'ENTRENADOR'].includes(user?.tipoUsuario);
 
   const [planes, setPlanes] = useState([]);
   const [loadingPlanes, setLoadingPlanes] = useState(true);

@@ -21,16 +21,54 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
+import { useAchievements } from '../../../context/AchievementsContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import SyncProgressModal from '../../../components/SyncProgressModal';
+import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SISTEMA DE TIERS DE TEMAS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const THEME_TIERS = {
+  pokeball: 'normal',
+  pikachu: 'pro',
+  gengar: 'legend',
+  galactic_empire: 'pro',
+  jedi_master: 'pro',
+  stark_industries: 'pro',
+  captain_america: 'pro',
+  horde: 'pro',
+  alliance: 'pro',
+};
+
+const TIER_PRICES = {
+  normal: { free: 1500, premium: 1000 },
+  pro: { free: 3000, premium: 2000 },
+  legend: { free: 5000, premium: 3000 },
+};
+
+const TIER_COLORS = {
+  normal: '#22c55e',  // Verde
+  pro: '#a855f7',     // Morado
+  legend: '#fbbf24',  // Dorado
+};
+
+const TIER_LABELS = {
+  normal: 'NORMAL',
+  pro: 'PRO',
+  legend: 'LEGEND',
+};
+
 export default function AjustesScreen() {
   const router = useRouter();
-  const { theme, themeMode, setThemeMode } = useTheme();
+  const { theme, themeMode, currentThemeId, setThemeId } = useTheme();
   const { user } = useAuth();
+  const { serverPoints } = useAchievements();
 
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [loadingSub, setLoadingSub] = useState(true);
@@ -51,6 +89,179 @@ export default function AjustesScreen() {
 
   // Estado para exportar datos
   const [exportingData, setExportingData] = useState(false);
+
+  // Estado para sincronización manual a la nube
+  const [syncingToCloud, setSyncingToCloud] = useState(false);
+  const [syncModal, setSyncModal] = useState({
+    visible: false,
+    direction: 'upload',
+    isComplete: false,
+    itemsSynced: 0,
+  });
+
+  // Estado para secciones de temas expandidas (solo Básicos abierto por defecto)
+  const [expandedSections, setExpandedSections] = useState({ 'Básicos': true });
+
+  // Estados para tienda de temas
+  const [unlockedThemes, setUnlockedThemes] = useState([]);
+  const [userPoints, setUserPoints] = useState(0);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [selectedThemeToPurchase, setSelectedThemeToPurchase] = useState(null);
+  const [purchasing, setPurchasing] = useState(false);
+
+
+  // Determinar si el usuario es premium/cliente/entrenador/admin
+  const isPremiumUser = ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMIN'].includes(user?.tipoUsuario);
+  const isAdmin = user?.tipoUsuario === 'ADMIN';
+
+  // Cargar temas desbloqueados al inicio (local para FREEUSER, cloud para premium)
+  useEffect(() => {
+    const loadUnlockedThemes = async () => {
+      try {
+        // Siempre cargar del local primero
+        const saved = await AsyncStorage.getItem('totalgains_unlocked_themes');
+        if (saved) {
+          setUnlockedThemes(JSON.parse(saved));
+        }
+
+        // Si es premium, también cargar del servidor y hacer merge
+        if (isPremiumUser) {
+          const token = await AsyncStorage.getItem('totalgains_token');
+          if (token) {
+            try {
+              const response = await fetch(`${API_URL}/api/achievements`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              const data = await response.json();
+
+              if (data.purchases && Array.isArray(data.purchases)) {
+                // Merge local y cloud purchases
+                const cloudPurchases = data.purchases;
+                const localPurchases = saved ? JSON.parse(saved) : [];
+                const merged = [...new Set([...localPurchases, ...cloudPurchases])];
+
+                setUnlockedThemes(merged);
+                // Actualizar local storage con el merge
+                await AsyncStorage.setItem('totalgains_unlocked_themes', JSON.stringify(merged));
+              }
+
+              // También actualizar puntos desde el servidor
+              if (typeof data.points === 'number') {
+                setUserPoints(data.points);
+              }
+            } catch (cloudError) {
+              console.warn('[Ajustes] Error loading purchases from cloud:', cloudError);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Ajustes] Error loading unlocked themes:', e);
+      }
+    };
+    loadUnlockedThemes();
+  }, [isPremiumUser]);
+
+  // Sincronizar puntos con serverPoints
+  useEffect(() => {
+    if (serverPoints !== null) {
+      setUserPoints(serverPoints);
+    }
+  }, [serverPoints]);
+
+  // Función para verificar si un tema está desbloqueado
+  const isThemeUnlocked = (themeMode) => {
+    // Admin tiene todo desbloqueado
+    if (isAdmin) return true;
+    // Temas básicos siempre desbloqueados
+    if (!THEME_TIERS[themeMode]) return true;
+    // Verificar si fue comprado
+    return unlockedThemes.includes(themeMode);
+  };
+
+  // Función para obtener el precio de un tema
+  const getThemePrice = (themeMode) => {
+    const tier = THEME_TIERS[themeMode];
+    if (!tier) return null;
+    const priceType = isPremiumUser ? 'premium' : 'free';
+    return TIER_PRICES[tier][priceType];
+  };
+
+  // Función para comprar un tema
+  const handlePurchaseTheme = async () => {
+    if (!selectedThemeToPurchase) return;
+
+    const price = getThemePrice(selectedThemeToPurchase.mode);
+    if (userPoints < price) {
+      Alert.alert('Puntos insuficientes', 'No tienes suficientes puntos para comprar este tema.');
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      const themeId = selectedThemeToPurchase.mode;
+      let newPoints = userPoints - price;
+      let newUnlockedThemes = [...unlockedThemes, themeId];
+
+      // Para usuarios premium, usar API cloud
+      if (isPremiumUser) {
+        const token = await AsyncStorage.getItem('totalgains_token');
+        if (token) {
+          const response = await fetch(`${API_URL}/api/achievements/purchase`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              itemId: themeId,
+              price: price,
+              itemType: 'theme'
+            })
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            if (data.alreadyOwned) {
+              Alert.alert('Ya lo tienes', 'Este tema ya está desbloqueado.');
+              setShowPurchaseModal(false);
+              return;
+            }
+            throw new Error(data.error || 'Error al comprar');
+          }
+
+          // Usar los valores actualizados del servidor
+          newPoints = data.remaining;
+          newUnlockedThemes = data.purchases;
+        }
+      }
+
+      // Siempre guardar en local (backup y para users free)
+      await AsyncStorage.setItem('totalgains_unlocked_themes', JSON.stringify(newUnlockedThemes));
+
+      setUnlockedThemes(newUnlockedThemes);
+      setUserPoints(newPoints);
+      setShowPurchaseModal(false);
+      setSelectedThemeToPurchase(null);
+
+      // Aplicar el tema recién comprado
+      await handleThemeChange(themeId);
+
+      Alert.alert('¡Tema desbloqueado!', `Has desbloqueado el tema ${selectedThemeToPurchase.title}`);
+    } catch (error) {
+      console.error('[Ajustes] Error purchasing theme:', error);
+      Alert.alert('Error', 'No se pudo completar la compra.');
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   // Función para exportar todos los datos del usuario
   const handleExportData = async () => {
@@ -194,29 +405,146 @@ export default function AjustesScreen() {
     }
   };
 
+  // Función para sincronizar datos locales a la nube manualmente
+  const handleSyncToCloud = async () => {
+    if (!isPremiumUser) return;
+
+    setSyncingToCloud(true);
+    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+
+    try {
+      const token = await AsyncStorage.getItem('totalgains_token');
+      if (!token) {
+        Alert.alert('Error', 'No se encontró la sesión. Por favor, reinicia la app.');
+        return;
+      }
+
+      const syncResult = await syncLocalToCloud(token);
+      setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+
+      // Esperar un momento para que el usuario vea el resultado
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      if (syncResult?.success) {
+        Alert.alert('✅ Sincronización completada', `Se sincronizaron ${syncResult.itemsSynced} registros a la nube.`);
+      } else {
+        Alert.alert('Atención', 'No había datos nuevos para sincronizar o hubo un error.');
+      }
+    } catch (error) {
+      console.error('[Ajustes] Error sincronizando a la nube:', error);
+      Alert.alert('Error', 'No se pudieron sincronizar los datos.');
+    } finally {
+      setSyncModal(prev => ({ ...prev, visible: false }));
+      setSyncingToCloud(false);
+    }
+  };
+
   const themeOptions = [
+    // ═══════════════════════════════════════════════════════════════
+    // BÁSICOS
+    // ═══════════════════════════════════════════════════════════════
+    { section: 'Básicos' },
     {
       mode: 'auto',
-      title: 'Automático',
+      title: '🔄 Automático',
       subtitle: 'Sigue el tema del sistema',
       icon: 'phone-portrait-outline',
     },
     {
       mode: 'light',
-      title: 'Modo Día',
+      title: '☀️ Modo Día',
       subtitle: 'Tema claro siempre',
       icon: 'sunny-outline',
     },
     {
       mode: 'dark',
-      title: 'Modo Noche',
+      title: '🌙 Modo Noche',
       subtitle: 'Tema oscuro siempre',
       icon: 'moon-outline',
+    },
+    // ═══════════════════════════════════════════════════════════════
+    // POKÉMON
+    // ═══════════════════════════════════════════════════════════════
+    { section: 'Monsters' },
+    {
+      mode: 'pokeball',
+      title: '🔴 Poké',
+      subtitle: 'Rojo y blanco clásico de Pokéball',
+      icon: 'ellipse-outline',
+    },
+    {
+      mode: 'pikachu',
+      title: '⚡ Pika',
+      subtitle: 'Amarillo eléctrico con fondo oscuro',
+      icon: 'flash-outline',
+    },
+    {
+      mode: 'gengar',
+      title: '👻 Fantasma',
+      subtitle: 'Púrpura fantasmal, oscuro y misterioso',
+      icon: 'skull-outline',
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // STAR WARS
+    // ═══════════════════════════════════════════════════════════════
+    { section: 'GuerraGalactica' },
+    {
+      mode: 'galactic_empire',
+      title: '👹 Lord Oscuro',
+      subtitle: 'El lado oscuro de la fuerza',
+      icon: 'planet-outline',
+    },
+    {
+      mode: 'jedi_master',
+      title: '🟢 The Force',
+      subtitle: 'Verde Jedi, equilibrio y serenidad',
+      icon: 'leaf-outline',
+    },
+    // ═══════════════════════════════════════════════════════════════
+    // MARVEL
+    // ═══════════════════════════════════════════════════════════════
+    { section: 'Heroes' },
+    {
+      mode: 'stark_industries',
+      title: '🤖 Iron Tech',
+      subtitle: 'Tecnología de Stark Industries',
+      icon: 'hardware-chip-outline',
+    },
+    {
+      mode: 'captain_america',
+      title: '🛡️ First Heroe',
+      subtitle: 'Azul patriótico y rojo',
+      icon: 'shield-outline',
+    },
+    // ═══════════════════════════════════════════════════════════════
+    // WARCRAFT
+    // ═══════════════════════════════════════════════════════════════
+    { section: 'Warcraft' },
+    {
+      mode: 'horde',
+      title: '⚔️ The Horde',
+      subtitle: 'Rojo sangre, honor orco',
+      icon: 'flame-outline',
+    },
+    {
+      mode: 'alliance',
+      title: '🦁 The Alliance',
+      subtitle: 'Azul real, nobleza humana',
+      icon: 'flag-outline',
     },
   ];
 
   const handleThemeChange = async (mode) => {
-    await setThemeMode(mode);
+    // Mapeamos los modos básicos a sus IDs de tema correspondientes
+    const modeToThemeId = {
+      'auto': 'default_light', // Por ahora auto = light (el sistema lo manejará internamente si lo necesitamos)
+      'light': 'default_light',
+      'dark': 'default_dark',
+    };
+
+    const themeId = modeToThemeId[mode] || mode;
+    await setThemeId(themeId);
   };
 
   // Cargar estado de suscripción
@@ -347,10 +675,19 @@ export default function AjustesScreen() {
         {/* Sección de Apariencia */}
         <View style={styles.section}>
           <View style={[styles.sectionHeader, { marginTop: 30, backgroundColor: theme.sectionHeader }]}>
-            <Ionicons name="color-palette-outline" size={20} color={theme.text} />
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Apariencia
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <Ionicons name="color-palette-outline" size={20} color={theme.text} />
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                Apariencia
+              </Text>
+            </View>
+            {/* Puntos actuales */}
+            <View style={styles.headerPointsContainer}>
+              <Text style={styles.headerCoinIcon}>🪙</Text>
+              <Text style={[styles.headerPointsText, { color: theme.primary }]}>
+                {userPoints?.toLocaleString() || 0}
+              </Text>
+            </View>
           </View>
 
           <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
@@ -359,74 +696,240 @@ export default function AjustesScreen() {
             </Text>
 
             {/* Opciones de Tema */}
-            {themeOptions.map((option, index) => {
-              const isSelected = themeMode === option.mode;
-              const isLast = index === themeOptions.length - 1;
+            {(() => {
+              let currentSection = null;
 
-              return (
-                <TouchableOpacity
-                  key={option.mode}
-                  style={[
-                    styles.themeOption,
-                    { borderBottomColor: theme.border },
-                    isLast && styles.themeOptionLast,
-                  ]}
-                  onPress={() => handleThemeChange(option.mode)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.themeOptionLeft}>
-                    <View
-                      style={[
-                        styles.iconCircle,
-                        { backgroundColor: theme.iconButton },
-                      ]}
+              return themeOptions.map((option, index) => {
+                // Si es un separador de sección
+                if (option.section) {
+                  currentSection = option.section;
+                  const isExpanded = expandedSections[option.section] || false;
+                  const isBasicSection = option.section === 'Básicos';
+
+                  return (
+                    <TouchableOpacity
+                      key={`section-${option.section}`}
+                      onPress={() => !isBasicSection && toggleSection(option.section)}
+                      activeOpacity={isBasicSection ? 1 : 0.7}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: index === 0 ? 8 : 20,
+                        marginBottom: 8,
+                        paddingHorizontal: 4,
+                      }}
                     >
-                      <Ionicons
-                        name={option.icon}
-                        size={24}
-                        color={isSelected ? theme.primary : theme.textSecondary}
-                      />
-                    </View>
-                    <View style={styles.themeOptionText}>
                       <Text
-                        style={[
-                          styles.themeOptionTitle,
-                          { color: theme.text },
-                          isSelected && { color: theme.primary },
-                        ]}
+                        style={{
+                          color: theme.textSecondary,
+                          fontWeight: '700',
+                          fontSize: 12,
+                          textTransform: 'uppercase',
+                          letterSpacing: 1,
+                        }}
                       >
-                        {option.title}
+                        {option.section}
                       </Text>
-                      <Text
-                        style={[
-                          styles.themeOptionSubtitle,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        {option.subtitle}
-                      </Text>
-                    </View>
-                  </View>
+                      {!isBasicSection && (
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={theme.textSecondary}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }
 
-                  {/* Radio button */}
-                  <View
+                // Determinar la sección actual para saber si mostrar o no
+                const themeSection = (() => {
+                  // Buscar la sección a la que pertenece este tema
+                  for (let i = index - 1; i >= 0; i--) {
+                    if (themeOptions[i].section) {
+                      return themeOptions[i].section;
+                    }
+                  }
+                  return 'Básicos';
+                })();
+
+                // Si la sección no está expandida y no es Básicos, no renderizar
+                if (themeSection !== 'Básicos' && !expandedSections[themeSection]) {
+                  return null;
+                }
+
+                // Determinar si está seleccionado comparando con currentThemeId
+                // Mapeamos los modos básicos a sus IDs
+                const modeToId = {
+                  'auto': 'default_light',
+                  'light': 'default_light',
+                  'dark': 'default_dark',
+                };
+                const expectedId = modeToId[option.mode] || option.mode;
+                const isSelected = currentThemeId === expectedId;
+
+                // Datos del tier
+                const tier = THEME_TIERS[option.mode];
+                const tierColor = tier ? TIER_COLORS[tier] : null;
+                const tierLabel = tier ? TIER_LABELS[tier] : null;
+                const unlocked = isThemeUnlocked(option.mode);
+                const price = getThemePrice(option.mode);
+                const premiumPrice = tier ? TIER_PRICES[tier].premium : null;
+                const freePrice = tier ? TIER_PRICES[tier].free : null;
+                const savingsPercent = tier && !isPremiumUser ? Math.round(((freePrice - premiumPrice) / freePrice) * 100) : null;
+
+                const handlePress = () => {
+                  if (unlocked) {
+                    handleThemeChange(option.mode);
+                  } else {
+                    setSelectedThemeToPurchase(option);
+                    setShowPurchaseModal(true);
+                  }
+                };
+
+                return (
+                  <TouchableOpacity
+                    key={option.mode}
                     style={[
-                      styles.radioOuter,
-                      { borderColor: isSelected ? theme.primary : theme.border },
+                      styles.themeOption,
+                      { borderBottomColor: theme.border },
+                      // Colored borders and inset shadows for tiered themes
+                      tier && {
+                        borderLeftWidth: 4,
+                        borderLeftColor: tierColor,
+                        shadowColor: tierColor,
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 4,
+                        elevation: 2,
+                      },
+                      !unlocked && { opacity: 0.85 },
                     ]}
+                    onPress={handlePress}
+                    activeOpacity={0.7}
                   >
-                    {isSelected && (
+                    <View style={styles.themeOptionLeft}>
                       <View
                         style={[
-                          styles.radioInner,
-                          { backgroundColor: theme.primary },
+                          styles.iconCircle,
+                          { backgroundColor: tier ? `${tierColor}20` : theme.iconButton },
+                          tier && { borderWidth: 2, borderColor: tierColor },
                         ]}
-                      />
+                      >
+                        {!unlocked && (
+                          <View style={styles.lockOverlay}>
+                            <Ionicons name="lock-closed" size={14} color="#fff" />
+                          </View>
+                        )}
+                        <Ionicons
+                          name={option.icon}
+                          size={24}
+                          color={isSelected ? theme.primary : (tier ? tierColor : theme.textSecondary)}
+                        />
+                      </View>
+                      <View style={styles.themeOptionText}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text
+                            style={[
+                              styles.themeOptionTitle,
+                              { color: theme.text },
+                              isSelected && { color: theme.primary },
+                            ]}
+                          >
+                            {option.title}
+                          </Text>
+                          {/* Tier Badge */}
+                          {tierLabel && (
+                            <View style={[styles.tierBadge, { backgroundColor: tierColor }]}>
+                              <Text style={styles.tierBadgeText}>{tierLabel}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.themeOptionSubtitle,
+                            { color: theme.textSecondary },
+                          ]}
+                        >
+                          {option.subtitle}
+                        </Text>
+                        {/* Price info for locked themes */}
+                        {!unlocked && price && (
+                          isPremiumUser ? (
+                            // Premium users: just show their price
+                            <View style={styles.priceRow}>
+                              <Text style={styles.coinIcon}>🪙</Text>
+                              <Text style={[styles.priceText, { color: tierColor }]}>
+                                {price.toLocaleString()} pts
+                              </Text>
+                            </View>
+                          ) : (
+                            // Free users: show comparison FREE vs PREMIUM
+                            <View style={styles.priceComparisonContainer}>
+                              <View style={styles.priceComparisonColumn}>
+                                <Text style={[styles.priceComparisonLabel, { color: theme.textSecondary }]}>FREE</Text>
+                                <View style={styles.priceWithCoin}>
+                                  <Text style={styles.coinIcon}>🪙</Text>
+                                  <Text style={[styles.priceComparisonValue, { color: tierColor }]}>
+                                    {freePrice.toLocaleString()}
+                                  </Text>
+                                </View>
+                              </View>
+                              <View style={styles.priceComparisonDivider} />
+                              <View style={styles.priceComparisonColumn}>
+                                <Text style={[styles.priceComparisonLabel, { color: '#a855f7' }]}>PREMIUM</Text>
+                                <View style={styles.priceWithCoin}>
+                                  <Text style={styles.coinIcon}>🪙</Text>
+                                  <Text style={[styles.priceComparisonValue, { color: '#a855f7' }]}>
+                                    {premiumPrice.toLocaleString()}
+                                  </Text>
+                                </View>
+                              </View>
+                              <View style={[styles.savingsBadge, { backgroundColor: `${tierColor}30` }]}>
+                                <Text style={[styles.savingsText, { color: tierColor }]}>
+                                  -{savingsPercent}%
+                                </Text>
+                              </View>
+                            </View>
+                          )
+                        )}
+                      </View>
+                    </View>
+
+                    {/* Radio button or lock icon */}
+                    {unlocked ? (
+                      <View
+                        style={[
+                          styles.radioOuter,
+                          { borderColor: isSelected ? theme.primary : (tier ? tierColor : theme.border) },
+                        ]}
+                      >
+                        {isSelected && (
+                          <View
+                            style={[
+                              styles.radioInner,
+                              { backgroundColor: theme.primary },
+                            ]}
+                          />
+                        )}
+                      </View>
+                    ) : (
+                      <View style={[styles.buyButton, { backgroundColor: tierColor }]}>
+                        <Text style={styles.buyButtonText}>🪙</Text>
+                      </View>
                     )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                  </TouchableOpacity>
+                );
+              });
+            })()}
+
+            {/* Coming Soon Placeholder */}
+            <View style={styles.comingSoonContainer}>
+              <Ionicons name="sparkles" size={24} color={theme.textSecondary} />
+              <Text style={[styles.comingSoonText, { color: theme.textSecondary }]}>
+                🎨 Próximamente más temas...
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -598,6 +1101,43 @@ export default function AjustesScreen() {
             <Text style={[styles.exportDescription, { color: theme.textSecondary }]}>
               Incluye rutinas, entrenamientos, ejercicios y perfil (local + nube)
             </Text>
+
+            {/* Botón de Guardar en la Nube - Solo para usuarios premium */}
+            {isPremiumUser && (
+              <>
+                <View style={[styles.dividerLine, { backgroundColor: theme.border, marginVertical: 16 }]} />
+
+                <TouchableOpacity
+                  style={styles.settingItem}
+                  onPress={handleSyncToCloud}
+                  activeOpacity={0.7}
+                  disabled={syncingToCloud}
+                >
+                  <View style={styles.settingItemLeft}>
+                    <View style={[styles.iconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      {syncingToCloud ? (
+                        <ActivityIndicator size="small" color="#10B981" />
+                      ) : (
+                        <Ionicons name="cloud-upload-outline" size={20} color="#10B981" />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.settingItemTitle, { color: theme.text }]}>
+                        Guardar en la Nube
+                      </Text>
+                      <Text style={[styles.settingItemSubtitle, { color: theme.textSecondary }]}>
+                        Sincroniza tus datos locales con el servidor
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                </TouchableOpacity>
+
+                <Text style={[styles.exportDescription, { color: theme.textSecondary }]}>
+                  Sube entrenamientos y progreso al servidor para no perderlos
+                </Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -805,6 +1345,118 @@ export default function AjustesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Comprar Tema */}
+      <Modal
+        visible={showPurchaseModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPurchaseModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            {selectedThemeToPurchase && (() => {
+              const tier = THEME_TIERS[selectedThemeToPurchase.mode];
+              const tierColor = tier ? TIER_COLORS[tier] : theme.primary;
+              const tierLabel = tier ? TIER_LABELS[tier] : '';
+              const price = getThemePrice(selectedThemeToPurchase.mode);
+              const canAfford = userPoints >= price;
+
+              return (
+                <>
+                  {/* Icon Container */}
+                  <View style={[styles.purchaseModalIconContainer, { backgroundColor: `${tierColor}20`, borderColor: tierColor }]}>
+                    <Ionicons name={selectedThemeToPurchase.icon} size={48} color={tierColor} />
+                  </View>
+
+                  <Text style={[styles.modalTitle, { color: theme.text }]}>
+                    {selectedThemeToPurchase.title}
+                  </Text>
+
+                  {/* Tier Badge */}
+                  {tierLabel && (
+                    <View style={[styles.purchaseTierBadge, { backgroundColor: tierColor }]}>
+                      <Text style={styles.tierBadgeText}>{tierLabel}</Text>
+                    </View>
+                  )}
+
+                  <Text style={[styles.modalDescription, { color: theme.textSecondary, textAlign: 'center' }]}>
+                    {selectedThemeToPurchase.subtitle}
+                  </Text>
+
+                  {/* Price */}
+                  <View style={styles.purchasePriceContainer}>
+                    <Text style={styles.purchaseCoinIcon}>🪙</Text>
+                    <Text style={[styles.purchasePrice, { color: tierColor }]}>
+                      {price?.toLocaleString()}
+                    </Text>
+                    <Text style={[styles.purchasePtsLabel, { color: theme.textSecondary }]}>pts</Text>
+                  </View>
+
+                  {/* Current Balance */}
+                  <View style={[styles.balanceContainer, { backgroundColor: theme.backgroundSecondary || theme.background }]}>
+                    <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>Tu saldo:</Text>
+                    <Text style={[styles.balanceValue, { color: canAfford ? theme.success || '#22c55e' : theme.danger || '#ef4444' }]}>
+                      🪙 {userPoints?.toLocaleString()} pts
+                    </Text>
+                  </View>
+
+                  {!canAfford && (
+                    <View style={styles.notEnoughContainer}>
+                      <Ionicons name="warning" size={16} color={theme.danger || '#ef4444'} />
+                      <Text style={[styles.notEnoughText, { color: theme.danger || '#ef4444' }]}>
+                        ¡Necesitas {(price - userPoints).toLocaleString()} puntos más!
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonCancel, { borderColor: theme.border }]}
+                      onPress={() => {
+                        setShowPurchaseModal(false);
+                        setSelectedThemeToPurchase(null);
+                      }}
+                      disabled={purchasing}
+                    >
+                      <Text style={[styles.modalButtonText, { color: theme.text }]}>
+                        Cancelar
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalButton,
+                        styles.modalButtonPrimary,
+                        { backgroundColor: canAfford ? tierColor : theme.textSecondary },
+                      ]}
+                      onPress={handlePurchaseTheme}
+                      disabled={purchasing || !canAfford}
+                    >
+                      {purchasing ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                          {canAfford ? '¡Comprar!' : 'Sin fondos'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🔄 Modal de sincronización de datos */}
+      <SyncProgressModal
+        visible={syncModal.visible}
+        direction={syncModal.direction}
+        isComplete={syncModal.isComplete}
+        itemsSynced={syncModal.itemsSynced}
+        onDismiss={() => setSyncModal(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }
@@ -1113,5 +1765,196 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 4,
     fontStyle: 'italic',
+  },
+  dividerLine: {
+    height: 1,
+    marginHorizontal: 16,
+  },
+  // ═══════════════════════════════════════════════════════════════
+  // ESTILOS TIENDA DE TEMAS
+  // ═══════════════════════════════════════════════════════════════
+  tierBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tierBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  lockOverlay: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  coinIcon: {
+    fontSize: 12,
+  },
+  priceText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  savingsBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 4,
+  },
+  savingsText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  buyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buyButtonText: {
+    fontSize: 16,
+  },
+  comingSoonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 20,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.2)',
+  },
+  comingSoonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontStyle: 'italic',
+  },
+  // Purchase Modal styles
+  purchaseModalIconContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    alignSelf: 'center',
+  },
+  purchaseTierBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 12,
+    alignSelf: 'center',
+  },
+  purchasePriceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  purchaseCoinIcon: {
+    fontSize: 28,
+  },
+  purchasePrice: {
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  purchasePtsLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  balanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  balanceValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notEnoughContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  notEnoughText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Points display in header
+  headerPointsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  headerCoinIcon: {
+    fontSize: 14,
+  },
+  headerPointsText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  // Price comparison for free users
+  priceComparisonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    paddingVertical: 4,
+  },
+  priceComparisonColumn: {
+    alignItems: 'center',
+  },
+  priceComparisonLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  priceComparisonValue: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  priceComparisonDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(128,128,128,0.3)',
+  },
+  priceWithCoin: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
 });

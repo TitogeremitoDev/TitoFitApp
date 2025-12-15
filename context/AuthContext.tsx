@@ -48,6 +48,19 @@ export type User = {
     alergias?: string;
     cocina?: string;
   };
+  // Campos de entrenador
+  trainerProfile?: {
+    bio?: string;
+    specialties?: string[];
+    pricePerMonth?: number;
+    maxClients?: number;
+    isAcceptingClients?: boolean;
+    instagramHandle?: string;
+    logoUrl?: string;
+    brandName?: string;
+    trainerCode?: string;
+  };
+  currentTrainerId?: string;
 };
 
 type AuthContextData = {

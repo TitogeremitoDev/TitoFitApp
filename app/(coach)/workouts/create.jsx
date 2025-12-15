@@ -1211,15 +1211,18 @@ const styles = StyleSheet.create({
   pickerGroup: { marginBottom: 12 },
   pickerLabel: { fontSize: 14, fontWeight: '600', color: '#0369a1', marginBottom: 0 },
   pickerWrapper: {
-    padding: 0,
-    height: 25,
     backgroundColor: '#fff',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#0073ffff',
     overflow: 'hidden',
+    minHeight: 50,  // ✅ Altura mínima adecuada
+    justifyContent: 'center',  // ✅ Centrar contenido
   },
-  picker: { height: 50 },
+  picker: {
+    height: 50,
+    width: '100%',
+  },
   confirmAddBtn: {
     backgroundColor: '#10b981',
     padding: 12,

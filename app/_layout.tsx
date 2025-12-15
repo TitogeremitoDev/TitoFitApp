@@ -70,7 +70,8 @@ function RootLayoutNav() {
 
     // Usuario con sesión en auth o root → redirigir según rol
     if (token && (inAuthGroup || isRoot)) {
-      const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR';
+      // Acceso coach: es admin, tiene tipo ENTRENADOR, O tiene código de entrenador configurado
+      const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode;
 
       if (isAdminOrCoach) {
         // Admin/Coach → mode-select para elegir

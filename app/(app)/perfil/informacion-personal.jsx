@@ -131,6 +131,7 @@ export default function InformacionPersonal() {
             altura: '',
             genero: '',
             objetivos: '',
+            objetivoPrincipal: '',
             compromiso: 'medio',
             experiencia: 5,
             conocimientoTecnico: 3,
@@ -174,7 +175,9 @@ export default function InformacionPersonal() {
                 comidasDia: data.comidasDia ? Number(data.comidasDia) : 4,
             };
 
-            await axios.put('/users/info', { info_user: payload });
+            console.log('[INFO-PERSONAL] Enviando payload:', JSON.stringify(payload, null, 2));
+            const response = await axios.put('/users/info', { info_user: payload });
+            console.log('[INFO-PERSONAL] Respuesta servidor:', JSON.stringify(response.data, null, 2));
             await refreshUser(); // Update local user context
             Alert.alert('Éxito', 'Información actualizada correctamente');
         } catch (error) {
@@ -348,6 +351,23 @@ export default function InformacionPersonal() {
                             )}
                         />
                     </View>
+
+                    <Controller
+                        control={control}
+                        name="objetivoPrincipal"
+                        render={({ field: { onChange, value } }) => (
+                            <RadioGroup
+                                label="Objetivo Principal"
+                                value={value}
+                                onChange={onChange}
+                                options={[
+                                    { label: '💪 Ganar peso / Volumen', value: 'ganar_peso' },
+                                    { label: '🔥 Definir / Perder grasa', value: 'definir' },
+                                    { label: '⚖️ Mantenerme', value: 'mantener' },
+                                ]}
+                            />
+                        )}
+                    />
 
                     <Controller
                         control={control}

@@ -18,13 +18,30 @@ import {
   Pressable,
   Alert,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LineChart } from 'react-native-chart-kit';
+import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+
+// KPI Utilities (mismo sistema que coach progress)
+import {
+  KPI_OPTIONS,
+  PERIOD_OPTIONS,
+  filterByPeriod,
+  filterExercises,
+  calcVolumeByWeek,
+  calcIntensityByWeek,
+  calcPlanComplianceByWeek,
+  calcPlanComplianceTotal,
+  calcHeavySetsByWeek,
+  calcMuscleBalance,
+  calcPRCountByWeek,
+} from '../../../src/utils/calculateKPIs';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SISTEMA DE MEDALLAS / EMOJIS
@@ -97,6 +114,26 @@ const chartConfig = {
   color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
   labelColor: (opacity = 1) => `rgba(209, 213, 219, ${opacity})`,
   propsForDots: { r: '5', strokeWidth: '2', stroke: '#3B82F6' },
+  fillShadowGradient: '#3b82f6',
+  fillShadowGradientOpacity: 0.3,
+};
+
+// BarChart config para KPIs
+const barChartConfig = {
+  backgroundColor: '#111827',
+  backgroundGradientFrom: '#0D1B2A',
+  backgroundGradientTo: '#111827',
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(209, 213, 219, ${opacity})`,
+  barPercentage: 0.65,
+  fillShadowGradient: '#6366f1',
+  fillShadowGradientOpacity: 1,
+  propsForBackgroundLines: {
+    strokeDasharray: '',
+    stroke: '#1f2937',
+    strokeWidth: 1,
+  },
 };
 
 /* Helpers */
@@ -199,6 +236,32 @@ export default function EvolucionScreen() {
   const [selEjeX, setSelEjeX] = useState(EJES_X[0].value);
   const [isBulking, setIsBulking] = useState(false);
   const [dataSource, setDataSource] = useState('local'); // 'local' o 'cloud'
+
+  // 📊 KPI System 2.0 (igual que coach progress)
+  const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table'
+  const [selectedKpi, setSelectedKpi] = useState('volume');
+  const [kpiModalVisible, setKpiModalVisible] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState('all');
+  const [selKpiMusculo, setSelKpiMusculo] = useState('TOTAL');
+  const [selKpiEjercicio, setSelKpiEjercicio] = useState('');
+
+  // Modales para filtros (iOS compatible)
+  const [muscleModalVisible, setMuscleModalVisible] = useState(false);
+  const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
+
+  // Estado para tabla expandible por rutina
+  const [expandedRoutines, setExpandedRoutines] = useState({});
+
+  // Modal para ver notas
+  const [noteModal, setNoteModal] = useState({ visible: false, note: null });
+
+  // Colores de prioridad de notas
+  const NOTE_COLORS = {
+    high: '#ef4444',    // Rojo
+    normal: '#f97316',  // Naranja
+    low: '#22c55e',     // Verde
+    custom: '#3b82f6',  // Azul
+  };
 
   const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -349,6 +412,345 @@ export default function EvolucionScreen() {
     );
     return agregarDatosParaGrafico(logFiltrado, selMetrica, selEjeX);
   }, [log, selMusculo, selEjercicio, selMetrica, selEjeX]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KPI 2.0 CALCULATIONS - Transformar log a formato sessions
+  // ═══════════════════════════════════════════════════════════════════════════
+  const sessions = useMemo(() => {
+    // Agrupar log entries por fecha para crear "sessions" compatibles con KPI functions
+    const sessionMap = new Map();
+
+    log.forEach(entry => {
+      const dateKey = entry.date?.split('T')[0] || 'unknown';
+      if (!sessionMap.has(dateKey)) {
+        sessionMap.set(dateKey, {
+          date: entry.date,
+          week: entry.week || 1,
+          exercises: []
+        });
+      }
+
+      const session = sessionMap.get(dateKey);
+      // Buscar si ya existe el ejercicio
+      let exercise = session.exercises.find(e => e.exerciseName === entry.exercise);
+      if (!exercise) {
+        exercise = {
+          exerciseName: entry.exercise,
+          muscleGroup: entry.muscle,
+          sets: []
+        };
+        session.exercises.push(exercise);
+      }
+
+      exercise.sets.push({
+        actualReps: entry.reps || 0,
+        weight: entry.load || 0,
+        targetRepsMin: null,
+        targetRepsMax: null
+      });
+    });
+
+    return Array.from(sessionMap.values());
+  }, [log]);
+
+  // Lista de músculos para KPIs
+  const listaMusculosKpi = useMemo(() => {
+    const muscleSet = new Set(['TOTAL']);
+    sessions.forEach(s => {
+      s.exercises?.forEach(e => {
+        if (e.muscleGroup) muscleSet.add(e.muscleGroup);
+      });
+    });
+    return Array.from(muscleSet).sort();
+  }, [sessions]);
+
+  // Lista de ejercicios según músculo seleccionado (para KPIs)
+  const listaEjerciciosKpi = useMemo(() => {
+    if (selKpiMusculo === 'TOTAL') return [];
+    const ejercSet = new Set();
+    sessions.forEach(s => {
+      s.exercises?.forEach(e => {
+        if (e.muscleGroup === selKpiMusculo && e.exerciseName) {
+          ejercSet.add(e.exerciseName);
+        }
+      });
+    });
+    return Array.from(ejercSet).sort();
+  }, [sessions, selKpiMusculo]);
+
+  // Sesiones filtradas por periodo
+  const filteredSessions = useMemo(() => {
+    return filterByPeriod(sessions, selectedPeriod);
+  }, [sessions, selectedPeriod]);
+
+  // KPI: Volumen (% mejora semanal)
+  const volumeData = useMemo(() => {
+    const data = calcVolumeByWeek(filteredSessions, selKpiMusculo, selKpiEjercicio);
+    if (data.length === 0) return null;
+    const lastValue = data[data.length - 1]?.value || 0;
+    const totalVol = data.reduce((sum, d) => sum + (d.volume || 0), 0);
+    return {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+      rawData: data,
+      lastValue,
+      totalVolK: (totalVol / 1000).toFixed(1)
+    };
+  }, [filteredSessions, selKpiMusculo, selKpiEjercicio]);
+
+  // KPI: Intensidad
+  const intensityData = useMemo(() => {
+    const data = calcIntensityByWeek(filteredSessions, selKpiMusculo, selKpiEjercicio);
+    if (data.length === 0) return null;
+    const lastValue = data[data.length - 1]?.value || 0;
+    return {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+      lastValue,
+      lastAvgLoad: data[data.length - 1]?.avgLoad || 0
+    };
+  }, [filteredSessions, selKpiMusculo, selKpiEjercicio]);
+
+  // KPI: Cumplimiento
+  const complianceWeeklyData = useMemo(() => {
+    const data = calcPlanComplianceByWeek(filteredSessions);
+    if (data.length === 0) return null;
+    const lastValue = data[data.length - 1]?.value || 0;
+    const avgValue = data.reduce((sum, d) => sum + d.value, 0) / data.length;
+    return {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value), strokeWidth: 3 }],
+      lastValue,
+      avgValue: avgValue.toFixed(1)
+    };
+  }, [filteredSessions]);
+
+  // KPI: Carga Alta
+  const heavySetsData = useMemo(() => {
+    const data = calcHeavySetsByWeek(filteredSessions, selKpiMusculo, selKpiEjercicio);
+    if (data.length === 0) return null;
+    const lastValue = data[data.length - 1]?.value || 0;
+    const avgValue = data.reduce((sum, d) => sum + d.value, 0) / data.length;
+    return {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value) }],
+      lastValue,
+      avgValue: avgValue.toFixed(0)
+    };
+  }, [filteredSessions, selKpiMusculo, selKpiEjercicio]);
+
+  // KPI: Balance Muscular
+  const muscleBalanceData = useMemo(() => {
+    const data = calcMuscleBalance(filteredSessions);
+    if (data.length === 0) return null;
+    return {
+      labels: data.map(d => d.muscle.substring(0, 4)),
+      datasets: [{ data: data.map(d => d.share) }],
+      fullData: data
+    };
+  }, [filteredSessions]);
+
+  // KPI: PRs
+  const prCountData = useMemo(() => {
+    const data = calcPRCountByWeek(filteredSessions);
+    if (data.length === 0) return null;
+    const totalPRs = data.reduce((sum, d) => sum + d.value, 0);
+    return {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value) }],
+      totalPRs
+    };
+  }, [filteredSessions]);
+
+  // KPI actual seleccionado
+  const currentKpi = useMemo(() => {
+    return KPI_OPTIONS.find(k => k.id === selectedKpi) || KPI_OPTIONS[0];
+  }, [selectedKpi]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGRUPAR DATOS POR RUTINA → DÍA (igual que coach/progress)
+  // Estructura: Rutina → Días → Ejercicios → Sesiones S1/S2 con flechas
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Helper para comparar tendencias
+  const getRepStatus = (actual, min, max) => {
+    if (!actual) return 'none';
+    if (min && actual < min) return 'below';
+    if (max && actual > max) return 'above';
+    return 'inRange';
+  };
+
+  const getRepStatusColor = (status) => {
+    switch (status) {
+      case 'below': return '#ef4444';
+      case 'above': return '#3b82f6';
+      case 'inRange': return '#22c55e';
+      default: return '#E5E7EB';
+    }
+  };
+
+  const datosPorRutina = useMemo(() => {
+    if (!log || log.length === 0) return { current: null, old: [] };
+
+    // Primero reconstruir sesiones desde el log (que tiene sets individuales)
+    const sessionsMap = new Map();
+
+    log.forEach(entry => {
+      const routineName = entry.routineName || 'Sin Rutina';
+      const dateKey = entry.date?.split('T')[0] || 'unknown';
+      const sessionKey = `${routineName}-${dateKey}-${entry.week || 1}`;
+
+      if (!sessionsMap.has(sessionKey)) {
+        sessionsMap.set(sessionKey, {
+          routineName,
+          date: new Date(entry.date),
+          week: entry.week || 1,
+          exercises: new Map()
+        });
+      }
+
+      const session = sessionsMap.get(sessionKey);
+      const exerciseName = entry.exercise || 'Ejercicio';
+
+      if (!session.exercises.has(exerciseName)) {
+        session.exercises.set(exerciseName, {
+          exerciseName,
+          muscleGroup: entry.muscle || 'SIN GRUPO',
+          sets: []
+        });
+      }
+
+      session.exercises.get(exerciseName).sets.push({
+        setNumber: entry.setIndex || session.exercises.get(exerciseName).sets.length + 1,
+        actualReps: entry.reps,
+        weight: entry.load,
+        notes: entry.notes || null
+      });
+    });
+
+    // Agrupar sesiones por rutina
+    const rutinasMap = new Map();
+
+    Array.from(sessionsMap.values()).forEach(session => {
+      if (!rutinasMap.has(session.routineName)) {
+        rutinasMap.set(session.routineName, {
+          routineName: session.routineName,
+          lastDate: session.date,
+          sessionsData: []
+        });
+      }
+
+      const rutina = rutinasMap.get(session.routineName);
+      if (session.date > rutina.lastDate) rutina.lastDate = session.date;
+
+      rutina.sessionsData.push({
+        date: session.date,
+        week: session.week,
+        exercises: Array.from(session.exercises.values())
+      });
+    });
+
+    // Ordenar por fecha más reciente
+    const rutinasArray = Array.from(rutinasMap.values())
+      .sort((a, b) => b.lastDate - a.lastDate);
+
+    // Procesar cada rutina (crear estructura como coach progress)
+    const procesarRutina = (rutina) => {
+      // Ordenar sesiones por fecha/week
+      rutina.sessionsData.sort((a, b) => {
+        const dateDiff = a.date - b.date;
+        if (dateDiff !== 0) return dateDiff;
+        return (a.week || 1) - (b.week || 1);
+      });
+
+      // Obtener ejercicios únicos
+      const ejerciciosVistos = new Set();
+      const ejerciciosUnicos = [];
+
+      rutina.sessionsData.forEach(s => {
+        s.exercises.forEach(ex => {
+          if (!ejerciciosVistos.has(ex.exerciseName)) {
+            ejerciciosVistos.add(ex.exerciseName);
+            ejerciciosUnicos.push({
+              exerciseName: ex.exerciseName,
+              muscleGroup: ex.muscleGroup
+            });
+          }
+        });
+      });
+
+      // Para cada ejercicio, recopilar sesiones con trends
+      const exercises = ejerciciosUnicos.map(ej => {
+        const sesiones = rutina.sessionsData.map((s, sIdx) => {
+          const exData = s.exercises.find(e => e.exerciseName === ej.exerciseName);
+          if (!exData) return null;
+
+          // Obtener sesión anterior para calcular trends
+          const prevSession = sIdx > 0 ? rutina.sessionsData[sIdx - 1] : null;
+          const prevExData = prevSession?.exercises?.find(e => e.exerciseName === ej.exerciseName);
+
+          const setsConTrend = (exData.sets || []).map((set, setIdx) => {
+            const prevSet = prevExData?.sets?.[setIdx];
+            return {
+              setNumber: set.setNumber || setIdx + 1,
+              reps: set.actualReps,
+              weight: set.weight,
+              notes: set.notes || null,
+              repTrend: (prevSet?.actualReps && set.actualReps && set.actualReps > prevSet.actualReps) ? 'up' : null,
+              weightTrend: (prevSet?.weight && set.weight && set.weight > prevSet.weight) ? 'up' : null,
+            };
+          });
+
+          return {
+            sessionIdx: sIdx + 1,
+            week: s.week,
+            date: s.date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+            sets: setsConTrend
+          };
+        }).filter(Boolean);
+
+        return { ...ej, sesiones };
+      });
+
+      return {
+        routineName: rutina.routineName,
+        lastDate: rutina.lastDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        exercises,
+        totalSessions: rutina.sessionsData.length
+      };
+    };
+
+    // Rutina actual = más reciente, old = resto
+    const current = rutinasArray.length > 0 ? procesarRutina(rutinasArray[0]) : null;
+    const old = rutinasArray.slice(1).map(procesarRutina);
+
+    return { current, old };
+  }, [log]);
+
+  // Estado para expandir días (usando dayIndex para consistencia)
+  const [expandedExercises, setExpandedExercises] = useState({});
+
+  const toggleExercise = (routineName, exerciseName) => {
+    const key = `${routineName}-${exerciseName}`;
+    setExpandedExercises(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Toggle para expandir rutinas
+  const toggleRoutine = (routineName) => {
+    setExpandedRoutines(prev => ({
+      ...prev,
+      [routineName]: !prev[routineName]
+    }));
+  };
+
+  // Handlers
+  const handleKpiMusculoChange = (musculo) => {
+    setSelKpiMusculo(musculo);
+    setSelKpiEjercicio('');
+  };
 
   const handleMusculoChange = (musculo) => { setSelMusculo(musculo); setSelEjercicio(''); };
 
@@ -542,72 +944,439 @@ export default function EvolucionScreen() {
         }}
       />
 
-      {/* --- Controles --- */}
-      <View style={styles.controles}>
-        <Text style={styles.label}></Text>
-        <Picker
-          selectedValue={selMusculo}
-          onValueChange={handleMusculoChange}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          dropdownIconColor="#E5E7EB"
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          TOGGLE: GRÁFICA vs TABLA
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      <View style={styles.viewModeToggle}>
+        <Pressable
+          style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
+          onPress={() => setViewMode('chart')}
         >
-          <Picker.Item label="Selecciona un músculo..." value="" style={styles.pickerPlaceholder} />
-          {listaMusculos.map((m) => (
-            <Picker.Item key={m} label={m} value={m} />
-          ))}
-        </Picker>
-
-        <Text style={styles.label}></Text>
-        <Picker
-          selectedValue={selEjercicio}
-          onValueChange={setSelEjercicio}
-          enabled={!!selMusculo}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          dropdownIconColor="#E5E7EB"
+          <Ionicons name="bar-chart-outline" size={18} color={viewMode === 'chart' ? '#fff' : '#9ca3af'} />
+          <Text style={[styles.viewModeBtnText, viewMode === 'chart' && styles.viewModeBtnTextActive]}>
+            Gráfica
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+          onPress={() => setViewMode('table')}
         >
-          <Picker.Item label="Todos los ejercicios..." value="" style={styles.pickerPlaceholder} />
-          {listaEjercicios.map((e) => (
-            <Picker.Item key={e} label={e} value={e} />
-          ))}
-        </Picker>
-
-        <Text style={styles.label}></Text>
-        <Picker
-          selectedValue={selMetrica}
-          onValueChange={setSelMetrica}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          dropdownIconColor="#E5E7EB"
-        >
-          {METRICAS.map((m) => (
-            <Picker.Item key={m.value} label={m.label} value={m.value} />
-          ))}
-        </Picker>
-
-        <Text style={styles.label}></Text>
-        <Picker
-          selectedValue={selEjeX}
-          onValueChange={setSelEjeX}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          dropdownIconColor="#E5E7EB"
-        >
-          {EJES_X.map((e) => (
-            <Picker.Item key={e.value} label={e.label} value={e.value} />
-          ))}
-        </Picker>
+          <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? '#fff' : '#9ca3af'} />
+          <Text style={[styles.viewModeBtnText, viewMode === 'table' && styles.viewModeBtnTextActive]}>
+            Tabla
+          </Text>
+        </Pressable>
       </View>
 
-      {/* --- Gráfico --- */}
-      <View style={styles.chartContainer}>
-        {isRefreshing ? (
-          <ActivityIndicator size="large" color="#3B82F6" style={{ height: 300 }} />
-        ) : datosGrafico ? (
-          <LineChart data={datosGrafico} width={screenWidth - 32} height={300} chartConfig={chartConfig} bezier style={styles.chart} />
-        ) : null}
-      </View>
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          VISTA GRÁFICA - KPI SYSTEM
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      {viewMode === 'chart' && (
+        <>
+          {/* Period Filter */}
+          <View style={styles.periodFilter}>
+            {PERIOD_OPTIONS.map(p => (
+              <Pressable
+                key={p.id}
+                style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
+                onPress={() => setSelectedPeriod(p.id)}
+              >
+                <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
+                  {p.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* KPI Selector */}
+          <Pressable style={styles.kpiSelector} onPress={() => setKpiModalVisible(true)}>
+            <View style={styles.kpiSelectorLeft}>
+              <View style={styles.kpiSelectorIconWrap}>
+                <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
+                <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
+              </View>
+            </View>
+            <View style={styles.kpiSelectorChevron}>
+              <Ionicons name="chevron-down" size={18} color="#fff" />
+            </View>
+          </Pressable>
+
+          {/* Muscle/Exercise Filters - Modal-based for iOS */}
+          {currentKpi.useFilters && (
+            <View style={styles.kpiFilters}>
+              <View style={styles.kpiFilterRow}>
+                <Text style={styles.kpiFilterLabel}>Músculo:</Text>
+                <Pressable
+                  style={styles.filterButton}
+                  onPress={() => setMuscleModalVisible(true)}
+                >
+                  <Text style={styles.filterButtonText}>
+                    {selKpiMusculo === 'TOTAL' ? 'Todos' : selKpiMusculo}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                </Pressable>
+              </View>
+              {selKpiMusculo !== 'TOTAL' && listaEjerciciosKpi.length > 0 && (
+                <View style={styles.kpiFilterRow}>
+                  <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                  <Pressable
+                    style={styles.filterButton}
+                    onPress={() => setExerciseModalVisible(true)}
+                  >
+                    <Text style={styles.filterButtonText}>
+                      {selKpiEjercicio || 'Todos'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Chart Rendering */}
+          <View style={styles.chartContainer}>
+            {/* VOLUMEN */}
+            {selectedKpi === 'volume' && volumeData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>
+                    Volumen {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
+                  </Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={[styles.chartSummaryValue, { color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444' }]}>
+                      {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
+                    </Text>
+                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                  </View>
+                </View>
+                <LineChart
+                  data={volumeData}
+                  width={screenWidth - 32}
+                  height={220}
+                  chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                  bezier
+                  style={styles.chart}
+                  yAxisSuffix="%"
+                />
+                <Text style={styles.chartSubInfo}>Total período: {volumeData.totalVolK}k kg</Text>
+              </>
+            )}
+
+            {/* INTENSIDAD */}
+            {selectedKpi === 'intensity' && intensityData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>
+                    Intensidad {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
+                  </Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={[styles.chartSummaryValue, { color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444' }]}>
+                      {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
+                    </Text>
+                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                  </View>
+                </View>
+                <LineChart
+                  data={intensityData}
+                  width={screenWidth - 32}
+                  height={220}
+                  chartConfig={chartConfig}
+                  bezier
+                  style={styles.chart}
+                  yAxisSuffix="%"
+                />
+                <Text style={styles.chartSubInfo}>Carga media: {intensityData.lastAvgLoad} kg/rep</Text>
+              </>
+            )}
+
+            {/* CUMPLIMIENTO */}
+            {selectedKpi === 'compliance' && complianceWeeklyData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>Cumplimiento del Plan</Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={[styles.chartSummaryValue, {
+                      color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
+                        complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
+                    }]}>
+                      {complianceWeeklyData.lastValue}%
+                    </Text>
+                    <Text style={styles.chartSummaryLabel}>última semana</Text>
+                  </View>
+                </View>
+                <LineChart
+                  data={complianceWeeklyData}
+                  width={screenWidth - 32}
+                  height={220}
+                  chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                  bezier
+                  style={styles.chart}
+                  yAxisSuffix="%"
+                />
+                <Text style={styles.chartSubInfo}>Media: {complianceWeeklyData.avgValue}% de sets en rango</Text>
+              </>
+            )}
+
+            {/* CARGA ALTA */}
+            {selectedKpi === 'heavySets' && heavySetsData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>
+                    Carga Alta {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
+                  </Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={styles.chartSummaryValue}>{heavySetsData.lastValue}%</Text>
+                    <Text style={styles.chartSummaryLabel}>última semana</Text>
+                  </View>
+                </View>
+                <BarChart
+                  data={heavySetsData}
+                  width={screenWidth - 32}
+                  height={220}
+                  chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})` }}
+                  style={styles.chart}
+                  yAxisSuffix="%"
+                  showValuesOnTopOfBars
+                />
+                <Text style={styles.chartSubInfo}>Media: {heavySetsData.avgValue}% sets ≥85% máximo</Text>
+              </>
+            )}
+
+            {/* BALANCE MUSCULAR */}
+            {selectedKpi === 'muscleBalance' && muscleBalanceData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>Balance Muscular</Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={styles.chartSummaryValue}>{muscleBalanceData.fullData?.[0]?.share || 0}%</Text>
+                    <Text style={styles.chartSummaryLabel}>{muscleBalanceData.fullData?.[0]?.muscle || '-'}</Text>
+                  </View>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalChartScroll}>
+                  <BarChart
+                    data={muscleBalanceData}
+                    width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                    height={220}
+                    chartConfig={{ ...barChartConfig, barPercentage: 0.6 }}
+                    style={styles.chart}
+                    yAxisSuffix="%"
+                    showValuesOnTopOfBars
+                  />
+                </ScrollView>
+                <View style={styles.muscleBalanceLegend}>
+                  {muscleBalanceData.fullData?.slice(0, 6).map((m, i) => (
+                    <View key={i} style={styles.muscleBalanceItem}>
+                      <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
+                      <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* PRs */}
+            {selectedKpi === 'prCount' && prCountData && (
+              <>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>PRs (Récords Personales)</Text>
+                  <View style={styles.chartSummary}>
+                    <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>{prCountData.totalPRs}</Text>
+                    <Text style={styles.chartSummaryLabel}>en el período</Text>
+                  </View>
+                </View>
+                <BarChart
+                  data={prCountData}
+                  width={screenWidth - 32}
+                  height={220}
+                  chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})` }}
+                  style={styles.chart}
+                  showValuesOnTopOfBars
+                />
+                <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
+              </>
+            )}
+
+            {/* No data */}
+            {((selectedKpi === 'volume' && !volumeData) ||
+              (selectedKpi === 'intensity' && !intensityData) ||
+              (selectedKpi === 'compliance' && !complianceWeeklyData) ||
+              (selectedKpi === 'heavySets' && !heavySetsData) ||
+              (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+              (selectedKpi === 'prCount' && !prCountData)) && (
+                <View style={styles.noDataContainer}>
+                  <Ionicons name="bar-chart-outline" size={48} color="#475569" />
+                  <Text style={styles.noDataText}>Sin datos para este período</Text>
+                </View>
+              )}
+          </View>
+        </>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          VISTA TABLA - IGUAL QUE COACH PROGRESS
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      {viewMode === 'table' && (
+        <View style={styles.tableContainer}>
+
+          {/* RUTINA ACTUAL */}
+          {datosPorRutina.current ? (
+            <View style={styles.routineSection}>
+              <Text style={styles.routineSectionTitle}>📋 Rutina Actual</Text>
+              <View style={styles.routineCard}>
+                {/* Cabecera de rutina */}
+                <Pressable
+                  style={styles.routineHeaderBlue}
+                  onPress={() => toggleRoutine('current')}
+                >
+                  <View>
+                    <Text style={styles.routineNameBlue}>{datosPorRutina.current.routineName}</Text>
+                    <Text style={styles.routineDateBlue}>Última: {datosPorRutina.current.lastDate}</Text>
+                  </View>
+                  <Ionicons
+                    name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'}
+                    size={22}
+                    color="#60a5fa"
+                  />
+                </Pressable>
+
+                {/* Contenido: Ejercicios con sesiones */}
+                {expandedRoutines['current'] && (
+                  <View style={styles.routineContent}>
+                    {datosPorRutina.current.exercises.map((exercise, exIdx) => (
+                      <View key={exIdx} style={styles.exerciseBlock}>
+                        {/* Cabecera del ejercicio */}
+                        <View style={styles.exerciseBlockHeader}>
+                          <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                          <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                        </View>
+
+                        {/* Sesiones S1, S2, S3... lado a lado */}
+                        <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
+                          {exercise.sesiones.map((sesion, sIdx) => (
+                            <View key={sIdx} style={styles.sessionBox}>
+                              {/* Header: S1 fecha */}
+                              <View style={styles.sessionBoxHeader}>
+                                <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                              </View>
+
+                              {/* Header de tabla */}
+                              <View style={styles.setHeaderRow}>
+                                <Text style={styles.setHeaderCell}>S</Text>
+                                <Text style={styles.setHeaderCellData}>Rep</Text>
+                                <Text style={styles.setHeaderCellData}>Kg</Text>
+                                <Text style={styles.setHeaderCellNote}>📝</Text>
+                              </View>
+
+                              {/* Rows de sets */}
+                              {sesion.sets.map((set, setIdx) => (
+                                <View key={setIdx} style={styles.setTableRow}>
+                                  <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                  <View style={styles.setColData}>
+                                    <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
+                                    {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                  </View>
+                                  <View style={styles.setColData}>
+                                    <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                    {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                  </View>
+                                  <Pressable
+                                    onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                    style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                  />
+                                </View>
+                              ))}
+                            </View>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.noDataContainer}>
+              <Ionicons name="calendar-outline" size={48} color="#475569" />
+              <Text style={styles.noDataText}>Sin datos de rutinas</Text>
+            </View>
+          )}
+
+          {/* RUTINAS ANTIGUAS */}
+          {datosPorRutina.old.length > 0 && (
+            <View style={styles.routineSection}>
+              <Text style={styles.routineSectionTitleOld}>📦 Rutinas Antiguas</Text>
+              {datosPorRutina.old.map((rutina, rIdx) => (
+                <View key={rIdx} style={styles.routineCardOld}>
+                  <Pressable
+                    style={styles.routineHeaderOld}
+                    onPress={() => toggleRoutine(rutina.routineName)}
+                  >
+                    <View>
+                      <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
+                      <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                    </View>
+                    <Ionicons
+                      name={expandedRoutines[rutina.routineName] ? 'chevron-up' : 'chevron-down'}
+                      size={22}
+                      color="#64748b"
+                    />
+                  </Pressable>
+
+                  {expandedRoutines[rutina.routineName] && (
+                    <View style={styles.routineContent}>
+                      {rutina.exercises.map((exercise, exIdx) => (
+                        <View key={exIdx} style={styles.exerciseBlock}>
+                          <View style={styles.exerciseBlockHeader}>
+                            <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                            <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                          </View>
+                          <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
+                            {exercise.sesiones.map((sesion, sIdx) => (
+                              <View key={sIdx} style={styles.sessionBox}>
+                                <View style={styles.sessionBoxHeader}>
+                                  <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                  <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                </View>
+                                <View style={styles.setHeaderRow}>
+                                  <Text style={styles.setHeaderCell}>S</Text>
+                                  <Text style={styles.setHeaderCellData}>Rep</Text>
+                                  <Text style={styles.setHeaderCellData}>Kg</Text>
+                                  <Text style={styles.setHeaderCellNote}>📝</Text>
+                                </View>
+                                {sesion.sets.map((set, setIdx) => (
+                                  <View key={setIdx} style={styles.setTableRow}>
+                                    <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                    <View style={styles.setColData}>
+                                      <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
+                                      {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                    </View>
+                                    <View style={styles.setColData}>
+                                      <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                      {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                    </View>
+                                    <Pressable
+                                      onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                      style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                    />
+                                  </View>
+                                ))}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════════════
           SECCIÓN DE TOTALES CON MEDALLAS 🏆
@@ -701,6 +1470,172 @@ export default function EvolucionScreen() {
         </Pressable>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          KPI SELECTOR MODAL
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={kpiModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setKpiModalVisible(false)}
+      >
+        <Pressable style={styles.kpiModalOverlay} onPress={() => setKpiModalVisible(false)}>
+          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.kpiModalHeader}>
+              <Text style={styles.kpiModalTitle}>Seleccionar KPI</Text>
+              <Pressable onPress={() => setKpiModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </Pressable>
+            </View>
+            <FlatList
+              data={KPI_OPTIONS}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.kpiModalItem, selectedKpi === item.id && styles.kpiModalItemActive]}
+                  onPress={() => {
+                    setSelectedKpi(item.id);
+                    setKpiModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.kpiModalItemIcon}>{item.icon}</Text>
+                  <View style={styles.kpiModalItemText}>
+                    <Text style={[styles.kpiModalItemName, selectedKpi === item.id && styles.kpiModalItemNameActive]}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.kpiModalItemDesc}>{item.description}</Text>
+                  </View>
+                  {selectedKpi === item.id && (
+                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                  )}
+                </Pressable>
+              )}
+            />
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          MUSCLE SELECTOR MODAL
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={muscleModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMuscleModalVisible(false)}
+      >
+        <Pressable style={styles.kpiModalOverlay} onPress={() => setMuscleModalVisible(false)}>
+          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.kpiModalHeader}>
+              <Text style={styles.kpiModalTitle}>Seleccionar Músculo</Text>
+              <Pressable onPress={() => setMuscleModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#9ca3af" />
+              </Pressable>
+            </View>
+            <FlatList
+              data={listaMusculosKpi}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.kpiModalItem, selKpiMusculo === item && styles.kpiModalItemActive]}
+                  onPress={() => {
+                    handleKpiMusculoChange(item);
+                    setMuscleModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.kpiModalItemName, selKpiMusculo === item && styles.kpiModalItemNameActive]}>
+                    {item === 'TOTAL' ? 'Todos los músculos' : item}
+                  </Text>
+                  {selKpiMusculo === item && (
+                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                  )}
+                </Pressable>
+              )}
+            />
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          EXERCISE SELECTOR MODAL
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={exerciseModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setExerciseModalVisible(false)}
+      >
+        <Pressable style={styles.kpiModalOverlay} onPress={() => setExerciseModalVisible(false)}>
+          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.kpiModalHeader}>
+              <Text style={styles.kpiModalTitle}>Seleccionar Ejercicio</Text>
+              <Pressable onPress={() => setExerciseModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#9ca3af" />
+              </Pressable>
+            </View>
+            <FlatList
+              data={[{ id: '', name: 'Todos los ejercicios' }, ...listaEjerciciosKpi.map(e => ({ id: e, name: e }))]}
+              keyExtractor={(item) => item.id || 'all'}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.kpiModalItem, selKpiEjercicio === item.id && styles.kpiModalItemActive]}
+                  onPress={() => {
+                    setSelKpiEjercicio(item.id);
+                    setExerciseModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.kpiModalItemName, selKpiEjercicio === item.id && styles.kpiModalItemNameActive]}>
+                    {item.name}
+                  </Text>
+                  {selKpiEjercicio === item.id && (
+                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                  )}
+                </Pressable>
+              )}
+            />
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          NOTE VIEW MODAL
+          ═══════════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={noteModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNoteModal({ visible: false, note: null })}
+      >
+        <Pressable
+          style={styles.noteModalOverlay}
+          onPress={() => setNoteModal({ visible: false, note: null })}
+        >
+          <View style={styles.noteModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.noteModalHeader}>
+              <View style={styles.noteModalPriority}>
+                <View
+                  style={[
+                    styles.notePriorityDot,
+                    { backgroundColor: NOTE_COLORS[noteModal.note?.value] || '#6b7280' }
+                  ]}
+                />
+                <Text style={styles.notePriorityLabel}>
+                  {noteModal.note?.value === 'high' && '🔴 Alta prioridad'}
+                  {noteModal.note?.value === 'normal' && '🟠 Media'}
+                  {noteModal.note?.value === 'low' && '🟢 Ok'}
+                  {noteModal.note?.value === 'custom' && '🔵 Nota'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setNoteModal({ visible: false, note: null })}>
+                <Ionicons name="close" size={24} color="#9ca3af" />
+              </Pressable>
+            </View>
+            <Text style={styles.noteModalText}>
+              {noteModal.note?.note || 'Sin texto adicional'}
+            </Text>
+          </View>
+        </Pressable>
+      </Modal>
 
     </ScrollView>
   );
@@ -841,5 +1776,764 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KPI 2.0 STYLES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // View Mode Toggle
+  viewModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  viewModeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    gap: 6,
+  },
+  viewModeBtnActive: {
+    backgroundColor: '#3b82f6',
+  },
+  viewModeBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  viewModeBtnTextActive: {
+    color: '#fff',
+  },
+
+  // Period Filter
+  periodFilter: {
+    flexDirection: 'row',
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  periodBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  periodBtnActive: {
+    backgroundColor: '#3b82f6',
+  },
+  periodBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  periodBtnTextActive: {
+    color: '#fff',
+  },
+
+  // KPI Selector
+  kpiSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e3a5f',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+  },
+  kpiSelectorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  kpiSelectorIconWrap: {
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kpiSelectorIcon: {
+    fontSize: 22,
+  },
+  kpiSelectorTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#60a5fa',
+  },
+  kpiSelectorDesc: {
+    fontSize: 11,
+    color: '#93c5fd',
+    marginTop: 2,
+  },
+  kpiSelectorChevron: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 20,
+    padding: 6,
+  },
+
+  // KPI Filters
+  kpiFilters: {
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  kpiFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  kpiFilterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9ca3af',
+    width: 70,
+  },
+  kpiFilterPicker: {
+    flex: 1,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#374151',
+    height: 44,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  kpiPickerStyle: {
+    height: 44,
+    color: '#E5E7EB',
+  },
+
+  // Chart Header & Summary
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E5E7EB',
+    flex: 1,
+  },
+  chartSummary: {
+    alignItems: 'flex-end',
+  },
+  chartSummaryValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#3b82f6',
+  },
+  chartSummaryLabel: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  chartSubInfo: {
+    fontSize: 13,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+
+  // Horizontal scroll chart
+  horizontalChartScroll: {
+    marginHorizontal: -10,
+    paddingHorizontal: 10,
+  },
+
+  // Muscle Balance Legend
+  muscleBalanceLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  muscleBalanceItem: {
+    backgroundColor: '#1f2937',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  muscleBalanceShare: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6366f1',
+  },
+  muscleBalanceName: {
+    fontSize: 10,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+
+  // No Data
+  noDataContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    backgroundColor: '#111827',
+    borderRadius: 16,
+  },
+  noDataText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 12,
+  },
+
+  // KPI Modal
+  kpiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  kpiModalContent: {
+    backgroundColor: '#1f2937',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    paddingBottom: 32,
+  },
+  kpiModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+  },
+  kpiModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
+  kpiModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+    gap: 12,
+  },
+  kpiModalItemActive: {
+    backgroundColor: '#1e3a5f',
+  },
+  kpiModalItemIcon: {
+    fontSize: 28,
+  },
+  kpiModalItemText: {
+    flex: 1,
+  },
+  kpiModalItemName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  kpiModalItemNameActive: {
+    color: '#60a5fa',
+  },
+  kpiModalItemDesc: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+
+  // Filter Button (modal-based selector)
+  filterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#374151',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#E5E7EB',
+    fontWeight: '500',
+  },
+
+  // Table Styles
+  tableContainer: {
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  tableSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E5E7EB',
+    marginBottom: 12,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+  },
+  tableRowEven: {
+    backgroundColor: '#1f2937',
+  },
+  tableHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9ca3af',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    textAlign: 'center',
+    backgroundColor: '#1f2937',
+  },
+  tableCell: {
+    fontSize: 12,
+    color: '#E5E7EB',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    textAlign: 'center',
+  },
+
+  // Routine Card Styles (for table view)
+  routineCard: {
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  routineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    backgroundColor: '#1e3a5f',
+  },
+  routineHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  routineIcon: {
+    fontSize: 24,
+  },
+  routineTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
+  routineSubtitle: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  routineContent: {
+    padding: 12,
+  },
+  exerciseBlock: {
+    marginBottom: 16,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    padding: 10,
+  },
+  exerciseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  exerciseName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#60a5fa',
+  },
+  exerciseMuscle: {
+    fontSize: 11,
+    color: '#9ca3af',
+    backgroundColor: '#1f2937',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+
+  // Week & Day Compact Styles
+  weekBlock: {
+    marginBottom: 4,
+  },
+  weekHeader: {
+    backgroundColor: '#374151',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  weekTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
+  dayBlock: {
+    marginBottom: 4,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1f2937',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  dayTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  weekBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#60a5fa',
+    backgroundColor: '#1e3a5f',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  dayTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  dayHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dayExerciseCount: {
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  dayContent: {
+    paddingLeft: 8,
+    paddingTop: 6,
+  },
+
+  // Exercise Compact
+  exerciseCompact: {
+    marginBottom: 10,
+    backgroundColor: '#111827',
+    borderRadius: 6,
+    padding: 8,
+  },
+  exerciseCompactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  exerciseMuscleCompact: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9ca3af',
+    backgroundColor: '#374151',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    textTransform: 'uppercase',
+  },
+  exerciseNameCompact: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#60a5fa',
+    flex: 1,
+  },
+
+  // Sets Table Compact
+  setsTable: {
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  setsTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1f2937',
+    paddingVertical: 4,
+  },
+  setsTableRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  setHeaderCell: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  setCell: {
+    fontSize: 12,
+    color: '#E5E7EB',
+    textAlign: 'center',
+  },
+
+  // Note Circle (compact)
+  noteCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  noteBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Note Modal
+  noteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  noteModalContent: {
+    backgroundColor: '#1f2937',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  noteModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noteModalPriority: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notePriorityDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  notePriorityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  noteModalText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    lineHeight: 20,
+  },
+
+  // Coach Progress Style - Routine Section
+  routineSection: {
+    marginBottom: 16,
+  },
+  routineSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#E5E7EB',
+    marginBottom: 10,
+  },
+  routineSectionTitleOld: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 10,
+    marginTop: 8,
+  },
+  routineHeaderBlue: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e3a5f',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  routineNameBlue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#60a5fa',
+  },
+  routineDateBlue: {
+    fontSize: 12,
+    color: '#38bdf8',
+    marginTop: 2,
+  },
+  routineCardOld: {
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  routineHeaderOld: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+  },
+  routineNameOld: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  routineDateOld: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+
+  // Exercise Block
+  exerciseBlock: {
+    marginBottom: 12,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    padding: 10,
+  },
+  exerciseBlockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  exerciseMuscleTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#60a5fa',
+    backgroundColor: '#1e3a5f',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  exerciseBlockName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#E5E7EB',
+    flex: 1,
+  },
+
+  // Sessions Carousel (S1, S2 side by side)
+  sessionsCarousel: {
+    flexDirection: 'row',
+  },
+  sessionBox: {
+    backgroundColor: '#1f2937',
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 10,
+    minWidth: 130,
+  },
+  sessionBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+  },
+  sessionBoxNum: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#3b82f6',
+  },
+  sessionBoxDate: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+
+  // Set Table Rows
+  setHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+  },
+  setHeaderCell: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6b7280',
+    width: 24,
+    textAlign: 'center',
+  },
+  setHeaderCellData: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6b7280',
+    width: 40,
+    textAlign: 'center',
+  },
+  setHeaderCellNote: {
+    fontSize: 10,
+    width: 24,
+    textAlign: 'center',
+  },
+  setTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  setColNum: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9ca3af',
+    width: 24,
+    textAlign: 'center',
+  },
+  setColData: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    gap: 2,
+  },
+  setColReps: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
+  setColKg: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  setColNoteBtn: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginLeft: 4,
+  },
+  setColNoteBtnEmpty: {
+    backgroundColor: '#374151',
   },
 });

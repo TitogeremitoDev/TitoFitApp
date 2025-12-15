@@ -173,12 +173,12 @@ export default function RegisterScreen() {
               {password.length === 0 ? 'Introduce tu contraseña' : passOk ? 'Contraseña válida' : 'Mínimo 8 caracteres'}
             </Text>
 
-            {/* Código cliente (opcional) */}
+            {/* Código de invitación/promocional (opcional) */}
             <View style={styles.inputWrap}>
-              <Ionicons name="key-outline" size={18} color="#9CA3AF" style={styles.inputIcon} />
+              <Ionicons name="gift-outline" size={18} color="#9CA3AF" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Código cliente (opcional)"
+                placeholder="Código promocional o de invitación"
                 placeholderTextColor="#6B7280"
                 autoCapitalize="characters"
                 value={clientCode}
@@ -186,6 +186,9 @@ export default function RegisterScreen() {
                 editable={!isSubmitting}
               />
             </View>
+            <Text style={[styles.hint, { color: '#6B7280' }]}>
+              Código de entrenador, referido o promocional
+            </Text>
 
             {/* Botón registro */}
             <Pressable
