@@ -49,6 +49,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAchievements } from '../../context/AchievementsContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 const { width } = Dimensions.get('window');
@@ -898,6 +899,19 @@ function TutorialModal({ visible, onComplete }) {
   const scrollViewRef = useRef(null);
   const { width: screenWidth } = Dimensions.get('window');
 
+  // Estados para el tutorial interactivo
+  const [tutorialReps, setTutorialReps] = useState('');
+  const [tutorialKg, setTutorialKg] = useState('');
+
+  // Calcular color del fondo según rango 8-12
+  const getTutorialBgColor = () => {
+    const repsNum = Number(tutorialReps);
+    if (tutorialReps === '' || isNaN(repsNum)) return theme.cardBackground;
+    if (repsNum < 8) return '#fecaca'; // rojo - por debajo
+    if (repsNum > 12) return '#bfdbfe'; // azul - supera
+    return '#bbf7d0'; // verde - en rango
+  };
+
   const goToSlide = (index) => {
     if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;
     setCurrentSlide(index);
@@ -914,9 +928,9 @@ function TutorialModal({ visible, onComplete }) {
 
   const getCoachMessage = () => {
     switch (currentSlide) {
-      case 0: return "¡Bienvenido, recluta! Soy tu coach. Aquí no venimos a jugar, venimos a transformar.";
-      case 1: return "El orden es clave. Verde para lo hecho, Rojo para lo fallado. Sin excusas.";
-      case 2: return "Tu rival eres tú mismo de la semana pasada. ¡Destruye a ese fantasma!";
+      case 0: return "¡Bienvenido, recluta! Soy tu coach. Aquí no venimos a jugar, venimos a subir de nivel.";
+      case 1: return "Esto nos ayudara a medir tu progreso y tu evolucion. Sin excusas.";
+      case 2: return "¡Eso es! Practica aquí. El color te indica si vas bien. ¡Simple!";
       case 3: return "Cada repetición que hagas tiene significado. El sistema analiza todo.";
       case 4: return "Ya tienes las herramientas. Ahora solo falta tu sudor. ¿Estás listo?";
       default: return "A entrenar.";
@@ -972,7 +986,7 @@ function TutorialModal({ visible, onComplete }) {
 
               <Text style={[tutorialStyles.mainTitle, { color: theme.text }]}>
                 SISTEMA{'\n'}
-                <Text style={{ color: theme.primary }}>TITOGEREMITO</Text>
+                <Text style={{ color: theme.primary }}>TOTALGAINS</Text>
               </Text>
               <Text style={[tutorialStyles.subtitle, { color: theme.textSecondary }]}>
                 Tu progreso, medido al milímetro.
@@ -988,182 +1002,193 @@ function TutorialModal({ visible, onComplete }) {
               </TouchableOpacity>
             </View>
           </View>
-
-          {/* SLIDE 2: LOS BOTONES */}
+          {/* SLIDE 3: TUTORIAL INTERACTIVO - Rellena tus primeros datos */}
           <View style={[tutorialStyles.slide, { width: screenWidth }]}>
             <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
               <View style={tutorialStyles.slideContent}>
-                <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
-                  Lógica del Sistema
+                <Ionicons name="create-outline" size={48} color={theme.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text, textAlign: 'center' }]}>
+                  Rellena tus{'\n'}primeros datos
                 </Text>
-                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
-                  Cada repetición cuenta. Clasifica tu serie:
-                </Text>
-
-                {/* Card Completado */}
-                <View style={[tutorialStyles.card, tutorialStyles.cardSuccess, {
-                  backgroundColor: theme.success + '20',
-                  borderColor: theme.success + '40'
-                }]}>
-                  <View style={[tutorialStyles.cardIcon, { backgroundColor: theme.success + '30' }]}>
-                    <Ionicons name="checkmark-circle" size={28} color={theme.success} />
-                  </View>
-                  <View style={tutorialStyles.cardContent}>
-                    <Text style={[tutorialStyles.cardTitle, { color: theme.success }]}>
-                      Completado (C)
-                    </Text>
-                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
-                      Objetivo cumplido. Los datos se guardan y sumas progreso.
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Card No Completado */}
-                <View style={[tutorialStyles.card, tutorialStyles.cardError, {
-                  backgroundColor: '#ef4444' + '20',
-                  borderColor: '#ef4444' + '40'
-                }]}>
-                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#ef4444' + '30' }]}>
-                    <Ionicons name="alert-circle" size={28} color="#ef4444" />
-                  </View>
-                  <View style={tutorialStyles.cardContent}>
-                    <Text style={[tutorialStyles.cardTitle, { color: '#ef4444' }]}>
-                      Fallo (NC)
-                    </Text>
-                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
-                      No llegaste al objetivo. No se guarda. Se repite la semana siguiente.
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Card Otro Ejercicio */}
-                <View style={[tutorialStyles.card, {
-                  backgroundColor: '#f59e0b' + '20',
-                  borderColor: '#f59e0b' + '40'
-                }]}>
-                  <View style={[tutorialStyles.cardIcon, { backgroundColor: '#f59e0b' + '30' }]}>
-                    <Ionicons name="barbell" size={28} color="#f59e0b" />
-                  </View>
-                  <View style={tutorialStyles.cardContent}>
-                    <Text style={[tutorialStyles.cardTitle, { color: '#f59e0b' }]}>
-                      Variante (OE)
-                    </Text>
-                    <Text style={[tutorialStyles.cardText, { color: theme.textSecondary }]}>
-                      Tuviste que cambiar el ejercicio por maquinaria ocupada.
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-
-          {/* SLIDE 3: MODO FANTASMA */}
-          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
-            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
-              <View style={tutorialStyles.slideContent}>
-                <View style={tutorialStyles.ghostHeader}>
-                  <Ionicons name="eye-outline" size={36} color={theme.primary} />
-                  <Text style={[tutorialStyles.slideTitle, { color: theme.text }]}>
-                    Modo{'\n'}Fantasma
-                  </Text>
-                </View>
-
-                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary }]}>
-                  Tu objetivo siempre será superar tu registro anterior. El sistema te mostrará
-                  lo que hiciste la semana pasada como una "sombra".
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, textAlign: 'center' }]}>
+                  Prueba cómo funciona el sistema de colores. Introduce tus repeticiones y observa el cambio.
                 </Text>
 
-                {/* Simulación UI */}
-                <View style={[tutorialStyles.ghostCard, {
+                {/* Tarjeta de ejercicio simulado */}
+                <View style={[tutorialStyles.interactiveCard, {
                   backgroundColor: theme.cardBackground,
                   borderColor: theme.cardBorder
                 }]}>
-                  <View style={[tutorialStyles.ghostTag, { backgroundColor: theme.backgroundSecondary }]}>
-                    <Text style={[tutorialStyles.ghostTagText, { color: theme.textSecondary }]}>
-                      PESO MUERTO
+                  {/* Header del ejercicio */}
+                  <View style={[tutorialStyles.interactiveHeader, { borderColor: theme.cardBorder }]}>
+                    <Text style={[tutorialStyles.interactiveExerciseName, { color: theme.text }]}>
+                      Pecho — Press Banca
                     </Text>
                   </View>
 
-                  {/* Semana Pasada */}
-                  <View style={tutorialStyles.ghostPrevious}>
-                    <View style={tutorialStyles.ghostLabel}>
-                      <Ionicons name="eye-outline" size={14} color={theme.textSecondary} />
-                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.textSecondary }]}>
-                        Semana Pasada
-                      </Text>
+                  {/* Fila de Serie */}
+                  <View style={[tutorialStyles.interactiveSerieRow, {
+                    backgroundColor: getTutorialBgColor(),
+                    borderColor: theme.border
+                  }]}>
+                    {/* Etiqueta Serie + Rango */}
+                    <View style={tutorialStyles.interactiveSerieLabel}>
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie 1</Text>
+                      <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>8-12</Text>
                     </View>
-                    <View style={tutorialStyles.ghostValues}>
-                      <View style={[tutorialStyles.ghostValueBox, {
-                        backgroundColor: theme.backgroundSecondary,
-                        borderColor: theme.border
-                      }]}>
-                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
-                          120
-                        </Text>
-                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
-                          KG
-                        </Text>
-                      </View>
-                      <View style={[tutorialStyles.ghostValueBox, {
-                        backgroundColor: theme.backgroundSecondary,
-                        borderColor: theme.border
-                      }]}>
-                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.textSecondary }]}>
-                          8
-                        </Text>
-                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.textSecondary }]}>
-                          REPS
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
 
-                  {/* Objetivo Hoy */}
-                  <View style={tutorialStyles.ghostToday}>
-                    <View style={tutorialStyles.ghostLabel}>
-                      <Ionicons name="flame" size={14} color={theme.primary} />
-                      <Text style={[tutorialStyles.ghostLabelText, { color: theme.primary }]}>
-                        Objetivo Hoy
-                      </Text>
+                    {/* Input Reps */}
+                    <View style={tutorialStyles.interactiveInputCol}>
+                      <Text style={[tutorialStyles.interactiveColLabel, { color: theme.textSecondary }]}>Reps</Text>
+                      <TextInput
+                        style={[tutorialStyles.interactiveInput, {
+                          borderColor: theme.inputBorder,
+                          backgroundColor: theme.inputBackground,
+                          color: theme.inputText
+                        }]}
+                        placeholder="10"
+                        placeholderTextColor={theme.placeholder}
+                        keyboardType="numeric"
+                        value={tutorialReps}
+                        onChangeText={setTutorialReps}
+                      />
                     </View>
-                    <View style={tutorialStyles.ghostValues}>
-                      <View style={[tutorialStyles.ghostValueBox, {
-                        backgroundColor: theme.primary + '20',
-                        borderColor: theme.primary
-                      }]}>
-                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
-                          122.5
-                        </Text>
-                        <Text style={[tutorialStyles.ghostValueLabel, { color: theme.primary }]}>
-                          KG
-                        </Text>
-                        <View style={[tutorialStyles.ghostBadge, { backgroundColor: theme.primary }]}>
-                          <Text style={tutorialStyles.ghostBadgeText}>+2.5</Text>
-                        </View>
-                      </View>
-                      <View style={[tutorialStyles.ghostValueBox, {
-                        backgroundColor: theme.backgroundSecondary,
-                        borderColor: theme.border
-                      }]}>
-                        <Text style={[tutorialStyles.ghostValueNumber, { color: theme.text }]}>
-                          ?
-                        </Text>
-                      </View>
+
+                    {/* Input Kg */}
+                    <View style={tutorialStyles.interactiveInputCol}>
+                      <Text style={[tutorialStyles.interactiveColLabel, { color: theme.textSecondary }]}>Kg</Text>
+                      <TextInput
+                        style={[tutorialStyles.interactiveInput, {
+                          borderColor: theme.inputBorder,
+                          backgroundColor: theme.inputBackground,
+                          color: theme.inputText
+                        }]}
+                        placeholder="60"
+                        placeholderTextColor={theme.placeholder}
+                        keyboardType="numeric"
+                        value={tutorialKg}
+                        onChangeText={setTutorialKg}
+                      />
                     </View>
                   </View>
                 </View>
 
-                <View style={[tutorialStyles.ghostQuote, {
-                  backgroundColor: theme.backgroundSecondary,
-                  borderColor: theme.border
-                }]}>
-                  <Text style={[tutorialStyles.ghostQuoteText, { color: theme.text }]}>
-                    "Si no superas al fantasma, no hay progreso."
-                  </Text>
+                {/* Leyenda de colores */}
+                <View style={[tutorialStyles.colorLegend, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+                  <Text style={[tutorialStyles.colorLegendTitle, { color: theme.text }]}>Lógica de colores:</Text>
+
+                  <View style={tutorialStyles.colorLegendRow}>
+                    <View style={[tutorialStyles.colorDot, { backgroundColor: '#fecaca' }]} />
+                    <Text style={[tutorialStyles.colorLegendText, { color: theme.textSecondary }]}>
+                      Rojo: por debajo del rango (menos de 8)
+                    </Text>
+                  </View>
+
+                  <View style={tutorialStyles.colorLegendRow}>
+                    <View style={[tutorialStyles.colorDot, { backgroundColor: '#bbf7d0' }]} />
+                    <Text style={[tutorialStyles.colorLegendText, { color: theme.textSecondary }]}>
+                      Verde: en el rango (8-12)
+                    </Text>
+                  </View>
+
+                  <View style={tutorialStyles.colorLegendRow}>
+                    <View style={[tutorialStyles.colorDot, { backgroundColor: '#bfdbfe' }]} />
+                    <Text style={[tutorialStyles.colorLegendText, { color: theme.textSecondary }]}>
+                      Azul: supera el rango (más de 12)
+                    </Text>
+                  </View>
                 </View>
+
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginTop: 16, textAlign: 'center', fontStyle: 'italic' }]}>
+                  ¡Prueba escribiendo diferentes números de repeticiones! {'\n'}
+                  ¡Cada semana lucharas contra tu yo anterior!
+                </Text>
               </View>
             </ScrollView>
           </View>
+
+          {/* SLIDE 2: LOS BOTONES - Versión equilibrada */}
+          <View style={[tutorialStyles.slide, { width: screenWidth }]}>
+            <ScrollView style={tutorialStyles.slideScroll} showsVerticalScrollIndicator={false}>
+              <View style={[tutorialStyles.slideContent, { paddingBottom: 140 }]}>
+                <Text style={[tutorialStyles.slideTitle, { color: theme.text, fontSize: 26, marginBottom: 6 }]}>
+                  Lógica del Sistema
+                </Text>
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginBottom: 16, fontSize: 14 }]}>
+                  Cada serie se clasifica con uno de estos estados:
+                </Text>
+
+                {/* Cards estados - en fila horizontal con más info */}
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+                  {/* C */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: theme.success + '20', borderColor: theme.success + '40', flex: 1, paddingVertical: 16 }]}>
+                    <Ionicons name="checkmark-circle" size={28} color={theme.success} />
+                    <Text style={[tutorialStyles.miniCardTitle, { color: theme.success }]}>C</Text>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Completado</Text>
+                  </View>
+                  {/* NC */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: '#ef4444' + '20', borderColor: '#ef4444' + '40', flex: 1, paddingVertical: 16 }]}>
+                    <Ionicons name="close-circle" size={28} color="#ef4444" />
+                    <Text style={[tutorialStyles.miniCardTitle, { color: '#ef4444' }]}>NC</Text>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>No Completado</Text>
+                  </View>
+                  {/* OE */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: '#f59e0b' + '20', borderColor: '#f59e0b' + '40', flex: 1, paddingVertical: 16 }]}>
+                    <Ionicons name="swap-horizontal" size={28} color="#f59e0b" />
+                    <Text style={[tutorialStyles.miniCardTitle, { color: '#f59e0b' }]}>OE</Text>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Otro Ejercicio</Text>
+                  </View>
+                </View>
+
+                {/* Descripción breve de estados */}
+                <Text style={{ color: theme.textSecondary, fontSize: 18, marginBottom: 20, lineHeight: 18, fontWeight: '600', paddingVertical: 20 }}>
+                  C = Guardas datos y sumas progreso{'\n'}
+                  NC = No se guarda, repites la próxima semana{'\n'}
+                  OE = Cambiaste de ejercicio por algún motivo
+                </Text>
+
+                {/* Separador visual */}
+                <View style={{ height: 1, backgroundColor: theme.border, marginBottom: 16 }} />
+
+                {/* Título herramientas */}
+                <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginBottom: 12, fontSize: 14 }]}>
+                  Cada ejercicio tiene botones de ayuda:
+                </Text>
+
+                {/* Botones de ayuda en fila */}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {/* TC */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, flex: 1, paddingVertical: 14 }]}>
+                    <View style={{ backgroundColor: theme.backgroundTertiary, padding: 8, borderRadius: 8 }}>
+                      <Text style={{ fontWeight: '800', fontSize: 13, color: theme.text }}>TC</Text>
+                    </View>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Técnica</Text>
+                  </View>
+                  {/* Imagen */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, flex: 1, paddingVertical: 14 }]}>
+                    <View style={{ backgroundColor: theme.backgroundTertiary, padding: 8, borderRadius: 8 }}>
+                      <Text style={{ fontSize: 16 }}>🖼️</Text>
+                    </View>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Imagen</Text>
+                  </View>
+                  {/* Video */}
+                  <View style={[tutorialStyles.miniCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, flex: 1, paddingVertical: 14 }]}>
+                    <View style={{ backgroundColor: theme.backgroundTertiary, padding: 8, borderRadius: 8 }}>
+                      <Ionicons name="videocam" size={18} color={theme.text} />
+                    </View>
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Video</Text>
+                  </View>
+                </View>
+
+                {/* Descripción breve herramientas */}
+                <Text style={{ color: theme.textSecondary, fontSize: 20, textAlign: 'center', marginTop: 8, lineHeight: 18, fontWeight: '600' }}>
+                  Ver tips de técnica, fotos del ejercicio o video tutorial
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+
+
 
           {/* SLIDE 4: TUS DATOS */}
           <View style={[tutorialStyles.slide, { width: screenWidth }]}>
@@ -1198,7 +1223,7 @@ function TutorialModal({ visible, onComplete }) {
                 </View>
 
                 <Text style={[tutorialStyles.slideDescription, { color: theme.textSecondary, marginTop: 24, textAlign: 'center' }]}>
-                  Podrás ver tu evolución completa en la sección de estadísticas.
+                  Podrás ver tu evolución completa en tu perfil en la sección de evolución.
                 </Text>
               </View>
             </ScrollView>
@@ -1215,8 +1240,8 @@ function TutorialModal({ visible, onComplete }) {
                 />
                 <View style={tutorialStyles.finalImageOverlay} />
                 <Text style={tutorialStyles.finalImageText}>
-                  NO PAIN{'\n'}
-                  <Text style={tutorialStyles.finalImageTextAccent}>NO GAIN</Text>
+                  NOFUN{'\n'}
+                  <Text style={tutorialStyles.finalImageTextAccent}>NOGAIN</Text>
                 </Text>
               </View>
 
@@ -1516,6 +1541,100 @@ const tutorialStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  // Estilos del Tutorial Interactivo
+  interactiveCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  interactiveHeader: {
+    padding: 12,
+    borderBottomWidth: 1,
+  },
+  interactiveExerciseName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  // Mini cards para vista compacta
+  miniCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  miniCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  miniCardText: {
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  miniCardSubtitle: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  interactiveSerieRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    margin: 8,
+    borderWidth: 1,
+  },
+  interactiveSerieLabel: {
+    width: 70,
+    justifyContent: 'center',
+  },
+  interactiveInputCol: {
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  interactiveColLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  interactiveInput: {
+    width: 55,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  colorLegend: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  colorLegendTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  colorLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  colorDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  colorLegendText: {
+    fontSize: 12,
+    flex: 1,
   },
   dataCard: {
     flexDirection: 'row',
@@ -1853,6 +1972,7 @@ export default function Entreno() {
   const { user } = useAuth();
   const { processWorkoutCompletion } = useAchievements();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [activeId, setActiveId] = useState(null);  // rutina activa
   const [hydrated, setHydrated] = useState(false); // ya cargamos última sesión
   const [rutina, setRutina] = useState(null);
@@ -2142,7 +2262,52 @@ export default function Entreno() {
     const activa = lista.find((r) => r && r.id === idAct) || null;
     const stored = await AsyncStorage.getItem(`routine_${idAct}`);
 
-    const diasNorm = normalizeDias(stored ? JSON.parse(stored) : []);
+    // ════════════════════════════════════════════════════════════════════════
+    // 🆕 FIX: Si no hay datos locales pero es ID de MongoDB, cargar desde API
+    // ════════════════════════════════════════════════════════════════════════
+    const extractMongoId = (id) => {
+      if (!id) return null;
+      if (/^[0-9a-fA-F]{24}$/.test(id)) return id;
+      if (id.startsWith('srv_')) {
+        const mongoId = id.replace('srv_', '');
+        if (/^[0-9a-fA-F]{24}$/.test(mongoId)) return mongoId;
+      }
+      return null;
+    };
+
+    let routineData = stored ? JSON.parse(stored) : null;
+    const mongoRoutineId = extractMongoId(idAct);
+
+    // Si no hay datos locales pero es un ID de MongoDB, cargar desde la API
+    if (!routineData && mongoRoutineId && token && user?.tipoUsuario !== 'FREEUSER') {
+      try {
+        console.log('[Entreno] 📡 Rutina no encontrada localmente, cargando desde servidor...');
+        const response = await fetch(`${API_URL}/api/routines/${mongoRoutineId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (data.success && data.routine) {
+          const serverRoutine = data.routine;
+          routineData = {};
+
+          // Convertir diasArr a formato {dia1: [], dia2: [], ...}
+          if (Array.isArray(serverRoutine.diasArr)) {
+            serverRoutine.diasArr.forEach((dayExercises, idx) => {
+              routineData[`dia${idx + 1}`] = dayExercises || [];
+            });
+          }
+
+          // Cachear en AsyncStorage para uso futuro
+          await AsyncStorage.setItem(`routine_${idAct}`, JSON.stringify(routineData));
+          console.log('[Entreno] ✅ Rutina cargada y cacheada:', serverRoutine.nombre);
+        }
+      } catch (error) {
+        console.error('[Entreno] Error cargando rutina del servidor:', error);
+      }
+    }
+
+    const diasNorm = normalizeDias(routineData || []);
     // 🆕 Usar nombre guardado como fallback si la rutina no está en la lista
     const metaBase = activa || { id: idAct, nombre: savedRoutineName || 'Rutina Desconocida' };
 
@@ -2174,21 +2339,7 @@ export default function Entreno() {
       }
     } catch { }
 
-    // 🆕 Para usuarios premium: intentar recuperar datos de la API
-    // Soporta IDs directos de MongoDB (24 hex chars) o IDs con prefijo srv_ 
-    const extractMongoId = (id) => {
-      if (!id) return null;
-      // ID directo de MongoDB
-      if (/^[0-9a-fA-F]{24}$/.test(id)) return id;
-      // ID con prefijo srv_
-      if (id.startsWith('srv_')) {
-        const mongoId = id.replace('srv_', '');
-        if (/^[0-9a-fA-F]{24}$/.test(mongoId)) return mongoId;
-      }
-      return null;
-    };
-
-    const mongoRoutineId = extractMongoId(idAct);
+    // Cargar workouts/progreso de la nube
     if (token && user?.tipoUsuario !== 'FREEUSER' && mongoRoutineId) {
       // 🆕 Cargar TODOS los workouts de la rutina de una vez
       const cloudData = await fetchAllCloudProgress(mongoRoutineId, diasNorm);
@@ -3230,6 +3381,16 @@ export default function Entreno() {
                                 <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
                                   {repMin}-{repMax}
                                 </Text>
+                              )}
+                              {/* Nota del entrenador */}
+                              {serie?.nota && serie.nota.trim() !== '' && (
+                                <TouchableOpacity
+                                  onPress={() => Alert.alert('📝 Nota del Coach', serie.nota)}
+                                  style={{ marginTop: 3 }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text style={{ fontSize: 10, color: '#f59e0b' }}>⚠️ Nota</Text>
+                                </TouchableOpacity>
                               )}
                             </View>
 

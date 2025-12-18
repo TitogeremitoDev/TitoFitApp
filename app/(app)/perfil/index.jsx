@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert, Share } from 'react-native';
+import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert, Share, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -75,6 +75,9 @@ export default function PerfilScreen() {
         isComplete: false,
         itemsSynced: 0,
     });
+
+    // Estado para modal de error de código
+    const [codeErrorModal, setCodeErrorModal] = useState({ visible: false, message: '' });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -237,11 +240,11 @@ export default function PerfilScreen() {
                 // Show success modal instead of Alert
                 setShowPremiumSuccessModal(true);
             } else {
-                Alert.alert('Error', data.message || 'No se pudo canjear el código');
+                setCodeErrorModal({ visible: true, message: data.message || 'No se pudo canjear el código' });
             }
         } catch (e) {
             console.error('[Perfil] Error redeeming code:', e);
-            Alert.alert('Error', 'No se pudo canjear el código');
+            setCodeErrorModal({ visible: true, message: 'No se pudo canjear el código. Verifica que sea correcto.' });
         } finally {
             setIsRedeemingCode(false);
         }
@@ -334,15 +337,23 @@ export default function PerfilScreen() {
         }
     };
 
+    const { width: screenWidth } = useWindowDimensions();
+    // Calculate card width for 2-column grid with proper spacing
+    const cardPadding = 20; // horizontal padding of container
+    const cardGap = 12; // gap between cards
+    // Limit effective width on web for better layout
+    const effectiveWidth = Math.min(screenWidth, 600) - (cardPadding * 2);
+    const cardWidth = (effectiveWidth - cardGap) / 2;
+
     const menuItems = [
-        { title: 'Información Personal', icon: 'person-outline', route: '/perfil/informacion-personal' },
-        { title: 'Evolución', icon: 'trending-up-outline', route: '/perfil/evolucion' },
-        { title: 'Mi Transformación', icon: 'body-outline', route: '/perfil/transformacion' },
-        { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros' },
-        { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos' },
-        { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad' },
-        { title: 'Videoteca', icon: 'videocam-outline', route: '/perfil/videos' },
-        { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes' },
+        { title: 'Información Personal', icon: 'person-outline', route: '/perfil/informacion-personal', color: '#3B82F6' },
+        { title: 'Evolución', icon: 'trending-up-outline', route: '/perfil/evolucion', color: '#10B981' },
+        { title: 'Mi Transformación', icon: 'body-outline', route: '/perfil/transformacion', color: '#8B5CF6' },
+        { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros', color: '#F59E0B' },
+        { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos', color: '#EC4899' },
+        { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad', color: '#06B6D4' },
+        { title: 'Videoteca', icon: 'videocam-outline', route: '/perfil/videos', color: '#EF4444' },
+        { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes', color: '#6B7280' },
     ];
 
     const gradientColors = isDark
@@ -397,6 +408,47 @@ export default function PerfilScreen() {
                             </View>
                         </View>
 
+                        {/* Subscription Expiry Info - Only show if user has subscriptionExpiry */}
+                        {user?.subscriptionExpiry && user?.tipoUsuario !== 'FREEUSER' && (() => {
+                            const expiryDate = new Date(user.subscriptionExpiry);
+                            const now = new Date();
+                            const diffTime = expiryDate.getTime() - now.getTime();
+                            const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                            const isExpired = daysRemaining <= 0;
+                            const isUrgent = daysRemaining <= 7 && daysRemaining > 0;
+
+                            const statusColor = isExpired ? '#EF4444' : isUrgent ? '#F59E0B' : '#10B981';
+                            const statusBgColor = isExpired ? 'rgba(239, 68, 68, 0.15)' : isUrgent ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+                            const statusText = isExpired
+                                ? 'Suscripción expirada'
+                                : isUrgent
+                                    ? `⚠️ Expira en ${daysRemaining} día${daysRemaining !== 1 ? 's' : ''}`
+                                    : `✓ Activo hasta ${expiryDate.toLocaleDateString()}`;
+
+                            return (
+                                <View style={[styles.subscriptionExpiryBanner, { backgroundColor: statusBgColor, borderColor: statusColor }]}>
+                                    <Ionicons
+                                        name={isExpired ? 'warning' : isUrgent ? 'time' : 'checkmark-circle'}
+                                        size={18}
+                                        color={statusColor}
+                                    />
+                                    <View style={{ flex: 1, marginLeft: 8 }}>
+                                        <Text style={[styles.subscriptionExpiryText, { color: statusColor }]}>
+                                            {statusText}
+                                        </Text>
+                                        {(isExpired || isUrgent) && (
+                                            <TouchableOpacity onPress={() => router.push('/payment')}>
+                                                <Text style={[styles.subscriptionRenewLink, { color: statusColor }]}>
+                                                    Renovar ahora →
+                                                </Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                </View>
+                            );
+                        })()}
+
                         {/* Simplified Referral Banner - Links to Amigos */}
                         <TouchableOpacity
                             style={[styles.referralBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: theme.primary }]}
@@ -406,10 +458,7 @@ export default function PerfilScreen() {
                                 <Ionicons name="gift" size={22} color={theme.primary} />
                                 <View style={styles.referralBannerText}>
                                     <Text style={[styles.referralBannerTitle, { color: theme.primary }]}>
-                                        Invita amigos, gana premium
-                                    </Text>
-                                    <Text style={[styles.referralBannerSubtitle, { color: theme.textSecondary }]}>
-                                        1 semana gratis por cada amigo
+                                        Codigos Premium o Rereridos
                                     </Text>
                                 </View>
                             </View>
@@ -469,30 +518,54 @@ export default function PerfilScreen() {
 
                 <View style={styles.divider} />
 
-                {/* Menu Section */}
+                {/* Menu Section - Professional 2-Column Grid */}
                 <View style={styles.menuContainer}>
-                    {menuItems.map((item, index) => (
-                        <View key={index} style={styles.menuItemWrapper}>
-                            <ActionButton
-                                title={item.title}
-                                icon={item.icon}
+                    <View style={styles.menuGrid}>
+                        {menuItems.map((item, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.menuCard,
+                                    {
+                                        width: cardWidth,
+                                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.9)',
+                                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                                    }
+                                ]}
                                 onPress={() => router.push(item.route)}
-                                variant="secondary"
-                                style={styles.menuButton}
-                            />
-                        </View>
-                    ))}
+                                activeOpacity={0.7}
+                            >
+                                <View style={[styles.menuCardIconContainer, { backgroundColor: `${item.color}15` }]}>
+                                    <Ionicons name={item.icon} size={24} color={item.color} />
+                                </View>
+                                <Text
+                                    style={[styles.menuCardTitle, { color: theme.text }]}
+                                    numberOfLines={2}
+                                >
+                                    {item.title}
+                                </Text>
+                                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} style={styles.menuCardChevron} />
+                            </TouchableOpacity>
+                        ))}
+                    </View>
 
                     <View style={[styles.divider, { marginVertical: 20 }]} />
 
-                    <ActionButton
-                        title="Cerrar Sesión"
-                        icon="log-out-outline"
+                    {/* Logout Button - Full Width */}
+                    <TouchableOpacity
+                        style={[
+                            styles.logoutButton,
+                            {
+                                backgroundColor: '#EF4444',
+                                borderColor: '#EF4444',
+                            }
+                        ]}
                         onPress={handleLogout}
-                        variant="secondary"
-                        style={{ borderColor: theme.error, borderWidth: 1 }}
-                        textStyle={{ color: theme.error }}
-                    />
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+                        <Text style={[styles.logoutButtonText, { color: '#FFFFFF' }]}>Cerrar Sesión</Text>
+                    </TouchableOpacity>
                 </View>
 
             </ScrollView>
@@ -739,7 +812,26 @@ export default function PerfilScreen() {
                 </View>
             </Modal >
 
-            {/* Referral Code Modal - Enter friend's code */}
+            {/* Code Error Modal */}
+            <Modal visible={codeErrorModal.visible} transparent animationType="fade" onRequestClose={() => setCodeErrorModal({ visible: false, message: '' })}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.premiumSuccessCard, { borderColor: '#EF4444' }]}>
+                        <View style={{ marginBottom: 16 }}>
+                            <Ionicons name="close-circle" size={70} color="#EF4444" />
+                        </View>
+                        <Text style={styles.premiumSuccessTitle}>❌ Código no válido</Text>
+                        <Text style={[styles.premiumSuccessSubtitle, { color: '#9CA3AF' }]}>
+                            {codeErrorModal.message}
+                        </Text>
+                        <TouchableOpacity
+                            style={[styles.premiumSuccessButton, { backgroundColor: '#EF4444', marginTop: 20 }]}
+                            onPress={() => setCodeErrorModal({ visible: false, message: '' })}
+                        >
+                            <Text style={styles.premiumSuccessButtonText}>Entendido</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
             < Modal visible={showReferralModal} transparent animationType="fade" onRequestClose={() => setShowReferralModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
@@ -949,6 +1041,26 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '700',
     },
+    // Subscription Expiry Banner
+    subscriptionExpiryBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        width: '100%',
+    },
+    subscriptionExpiryText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    subscriptionRenewLink: {
+        fontSize: 12,
+        fontWeight: '700',
+        marginTop: 4,
+        textDecorationLine: 'underline',
+    },
 
     // Referral Code Styles
     referralSection: {
@@ -1038,9 +1150,92 @@ const styles = StyleSheet.create({
     },
     menuContainer: {
         width: '100%',
+        maxWidth: 600,
         paddingHorizontal: 20,
         marginTop: 4,
         alignItems: 'center',
+        alignSelf: 'center',
+    },
+    menuGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        width: '100%',
+        ...Platform.select({
+            web: {
+                gap: 1,
+            },
+            default: {},
+        }),
+    },
+    menuCard: {
+        marginVertical: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        paddingVertical: 16,
+        paddingHorizontal: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 120,
+        marginBottom: Platform.OS === 'web' ? 0 : 12,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 3,
+            },
+            web: {
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            },
+        }),
+    },
+    menuCardIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    menuCardTitle: {
+        fontSize: 13,
+        fontWeight: '600',
+        textAlign: 'center',
+        lineHeight: 18,
+    },
+    menuCardChevron: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        opacity: 0.5,
+    },
+    logoutButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        width: '100%',
+        maxWidth: 280,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        ...Platform.select({
+            web: {
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, opacity 0.15s ease',
+            },
+            default: {},
+        }),
+    },
+    logoutButtonText: {
+        fontSize: 15,
+        fontWeight: '700',
     },
     menuItemWrapper: {
         marginBottom: 12,

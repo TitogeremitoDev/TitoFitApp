@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import ActionButton from '../../components/ActionButton';
+import SubscriptionRetentionModal from '../../components/SubscriptionRetentionModal';
 import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
@@ -66,6 +67,10 @@ export default function HomeScreen() {
 
   // Estado para el entrenador del cliente
   const [currentTrainer, setCurrentTrainer] = useState(null);
+
+  // Estado para el modal de retención de suscripción
+  const [subscriptionData, setSubscriptionData] = useState(null);
+  const [showRetentionModal, setShowRetentionModal] = useState(false);
 
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
@@ -121,6 +126,108 @@ export default function HomeScreen() {
       } catch { }
     })();
   }, []);
+
+  // Cargar estado de suscripción para usuarios premium/cliente/entrenador
+  useEffect(() => {
+    const checkSubscriptionStatus = async () => {
+      // Solo para usuarios no FREEUSER que tengan token
+      if (!token || user?.tipoUsuario === 'FREEUSER' || !user) return;
+
+      try {
+        const response = await fetch(`${API_URL}/api/subscription/status`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await response.json();
+        if (data.success && data.subscription) {
+          setSubscriptionData(data.subscription);
+        } else {
+          // FALLBACK: Si no hay suscripción formal pero el usuario tiene subscriptionExpiry
+          // (caso de códigos gratuitos / períodos de prueba)
+          if (user.subscriptionExpiry) {
+            const expiryDate = new Date(user.subscriptionExpiry);
+            const now = new Date();
+            const diffTime = expiryDate.getTime() - now.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            setSubscriptionData({
+              daysRemaining: diffDays,
+              status: diffDays <= 0 ? 'expired' : 'trial', // 'trial' para códigos gratuitos
+              active: diffDays > 0,
+              expiresAt: user.subscriptionExpiry,
+              isCodeBased: true, // Flag para identificar que es un código gratuito
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[Home] Error fetching subscription status:', error);
+        // FALLBACK en caso de error: usar subscriptionExpiry del usuario
+        if (user?.subscriptionExpiry) {
+          const expiryDate = new Date(user.subscriptionExpiry);
+          const now = new Date();
+          const diffTime = expiryDate.getTime() - now.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          setSubscriptionData({
+            daysRemaining: diffDays,
+            status: diffDays <= 0 ? 'expired' : 'trial',
+            active: diffDays > 0,
+            expiresAt: user.subscriptionExpiry,
+            isCodeBased: true,
+          });
+        }
+      }
+    };
+
+    checkSubscriptionStatus();
+  }, [token, user?.tipoUsuario, user, user?.subscriptionExpiry]);
+
+  // Lógica de trigger para el modal de retención
+  useEffect(() => {
+    const checkRetentionModal = async () => {
+      if (!subscriptionData) return;
+
+      const { daysRemaining, status, active, isCodeBased } = subscriptionData;
+
+      // NO mostrar si tiene suscripción activa que se auto-renueva
+      // (status === 'active' Y no está cancelada Y no tiene fecha de expiración próxima Y NO es código gratuito)
+      if (status === 'active' && active && !subscriptionData.cancelAtPeriodEnd && !isCodeBased) {
+        return;
+      }
+
+      // No tiene días restantes definidos o son indefinidos
+      if (daysRemaining === undefined || daysRemaining === null) return;
+
+      // No mostrar si quedan más de 7 días
+      if (daysRemaining > 7) return;
+
+      const lastShown = await AsyncStorage.getItem('retention_modal_last_shown');
+      const now = Date.now();
+
+      if (lastShown) {
+        const elapsed = now - parseInt(lastShown, 10);
+        const hoursElapsed = elapsed / (1000 * 60 * 60);
+
+        // Reglas de frecuencia:
+        // - 7-3 días: mostrar cada 48 horas
+        // - < 3 días (pero > 0): mostrar cada 24 horas
+        // - Día 0: mostrar siempre
+        if (daysRemaining >= 3 && hoursElapsed < 48) return;
+        if (daysRemaining > 0 && daysRemaining < 3 && hoursElapsed < 24) return;
+        // daysRemaining === 0: siempre mostrar (no return)
+      }
+
+      // Delay de 2.5 segundos para no ser intrusivo al entrar
+      setTimeout(() => {
+        setShowRetentionModal(true);
+        AsyncStorage.setItem('retention_modal_last_shown', now.toString());
+      }, 2500);
+    };
+
+    checkRetentionModal();
+  }, [subscriptionData]);
 
   const closeChangelog = async () => {
     setShowChangelog(false);
@@ -393,6 +500,19 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de retención de suscripción */}
+      <SubscriptionRetentionModal
+        visible={showRetentionModal}
+        onClose={() => setShowRetentionModal(false)}
+        onRenew={() => {
+          setShowRetentionModal(false);
+          router.push('/payment');
+        }}
+        daysRemaining={subscriptionData?.daysRemaining || 0}
+        userType={user?.tipoUsuario}
+        subscriptionStatus={subscriptionData?.status}
+      />
     </View>
   );
 }
@@ -402,7 +522,7 @@ const BORDER = 'rgba(255,255,255,0.18)';
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  contentContainer: { width: '86%', alignItems: 'center' ,bottom: -20},
+  contentContainer: { width: '86%', alignItems: 'center', bottom: -20 },
   blob: {
     position: 'absolute',
     width: 280,

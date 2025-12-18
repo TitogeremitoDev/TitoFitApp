@@ -38,6 +38,7 @@ const normalizeRoutine = (input) => {
         repMin: s?.repMin ?? '8',
         repMax: s?.repMax ?? '12',
         extra: s?.extra ?? 'Ninguno',
+        nota: s?.nota ?? '',
       }));
       return {
         musculo: '',
@@ -72,40 +73,54 @@ const nextDayKey = (entries) => {
 
 const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, updateSerieCampo, toggleSerieExtra, deleteSerie }) => {
   return (
-    <View style={styles.serieRow}>
-      <Text style={styles.serieLabel}>Serie {index + 1}</Text>
+    <View style={styles.serieRowContainer}>
+      <View style={styles.serieRow}>
+        <Text style={styles.serieLabel}>Serie {index + 1}</Text>
 
-      <TextInput
-        style={styles.serieInput}
-        placeholder="min"
-        keyboardType="numeric"
-        value={String(s.repMin ?? '')}
-        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
-      />
-      <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
-      <TextInput
-        style={styles.serieInput}
-        placeholder="max"
-        keyboardType="numeric"
-        value={String(s.repMax ?? '')}
-        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
-      />
+        <TextInput
+          style={styles.serieInput}
+          placeholder="min"
+          keyboardType="numeric"
+          value={String(s.repMin ?? '')}
+          onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
+        />
+        <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
+        <TextInput
+          style={styles.serieInput}
+          placeholder="max"
+          keyboardType="numeric"
+          value={String(s.repMax ?? '')}
+          onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
+        />
 
-      <TouchableOpacity
-        style={styles.extraPill}
-        onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
-      >
-        <Text style={styles.extraPillTxt}>{s.extra || 'Ninguno'}</Text>
-        <Ionicons name="chevron-down-outline" size={16} color="#475569" />
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.extraPill}
+          onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
+        >
+          <Text style={styles.extraPillTxt}>{s.extra || 'Ninguno'}</Text>
+          <Ionicons name="chevron-down-outline" size={16} color="#475569" />
+        </TouchableOpacity>
 
-      <View style={{ flex: 1 }} />
+        <View style={{ flex: 1 }} />
 
-      <IconBtn
-        onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
-        icon="close-circle"
-        tint="#ef4444"
-      />
+        <IconBtn
+          onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
+          icon="close-circle"
+          tint="#ef4444"
+        />
+      </View>
+
+      {/* Nota del entrenador */}
+      <View style={styles.notaRow}>
+        <Ionicons name="chatbubble-ellipses-outline" size={14} color="#6b7280" style={{ marginRight: 6 }} />
+        <TextInput
+          style={styles.notaInput}
+          placeholder="Nota para el cliente (ej: Controlar la bajada...)"
+          placeholderTextColor="#9ca3af"
+          value={s.nota || ''}
+          onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'nota', v)}
+        />
+      </View>
     </View>
   );
 });
@@ -398,7 +413,8 @@ export default function CreateRoutineScreen() {
             id: `s-${uid()}`,
             repMin: s.repMin,
             repMax: s.repMax,
-            extra: s.extra || 'Ninguno'
+            extra: s.extra || 'Ninguno',
+            nota: s.nota || ''
           }))
         }));
       });
@@ -552,9 +568,9 @@ export default function CreateRoutineScreen() {
         nombre: '',
         dbId: null,
         series: [
-          { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno' },
-          { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno' },
-          { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
+          { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
+          { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
         ],
       };
 
@@ -718,7 +734,7 @@ export default function CreateRoutineScreen() {
         const newId = `s-${ejercicioId}-${(e.series?.length || 0) + 1}-${uid()}`;
         const series = [
           ...(e.series || []),
-          { id: newId, repMin: '8', repMax: '12', extra: 'Ninguno' },
+          { id: newId, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
         ];
         return { ...e, series };
       });
@@ -1340,6 +1356,28 @@ const styles = StyleSheet.create({
     borderColor: '#bbf7d0',
   },
   addSerieTxt: { fontWeight: '800', fontSize: 13, color: '#15803d' },
+
+  // Contenedor de serie con nota
+  serieRowContainer: {
+    marginBottom: 8,
+  },
+  notaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 4,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notaInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#475569',
+    paddingVertical: 2,
+  },
 
   saveButton: {
     padding: 16,

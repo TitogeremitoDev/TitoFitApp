@@ -39,6 +39,7 @@ const normalizeRoutine = (input) => {
         repMin: s?.repMin ?? '8',
         repMax: s?.repMax ?? '12',
         extra: s?.extra ?? 'Ninguno',
+        nota: s?.nota ?? '',
       }));
       return {
         musculo: '',
@@ -320,7 +321,22 @@ export default function UserRoutineEditorScreen() {
         return;
       }
 
-      // 2. Si no está en local, intentar API (Server/Premium)
+      // 🆕 Si es un ID local (r-xxx) y no hay datos, inicializar vacío
+      // No intentar cargar de API porque no existe ahí
+      const isLocalId = routineId && routineId.startsWith('r-');
+      if (isLocalId) {
+        console.log('[Rutinas] ID local sin datos, inicializando rutina vacía');
+        const init = normalizeRoutine({});
+        for (let i = 1; i <= days; i++) init[`dia${i}`] = [];
+        setRutina(init);
+        const open = {};
+        Object.keys(init).forEach((k) => (open[k] = true));
+        setDiasAbiertos(open);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Si no está en local y es ID de MongoDB, intentar API (Server/Premium)
       const response = await fetch(`${API_URL}/api/routines/${routineId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -364,7 +380,8 @@ export default function UserRoutineEditorScreen() {
             id: `s-${uid()}`,
             repMin: s.repMin,
             repMax: s.repMax,
-            extra: s.extra || 'Ninguno'
+            extra: s.extra || 'Ninguno',
+            nota: s.nota || ''
           }))
         }));
       });
@@ -825,13 +842,18 @@ export default function UserRoutineEditorScreen() {
         if (retryData.success) {
           // ACTUALIZAR AsyncStorage con el nuevo ID
           if (isLocalId && retryData.routine?._id) {
+            const newMongoId = retryData.routine._id;
             const rutinasStr = await AsyncStorage.getItem('rutinas');
             if (rutinasStr) {
               const rutinas = JSON.parse(rutinasStr);
               const updatedRutinas = rutinas.map(r =>
-                r.id === id ? { ...r, id: retryData.routine._id, origen: 'server' } : r
+                r.id === id ? { ...r, id: newMongoId, origen: 'server' } : r
               );
               await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+
+              // 🆕 Cachear el contenido con el nuevo ID
+              await AsyncStorage.setItem(`routine_${newMongoId}`, JSON.stringify(rutina));
+
               await AsyncStorage.removeItem(`routine_${id}`);
             }
           }
@@ -849,13 +871,19 @@ export default function UserRoutineEditorScreen() {
       if (data.success) {
         // Si era ID local y se creó correctamente, actualizar AsyncStorage
         if (isLocalId && data.routine?._id && method === 'POST') {
+          const newMongoId = data.routine._id;
           const rutinasStr = await AsyncStorage.getItem('rutinas');
           if (rutinasStr) {
             const rutinas = JSON.parse(rutinasStr);
             const updatedRutinas = rutinas.map(r =>
-              r.id === id ? { ...r, id: data.routine._id, origen: 'server' } : r
+              r.id === id ? { ...r, id: newMongoId, origen: 'server' } : r
             );
             await AsyncStorage.setItem('rutinas', JSON.stringify(updatedRutinas));
+
+            // 🆕 Cachear el contenido de la rutina con el nuevo ID para uso inmediato
+            await AsyncStorage.setItem(`routine_${newMongoId}`, JSON.stringify(rutina));
+            console.log('[Rutinas] ✅ Rutina cacheada con nuevo ID:', newMongoId);
+
             // Eliminar el storage local con el ID viejo
             await AsyncStorage.removeItem(`routine_${id}`);
           }
@@ -1094,12 +1122,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
   },
   titleInput: {
+    marginTop: 12,
     fontSize: 20,
     fontWeight: '800',
     color: '#1e293b',
-    borderBottomWidth: 1,
-    borderBottomColor: '#cbd5e1',
-    paddingBottom: 4,
+    borderColor: '#656b72ff',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    paddingBottom: 6,
   },
 
   /* Día */

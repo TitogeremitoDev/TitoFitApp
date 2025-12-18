@@ -1921,7 +1921,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '💲',
         category: 'intensidad',
         exerciseMatch: ['press banca', 'bench press', 'press de banca', 'banca', 'bench'],
-        unlockCondition: (stats) => stats.benchPR >= stats.bodyWeight * 1.25,
+        unlockCondition: (stats) => stats.benchPR > 0 && stats.bodyWeight > 0 && stats.benchPR >= stats.bodyWeight * 1.25,
     },
     {
         id: 'bench_1_5x_bw',
@@ -1932,7 +1932,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '💥',
         category: 'intensidad',
         exerciseMatch: ['press banca', 'bench press', 'press de banca', 'banca', 'bench'],
-        unlockCondition: (stats) => stats.benchPR >= stats.bodyWeight * 1.5,
+        unlockCondition: (stats) => stats.benchPR > 0 && stats.bodyWeight > 0 && stats.benchPR >= stats.bodyWeight * 1.5,
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2013,7 +2013,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '💰',
         category: 'intensidad',
         exerciseMatch: ['sentadilla', 'squat'],
-        unlockCondition: (stats) => stats.squatPR >= stats.bodyWeight * 1.5,
+        unlockCondition: (stats) => stats.squatPR > 0 && stats.bodyWeight > 0 && stats.squatPR >= stats.bodyWeight * 1.5,
     },
     {
         id: 'squat_2x_bw',
@@ -2024,7 +2024,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '🛡️',
         category: 'intensidad',
         exerciseMatch: ['sentadilla', 'squat'],
-        unlockCondition: (stats) => stats.squatPR >= stats.bodyWeight * 2,
+        unlockCondition: (stats) => stats.squatPR > 0 && stats.bodyWeight > 0 && stats.squatPR >= stats.bodyWeight * 2,
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2197,7 +2197,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '⚖️',
         category: 'intensidad',
         exerciseMatch: ['press militar', 'overhead press', 'ohp'],
-        unlockCondition: (stats) => stats.ohpPR >= stats.bodyWeight * 0.75,
+        unlockCondition: (stats) => stats.ohpPR > 0 && stats.bodyWeight > 0 && stats.ohpPR >= stats.bodyWeight * 0.75,
     },
     {
         id: 'ohp_1x_bw',
@@ -2208,7 +2208,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '⚡',
         category: 'intensidad',
         exerciseMatch: ['press militar', 'overhead press', 'ohp'],
-        unlockCondition: (stats) => stats.ohpPR >= stats.bodyWeight,
+        unlockCondition: (stats) => stats.ohpPR > 0 && stats.bodyWeight > 0 && stats.ohpPR >= stats.bodyWeight,
     },
 
     // ─────────────────────────────────────────────────────────────────────────

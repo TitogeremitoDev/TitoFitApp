@@ -11,6 +11,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -63,6 +64,13 @@ export default function LoginScreen() {
 
   const processedResponseRef = useRef<string | null>(null); // ✅ Para trackear respuestas ya procesadas
   const urlTokenProcessedRef = useRef(false); // ✅ Para evitar procesar URL token múltiples veces
+
+  // Estado para modal de error visual
+  const [errorModal, setErrorModal] = useState<{ visible: boolean; title: string; message: string }>({
+    visible: false,
+    title: '',
+    message: ''
+  });
 
   // ════════════════════════════════════════════════════════════════════════
   // WEB: Detectar token de OAuth en URL hash al cargar la página
@@ -188,7 +196,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!emailOrUsername.trim() || !password.trim()) {
-      Alert.alert('Datos incompletos', 'Introduce usuario/email y contraseña.');
+      setErrorModal({ visible: true, title: 'Datos incompletos', message: 'Introduce usuario/email y contraseña.' });
       return;
     }
 
@@ -218,7 +226,7 @@ export default function LoginScreen() {
         msg = e.message;
       }
 
-      Alert.alert('Error', msg);
+      setErrorModal({ visible: true, title: 'Error de inicio de sesión', message: msg });
     } finally {
       setIsSubmitting(false);
     }
@@ -572,6 +580,30 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Modal de Error Visual */}
+      <Modal
+        visible={errorModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setErrorModal({ ...errorModal, visible: false })}
+      >
+        <View style={styles.errorModalOverlay}>
+          <View style={styles.errorModalCard}>
+            <View style={styles.errorIconContainer}>
+              <Ionicons name="close-circle" size={60} color="#EF4444" />
+            </View>
+            <Text style={styles.errorModalTitle}>{errorModal.title}</Text>
+            <Text style={styles.errorModalMessage}>{errorModal.message}</Text>
+            <Pressable
+              style={styles.errorModalButton}
+              onPress={() => setErrorModal({ ...errorModal, visible: false })}
+            >
+              <Text style={styles.errorModalButtonText}>Entendido</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -657,4 +689,50 @@ const styles = StyleSheet.create({
   },
   bottomRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 6 },
   link: { color: '#60A5FA', fontWeight: '700' },
+  // Error Modal Styles
+  errorModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorModalCard: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  errorIconContainer: {
+    marginBottom: 16,
+  },
+  errorModalTitle: {
+    color: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorModalMessage: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  errorModalButton: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  errorModalButtonText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
 });

@@ -1,10 +1,12 @@
 /* app/(app)/perfil/videos.jsx
     Videoteca de ejercicios - Ahora carga datos desde MongoDB (campo videoId)
-    - Modal de video con soporte para 16:9 y 9:16 (shorts)
-    - Modal de upgrade para usuarios FREE
+    - Estilo profesional y premium
+    - Buscador integrado
+    - Categorías por músculo con iconos
+    - Modal de video mejorado
     ──────────────────────────────────────────────────────────────────────── */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -17,11 +19,15 @@ import {
     Platform,
     UIManager,
     Modal,
+    TextInput,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubeIframe from 'react-native-youtube-iframe';
 import { useAuth } from '../../../context/AuthContext';
+import { useTheme } from '../../../context/ThemeContext';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -33,14 +39,32 @@ const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
 const modalWidth = screenWidth * 0.95;
 
+// Mapeo de iconos por músculo
+const MUSCLE_ICONS = {
+    'PECHO': 'fitness',
+    'ESPALDA': 'reorder-four',
+    'PIERNAS': 'walk',
+    'GLÚTEOS': 'accessibility',
+    'HOMBROS': 'body',
+    'BÍCEPS': 'barbell',
+    'TRÍCEPS': 'flash',
+    'ABDOMEN': 'apps',
+    'CORE': 'apps',
+    'CARDIO': 'heart',
+    'ANTEBRAZOS': 'hand-left',
+    'CADERA': 'body-outline',
+};
+
 export default function VideosScreen() {
     const router = useRouter();
     const { user, token } = useAuth();
+    const { theme, isDark } = useTheme();
     const [openMuscle, setOpenMuscle] = useState(null);
     const [selectedVideo, setSelectedVideo] = useState(null);
     const [playing, setPlaying] = useState(false);
     const [showVideoPlayer, setShowVideoPlayer] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Estado para datos de MongoDB
     const [exercisesByMuscle, setExercisesByMuscle] = useState({});
@@ -85,11 +109,10 @@ export default function VideosScreen() {
                 const name = (ex.name || '').trim();
                 if (!name) continue;
 
-                // Usar videoId del ejercicio de MongoDB
                 const videoId = (ex.videoId || '').trim();
                 grouped[muscle][name] = {
                     id: videoId,
-                    formato: '16:9', // Por defecto 16:9, se puede añadir un campo en MongoDB para shorts
+                    formato: '16:9',
                 };
             }
 
@@ -102,13 +125,37 @@ export default function VideosScreen() {
         }
     };
 
+    // Filtrado de ejercicios por búsqueda
+    const filteredExercises = useMemo(() => {
+        if (!searchQuery.trim()) return exercisesByMuscle;
+
+        const query = searchQuery.toLowerCase();
+        const filtered = {};
+
+        Object.entries(exercisesByMuscle).forEach(([muscle, exercises]) => {
+            const filteredEx = {};
+            let hasMatches = muscle.toLowerCase().includes(query);
+
+            Object.entries(exercises).forEach(([name, data]) => {
+                if (name.toLowerCase().includes(query) || hasMatches) {
+                    filteredEx[name] = data;
+                }
+            });
+
+            if (Object.keys(filteredEx).length > 0) {
+                filtered[muscle] = filteredEx;
+            }
+        });
+
+        return filtered;
+    }, [exercisesByMuscle, searchQuery]);
+
     const toggleMuscle = (muscle) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setOpenMuscle(openMuscle === muscle ? null : muscle);
     };
 
     const handleExercisePress = (videoData) => {
-        // Si el usuario es FREE, mostrar modal de upgrade
         if (user?.tipoUsuario === 'FREE' || user?.tipoUsuario === 'FREEUSER') {
             setShowUpgradeModal(true);
             return;
@@ -151,10 +198,10 @@ export default function VideosScreen() {
         }
     };
 
-    const listaMusculos = Object.keys(exercisesByMuscle).sort();
+    const listaMusculos = Object.keys(filteredExercises).sort();
 
     // --- CÁLCULO DE ALTURA DINÁMICO ---
-    let videoHeight = (modalWidth * 9) / 16; // Default 16:9
+    let videoHeight = (modalWidth * 9) / 16;
     if (selectedVideo?.formato === '9:16') {
         videoHeight = (modalWidth * 16) / 9;
         const maxHeight = screenHeight * 0.85;
@@ -163,55 +210,41 @@ export default function VideosScreen() {
         }
     }
 
-    // Mostrar loading mientras se cargan los ejercicios
     if (isLoading) {
         return (
-            <View style={[styles.container, styles.centerContent]}>
+            <View style={[styles.container, { backgroundColor: theme.background }, styles.centerContent]}>
                 <Stack.Screen
                     options={{
                         title: 'Videoteca',
-                        headerTitleStyle: { color: '#E5E7EB' },
-                        headerStyle: { backgroundColor: '#0D1B2A' },
-                        headerTintColor: '#E5E7EB',
+                        headerTitleStyle: { color: theme.text, fontWeight: '800' },
+                        headerStyle: { backgroundColor: theme.background },
+                        headerTintColor: theme.text,
                         headerLeft: () => (
                             <Pressable
                                 onPress={() => router.back()}
                                 style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
                             >
-                                <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
+                                <Ionicons name="arrow-back" size={24} color={theme.text} />
                             </Pressable>
                         ),
                     }}
                 />
-                <ActivityIndicator size="large" color="#10B981" />
-                <Text style={styles.loadingText}>Cargando videoteca...</Text>
+                <ActivityIndicator size="large" color={theme.primary} />
+                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Sincronizando videoteca...</Text>
             </View>
         );
     }
 
-    // Mostrar error si hubo problema al cargar
     if (loadError) {
         return (
-            <View style={[styles.container, styles.centerContent]}>
-                <Stack.Screen
-                    options={{
-                        title: 'Videoteca',
-                        headerTitleStyle: { color: '#E5E7EB' },
-                        headerStyle: { backgroundColor: '#0D1B2A' },
-                        headerTintColor: '#E5E7EB',
-                        headerLeft: () => (
-                            <Pressable
-                                onPress={() => router.back()}
-                                style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
-                            >
-                                <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
-                            </Pressable>
-                        ),
-                    }}
-                />
-                <Ionicons name="alert-circle" size={64} color="#EF4444" />
-                <Text style={styles.errorText}>{loadError}</Text>
-                <Pressable style={styles.retryButton} onPress={fetchExercisesFromCloud}>
+            <View style={[styles.container, { backgroundColor: theme.background }, styles.centerContent]}>
+                <Stack.Screen options={{ title: 'Error' }} />
+                <Ionicons name="alert-circle" size={64} color={theme.danger} />
+                <Text style={[styles.errorText, { color: theme.danger }]}>{loadError}</Text>
+                <Pressable
+                    style={[styles.retryButton, { backgroundColor: theme.primary }]}
+                    onPress={fetchExercisesFromCloud}
+                >
                     <Text style={styles.retryButtonText}>Reintentar</Text>
                 </Pressable>
             </View>
@@ -219,343 +252,502 @@ export default function VideosScreen() {
     }
 
     return (
-        <ScrollView style={styles.container}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
             <Stack.Screen
                 options={{
-                    title: 'Videoteca',
-                    headerTitleStyle: { color: '#E5E7EB' },
-                    headerStyle: { backgroundColor: '#0D1B2A' },
-                    headerTintColor: '#E5E7EB',
+                    headerTitle: () => (
+                        <View style={styles.headerTitleContainer}>
+                            <Text style={[styles.headerTitle, { color: theme.text }]}>VIDEOTECA</Text>
+                            <View style={[styles.titleDot, { backgroundColor: theme.primary }]} />
+                        </View>
+                    ),
+                    headerTitleAlign: 'center',
+                    headerStyle: { backgroundColor: theme.background },
+                    headerTintColor: theme.text,
+                    headerShadowVisible: false,
                     headerLeft: () => (
                         <Pressable
                             onPress={() => router.back()}
-                            style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
+                            style={({ pressed }) => [styles.headerButton, { backgroundColor: theme.backgroundSecondary }, pressed && styles.headerButtonPressed]}
                         >
-                            <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
+                            <Ionicons name="chevron-back" size={20} color={theme.text} />
                         </Pressable>
                     ),
                 }}
             />
 
-            <Text style={styles.instructionText}>
-                Selecciona un grupo muscular y luego un ejercicio:
-            </Text>
-
-            {listaMusculos.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                    <Ionicons name="videocam-off" size={48} color="#6B7280" />
-                    <Text style={styles.emptyText}>No hay ejercicios con videos disponibles</Text>
+            <View style={styles.searchContainer}>
+                <View style={[styles.searchWrapper, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="search" size={20} color={theme.textTertiary} />
+                    <TextInput
+                        style={[styles.searchInput, { color: theme.text }]}
+                        placeholder="Buscar ejercicio o músculo..."
+                        placeholderTextColor={theme.textTertiary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                        <Pressable onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                        </Pressable>
+                    )}
                 </View>
-            ) : (
-                listaMusculos.map((muscle) => {
-                    const isOpen = openMuscle === muscle;
-                    return (
-                        <View key={muscle} style={styles.muscleGroup}>
-                            <Pressable
-                                style={({ pressed }) => [styles.muscleButton, pressed && styles.muscleButtonPressed]}
-                                onPress={() => toggleMuscle(muscle)}
-                            >
-                                <Text style={styles.muscleButtonText}>{muscle}</Text>
-                                <Ionicons
-                                    name={isOpen ? 'chevron-down-outline' : 'chevron-forward-outline'}
-                                    size={20}
-                                    color="#E5E7EB"
-                                />
-                            </Pressable>
+            </View>
 
-                            {isOpen && (
-                                <View style={styles.exerciseList}>
-                                    {Object.entries(exercisesByMuscle[muscle]).map(([exercise, videoData]) => (
-                                        <Pressable
-                                            key={exercise}
-                                            style={({ pressed }) => [styles.exerciseButton, pressed && styles.exerciseButtonPressed]}
-                                            onPress={() => handleExercisePress(videoData)}
-                                        >
-                                            <Ionicons
-                                                name={videoData.id ? 'play-circle' : 'play-circle-outline'}
-                                                size={18}
-                                                color={videoData.id ? '#10B981' : '#6B7280'}
-                                                style={{ marginRight: 8 }}
-                                            />
-                                            <Text style={[
-                                                styles.exerciseButtonText,
-                                                !videoData.id && styles.exerciseNoVideo
-                                            ]}>
-                                                {exercise}
-                                            </Text>
-                                            {!videoData.id && (
-                                                <Text style={styles.noVideoTag}>Sin video</Text>
-                                            )}
-                                        </Pressable>
-                                    ))}
-                                </View>
-                            )}
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                {listaMusculos.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                        <View style={[styles.emptyIconCircle, { backgroundColor: theme.backgroundSecondary }]}>
+                            <Ionicons name="search-outline" size={48} color={theme.textTertiary} />
                         </View>
-                    );
-                })
-            )}
+                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                            No encontramos resultados para "{searchQuery}"
+                        </Text>
+                    </View>
+                ) : (
+                    listaMusculos.map((muscle) => {
+                        const isOpen = openMuscle === muscle;
+                        const iconName = MUSCLE_ICONS[muscle] || 'fitness';
+                        const count = Object.keys(filteredExercises[muscle]).length;
 
-            <View style={{ height: 64 }} />
+                        return (
+                            <View key={muscle} style={[
+                                styles.muscleGroup,
+                                {
+                                    backgroundColor: theme.backgroundSecondary,
+                                    borderColor: isOpen ? theme.primary : theme.border,
+                                    borderWidth: 1,
+                                }
+                            ]}>
+                                <Pressable
+                                    style={({ pressed }) => [
+                                        styles.muscleButton,
+                                        pressed && { opacity: 0.8 }
+                                    ]}
+                                    onPress={() => toggleMuscle(muscle)}
+                                >
+                                    <View style={styles.muscleInfo}>
+                                        <View style={[styles.iconBox, { backgroundColor: isOpen ? theme.primary : isDark ? '#2D3748' : '#EDF2F7' }]}>
+                                            <Ionicons
+                                                name={iconName}
+                                                size={20}
+                                                color={isOpen ? '#FFF' : theme.textSecondary}
+                                            />
+                                        </View>
+                                        <View style={styles.muscleTextContainer}>
+                                            <Text style={[styles.muscleButtonText, { color: theme.text }]}>
+                                                {muscle}
+                                            </Text>
+                                            <Text style={[styles.muscleCount, { color: theme.textTertiary }]}>
+                                                {count} {count === 1 ? 'ejercicio' : 'ejercicios'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <View style={[styles.chevronBox, { backgroundColor: isOpen ? theme.primary + '20' : 'transparent' }]}>
+                                        <Ionicons
+                                            name={isOpen ? 'chevron-up' : 'chevron-down'}
+                                            size={18}
+                                            color={isOpen ? theme.primary : theme.textTertiary}
+                                        />
+                                    </View>
+                                </Pressable>
+
+                                {isOpen && (
+                                    <View style={[styles.exerciseList, { borderTopColor: theme.border }]}>
+                                        <LinearGradient
+                                            colors={[theme.backgroundSecondary, theme.background]}
+                                            style={styles.exerciseGradient}
+                                        >
+                                            {Object.entries(filteredExercises[muscle]).map(([exercise, videoData], idx) => (
+                                                <Pressable
+                                                    key={exercise}
+                                                    style={({ pressed }) => [
+                                                        styles.exerciseButton,
+                                                        pressed && { backgroundColor: theme.primary + '10' },
+                                                        idx !== count - 1 && { borderBottomWidth: 1, borderBottomColor: theme.border + '50' }
+                                                    ]}
+                                                    onPress={() => handleExercisePress(videoData)}
+                                                >
+                                                    <View style={[styles.playIndicator, { backgroundColor: videoData.id ? theme.primary + '15' : theme.background }]}>
+                                                        <Ionicons
+                                                            name={videoData.id ? "play" : "play-outline"}
+                                                            size={14}
+                                                            color={videoData.id ? theme.primary : theme.textTertiary}
+                                                        />
+                                                    </View>
+                                                    <Text style={[
+                                                        styles.exerciseButtonText,
+                                                        { color: theme.text },
+                                                        !videoData.id && { color: theme.textTertiary }
+                                                    ]}>
+                                                        {exercise}
+                                                    </Text>
+                                                    {!videoData.id ? (
+                                                        <View style={[styles.statusBadge, { backgroundColor: isDark ? '#2D3748' : '#EDF2F7' }]}>
+                                                            <Text style={[styles.statusBadgeText, { color: theme.textTertiary }]}>Próximamente</Text>
+                                                        </View>
+                                                    ) : (
+                                                        <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
+                                                    )}
+                                                </Pressable>
+                                            ))}
+                                        </LinearGradient>
+                                    </View>
+                                )}
+                            </View>
+                        );
+                    })
+                )}
+                <View style={{ height: 100 }} />
+            </ScrollView>
 
             {/* --- MODAL DE VIDEO PLAYER --- */}
             <Modal
-                animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
+                animationType="fade"
                 transparent={true}
                 visible={showVideoPlayer}
                 onRequestClose={closeModal}
             >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { height: videoHeight }]}>
-                        {selectedVideo && (
-                            <YoutubeIframe
-                                height={videoHeight}
-                                width={modalWidth}
-                                play={playing}
-                                videoId={selectedVideo.id}
-                                onChangeState={onStateChange}
-                            />
-                        )}
-
-                        <Pressable onPress={closeModal} style={styles.closeButton}>
-                            <Ionicons name="close-outline" size={30} color="#FFFFFF" />
+                <BlurView intensity={30} style={StyleSheet.absoluteFill}>
+                    <Pressable style={styles.modalOverlay} onPress={closeModal}>
+                        <Pressable style={[styles.modalContent, { height: videoHeight, backgroundColor: '#000' }]}>
+                            {selectedVideo && (
+                                <YoutubeIframe
+                                    height={videoHeight}
+                                    width={modalWidth}
+                                    play={playing}
+                                    videoId={selectedVideo.id}
+                                    onChangeState={onStateChange}
+                                />
+                            )}
+                            <Pressable onPress={closeModal} style={styles.closeButton}>
+                                <Ionicons name="close" size={24} color="#FFF" />
+                            </Pressable>
                         </Pressable>
-                    </View>
-                </View>
+                    </Pressable>
+                </BlurView>
             </Modal>
 
-            {/* --- MODAL DE UPGRADE PARA USUARIOS FREE --- */}
+            {/* --- MODAL DE UPGRADE --- */}
             <Modal
                 animationType="fade"
                 transparent={true}
                 visible={showUpgradeModal}
                 onRequestClose={closeUpgradeModal}
             >
-                <View style={styles.upgradeModalOverlay}>
-                    <View style={styles.upgradeModalContent}>
-                        <Pressable onPress={closeUpgradeModal} style={styles.upgradeModalClose}>
-                            <Ionicons name="close-circle" size={32} color="#9CA3AF" />
-                        </Pressable>
+                <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.upgradeModalOverlay}>
+                    <View style={[styles.upgradeModalContent, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+                        <LinearGradient
+                            colors={[theme.primary, theme.primary + '80']}
+                            style={styles.upgradeHeaderIcon}
+                        >
+                            <Ionicons name="star" size={32} color="#FFF" />
+                        </LinearGradient>
 
-                        <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
-
-                        <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
-                        <Text style={styles.upgradeModalText}>
-                            Para acceder a nuestros videos exclusivos, necesitas mejorar tu plan.
+                        <Text style={[styles.upgradeModalTitle, { color: theme.text }]}>Contenido Premium</Text>
+                        <Text style={[styles.upgradeModalText, { color: theme.textSecondary }]}>
+                            Desbloquea nuestra videoteca completa y cientos de ejercicios guiados subiendo de nivel.
                         </Text>
 
-                        <Pressable style={styles.upgradeButton} onPress={goToPayment}>
-                            <Ionicons name="add-circle" size={24} color="#FFF" />
-                            <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+                        <Pressable
+                            style={[styles.upgradeButton, { backgroundColor: theme.primary }]}
+                            onPress={goToPayment}
+                        >
+                            <Text style={styles.upgradeButtonText}>VER PLANES PREMIUM</Text>
+                            <Ionicons name="arrow-forward" size={18} color="#FFF" />
                         </Pressable>
 
                         <Pressable style={styles.upgradeCancelButton} onPress={closeUpgradeModal}>
-                            <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+                            <Text style={[styles.upgradeCancelText, { color: theme.textTertiary }]}>Más tarde</Text>
                         </Pressable>
                     </View>
-                </View>
+                </BlurView>
             </Modal>
-        </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0D1B2A',
-        paddingHorizontal: 16,
     },
     centerContent: {
         justifyContent: 'center',
         alignItems: 'center',
     },
+    headerTitleContainer: {
+
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        letterSpacing: 1.5,
+    },
+    titleDot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        marginLeft: 4,
+        marginTop: 4,
+    },
     headerButton: {
-        padding: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 10,
     },
     headerButtonPressed: {
-        opacity: 0.6,
+        opacity: 0.7,
+    },
+    searchContainer: {
+        marginTop: 30,
+        paddingHorizontal: 20,
+        paddingBottom: 15,
+        paddingTop: 5,
+    },
+    searchWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 60,
+        borderRadius: 16,
+        paddingHorizontal: 15,
+        borderWidth: 1,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 20,
+        marginLeft: 10,
+        fontWeight: '1000',
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        paddingHorizontal: 20,
     },
     loadingText: {
-        color: '#9CA3AF',
         fontSize: 16,
         marginTop: 16,
+        fontWeight: '600',
     },
     errorText: {
-        color: '#EF4444',
-        fontSize: 16,
+        fontSize: 15,
         marginTop: 16,
         textAlign: 'center',
+        paddingHorizontal: 40,
+        lineHeight: 22,
     },
     retryButton: {
-        marginTop: 20,
+        marginTop: 24,
         paddingVertical: 12,
-        paddingHorizontal: 24,
-        backgroundColor: '#10B981',
-        borderRadius: 8,
+        paddingHorizontal: 30,
+        borderRadius: 14,
     },
     retryButtonText: {
         color: '#FFF',
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '700',
     },
     emptyContainer: {
-        flex: 1,
+        paddingVertical: 100,
+        alignItems: 'center',
+    },
+    emptyIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingVertical: 60,
+        marginBottom: 20,
     },
     emptyText: {
-        color: '#6B7280',
         fontSize: 16,
-        marginTop: 16,
         textAlign: 'center',
-    },
-    instructionText: {
-        color: '#9CA3AF',
-        fontSize: 14,
-        textAlign: 'center',
-        marginVertical: 20,
+        fontWeight: '500',
+        lineHeight: 24,
     },
     muscleGroup: {
-        marginBottom: 8,
-        backgroundColor: '#111827',
-        borderRadius: 12,
+        marginBottom: 12,
+        borderRadius: 20,
         overflow: 'hidden',
+        // Shadow for premium feel
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
     },
     muscleButton: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 15,
+        paddingVertical: 18,
         paddingHorizontal: 16,
-        backgroundColor: '#1F2937',
     },
-    muscleButtonPressed: {
-        backgroundColor: '#374151',
+    muscleInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    iconBox: {
+        width: 42,
+        height: 42,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    muscleTextContainer: {
+        flex: 1,
     },
     muscleButtonText: {
-        color: '#E5E7EB',
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 17,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+    },
+    muscleCount: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginTop: 2,
+    },
+    chevronBox: {
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     exerciseList: {
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        paddingBottom: 8,
         borderTopWidth: 1,
-        borderTopColor: '#374151',
+    },
+    exerciseGradient: {
+        paddingVertical: 5,
     },
     exerciseButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 8,
-        borderRadius: 8,
-        marginBottom: 4,
+        paddingVertical: 15,
+        paddingHorizontal: 20,
     },
-    exerciseButtonPressed: {
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    playIndicator: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
     },
     exerciseButtonText: {
-        color: '#D1D5DB',
-        fontSize: 14,
+        fontSize: 15,
+        fontWeight: '600',
         flex: 1,
     },
-    exerciseNoVideo: {
-        color: '#6B7280',
+    statusBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
     },
-    noVideoTag: {
-        color: '#6B7280',
+    statusBadgeText: {
         fontSize: 10,
-        backgroundColor: '#1F2937',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
+        fontWeight: '800',
+        textTransform: 'uppercase',
     },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     modalContent: {
         width: modalWidth,
-        backgroundColor: '#000',
-        borderRadius: 15,
+        borderRadius: 24,
         overflow: 'hidden',
         position: 'relative',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
     },
     closeButton: {
         position: 'absolute',
-        top: -10,
-        right: -10,
+        top: 15,
+        right: 15,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
         zIndex: 10,
-        padding: 10,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        borderRadius: 20,
     },
-    // Estilos para el modal de upgrade
     upgradeModalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
     },
     upgradeModalContent: {
-        width: '90%',
-        maxWidth: 400,
-        backgroundColor: '#111827',
-        borderRadius: 20,
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 30,
         padding: 30,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#374151',
     },
-    upgradeModalClose: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        zIndex: 10,
+    upgradeHeaderIcon: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 15,
+        elevation: 8,
     },
     upgradeModalTitle: {
-        color: '#E5E7EB',
-        fontSize: 24,
-        fontWeight: '800',
+        fontSize: 22,
+        fontWeight: '900',
         marginBottom: 10,
         textAlign: 'center',
     },
     upgradeModalText: {
-        color: '#9CA3AF',
-        fontSize: 16,
+        fontSize: 15,
         textAlign: 'center',
         marginBottom: 30,
-        lineHeight: 24,
+        lineHeight: 22,
+        paddingHorizontal: 10,
     },
     upgradeButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#10B981',
-        paddingVertical: 14,
-        paddingHorizontal: 30,
-        borderRadius: 12,
-        marginBottom: 15,
+        justifyContent: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 25,
+        borderRadius: 16,
+        width: '100%',
+        marginBottom: 12,
         gap: 10,
-        shadowColor: '#10B981',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
     },
     upgradeButtonText: {
         color: '#FFF',
-        fontSize: 18,
-        fontWeight: '700',
+        fontSize: 15,
+        fontWeight: '800',
+        letterSpacing: 0.5,
     },
     upgradeCancelButton: {
         paddingVertical: 10,
     },
     upgradeCancelText: {
-        color: '#6B7280',
         fontSize: 14,
+        fontWeight: '600',
     },
 });

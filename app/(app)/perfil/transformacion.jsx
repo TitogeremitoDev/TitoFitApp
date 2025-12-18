@@ -1175,6 +1175,33 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginVertical: 8,
     },
+    // Target weight line overlay styles
+    targetLineOverlay: {
+        position: 'absolute',
+        flexDirection: 'row',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    targetLine: {
+        flex: 1,
+        height: 2,
+        backgroundColor: '#EF4444',
+        borderStyle: 'dashed',
+    },
+    targetLineBadge: {
+        backgroundColor: '#EF444420',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#EF4444',
+        marginLeft: 4,
+    },
+    targetLineBadgeText: {
+        color: '#EF4444',
+        fontSize: 10,
+        fontWeight: '700',
+    },
     targetLineInfo: {
         width: '100%',
         paddingHorizontal: 16,

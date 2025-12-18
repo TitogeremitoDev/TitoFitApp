@@ -4,6 +4,7 @@
    ▸ CORRECCIÓN: ListHeaderComponent fuera para evitar pérdida de foco en TextInput
 */
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, TextInput, StyleSheet, Linking, ImageBackground,
   TouchableOpacity, SectionList, Alert, Platform,
@@ -78,8 +79,6 @@ const normalizeCSV = (parsedData) => {
 
 const ListHeaderComponent = React.memo(function ListHeaderComponent({
   theme,
-  newRoutineName,
-  onNameChange,
   onAddRoutine,
   onPickDocument,
   onSync,
@@ -98,24 +97,13 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
       backgroundColor: theme.cardBackground,
       borderBottomColor: theme.cardBorder
     }]}>
-      <Text style={[styles.headerTitle, { color: theme.text }]}>Crear Nueva Rutina</Text>
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={[styles.input, {
-            borderColor: theme.inputBorder,
-            backgroundColor: theme.inputBackground,
-            color: theme.inputText
-          }]}
-          placeholder="Nombre de la nueva rutina..."
-          placeholderTextColor={theme.placeholder}
-          value={newRoutineName}
-          onChangeText={onNameChange}
-        />
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: theme.success }]} onPress={onAddRoutine}>
-          <Ionicons name="add" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
       <View style={styles.buttonRow}>
+        {/* Botón crear nueva rutina */}
+        <TouchableOpacity style={[styles.button, { backgroundColor: theme.success }]} onPress={onAddRoutine}>
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={styles.buttonText}>Nueva Rutina Manual</Text>
+        </TouchableOpacity>
+
         {tipoUsuario !== PLAN.FREEUSER && (
           <TouchableOpacity style={[styles.button, { backgroundColor: theme.primary }]} onPress={onPickDocument}>
             <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
@@ -218,7 +206,6 @@ export default function RutinasScreen() {
   const [rutinas, setRutinas] = useState([]);
   const [coachRoutines, setCoachRoutines] = useState([]); // 🆕 Rutinas asignadas por entrenador
   const [activeRoutineId, setActiveRoutineId] = useState(null);
-  const [newRoutineName, setNewRoutineName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOfferModalVisible, setIsOfferModalVisible] = useState(false);
@@ -353,19 +340,18 @@ export default function RutinasScreen() {
       setIsLoading(false);
     }
   }, [token, hasCoach]);
-  useEffect(() => {
-    loadRutinasAndActiveId();
-  }, [loadRutinasAndActiveId]);
+  // 🆕 Recargar rutinas cada vez que la pantalla obtiene foco (ej: volver del editor)
+  useFocusEffect(
+    useCallback(() => {
+      loadRutinasAndActiveId();
+    }, [loadRutinasAndActiveId])
+  );
 
   /* Gestión de rutinas (CRUD) */
   const handleAddRoutine = useCallback(async () => {
-    if (newRoutineName.trim() === '') {
-      Alert.alert('Error', 'El nombre de la rutina no puede estar vacío.');
-      return;
-    }
     const newRoutine = {
       id: `r-${uid()}`,
-      nombre: newRoutineName.trim(),
+      nombre: '',  // Vacío para que se muestre el placeholder
       origen: 'local',
       updatedAt: new Date().toISOString(),
       folder: selectedFolder || null,
@@ -376,12 +362,11 @@ export default function RutinasScreen() {
       await AsyncStorage.setItem('rutinas', JSON.stringify(newRutinasList));
       const initialContent = { dia1: [] };
       await AsyncStorage.setItem(`routine_${newRoutine.id}`, JSON.stringify(initialContent));
-      setNewRoutineName('');
       router.push(`/rutinas/${newRoutine.id}`);
     } catch (e) {
-      Alert.alert('Error', 'No se pudo guardar la rutina.');
+      Alert.alert('Error', 'No se pudo crear la rutina.');
     }
-  }, [newRoutineName, rutinas, selectedFolder]);
+  }, [rutinas, selectedFolder]);
 
   const handleDeleteRoutine = useCallback((idToDelete) => {
     setRoutineToDelete(idToDelete);
@@ -392,6 +377,28 @@ export default function RutinasScreen() {
     if (!routineToDelete) return;
 
     try {
+      // 🆕 Si es un ID de MongoDB válido, eliminar también del servidor
+      const isMongoId = /^[0-9a-fA-F]{24}$/.test(routineToDelete);
+      if (isMongoId && token && tipoUsuario !== PLAN.FREEUSER) {
+        try {
+          const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+          const response = await fetch(`${apiBaseUrl}/api/routines/${routineToDelete}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (data.success) {
+            console.log('[Rutinas] ✅ Rutina eliminada del servidor');
+          } else {
+            console.warn('[Rutinas] ⚠️ Error eliminando del servidor:', data.message);
+          }
+        } catch (error) {
+          console.error('[Rutinas] Error al eliminar del servidor:', error);
+          // Continuar con eliminación local aunque falle el servidor
+        }
+      }
+
+      // Eliminar localmente
       const newRutinasList = rutinas.filter((r) => r.id !== routineToDelete);
       setRutinas(newRutinasList);
       await AsyncStorage.setItem('rutinas', JSON.stringify(newRutinasList));
@@ -407,7 +414,7 @@ export default function RutinasScreen() {
       setDeleteModalVisible(false);
       setRoutineToDelete(null);
     }
-  }, [rutinas, activeRoutineId, routineToDelete]);
+  }, [rutinas, activeRoutineId, routineToDelete, token, tipoUsuario]);
 
   const handleSelectRoutine = useCallback(async (id, nombre, section) => {
     try {
@@ -749,8 +756,6 @@ export default function RutinasScreen() {
         ListHeaderComponent={
           <ListHeaderComponent
             theme={theme}
-            newRoutineName={newRoutineName}
-            onNameChange={setNewRoutineName}
             onAddRoutine={handleAddRoutine}
             onPickDocument={handlePickDocument}
             onSync={onSync}
@@ -1025,7 +1030,7 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', marginBottom: 12 },
   input: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
   addButton: { marginLeft: 10, borderRadius: 8, padding: 10, justifyContent: 'center', alignItems: 'center' },
-  buttonRow: { flexDirection: 'row', gap: 10, justifyContent: 'flex-start', marginBottom: 12 },
+  buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-start', marginBottom: 12 },
   button: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, gap: 8 },
   iconButton: { padding: 10, borderRadius: 8 },
   buttonDisabled: { backgroundColor: '#9ca3af' },

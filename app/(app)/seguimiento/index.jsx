@@ -1,6 +1,6 @@
 /* app/(app)/seguimiento/index.jsx - Sistema de Seguimiento Completo */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -14,6 +14,7 @@ import {
     useWindowDimensions,
     Alert,
     ActivityIndicator,
+    Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -231,9 +232,12 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
  * Calendario mensual que muestra días con datos
  * @param {Set} dailyDates - Fechas con datos diarios (formato 'YYYY-MM-DD')
  * @param {Set} weeklyDates - Fechas de inicio de semana con check-in semanal
+ * @param {string} selectedDate - Fecha actualmente seleccionada (formato 'YYYY-MM-DD')
+ * @param {function} onDaySelect - Callback cuando se selecciona un día
  */
-const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) => {
+const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), selectedDate, onDaySelect }) => {
     const [currentMonth, setCurrentMonth] = useState(new Date());
+    const todayStr = new Date().toISOString().split('T')[0];
 
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -257,8 +261,10 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) =>
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const hasDaily = dailyDates.has(dateStr);
         const hasWeekly = weeklyDates.has(dateStr);
-        const isToday = new Date().toISOString().split('T')[0] === dateStr;
-        days.push({ day: d, dateStr, hasDaily, hasWeekly, isToday, key: dateStr });
+        const isToday = todayStr === dateStr;
+        const isSelected = selectedDate === dateStr;
+        const isFuture = dateStr > todayStr;
+        days.push({ day: d, dateStr, hasDaily, hasWeekly, isToday, isSelected, isFuture, key: dateStr });
     }
 
     const goToPrevMonth = () => {
@@ -267,6 +273,11 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) =>
 
     const goToNextMonth = () => {
         setCurrentMonth(new Date(year, month + 1, 1));
+    };
+
+    const handleDayPress = (dateStr, isFuture) => {
+        if (isFuture) return; // No permitir seleccionar fechas futuras
+        if (onDaySelect) onDaySelect(dateStr);
     };
 
     return (
@@ -293,16 +304,25 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) =>
 
             {/* Grid de días */}
             <View style={styles.calendarGrid}>
-                {days.map(({ day, hasDaily, hasWeekly, isToday, key }) => (
+                {days.map(({ day, dateStr, hasDaily, hasWeekly, isToday, isSelected, isFuture, key }) => (
                     <View key={key} style={styles.calendarDayCell}>
                         {day !== null ? (
-                            <View style={[
-                                styles.calendarDay,
-                                isToday && styles.calendarDayToday
-                            ]}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.calendarDay,
+                                    isToday && styles.calendarDayToday,
+                                    isSelected && styles.calendarDaySelected,
+                                    isFuture && styles.calendarDayFuture
+                                ]}
+                                onPress={() => handleDayPress(dateStr, isFuture)}
+                                activeOpacity={isFuture ? 1 : 0.6}
+                                disabled={isFuture}
+                            >
                                 <Text style={[
                                     styles.calendarDayText,
-                                    isToday && styles.calendarDayTextToday
+                                    isToday && styles.calendarDayTextToday,
+                                    isSelected && styles.calendarDayTextSelected,
+                                    isFuture && styles.calendarDayTextFuture
                                 ]}>
                                     {day}
                                 </Text>
@@ -311,7 +331,7 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) =>
                                     {hasDaily && <View style={styles.calendarDotDaily} />}
                                     {hasWeekly && <View style={styles.calendarDotWeekly} />}
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         ) : null}
                     </View>
                 ))}
@@ -449,6 +469,40 @@ export default function SeguimientoScreen() {
     const [minimalDataSaved, setMinimalDataSaved] = useState(false);
     const [minimalDataLoading, setMinimalDataLoading] = useState(true);
 
+    // 🎬 Animación de pulse para feedback visual al guardar
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const rotateAnim = useRef(new Animated.Value(0)).current;
+
+    const triggerSaveAnimation = () => {
+        // Secuencia: pulse + rotación del emoji
+        Animated.parallel([
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 1.2,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+            ]),
+            Animated.sequence([
+                Animated.timing(rotateAnim, {
+                    toValue: 1,
+                    duration: 300,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(rotateAnim, {
+                    toValue: 0,
+                    duration: 0,
+                    useNativeDriver: true,
+                }),
+            ]),
+        ]).start();
+    };
+
     // Objetivos de nutrición (cargados del sistema)
     const [nutritionTargets, setNutritionTargets] = useState({
         kcal: 0,
@@ -519,6 +573,15 @@ export default function SeguimientoScreen() {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
+    // TRACKING DE DATOS EXISTENTES (para saber si es update o create)
+    // ─────────────────────────────────────────────────────────────────────────
+    const [diarioExistente, setDiarioExistente] = useState(false);
+    const [semanalExistente, setSemanalExistente] = useState(false);
+    // Guardamos los datos originales para comparar qué campos son nuevos (para logros)
+    const [diarioOriginal, setDiarioOriginal] = useState(null);
+    const [semanalOriginal, setSemanalOriginal] = useState(null);
+
+    // ─────────────────────────────────────────────────────────────────────────
     // HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
     const updateDiario = (key, value) => setDiario(prev => ({ ...prev, [key]: value }));
@@ -532,15 +595,79 @@ export default function SeguimientoScreen() {
     }, [user]);
 
     // ─────────────────────────────────────────────────────────────────────────
+    // NAVEGACIÓN DE FECHAS
+    // ─────────────────────────────────────────────────────────────────────────
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
+    // Helpers de navegación
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = selectedDate === todayStr;
+
+    const goToPreviousDay = () => {
+        const d = new Date(selectedDate);
+        d.setDate(d.getDate() - 1);
+        setSelectedDate(d.toISOString().split('T')[0]);
+    };
+
+    const goToNextDay = () => {
+        if (isToday) return; // No permitir avanzar más allá de hoy
+        const d = new Date(selectedDate);
+        d.setDate(d.getDate() + 1);
+        setSelectedDate(d.toISOString().split('T')[0]);
+    };
+
+    const formatDateDisplay = (dateStr) => {
+        if (dateStr === todayStr) return 'Hoy';
+        const d = new Date(dateStr);
+        const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+        const dayName = days[d.getDay()];
+        return `${dayName} ${d.getDate()}/${d.getMonth() + 1}`;
+    };
+
+    const handleDaySelect = (dateStr) => {
+        // No permitir seleccionar fechas futuras
+        if (dateStr > todayStr) return;
+        setSelectedDate(dateStr);
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
     // CARGAR OBJETIVOS DE NUTRICIÓN Y DATOS DEL DÍA
     // ─────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         const loadNutritionAndData = async () => {
             setMinimalDataLoading(true);
-            try {
-                const today = new Date().toISOString().split('T')[0];
+            // Resetear estados cuando cambia la fecha
+            setMinimalDataSaved(false);
+            setDiarioExistente(false);
+            setDiarioOriginal(null);
+            setMinimalData({
+                peso: '',
+                animo: 3,
+                kcalConsumed: '',
+                proteinConsumed: '',
+                carbsConsumed: '',
+                fatConsumed: '',
+            });
+            setDiario({
+                peso: '',
+                sueno: '',
+                animo: 3,
+                energia: 3,
+                hambre: 3,
+                pasos: '',
+                haIdoBien: '',
+                nota: '',
+                kcalConsumed: '',
+                proteinConsumed: '',
+                carbsConsumed: '',
+                fatConsumed: '',
+            });
 
-                // 1. Cargar objetivos de nutrición
+            try {
+                // Usar selectedDate en lugar de today
+                const targetDate = selectedDate;
+
+                // 1. Cargar objetivos de nutrición (siempre para el día actual)
                 if (isPremium && token) {
                     try {
                         // Intentar cargar plan del coach primero
@@ -591,15 +718,17 @@ export default function SeguimientoScreen() {
                     }
                 }
 
-                // 2. Cargar datos del día actual
+                // 2. Cargar datos del día seleccionado
                 if (user?.tipoUsuario === 'FREEUSER') {
                     // Cargar desde AsyncStorage
-                    const storageKey = `minimal_data_${today}`;
+                    const storageKey = `minimal_data_${targetDate}`;
                     const saved = await AsyncStorage.getItem(storageKey);
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         setMinimalData(parsed);
                         setMinimalDataSaved(true);
+                        setDiarioExistente(true);
+                        setDiarioOriginal(parsed);
                         // Pre-rellenar diario
                         setDiario(prev => ({
                             ...prev,
@@ -611,37 +740,48 @@ export default function SeguimientoScreen() {
                             fatConsumed: parsed.fatConsumed || '',
                         }));
                     }
+                    // También cargar datos del diario completo si existen
+                    const diarioKey = `daily_monitoring_${targetDate}`;
+                    const savedDiario = await AsyncStorage.getItem(diarioKey);
+                    if (savedDiario) {
+                        const parsedDiario = JSON.parse(savedDiario);
+                        setDiario(prev => ({ ...prev, ...parsedDiario }));
+                        setDiarioExistente(true);
+                        setDiarioOriginal(parsedDiario);
+                    }
                 } else if (token) {
                     // Cargar desde la nube
                     try {
-                        const res = await axios.get(`/monitoring/daily?startDate=${today}&endDate=${today}`);
+                        const res = await axios.get(`/monitoring/daily?startDate=${targetDate}&endDate=${targetDate}`);
                         if (res.data?.data?.length > 0) {
-                            const todayData = res.data.data[0];
+                            const dayData = res.data.data[0];
                             setMinimalData({
-                                peso: todayData.peso?.toString() || '',
-                                animo: todayData.animo || 3,
-                                kcalConsumed: todayData.kcalConsumed?.toString() || '',
-                                proteinConsumed: todayData.proteinConsumed?.toString() || '',
-                                carbsConsumed: todayData.carbsConsumed?.toString() || '',
-                                fatConsumed: todayData.fatConsumed?.toString() || '',
+                                peso: dayData.peso?.toString() || '',
+                                animo: dayData.animo || 3,
+                                kcalConsumed: dayData.kcalConsumed?.toString() || '',
+                                proteinConsumed: dayData.proteinConsumed?.toString() || '',
+                                carbsConsumed: dayData.carbsConsumed?.toString() || '',
+                                fatConsumed: dayData.fatConsumed?.toString() || '',
                             });
                             setMinimalDataSaved(true);
+                            setDiarioExistente(true);
+                            setDiarioOriginal(dayData);
                             // Pre-rellenar diario
-                            setDiario(prev => ({
-                                ...prev,
-                                peso: todayData.peso?.toString() || '',
-                                animo: todayData.animo || 3,
-                                sueno: todayData.sueno?.toString() || '',
-                                energia: todayData.energia || 3,
-                                hambre: todayData.hambre || 3,
-                                pasos: todayData.pasos?.toString() || '',
-                                haIdoBien: todayData.haIdoBien || '',
-                                nota: todayData.nota || '',
-                                kcalConsumed: todayData.kcalConsumed?.toString() || '',
-                                proteinConsumed: todayData.proteinConsumed?.toString() || '',
-                                carbsConsumed: todayData.carbsConsumed?.toString() || '',
-                                fatConsumed: todayData.fatConsumed?.toString() || '',
-                            }));
+                            const diarioData = {
+                                peso: dayData.peso?.toString() || '',
+                                animo: dayData.animo || 3,
+                                sueno: dayData.sueno?.toString() || '',
+                                energia: dayData.energia || 3,
+                                hambre: dayData.hambre || 3,
+                                pasos: dayData.pasos?.toString() || '',
+                                haIdoBien: dayData.haIdoBien || '',
+                                nota: dayData.nota || '',
+                                kcalConsumed: dayData.kcalConsumed?.toString() || '',
+                                proteinConsumed: dayData.proteinConsumed?.toString() || '',
+                                carbsConsumed: dayData.carbsConsumed?.toString() || '',
+                                fatConsumed: dayData.fatConsumed?.toString() || '',
+                            };
+                            setDiario(prev => ({ ...prev, ...diarioData }));
                         }
                     } catch (e) {
                         console.log('[Seguimiento] Error cargando datos del día:', e.message);
@@ -655,7 +795,7 @@ export default function SeguimientoScreen() {
         };
 
         loadNutritionAndData();
-    }, [user, token, isPremium]);
+    }, [user, token, isPremium, selectedDate]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR FECHAS PARA EL CALENDARIO
@@ -751,20 +891,123 @@ export default function SeguimientoScreen() {
     }, [user, token, calendarRefreshTrigger]);
 
     // ─────────────────────────────────────────────────────────────────────────
+    // CARGAR DATOS SEMANALES AL EXPANDIR (lazy loading)
+    // ─────────────────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const loadWeeklyData = async () => {
+            if (!semanalExpanded || semanalExistente) return; // Solo cargar si se expande y no hay datos
+
+            try {
+                // Calcular inicio de semana actual (lunes)
+                const now = new Date();
+                const dayOfWeek = now.getDay();
+                const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                const weekStart = new Date(now);
+                weekStart.setDate(now.getDate() - diff);
+                const weekKey = weekStart.toISOString().split('T')[0];
+
+                if (user?.tipoUsuario === 'FREEUSER') {
+                    const storageKey = `weekly_monitoring_${weekKey}`;
+                    const saved = await AsyncStorage.getItem(storageKey);
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        setSemanal(prev => ({
+                            ...prev,
+                            nutriAdherencia: parsed.nutriAdherencia || 5,
+                            nutriSaciedad: parsed.nutriSaciedad || 3,
+                            nutriGI: parsed.nutriGI || 3,
+                            nutriDeposiciones: parsed.nutriDeposiciones || 3,
+                            nutriComidasLibres: parsed.nutriComidasLibres?.toString() || '',
+                            nutriComentario: parsed.nutriComentario || '',
+                            entrenoAdherencia: parsed.entrenoAdherencia || 5,
+                            entrenoRendimiento: parsed.entrenoRendimiento || 5,
+                            entrenoFatiga: parsed.entrenoFatiga || 3,
+                            entrenoMolestias: parsed.entrenoMolestias || false,
+                            entrenoMolestiasTexto: parsed.entrenoMolestiasTexto || '',
+                            entrenoComentario: parsed.entrenoComentario || '',
+                            sensMotivacion: parsed.sensMotivacion || 3,
+                            sensEstres: parsed.sensEstres || 3,
+                            sensEmocional: parsed.sensEmocional || 3,
+                            sensSuenoMedio: parsed.sensSuenoMedio?.toString() || '',
+                            sensComentario: parsed.sensComentario || '',
+                            topMejorar: parsed.topMejorar || '',
+                            topBien: parsed.topBien || '',
+                            medCuello: parsed.medCuello?.toString() || '',
+                            medHombros: parsed.medHombros?.toString() || '',
+                            medPecho: parsed.medPecho?.toString() || '',
+                            medCintura: parsed.medCintura?.toString() || '',
+                            medPierna: parsed.medPierna?.toString() || '',
+                            medGemelo: parsed.medGemelo?.toString() || '',
+                        }));
+                        setSemanalExistente(true);
+                        setSemanalOriginal(parsed);
+                        console.log('[Seguimiento] Datos semanales cargados (FREEUSER)');
+                    }
+                } else if (token) {
+                    const res = await axios.get(`/monitoring/weekly?limit=1`);
+                    if (res.data?.data?.length > 0) {
+                        const weekData = res.data.data[0];
+                        // Verificar que es de esta semana
+                        const dataWeekStart = weekData.weekStartDate?.split('T')[0];
+                        if (dataWeekStart === weekKey) {
+                            setSemanal(prev => ({
+                                ...prev,
+                                nutriAdherencia: weekData.nutriAdherencia || 5,
+                                nutriSaciedad: weekData.nutriSaciedad || 3,
+                                nutriGI: weekData.nutriGI || 3,
+                                nutriDeposiciones: weekData.nutriDeposiciones || 3,
+                                nutriComidasLibres: weekData.nutriComidasLibres?.toString() || '',
+                                nutriComentario: weekData.nutriComentario || '',
+                                entrenoAdherencia: weekData.entrenoAdherencia || 5,
+                                entrenoRendimiento: weekData.entrenoRendimiento || 5,
+                                entrenoFatiga: weekData.entrenoFatiga || 3,
+                                entrenoMolestias: weekData.entrenoMolestias || false,
+                                entrenoMolestiasTexto: weekData.entrenoMolestiasTexto || '',
+                                entrenoComentario: weekData.entrenoComentario || '',
+                                sensMotivacion: weekData.sensMotivacion || 3,
+                                sensEstres: weekData.sensEstres || 3,
+                                sensEmocional: weekData.sensEmocional || 3,
+                                sensSuenoMedio: weekData.sensSuenoMedio?.toString() || '',
+                                sensComentario: weekData.sensComentario || '',
+                                topMejorar: weekData.topMejorar || '',
+                                topBien: weekData.topBien || '',
+                                medCuello: weekData.medCuello?.toString() || '',
+                                medHombros: weekData.medHombros?.toString() || '',
+                                medPecho: weekData.medPecho?.toString() || '',
+                                medCintura: weekData.medCintura?.toString() || '',
+                                medPierna: weekData.medPierna?.toString() || '',
+                                medGemelo: weekData.medGemelo?.toString() || '',
+                            }));
+                            setSemanalExistente(true);
+                            setSemanalOriginal(weekData);
+                            console.log('[Seguimiento] Datos semanales cargados (Cloud)');
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[Seguimiento] Error cargando datos semanales:', error);
+            }
+        };
+
+        loadWeeklyData();
+    }, [semanalExpanded, user, token, semanalExistente]);
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GUARDAR DATOS MÍNIMOS
     // ─────────────────────────────────────────────────────────────────────────
     const handleGuardarMinimalData = async () => {
         try {
-            const today = new Date().toISOString().split('T')[0];
-            const dataToSave = { ...minimalData, date: today };
+            // Usar selectedDate en lugar de hoy
+            const targetDate = selectedDate;
+            const dataToSave = { ...minimalData, date: targetDate };
 
             if (user?.tipoUsuario === 'FREEUSER') {
                 // Guardar en local
-                const storageKey = `minimal_data_${today}`;
+                const storageKey = `minimal_data_${targetDate}`;
                 await AsyncStorage.setItem(storageKey, JSON.stringify(dataToSave));
 
-                // Sincronizar peso al perfil local
-                if (minimalData.peso && parseFloat(minimalData.peso) > 0) {
+                // Sincronizar peso al perfil local (solo si es el día actual)
+                if (isToday && minimalData.peso && parseFloat(minimalData.peso) > 0) {
                     await AsyncStorage.setItem('USER_PESO', String(minimalData.peso));
                 }
             } else {
@@ -784,9 +1027,15 @@ export default function SeguimientoScreen() {
             }));
 
             setMinimalDataSaved(true);
-            // Refrescar calendario para mostrar el día actual
+            setDiarioExistente(true);
+            // Refrescar calendario para mostrar el día guardado
             setCalendarRefreshTrigger(prev => prev + 1);
-            Alert.alert('✅ Guardado', 'Datos básicos guardados correctamente');
+
+            // 🎬 Activar animación de feedback
+            triggerSaveAnimation();
+
+            const dateLabel = isToday ? 'hoy' : formatDateDisplay(targetDate);
+            Alert.alert('✅ Guardado', `Datos de ${dateLabel} guardados correctamente`);
         } catch (error) {
             console.error('[SEGUIMIENTO] Error guardando datos mínimos:', error);
             Alert.alert('Error', 'No se pudieron guardar los datos básicos');
@@ -839,25 +1088,40 @@ export default function SeguimientoScreen() {
 
     const handleGuardarDiario = async () => {
         try {
-            const today = new Date().toISOString().split('T')[0];
-            const dataToSave = { ...diario, date: today };
+            // Usar selectedDate en lugar de hoy
+            const targetDate = selectedDate;
+
+            // 📌 Para FREEUSER: hacer merge con datos existentes
+            let dataToSave = { ...diario, date: targetDate };
 
             if (user?.tipoUsuario === 'FREEUSER') {
-                // Guardar en local (AsyncStorage)
-                const storageKey = `daily_monitoring_${today}`;
+                // Cargar datos existentes y hacer merge
+                const storageKey = `daily_monitoring_${targetDate}`;
+                const existing = await AsyncStorage.getItem(storageKey);
+                if (existing) {
+                    const existingData = JSON.parse(existing);
+                    // Merge: mantener existentes, sobrescribir solo campos con valor
+                    Object.keys(dataToSave).forEach(key => {
+                        if (dataToSave[key] === '' || dataToSave[key] === null || dataToSave[key] === undefined) {
+                            if (existingData[key] !== undefined && existingData[key] !== '' && existingData[key] !== null) {
+                                dataToSave[key] = existingData[key];
+                            }
+                        }
+                    });
+                }
                 await AsyncStorage.setItem(storageKey, JSON.stringify(dataToSave));
 
                 // También guardar en lista de días registrados
                 const daysKey = 'daily_monitoring_days';
                 const existingDays = await AsyncStorage.getItem(daysKey);
                 const days = existingDays ? JSON.parse(existingDays) : [];
-                if (!days.includes(today)) {
-                    days.push(today);
+                if (!days.includes(targetDate)) {
+                    days.push(targetDate);
                     await AsyncStorage.setItem(daysKey, JSON.stringify(days));
                 }
 
-                // 📌 Sincronizar peso al perfil local del usuario
-                if (diario.peso && parseFloat(diario.peso) > 0) {
+                // 📌 Sincronizar peso al perfil local del usuario (solo si es hoy)
+                if (isToday && diario.peso && parseFloat(diario.peso) > 0) {
                     await AsyncStorage.setItem('USER_PESO', String(diario.peso));
                 }
             } else {
@@ -865,20 +1129,42 @@ export default function SeguimientoScreen() {
                 await axios.post('/monitoring/daily', dataToSave);
             }
 
-            // 🏆 Procesar logros de seguimiento (siempre, independiente de donde se guarde)
-            const unlockedAchievements = processDailyCheckin(diario);
+            // 🏆 Procesar logros de seguimiento SOLO para campos NUEVOS (solo si es hoy)
+            // Si ya existía un registro, solo procesar campos que antes no tenían valor
+            let dataParaLogros = diario;
+            if (diarioExistente && diarioOriginal) {
+                // Filtrar: solo campos que NO existían antes
+                dataParaLogros = {};
+                Object.keys(diario).forEach(key => {
+                    const valorActual = diario[key];
+                    const valorOriginal = diarioOriginal[key];
+                    // Solo contar si el original estaba vacío/undefined y el actual tiene valor
+                    if ((valorOriginal === undefined || valorOriginal === '' || valorOriginal === null) &&
+                        (valorActual !== undefined && valorActual !== '' && valorActual !== null)) {
+                        dataParaLogros[key] = valorActual;
+                    }
+                });
+            }
 
+            // Solo procesar logros si hay campos nuevos y es el día actual
+            const hayCamposNuevos = Object.keys(dataParaLogros).length > 0;
+            const unlockedAchievements = (isToday && hayCamposNuevos) ? processDailyCheckin(dataParaLogros) : [];
+
+            const dateLabel = isToday ? '' : ` (${formatDateDisplay(targetDate)})`;
             if (unlockedAchievements && unlockedAchievements.length > 0) {
                 Alert.alert('🏆 ¡Logro desbloqueado!',
                     `Has desbloqueado: ${unlockedAchievements.map(a => a.name).join(', ')}`);
             } else {
-                Alert.alert('✅ Guardado', 'Check-in diario guardado correctamente');
+                Alert.alert('✅ Guardado', diarioExistente ? `Check-in diario actualizado${dateLabel}` : `Check-in diario guardado${dateLabel}`);
             }
 
             // Refrescar calendario
             setCalendarRefreshTrigger(prev => prev + 1);
-            // Resetear campos
-            setDiario(initialDiario);
+
+            // 📌 NO resetear - marcar como existente y actualizar original
+            setDiarioExistente(true);
+            setDiarioOriginal(dataToSave);
+            setMinimalDataSaved(true);
         } catch (error) {
             console.error('[SEGUIMIENTO] Error guardando diario:', error);
             Alert.alert('Error', 'No se pudo guardar el check-in diario');
@@ -895,11 +1181,23 @@ export default function SeguimientoScreen() {
             weekStart.setDate(now.getDate() - diff);
             const weekKey = weekStart.toISOString().split('T')[0];
 
-            const dataToSave = { ...semanal, weekStartDate: weekKey };
+            // 📌 Para FREEUSER: hacer merge con datos existentes
+            let dataToSave = { ...semanal, weekStartDate: weekKey };
 
             if (user?.tipoUsuario === 'FREEUSER') {
-                // Guardar en local (AsyncStorage)
+                // Cargar datos existentes y hacer merge
                 const storageKey = `weekly_monitoring_${weekKey}`;
+                const existing = await AsyncStorage.getItem(storageKey);
+                if (existing) {
+                    const existingData = JSON.parse(existing);
+                    Object.keys(dataToSave).forEach(key => {
+                        if (dataToSave[key] === '' || dataToSave[key] === null || dataToSave[key] === undefined) {
+                            if (existingData[key] !== undefined && existingData[key] !== '' && existingData[key] !== null) {
+                                dataToSave[key] = existingData[key];
+                            }
+                        }
+                    });
+                }
                 await AsyncStorage.setItem(storageKey, JSON.stringify(dataToSave));
 
                 // También guardar en lista de semanas registradas
@@ -958,20 +1256,36 @@ export default function SeguimientoScreen() {
                 }
             }
 
-            // 🏆 Procesar logros de seguimiento semanal
-            const unlockedAchievements = processWeeklyCheckin(semanal);
+            // 🏆 Procesar logros de seguimiento semanal SOLO para campos NUEVOS
+            let dataParaLogros = semanal;
+            if (semanalExistente && semanalOriginal) {
+                dataParaLogros = {};
+                Object.keys(semanal).forEach(key => {
+                    const valorActual = semanal[key];
+                    const valorOriginal = semanalOriginal[key];
+                    if ((valorOriginal === undefined || valorOriginal === '' || valorOriginal === null) &&
+                        (valorActual !== undefined && valorActual !== '' && valorActual !== null)) {
+                        dataParaLogros[key] = valorActual;
+                    }
+                });
+            }
+
+            const hayCamposNuevos = Object.keys(dataParaLogros).length > 0;
+            const unlockedAchievements = hayCamposNuevos ? processWeeklyCheckin(dataParaLogros) : [];
 
             if (unlockedAchievements && unlockedAchievements.length > 0) {
                 Alert.alert('🏆 ¡Logro desbloqueado!',
                     `Has desbloqueado: ${unlockedAchievements.map(a => a.name).join(', ')}`);
             } else {
-                Alert.alert('✅ Guardado', 'Check-in semanal guardado correctamente');
+                Alert.alert('✅ Guardado', semanalExistente ? 'Check-in semanal actualizado' : 'Check-in semanal guardado correctamente');
             }
 
             // Refrescar calendario
             setCalendarRefreshTrigger(prev => prev + 1);
-            // Resetear campos
-            setSemanal(initialSemanal);
+
+            // 📌 NO resetear - marcar como existente y actualizar original
+            setSemanalExistente(true);
+            setSemanalOriginal(dataToSave);
         } catch (error) {
             console.error('[SEGUIMIENTO] Error guardando semanal:', error);
             Alert.alert('Error', 'No se pudo guardar el check-in semanal');
@@ -1008,14 +1322,53 @@ export default function SeguimientoScreen() {
                 {/* ═══════════════════════════════════════════════════════════════════ */}
                 <View style={styles.minimalDataCard}>
                     <View style={styles.minimalDataHeader}>
-                        <Text style={styles.minimalDataIcon}>📊</Text>
-                        <Text style={styles.minimalDataTitle}>Datos de Hoy</Text>
+                        {/* Flecha izquierda - Día anterior */}
+                        <TouchableOpacity
+                            onPress={goToPreviousDay}
+                            style={styles.dateNavArrow}
+                            activeOpacity={0.6}
+                        >
+                            <Ionicons name="chevron-back" size={26} color="#3B82F6" />
+                        </TouchableOpacity>
+
+                        {/* Título con fecha */}
+                        <View style={styles.dateNavCenter}>
+                            <Text style={styles.minimalDataIcon}>📊</Text>
+                            <Text style={styles.minimalDataTitle}>{formatDateDisplay(selectedDate)}</Text>
+                        </View>
+                        {/* Badge de guardado */}
                         {minimalDataSaved && (
-                            <View style={styles.savedBadge}>
-                                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                                <Text style={styles.savedBadgeText}>Guardado</Text>
-                            </View>
+                            <Animated.View style={[
+                                styles.savedBadge,
+                                { transform: [{ scale: pulseAnim }] }
+                            ]}>
+                                <Animated.Text style={{
+                                    transform: [{
+                                        rotate: rotateAnim.interpolate({
+                                            inputRange: [0, 1],
+                                            outputRange: ['0deg', '360deg']
+                                        })
+                                    }]
+                                }}>
+                                    {diarioExistente ? '🔄' : '✅'}
+                                </Animated.Text>
+                                <Text style={[styles.savedBadgeText, diarioExistente && { color: '#3B82F6' }]}>
+                                    {diarioExistente ? 'Actualizado' : 'Guardado'}
+                                </Text>
+                            </Animated.View>
                         )}
+                        {/* Flecha derecha - Día siguiente (deshabilitada si es hoy) */}
+                        <TouchableOpacity
+                            onPress={goToNextDay}
+                            style={[styles.dateNavArrow, isToday && styles.dateNavArrowDisabled]}
+                            activeOpacity={isToday ? 1 : 0.6}
+                            disabled={isToday}
+                        >
+                            <Ionicons name="chevron-forward" size={26} color={isToday ? '#4B5563' : '#3B82F6'} />
+                            
+                        </TouchableOpacity>
+
+
                     </View>
 
                     {minimalDataLoading ? (
@@ -1385,10 +1738,12 @@ export default function SeguimientoScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Calendario mensual */}
+                {/* Calendario mensual - interactivo */}
                 <MonthlyCalendar
                     dailyDates={filledDailyDates}
                     weeklyDates={filledWeeklyDates}
+                    selectedDate={selectedDate}
+                    onDaySelect={handleDaySelect}
                 />
 
                 {/* Espaciado inferior */}
@@ -2004,16 +2359,31 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 16,
-        gap: 10,
+        gap: 6,
     },
     minimalDataIcon: {
-        fontSize: 24,
+        fontSize: 20,
     },
     minimalDataTitle: {
         color: '#E5E7EB',
-        fontSize: 20,
+        fontSize: 17,
         fontWeight: '700',
+    },
+    // Navegación de fechas
+    dateNavArrow: {
+        padding: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    },
+    dateNavArrowDisabled: {
+        backgroundColor: 'rgba(75, 85, 99, 0.1)',
+    },
+    dateNavCenter: {
         flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
     },
     savedBadge: {
         flexDirection: 'row',
@@ -2236,6 +2606,14 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#3B82F6',
     },
+    calendarDaySelected: {
+        backgroundColor: 'rgba(16, 185, 129, 0.3)',
+        borderWidth: 2,
+        borderColor: '#10B981',
+    },
+    calendarDayFuture: {
+        opacity: 0.35,
+    },
     calendarDayText: {
         color: '#9CA3AF',
         fontSize: 12,
@@ -2244,6 +2622,13 @@ const styles = StyleSheet.create({
     calendarDayTextToday: {
         color: '#3B82F6',
         fontWeight: '700',
+    },
+    calendarDayTextSelected: {
+        color: '#10B981',
+        fontWeight: '700',
+    },
+    calendarDayTextFuture: {
+        color: '#4B5563',
     },
     calendarIndicators: {
         flexDirection: 'row',

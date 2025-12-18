@@ -45,6 +45,7 @@ interface PromoCode {
     usedCount: number;
     usesRemaining: number | string;
     expiresAt: string | null;
+    subscriptionExpiresAt?: string | null; // Fecha en que expira la suscripción del usuario
     isExpired: boolean;
     active: boolean;
     createdAt: string;
@@ -87,7 +88,8 @@ export default function AdminPanel() {
         upgradeToType: 'PREMIUM',
         maxClients: '5',
         maxUses: '50',
-        expiresAt: ''
+        expiresAt: '', // Cuándo expira el código para canjearse
+        subscriptionExpiresAt: '' // Cuándo expira la suscripción del usuario que lo canjea
     });
 
     useEffect(() => {
@@ -125,7 +127,8 @@ export default function AdminPanel() {
             upgradeToType: 'PREMIUM',
             maxClients: '5',
             maxUses: '50',
-            expiresAt: ''
+            expiresAt: '',
+            subscriptionExpiresAt: ''
         });
         setShowCodeModal(true);
     };
@@ -138,7 +141,8 @@ export default function AdminPanel() {
             upgradeToType: code.upgradeToType,
             maxClients: code.maxClients ? String(code.maxClients) : '5',
             maxUses: String(code.maxUses),
-            expiresAt: code.expiresAt ? code.expiresAt.split('T')[0] : ''
+            expiresAt: code.expiresAt ? code.expiresAt.split('T')[0] : '',
+            subscriptionExpiresAt: code.subscriptionExpiresAt ? code.subscriptionExpiresAt.split('T')[0] : ''
         });
         setShowCodeModal(true);
     };
@@ -160,6 +164,7 @@ export default function AdminPanel() {
                 maxClients: codeFormData.upgradeToType === 'ENTRENADOR' ? parseInt(codeFormData.maxClients) || 5 : null,
                 maxUses: parseInt(codeFormData.maxUses) || 50,
                 expiresAt: codeFormData.expiresAt || null,
+                subscriptionExpiresAt: codeFormData.subscriptionExpiresAt || null, // Fecha de expiración de suscripción
                 active: true
             };
 
@@ -581,7 +586,10 @@ export default function AdminPanel() {
 
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>
-                                    Fecha de expiración (opcional)
+                                    Expiración del CÓDIGO (opcional)
+                                </Text>
+                                <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6 }}>
+                                    Fecha hasta cuando el código puede canjearse
                                 </Text>
                                 <TextInput
                                     style={[styles.input, {
@@ -591,6 +599,27 @@ export default function AdminPanel() {
                                     value={codeFormData.expiresAt}
                                     onChangeText={(t) => setCodeFormData({ ...codeFormData, expiresAt: t })}
                                     placeholder="YYYY-MM-DD (ej: 2025-01-31)"
+                                    placeholderTextColor="#9CA3AF"
+                                />
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.label, { color: '#F59E0B' }]}>
+                                    ⭐ Expiración de SUSCRIPCIÓN (importante)
+                                </Text>
+                                <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6 }}>
+                                    Fecha en que expira el acceso del usuario que canjea
+                                </Text>
+                                <TextInput
+                                    style={[styles.input, {
+                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
+                                        color: isDark ? '#FFF' : '#000',
+                                        borderColor: '#F59E0B',
+                                        borderWidth: 1
+                                    }]}
+                                    value={codeFormData.subscriptionExpiresAt}
+                                    onChangeText={(t) => setCodeFormData({ ...codeFormData, subscriptionExpiresAt: t })}
+                                    placeholder="YYYY-MM-DD (ej: 2026-12-31)"
                                     placeholderTextColor="#9CA3AF"
                                 />
                             </View>

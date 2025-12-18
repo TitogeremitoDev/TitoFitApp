@@ -57,6 +57,9 @@ export default function Amigos() {
         itemsSynced: 0,
     });
 
+    // Estado para modal de error de código
+    const [codeErrorModal, setCodeErrorModal] = useState({ visible: false, message: '' });
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     const gradientColors = isDark
@@ -137,7 +140,7 @@ export default function Amigos() {
     // Función unificada: intenta canjear como referido, si falla intenta como código promocional
     const handleRedeemCode = async () => {
         if (!redeemCode.trim()) {
-            Alert.alert('Error', 'Por favor ingresa un código');
+            setCodeErrorModal({ visible: true, message: 'Por favor ingresa un código' });
             return;
         }
 
@@ -215,11 +218,11 @@ export default function Amigos() {
             }
 
             // Ninguno de los dos funcionó
-            Alert.alert('Código inválido', promoData.message || referralData.message || 'Este código no existe o ya ha sido usado');
+            setCodeErrorModal({ visible: true, message: promoData.message || referralData.message || 'Este código no existe o ya ha sido usado' });
 
         } catch (error) {
             console.error('[Amigos] Error redeeming:', error);
-            Alert.alert('Error', 'No se pudo canjear el código. Verifica tu conexión.');
+            setCodeErrorModal({ visible: true, message: 'No se pudo canjear el código. Verifica tu conexión.' });
         } finally {
             setIsRedeeming(false);
         }
@@ -456,6 +459,27 @@ export default function Amigos() {
                 itemsSynced={syncModal.itemsSynced}
                 onDismiss={() => setSyncModal(prev => ({ ...prev, visible: false }))}
             />
+
+            {/* Code Error Modal */}
+            <Modal visible={codeErrorModal.visible} transparent animationType="fade" onRequestClose={() => setCodeErrorModal({ visible: false, message: '' })}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.errorModalCard, { backgroundColor: theme.backgroundSecondary }]}>
+                        <View style={styles.errorIconContainer}>
+                            <Ionicons name="close-circle" size={60} color="#EF4444" />
+                        </View>
+                        <Text style={[styles.errorModalTitle, { color: theme.text }]}>❌ Código no válido</Text>
+                        <Text style={[styles.errorModalMessage, { color: theme.textSecondary }]}>
+                            {codeErrorModal.message}
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.errorModalButton}
+                            onPress={() => setCodeErrorModal({ visible: false, message: '' })}
+                        >
+                            <Text style={styles.errorModalButtonText}>Entendido</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -758,5 +782,41 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
+    },
+    // Error Modal Styles
+    errorModalCard: {
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 16,
+        padding: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#EF4444',
+    },
+    errorIconContainer: {
+        marginBottom: 12,
+    },
+    errorModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    errorModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+        lineHeight: 20,
+    },
+    errorModalButton: {
+        backgroundColor: '#EF4444',
+        paddingHorizontal: 32,
+        paddingVertical: 12,
+        borderRadius: 10,
+    },
+    errorModalButtonText: {
+        color: '#FFF',
+        fontWeight: '700',
+        fontSize: 15,
     },
 });

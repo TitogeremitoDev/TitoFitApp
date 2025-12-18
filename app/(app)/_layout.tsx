@@ -13,7 +13,7 @@ import { SplashScreen, Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable, View } from 'react-native';
 import 'react-native-reanimated';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 // Asegúrate de que la importación de Ionicons sea correcta para tu proyecto
 // Puede ser '@expo/vector-icons' o '@react-vector-icons/ionicons'
 import { Ionicons } from '@expo/vector-icons';
@@ -224,51 +224,53 @@ export default function RootLayout() {
           <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
             <SafeAreaProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    // Habilitar gesto de swipe back en iOS
-                    gestureEnabled: true,
-                    // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
-                    fullScreenGestureEnabled: true,
-                    animation: 'slide_from_right',
-                    // Tus screenOptions existentes para el header
-                    headerTransparent: true,
-                    ...(Platform.OS === 'android'
-                      ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
-                      : {}),
-                    headerTitle: '',
-                    headerTintColor: 'black',
-                    headerShadowVisible: true,
-                    headerLeft: (props) => { // Tu headerLeft personalizado
-                      if (!props.canGoBack) return null;
-                      return (
-                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                          <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                            <Ionicons name="arrow-back" size={24} color="black" />
-                          </Pressable>
-                        </View>
-                      );
-                    },
-                  }}
-                >
-                  {/* Tus Stack.Screen existentes */}
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="home" options={{ headerShown: false }} />
-                  <Stack.Screen name="entreno" />
-                  <Stack.Screen
-                    name="rutinas/[id]"
-                    options={{
+                <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      // Habilitar gesto de swipe back en iOS
                       gestureEnabled: true,
+                      // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
                       fullScreenGestureEnabled: true,
                       animation: 'slide_from_right',
+                      // Tus screenOptions existentes para el header
+                      headerTransparent: true,
+                      ...(Platform.OS === 'android'
+                        ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
+                        : {}),
+                      headerTitle: '',
+                      headerTintColor: 'black',
+                      headerShadowVisible: true,
+                      headerLeft: (props) => { // Tu headerLeft personalizado
+                        if (!props.canGoBack) return null;
+                        return (
+                          <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                            <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                              <Ionicons name="arrow-back" size={24} color="black" />
+                            </Pressable>
+                          </View>
+                        );
+                      },
                     }}
-                  />
-                  <Stack.Screen name="perfil/evolucion" />
-                  <Stack.Screen name="videos" />
-                  <Stack.Screen name="+not-found" />
+                  >
+                    {/* Tus Stack.Screen existentes */}
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="home" options={{ headerShown: false }} />
+                    <Stack.Screen name="entreno" />
+                    <Stack.Screen
+                      name="rutinas/[id]"
+                      options={{
+                        gestureEnabled: true,
+                        fullScreenGestureEnabled: true,
+                        animation: 'slide_from_right',
+                      }}
+                    />
+                    <Stack.Screen name="perfil/evolucion" />
+                    <Stack.Screen name="videos" />
+                    <Stack.Screen name="+not-found" />
 
-                </Stack>
+                  </Stack>
+                </SafeAreaView>
 
                 <StatusBar
                   style="auto"

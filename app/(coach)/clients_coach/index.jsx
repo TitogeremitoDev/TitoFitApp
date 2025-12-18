@@ -1,12 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Modal, Alert, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
-    ActivityIndicator, TouchableOpacity
+    Modal, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
+    ActivityIndicator, TouchableOpacity, LayoutAnimation, Platform, UIManager, TextInput
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+
+// Habilitar LayoutAnimation en Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const getFeedbackColor = (days) => {
+    if (days === null) return '#6b7280'; // Sin datos - gris
+    if (days < 7) return '#10b981'; // Verde - menos de 7 días
+    if (days < 14) return '#f59e0b'; // Naranja - 7-14 días
+    return '#ef4444'; // Rojo - más de 14 días
+};
+
+const getFeedbackText = (days) => {
+    if (days === null) return 'Sin feedback';
+    if (days === 0) return 'Hoy';
+    if (days === 1) return 'Ayer';
+    return `Hace ${days}d`;
+};
+
+const getE1rmIcon = (trend) => {
+    if (trend === 'improving') return { name: 'trending-up', color: '#10b981' };
+    if (trend === 'declining') return { name: 'trending-down', color: '#ef4444' };
+    return { name: 'remove', color: '#6b7280' };
+};
+
+// Sistema de colores: Seguimiento (>4 días naranja, >7 días rojo)
+const getTrackingColor = (days) => {
+    if (days === null) return '#6b7280'; // Sin datos - gris
+    if (days <= 4) return '#10b981'; // Verde - 0-4 días
+    if (days <= 7) return '#f59e0b'; // Naranja - 5-7 días
+    return '#ef4444'; // Rojo - más de 7 días
+};
+
+// Sistema de colores: Entrenos (<3/semana rojo)
+const getWorkoutsColor = (workouts) => {
+    if (workouts >= 3) return '#10b981'; // Verde
+    if (workouts >= 2) return '#f59e0b'; // Naranja
+    return '#ef4444'; // Rojo
+};
+
+// Mood emoji basado en valor 1-5
+const getMoodEmoji = (mood) => {
+    if (mood === null) return { emoji: '❓', color: '#6b7280' };
+    if (mood >= 4.5) return { emoji: '😄', color: '#10b981' };
+    if (mood >= 3.5) return { emoji: '🙂', color: '#22c55e' };
+    if (mood >= 2.5) return { emoji: '😐', color: '#f59e0b' };
+    if (mood >= 1.5) return { emoji: '😔', color: '#f97316' };
+    return { emoji: '😢', color: '#ef4444' };
+};
 
 export default function ClientsScreen() {
     const router = useRouter();
@@ -16,12 +70,60 @@ export default function ClientsScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [maxClients, setMaxClients] = useState(5);
+    const [expandedClients, setExpandedClients] = useState({});
     const [confirmModal, setConfirmModal] = useState({
         visible: false,
         clientId: null,
         clientName: ''
     });
+
+    // Feedback modal state
+    const [feedbackModal, setFeedbackModal] = useState({
+        visible: false,
+        clientId: null,
+        clientName: '',
+    });
+    const [feedbackMessage, setFeedbackMessage] = useState('');
+    const [feedbackType, setFeedbackType] = useState('general');
+    const [sendingFeedback, setSendingFeedback] = useState(false);
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+    // Enviar feedback rápido
+    const handleSendFeedback = async () => {
+        if (!feedbackMessage.trim() || !feedbackModal.clientId) return;
+
+        try {
+            setSendingFeedback(true);
+            const response = await fetch(`${API_URL}/api/feedback`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    clientId: feedbackModal.clientId,
+                    message: feedbackMessage.trim(),
+                    type: feedbackType,
+                }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setFeedbackModal({ visible: false, clientId: null, clientName: '' });
+                setFeedbackMessage('');
+                setFeedbackType('general');
+            }
+        } catch (error) {
+            console.error('[SendFeedback] Error:', error);
+        } finally {
+            setSendingFeedback(false);
+        }
+    };
+
+    const openFeedbackModal = (clientId, clientName) => {
+        setFeedbackModal({ visible: true, clientId, clientName });
+    };
 
     useEffect(() => {
         fetchClients();
@@ -31,7 +133,8 @@ export default function ClientsScreen() {
         try {
             if (!isRefresh) setIsLoading(true);
 
-            const response = await fetch(`${API_URL}/api/trainers/clients`, {
+            // Usar el nuevo endpoint extendido
+            const response = await fetch(`${API_URL}/api/trainers/clients-extended`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = await response.json();
@@ -48,23 +151,23 @@ export default function ClientsScreen() {
         }
     };
 
+    const toggleExpand = useCallback((clientId) => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setExpandedClients(prev => ({
+            ...prev,
+            [clientId]: !prev[clientId]
+        }));
+    }, []);
+
     const handleDeleteClient = (clientId, clientName) => {
-        console.log('[DELETE CLIENT] Button pressed for:', clientId, clientName);
-        setConfirmModal({
-            visible: true,
-            clientId,
-            clientName
-        });
+        setConfirmModal({ visible: true, clientId, clientName });
     };
 
     const confirmDelete = async () => {
-        const { clientId, clientName } = confirmModal;
-
-        // Cerrar modal
+        const { clientId } = confirmModal;
         setConfirmModal({ visible: false, clientId: null, clientName: '' });
 
         try {
-            console.log('[DELETE] Making DELETE request to:', `${API_URL}/api/trainers/clients/${clientId}`);
             const response = await fetch(
                 `${API_URL}/api/trainers/clients/${clientId}`,
                 {
@@ -72,11 +175,7 @@ export default function ClientsScreen() {
                     headers: { Authorization: `Bearer ${token}` }
                 }
             );
-
-            console.log('[DELETE] Response status:', response.status);
             const data = await response.json();
-            console.log('[DELETE] Response data:', data);
-
             if (data.success) {
                 fetchClients();
             }
@@ -89,115 +188,264 @@ export default function ClientsScreen() {
         setConfirmModal({ visible: false, clientId: null, clientName: '' });
     };
 
-    const handleMessageClient = (client) => {
-        router.push({
-            pathname: '/(coach)/communication',
-            params: { preselectedClient: client._id }
-        });
-    };
-
-    const handleClientPayments = (client) => {
-        router.push({
-            pathname: '/(coach)/payments',
-            params: { clientId: client._id }
-        });
-    };
-
-    const handleClientEvolution = (client) => {
-        router.push({
-            pathname: '/(coach)/evolution',
-            params: { clientId: client._id }
-        });
-    };
-
-    const handleClientNutrition = (client) => {
-        router.push({
-            pathname: '/(coach)/nutrition',
-            params: { clientId: client._id }
-        });
-    };
     const onRefresh = () => {
         setIsRefreshing(true);
         fetchClients(true);
     };
 
-    const formatDate = (dateString) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('es-ES', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
-    };
+    const renderClientCard = ({ item }) => {
+        const isExpanded = expandedClients[item._id];
+        const feedbackColor = getFeedbackColor(item.daysSinceLastFeedback);
+        const e1rmInfo = getE1rmIcon(item.e1rmTrend);
+        const trackingColor = getTrackingColor(item.daysSinceLastTracking);
+        const workoutsColor = getWorkoutsColor(item.workoutsThisWeek ?? 0);
+        const moodInfo = getMoodEmoji(item.avgMood);
 
-    const renderClientCard = ({ item }) => (
-        <View style={styles.clientCard}>
-            <View style={styles.clientInfo}>
-                <View style={styles.clientHeader}>
-                    <Ionicons name="person-circle" size={40} color="#3b82f6" />
+        return (
+            <View style={styles.clientCard}>
+                {/* Header - Siempre visible */}
+                <TouchableOpacity
+                    style={styles.clientHeader}
+                    onPress={() => toggleExpand(item._id)}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="person-circle" size={44} color="#3b82f6" />
                     <View style={styles.clientDetails}>
-                        <Text style={styles.clientName}>{item.nombre}</Text>
+                        <View style={styles.nameRow}>
+                            <Text style={styles.clientName}>{item.nombre}</Text>
+                            {item.unreadMessages > 0 && (
+                                <View style={styles.unreadBadge}>
+                                    <Text style={styles.unreadText}>{item.unreadMessages}</Text>
+                                </View>
+                            )}
+                            {/* Mood Badge */}
+                            <View style={[styles.moodBadge, { backgroundColor: moodInfo.color + '20' }]}>
+                                <Text style={styles.moodEmoji}>{moodInfo.emoji}</Text>
+                            </View>
+                        </View>
                         <Text style={styles.clientEmail}>{item.email}</Text>
-                        <Text style={styles.clientUsername}>@{item.username}</Text>
+                        {/* Rutina actual */}
+                        <View style={styles.routineRow}>
+                            <Ionicons name="fitness" size={12} color="#8b5cf6" />
+                            <Text style={styles.routineText} numberOfLines={1}>
+                                {item.currentRoutineName
+                                    ? `${item.currentRoutineName} • ${item.daysWithRoutine}d`
+                                    : 'Sin rutina asignada'}
+                            </Text>
+                        </View>
+                        <View style={styles.metaRow}>
+                            {/* Seguimiento con color */}
+                            <View style={[styles.statusPill, { backgroundColor: trackingColor + '20', borderColor: trackingColor }]}>
+                                <Ionicons name="calendar" size={12} color={trackingColor} />
+                                <Text style={[styles.statusPillText, { color: trackingColor }]}>
+                                    {item.daysSinceLastTracking !== null ? `${item.daysSinceLastTracking}d` : '--'}
+                                </Text>
+                            </View>
+                            {/* Entrenos con color */}
+                            <View style={[styles.statusPill, { backgroundColor: workoutsColor + '20', borderColor: workoutsColor }]}>
+                                <Ionicons name="barbell" size={12} color={workoutsColor} />
+                                <Text style={[styles.statusPillText, { color: workoutsColor }]}>
+                                    {item.workoutsThisWeek ?? 0}/sem
+                                </Text>
+                            </View>
+                            {/* Progreso con color */}
+                            <View style={[styles.statusPill, { backgroundColor: e1rmInfo.color + '20', borderColor: e1rmInfo.color }]}>
+                                <Ionicons name={e1rmInfo.name} size={12} color={e1rmInfo.color} />
+                            </View>
+                            {/* Feedback */}
+                            <View style={[styles.statusPill, { backgroundColor: feedbackColor + '20', borderColor: feedbackColor }]}>
+                                <Ionicons name="chatbox" size={12} color={feedbackColor} />
+                            </View>
+                        </View>
                     </View>
-                </View>
+                    <Ionicons
+                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={24}
+                        color="#94a3b8"
+                    />
+                </TouchableOpacity>
 
-                <View style={styles.clientMeta}>
-                    <View style={styles.metaItem}>
-                        <Ionicons name="fitness" size={14} color="#64748b" />
-                        <Text style={styles.metaText}>{item.tipoUsuario}</Text>
+                {/* Contenido Expandible */}
+                {isExpanded && (
+                    <View style={styles.expandedContent}>
+                        {/* Resumen de Estado */}
+                        <View style={styles.statsRow}>
+                            {/* Último Seguimiento con color */}
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>Seguimiento</Text>
+                                <View style={[styles.statValueBox, { borderColor: trackingColor }]}>
+                                    <Ionicons name="calendar" size={14} color={trackingColor} />
+                                    <Text style={[styles.statValue, { color: trackingColor }]}>
+                                        {item.lastTrackingDate
+                                            ? new Date(item.lastTrackingDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+                                            : '--'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Entrenos esta semana con color */}
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>Entrenos</Text>
+                                <View style={[styles.statValueBox, { borderColor: workoutsColor }]}>
+                                    <Ionicons name="barbell" size={14} color={workoutsColor} />
+                                    <Text style={[styles.statValue, { color: workoutsColor }]}>
+                                        {item.workoutsThisWeek ?? 0}/sem
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Estado de ánimo medio */}
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>Ánimo</Text>
+                                <View style={[styles.statValueBox, { borderColor: moodInfo.color }]}>
+                                    <Text style={styles.moodEmojiLarge}>{moodInfo.emoji}</Text>
+                                    <Text style={[styles.statValue, { color: moodInfo.color }]}>
+                                        {item.avgMood != null ? item.avgMood.toFixed(1) : '--'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Tendencia e1RM */}
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>Progreso</Text>
+                                <View style={[styles.statValueBox, { borderColor: e1rmInfo.color }]}>
+                                    <Ionicons name={e1rmInfo.name} size={14} color={e1rmInfo.color} />
+                                    <Text style={[styles.statValue, { color: e1rmInfo.color }]}>
+                                        {item.e1rmTrend === 'improving' ? 'Mejora' : item.e1rmTrend === 'declining' ? 'Baja' : 'Estable'}
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Peso */}
+                        <View style={styles.weightRow}>
+                            <View style={styles.weightItem}>
+                                <Text style={styles.weightLabel}>Peso Actual</Text>
+                                <Text style={styles.weightValue}>
+                                    {item.currentWeight ? `${item.currentWeight} kg` : '--'}
+                                </Text>
+                            </View>
+                            <View style={styles.weightItem}>
+                                <Text style={styles.weightLabel}>Objetivo</Text>
+                                <Text style={styles.weightValue}>
+                                    {item.targetWeight ? `${item.targetWeight} kg` : '--'}
+                                </Text>
+                            </View>
+                            <View style={styles.weightItem}>
+                                <Text style={styles.weightLabel}>Tendencia</Text>
+                                <View style={styles.trendRow}>
+                                    {item.weightTrend !== null && (
+                                        <>
+                                            <Ionicons
+                                                name={item.weightTrend > 0 ? 'arrow-up' : item.weightTrend < 0 ? 'arrow-down' : 'remove'}
+                                                size={14}
+                                                color={item.weightTrend > 0 ? '#ef4444' : item.weightTrend < 0 ? '#10b981' : '#6b7280'}
+                                            />
+                                            <Text style={[
+                                                styles.trendValue,
+                                                { color: item.weightTrend > 0 ? '#ef4444' : item.weightTrend < 0 ? '#10b981' : '#6b7280' }
+                                            ]}>
+                                                {Math.abs(item.weightTrend)} kg
+                                            </Text>
+                                        </>
+                                    )}
+                                    {item.weightTrend === null && <Text style={styles.noData}>--</Text>}
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Botón Ver Toda la Información */}
+                        <TouchableOpacity
+                            style={styles.viewAllButton}
+                            onPress={() => router.push({
+                                pathname: '/(coach)/client-detail/[clientId]',
+                                params: { clientId: item._id, clientName: item.nombre }
+                            })}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="expand-outline" size={20} color="#fff" />
+                            <Text style={styles.viewAllButtonText}>Ver toda la información</Text>
+                            <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </TouchableOpacity>
+
+                        {/* Botones de Acción */}
+                        <View style={styles.actionsRow}>
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.messageButton]}
+                                onPress={() => router.push({
+                                    pathname: '/(coach)/communication',
+                                    params: { preselectedClient: item._id }
+                                })}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#3b82f6' }]}>Mensaje</Text>
+                                <Ionicons name="chatbubble" size={22} color="#3b82f6" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.paymentsButton]}
+                                onPress={() => router.push({
+                                    pathname: '/(coach)/payments',
+                                    params: { clientId: item._id }
+                                })}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#10b981' }]}>Pagos</Text>
+                                <Ionicons name="card" size={22} color="#10b981" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.evolutionButton]}
+                                onPress={() => router.push({
+                                    pathname: '/(coach)/progress/[clientId]',
+                                    params: { clientId: item._id, clientName: item.nombre }
+                                })}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#eab308' }]}>Evolución</Text>
+                                <Ionicons name="trending-up" size={22} color="#eab308" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.trainingButton]}
+                                onPress={() => router.push({
+                                    pathname: '/(coach)/seguimiento_coach/[clientId]',
+                                    params: { clientId: item._id, clientName: item.nombre }
+                                })}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#8b5cf6' }]}>Entreno</Text>
+                                <Ionicons name="barbell" size={22} color="#8b5cf6" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.nutritionButton]}
+                                onPress={() => router.push({
+                                    pathname: '/(coach)/nutrition/[clientId]',
+                                    params: { clientId: item._id, clientName: item.nombre }
+                                })}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#ec4899' }]}>Nutrición</Text>
+                                <Ionicons name="nutrition" size={22} color="#ec4899" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.feedbackButton]}
+                                onPress={() => openFeedbackModal(item._id, item.nombre)}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#10b981' }]}>Feedback</Text>
+                                <Ionicons name="create" size={22} color="#10b981" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.deleteButton]}
+                                onPress={() => handleDeleteClient(item._id, item.nombre)}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#ef4444' }]}>Eliminar</Text>
+                                <Ionicons name="trash" size={22} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                    <View style={styles.metaItem}>
-                        <Ionicons name="calendar" size={14} color="#64748b" />
-                        <Text style={styles.metaText}>
-                            {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
-                        </Text>
-                    </View>
-                </View>
+                )}
             </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionsRow}>
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.messageButton]}
-                    onPress={() => handleMessageClient(item)}
-                >
-                    <Ionicons name="chatbubble-outline" size={18} color="#3b82f6" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.paymentsButton]}
-                    onPress={() => handleClientPayments(item)}
-                >
-                    <Ionicons name="card-outline" size={18} color="#10b981" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.evolutionButton]}
-                    onPress={() => router.push({
-                        pathname: '/(coach)/progress/[clientId]',
-                        params: { clientId: item._id, clientName: item.nombre }
-                    })}
-                >
-                    <Ionicons name="trending-up-outline" size={18} color="#8b5cf6" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.nutritionButton]}
-
-                >
-                    <Ionicons name="nutrition-outline" size={18} color="#f59e0b" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => handleDeleteClient(item._id, item.nombre)}
-                >
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
+        );
+    };
 
     const renderEmpty = () => (
         <View style={styles.emptyContainer}>
@@ -227,7 +475,6 @@ export default function ClientsScreen() {
     }
 
     return (
-
         <SafeAreaView style={styles.container}>
             <CoachHeader
                 title="Clientes"
@@ -250,6 +497,81 @@ export default function ClientsScreen() {
                     />
                 }
             />
+
+            {/* Modal de Feedback Rápido */}
+            <Modal
+                transparent={true}
+                visible={feedbackModal.visible}
+                animationType="slide"
+                onRequestClose={() => setFeedbackModal({ visible: false, clientId: null, clientName: '' })}
+            >
+                <View style={styles.feedbackModalOverlay}>
+                    <View style={styles.feedbackModalContainer}>
+                        <View style={styles.feedbackModalHeader}>
+                            <View style={styles.feedbackModalTitleRow}>
+                                <Ionicons name="create" size={24} color="#10b981" />
+                                <Text style={styles.feedbackModalTitle}>Feedback para {feedbackModal.clientName}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setFeedbackModal({ visible: false, clientId: null, clientName: '' })}>
+                                <Ionicons name="close-circle" size={28} color="#94a3b8" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Type Selector */}
+                        <View style={styles.feedbackTypeRow}>
+                            {[
+                                { id: 'general', label: 'General', icon: 'chatbubble' },
+                                { id: 'entreno', label: 'Entreno', icon: 'barbell' },
+                                { id: 'nutricion', label: 'Nutrición', icon: 'nutrition' },
+                                { id: 'evolucion', label: 'Evolución', icon: 'trending-up' },
+                            ].map(type => (
+                                <TouchableOpacity
+                                    key={type.id}
+                                    style={[styles.feedbackTypeBtn, feedbackType === type.id && styles.feedbackTypeBtnActive]}
+                                    onPress={() => setFeedbackType(type.id)}
+                                >
+                                    <Ionicons
+                                        name={type.icon}
+                                        size={14}
+                                        color={feedbackType === type.id ? '#fff' : '#64748b'}
+                                    />
+                                    <Text style={[styles.feedbackTypeLabel, feedbackType === type.id && styles.feedbackTypeLabelActive]}>
+                                        {type.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Message Input */}
+                        <TextInput
+                            style={styles.feedbackInput}
+                            placeholder="Escribe tu mensaje..."
+                            placeholderTextColor="#94a3b8"
+                            value={feedbackMessage}
+                            onChangeText={setFeedbackMessage}
+                            multiline
+                            numberOfLines={4}
+                            textAlignVertical="top"
+                        />
+
+                        {/* Send Button */}
+                        <TouchableOpacity
+                            style={[styles.sendFeedbackBtn, !feedbackMessage.trim() && styles.sendFeedbackBtnDisabled]}
+                            onPress={handleSendFeedback}
+                            disabled={!feedbackMessage.trim() || sendingFeedback}
+                        >
+                            {sendingFeedback ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="paper-plane" size={18} color="#fff" />
+                                    <Text style={styles.sendFeedbackBtnText}>Enviar</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Modal de Confirmación */}
             <Modal
@@ -296,39 +618,27 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8fafc'
     },
-    header: {
-        flexDirection: 'row',
+    list: {
+        padding: 16,
+    },
+    emptyList: {
+        flex: 1,
+    },
+    loadingContainer: {
+        flex: 1,
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
+        justifyContent: 'center'
     },
-    headerTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#1e293b'
+    loadingText: {
+        marginTop: 12,
+        fontSize: 16,
+        color: '#64748b',
     },
-    headerBadge: {
-        backgroundColor: '#dbeafe',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    headerBadgeText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#3b82f6',
-    },
-    listContent: {
-        padding: 16
-    },
+
+    // Client Card
     clientCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 16,
         marginBottom: 12,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -337,69 +647,204 @@ const styles = StyleSheet.create({
         elevation: 3,
         borderWidth: 1,
         borderColor: '#e2e8f0',
-    },
-    clientInfo: {
-        marginBottom: 12,
+        overflow: 'hidden',
     },
     clientHeader: {
         flexDirection: 'row',
         alignItems: 'center',
+        padding: 16,
         gap: 12,
-        marginBottom: 12,
     },
     clientDetails: {
         flex: 1,
     },
-    clientName: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1e293b',
-        marginBottom: 4,
-    },
-    clientEmail: {
-        fontSize: 14,
-        color: '#64748b',
-        marginBottom: 2,
-    },
-    clientUsername: {
-        fontSize: 13,
-        color: '#94a3b8',
-        fontWeight: '500',
-    },
-    clientMeta: {
-        flexDirection: 'row',
-        gap: 16,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: '#f1f5f9',
-    },
-    metaItem: {
+    nameRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-    },
-    metaText: {
-        fontSize: 12,
-        color: '#64748b',
-        fontWeight: '500',
-    },
-    actionsRow: {
-        flexDirection: 'row',
         gap: 8,
-        marginTop: 12,
-        paddingTop: 12,
+    },
+    clientName: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    unreadBadge: {
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        minWidth: 20,
+        alignItems: 'center',
+    },
+    unreadText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    clientEmail: {
+        fontSize: 13,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 6,
+        gap: 10,
+    },
+    routineRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 4,
+    },
+    routineText: {
+        fontSize: 12,
+        color: '#8b5cf6',
+        fontWeight: '500',
+        flex: 1,
+    },
+    clientDate: {
+        fontSize: 12,
+        color: '#94a3b8',
+    },
+    feedbackPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 12,
+        borderWidth: 1,
+        gap: 4,
+    },
+    feedbackText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    statusPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 10,
+        borderWidth: 1,
+        gap: 3,
+    },
+    statusPillText: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    moodBadge: {
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 10,
+        marginLeft: 4,
+    },
+    moodEmoji: {
+        fontSize: 12,
+    },
+    moodEmojiLarge: {
+        fontSize: 16,
+    },
+    statValueBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 4,
+    },
+
+    // Expanded Content
+    expandedContent: {
         borderTopWidth: 1,
         borderTopColor: '#e2e8f0',
+        padding: 16,
+        backgroundColor: '#fafbfc',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    statItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statLabel: {
+        fontSize: 11,
+        color: '#94a3b8',
+        marginBottom: 4,
+    },
+    statValue: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    trendRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+
+    // Weight Row
+    weightRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    weightItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    weightLabel: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginBottom: 4,
+    },
+    weightValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    trendValue: {
+        fontSize: 13,
+        fontWeight: '600',
+        marginLeft: 2,
+    },
+    noData: {
+        fontSize: 13,
+        color: '#94a3b8',
+    },
+
+    // Action Buttons
+    actionsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
     actionButton: {
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 8,
-        borderRadius: 10,
+        width: '30%',
+        minWidth: 70,
+        paddingVertical: 10,
+        paddingHorizontal: 6,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#f8fafc',
         borderWidth: 1.5,
+        gap: 4,
+    },
+    actionLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        textAlign: 'center',
     },
     messageButton: {
         borderColor: '#93c5fd',
@@ -410,40 +855,67 @@ const styles = StyleSheet.create({
         backgroundColor: '#f0fdf4',
     },
     evolutionButton: {
+        borderColor: '#fde047',
+        backgroundColor: '#fefce8',
+    },
+    trainingButton: {
         borderColor: '#c4b5fd',
         backgroundColor: '#faf5ff',
     },
     nutritionButton: {
-        borderColor: '#fcd34d',
-        backgroundColor: '#fffbeb',
+        borderColor: '#f9a8d4',
+        backgroundColor: '#fdf2f8',
     },
     deleteButton: {
         borderColor: '#fca5a5',
         backgroundColor: '#fef2f2',
     },
+
+    // View All Button
+    viewAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        backgroundColor: '#6366f1',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        marginBottom: 12,
+        shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    viewAllButtonText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#fff',
+    },
+
+    // Empty State
     emptyContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 60,
     },
+    emptyTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#64748b',
+        marginTop: 16,
+    },
     emptyText: {
         fontSize: 16,
         color: '#94a3b8',
-        marginTop: 16,
+        marginTop: 8,
         textAlign: 'center',
+        paddingHorizontal: 32,
     },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    // Modal styles
+
+    // Modal
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -507,10 +979,99 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#fff',
     },
-    emptyTitle: {
-        fontSize: 20,
+
+    // Feedback Button
+    feedbackButton: {
+        backgroundColor: '#ecfdf5',
+        borderColor: '#10b981',
+    },
+
+    // Feedback Modal
+    feedbackModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    feedbackModalContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 20,
+        paddingBottom: 40,
+    },
+    feedbackModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    feedbackModalTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        flex: 1,
+    },
+    feedbackModalTitle: {
+        fontSize: 16,
         fontWeight: '700',
+        color: '#1e293b',
+        flex: 1,
+    },
+    feedbackTypeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginBottom: 12,
+    },
+    feedbackTypeBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    feedbackTypeBtnActive: {
+        backgroundColor: '#10b981',
+        borderColor: '#10b981',
+    },
+    feedbackTypeLabel: {
+        fontSize: 11,
+        fontWeight: '600',
         color: '#64748b',
-        marginTop: 16,
-    }
+    },
+    feedbackTypeLabelActive: {
+        color: '#fff',
+    },
+    feedbackInput: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 14,
+        color: '#1e293b',
+        minHeight: 100,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginBottom: 12,
+    },
+    sendFeedbackBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#10b981',
+        paddingVertical: 12,
+        borderRadius: 12,
+    },
+    sendFeedbackBtnDisabled: {
+        backgroundColor: '#94a3b8',
+    },
+    sendFeedbackBtnText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#fff',
+    },
 });
