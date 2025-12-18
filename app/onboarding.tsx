@@ -111,13 +111,26 @@ export default function Onboarding() {
 
             await axios.put('/users/info', { info_user });
             await refreshUser();
-            await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
             router.replace('/home');
         } catch (error) {
             console.error('Error guardando datos:', error);
             Alert.alert('Error', 'No se pudieron guardar tus datos. Inténtalo de nuevo.');
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Función para saltar onboarding
+    const handleSkipOnboarding = async () => {
+        try {
+            // Marcar como completado en el backend (con info_user vacío)
+            // Así el usuario puede completar los datos después desde perfil
+            await axios.put('/users/info', { info_user: {} });
+            router.replace('/home');
+        } catch (error) {
+            console.error('Error saltando onboarding:', error);
+            // Si falla, intentar ir a home de todas formas
+            router.replace('/home');
         }
     };
 
@@ -129,29 +142,29 @@ export default function Onboarding() {
                     <View style={styles.welcomeContent}>
                         <Ionicons name="barbell" size={80} color={theme.primary} />
                         <Text style={[styles.welcomeTitle, { color: theme.text }]}>
-                            Bienvenido a tu plataforma fitness entrenador–entrenado
+                            ¡Bienvenido a TotalGains!
                         </Text>
                         <Text style={[styles.welcomeSubtitle, { color: theme.textSecondary }]}>
-                            Aquí vas a tener tus rutinas, progresos y comunicación con tu entrenador en un solo lugar.
+                            Antes de empezar, nos gustaría conocerte un poco mejor para personalizar tu experiencia.
                         </Text>
 
                         <View style={styles.benefitsList}>
                             <View style={styles.benefitItem}>
                                 <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Centraliza tus entrenos y progresos
+                                    Rutinas adaptadas a tus objetivos
                                 </Text>
                             </View>
                             <View style={styles.benefitItem}>
                                 <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Conecta con tu entrenador en segundos
+                                    Recomendaciones personalizadas
                                 </Text>
                             </View>
                             <View style={styles.benefitItem}>
                                 <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Ten siempre claro qué toca hacer hoy
+                                    Seguimiento más preciso de tu progreso
                                 </Text>
                             </View>
                         </View>
@@ -160,11 +173,28 @@ export default function Onboarding() {
                             style={[styles.primaryButton, { backgroundColor: theme.primary }]}
                             onPress={handleNext}
                         >
-                            <Text style={styles.primaryButtonText}>Empezar en 30 segundos</Text>
+                            <Ionicons name="clipboard-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                            <Text style={styles.primaryButtonText}>Completar cuestionario</Text>
                         </TouchableOpacity>
 
                         <Text style={[styles.helperText, { color: theme.textSecondary }]}>
-                            Sin formularios eternos, solo lo básico para afinar tu plan 😉
+                            Solo te llevará 30 segundos 😉
+                        </Text>
+
+                        <TouchableOpacity
+                            style={[styles.secondaryButton, { borderColor: theme.border }]}
+                            onPress={handleSkipOnboarding}
+                        >
+                            <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>
+                                Dejarlo para más tarde
+                            </Text>
+                        </TouchableOpacity>
+
+                        <Text style={[styles.skipNote, { color: theme.textSecondary }]}>
+                            Podrás rellenar tus datos en cualquier momento desde{' '}
+                            <Text style={{ fontWeight: '600', color: theme.primary }}>
+                                Perfil → Información de usuario
+                            </Text>
                         </Text>
                     </View>
                 </ScrollView>
@@ -300,9 +330,9 @@ export default function Onboarding() {
     // STEP 2: LEVEL & COMMITMENT
     if (currentStep === 2) {
         const experienciaOpts = [
-            { label: 'Estoy empezando (0–1 años)', value: 0 },
-            { label: 'Voy en serio (1–3 años)', value: 2 },
-            { label: 'Llevo años dándole (3+ años)', value: 6 },
+            { label: 'Estoy empezando (0–1 años)', value: 2 },
+            { label: 'Voy en serio (1–3 años)', value: 5 },
+            { label: 'Llevo años dándole (3+ años)', value: 8 },
         ];
         const compromisoOpts = [
             { label: 'Tranquilo', value: 'bajo' },
@@ -398,9 +428,23 @@ export default function Onboarding() {
 
     // STEP 3: STYLE, CARDIO, DIET
     if (currentStep === 3) {
-        const tipoOpts = ['Hipertrofia', 'Fuerza', 'Pérdida de grasa', 'Rendimiento/Deporte', 'Salud general'];
-        const cardioOpts = ['Mínimo, gracias', 'Algo moderado', 'Lo que haga falta'];
-        const dietaOpts = ['Flexible', 'Bastante estricta', 'Voy un poco a lo loco'];
+        const tipoOpts = [
+            { label: 'Hipertrofia', value: 'hipertrofia' },
+            { label: 'Fuerza', value: 'fuerza' },
+            { label: 'Pérdida de grasa', value: 'perdida_grasa' },
+            { label: 'Rendimiento/Deporte', value: 'resistencia' },
+            { label: 'Salud general', value: 'salud' },
+        ];
+        const cardioOpts = [
+            { label: 'Mínimo, gracias', value: 'minimo' },
+            { label: 'Algo moderado', value: 'moderado' },
+            { label: 'Lo que haga falta', value: 'intenso' },
+        ];
+        const dietaOpts = [
+            { label: 'Flexible', value: 'flexible' },
+            { label: 'Bastante estricta', value: 'estricta' },
+            { label: 'Voy un poco a lo loco', value: 'sin_control' },
+        ];
         const ejerciciosFavOpts = ['Multiarticulares', 'Máquinas', 'Peso libre', 'Funcional', 'No lo sé aún'];
         const ejerciciosEvitOpts = ['Cardio', 'Piernas', 'Trabajo de core', 'Nada en especial'];
 
@@ -419,18 +463,18 @@ export default function Onboarding() {
                         <View style={styles.chipGrid}>
                             {tipoOpts.map((opt) => (
                                 <TouchableOpacity
-                                    key={opt}
+                                    key={opt.value}
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.tipoEntreno === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.tipoEntreno === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.tipoEntreno === opt.value ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.tipoEntreno === opt.value ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, tipoEntreno: opt })}
+                                    onPress={() => setFormData({ ...formData, tipoEntreno: opt.value })}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.tipoEntreno === opt ? theme.primary : theme.text }]}>
-                                        {opt}
+                                    <Text style={[styles.chipText, { color: formData.tipoEntreno === opt.value ? theme.primary : theme.text }]}>
+                                        {opt.label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -442,18 +486,18 @@ export default function Onboarding() {
                         <View style={styles.chipGrid}>
                             {cardioOpts.map((opt) => (
                                 <TouchableOpacity
-                                    key={opt}
+                                    key={opt.value}
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.cardio === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.cardio === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.cardio === opt.value ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.cardio === opt.value ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, cardio: opt })}
+                                    onPress={() => setFormData({ ...formData, cardio: opt.value })}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.cardio === opt ? theme.primary : theme.text }]}>
-                                        {opt}
+                                    <Text style={[styles.chipText, { color: formData.cardio === opt.value ? theme.primary : theme.text }]}>
+                                        {opt.label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -465,18 +509,18 @@ export default function Onboarding() {
                         <View style={styles.chipGrid}>
                             {dietaOpts.map((opt) => (
                                 <TouchableOpacity
-                                    key={opt}
+                                    key={opt.value}
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.dieta === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.dieta === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.dieta === opt.value ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.dieta === opt.value ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, dieta: opt })}
+                                    onPress={() => setFormData({ ...formData, dieta: opt.value })}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.dieta === opt ? theme.primary : theme.text }]}>
-                                        {opt}
+                                    <Text style={[styles.chipText, { color: formData.dieta === opt.value ? theme.primary : theme.text }]}>
+                                        {opt.label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -820,6 +864,8 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         borderRadius: 12,
         alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
         marginBottom: 16,
     },
     primaryButtonText: {
@@ -831,6 +877,26 @@ const styles = StyleSheet.create({
         fontSize: 13,
         textAlign: 'center',
         marginTop: 8,
+    },
+    secondaryButton: {
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 16,
+        borderWidth: 1,
+        backgroundColor: 'transparent',
+    },
+    secondaryButtonText: {
+        fontSize: 15,
+        fontWeight: '500',
+    },
+    skipNote: {
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 16,
+        lineHeight: 18,
+        paddingHorizontal: 20,
     },
     linkText: {
         fontSize: 15,

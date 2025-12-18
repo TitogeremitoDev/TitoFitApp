@@ -4,13 +4,57 @@ import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useRef } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { StripeProvider } from '../utils/stripeWrapper';
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
+
+// CSS global para scrollbar estilizado en web
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const styleId = 'custom-scrollbar-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      /* Scrollbar estilizado para elementos con scroll horizontal */
+      .custom-scrollbar::-webkit-scrollbar {
+        height: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #1f2937;
+        border-radius: 3px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: linear-gradient(90deg, #6366f1, #8b5cf6);
+        border-radius: 3px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(90deg, #818cf8, #a78bfa);
+      }
+      
+      /* Scrollbar global más delgado */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0D1B2A;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #374151;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #4B5563;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 function RootLayoutNav() {
   const { token, isLoading, user, refreshUser } = useAuth();
@@ -80,54 +124,29 @@ function RootLayoutNav() {
         }
         router.replace('/mode-select');
       } else {
-        // Usuario normal → verificar onboarding
+        // Usuario normal → verificar onboarding SOLO contra el backend (nube)
         (async () => {
           try {
-            const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+            // Obtener datos frescos del usuario desde el backend
+            const freshUser = await refreshUser();
 
-            // Si ya tiene flag local, ir directo a home
-            if (hasCompletedOnboarding) {
+            // Verificar el campo onboardingCompleted del backend
+            // Si es true, el usuario ya completó (o saltó) el onboarding
+            if (freshUser?.onboardingCompleted === true) {
               if (__DEV__) {
-                console.log('[Navigation] Redirecting to home (local flag exists)');
-              }
-              router.replace('/home');
-              return;
-            }
-
-            // Si no hay flag local, verificar en MongoDB
-            let hasMongoData = false;
-            try {
-              // Obtener datos frescos del usuario desde el backend
-              const freshUser = await refreshUser();
-              hasMongoData = Boolean(freshUser?.info_user && (
-                freshUser.info_user.edad ||
-                freshUser.info_user.peso ||
-                freshUser.info_user.objetivos ||
-                freshUser.info_user.genero
-              ));
-              if (__DEV__) {
-                console.log('[Navigation] MongoDB info_user check:', hasMongoData, freshUser?.info_user);
-              }
-            } catch (e) {
-              console.error('[Navigation] Error fetching user data:', e);
-            }
-
-            if (hasMongoData) {
-              // Tiene datos en Mongo, guardar flag y ir a home
-              await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-              if (__DEV__) {
-                console.log('[Navigation] Redirecting to home (mongo data exists)');
+                console.log('[Navigation] Redirecting to home (onboardingCompleted=true)');
               }
               router.replace('/home');
             } else {
-              // No hay datos en ningún lado, mostrar onboarding
+              // onboardingCompleted es false o undefined → mostrar onboarding
               if (__DEV__) {
-                console.log('[Navigation] Redirecting to onboarding (no data found)');
+                console.log('[Navigation] Redirecting to onboarding (onboardingCompleted !== true)');
               }
               router.replace('/onboarding');
             }
           } catch (error) {
-            console.error('Error verificando onboarding:', error);
+            console.error('[Navigation] Error verificando onboarding:', error);
+            // Si hay error obteniendo datos, ir a home para no bloquear
             router.replace('/home');
           }
         })();
@@ -144,20 +163,29 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack screenOptions={{
-      headerShown: false,
-      // Habilitar gesto de swipe back en iOS
-      gestureEnabled: true,
-      fullScreenGestureEnabled: true,
-      animation: 'slide_from_right',
-    }}>
-      <Stack.Screen name="mode-select" />
-      <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(app)" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(coach)" />
-      <Stack.Screen name="(admin)" />
-    </Stack>
+    <>
+      <Stack screenOptions={{
+        headerShown: false,
+        // Habilitar gesto de swipe back en iOS
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
+        animation: 'slide_from_right',
+      }}>
+        <Stack.Screen name="mode-select" />
+        <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="(app)" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(coach)" />
+        <Stack.Screen name="(admin)" />
+      </Stack>
+
+      {/* StatusBar global: no translúcida en Android para que el contenido empiece debajo */}
+      <StatusBar
+        style="light"
+        translucent={Platform.OS === 'android' ? false : undefined}
+        backgroundColor="#000000"
+      />
+    </>
   );
 }
 

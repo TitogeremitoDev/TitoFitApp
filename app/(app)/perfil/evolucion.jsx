@@ -13,7 +13,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
   ActivityIndicator,
   Pressable,
   Alert,
@@ -87,7 +87,7 @@ function formatNumber(num) {
   return num.toLocaleString('es-ES');
 }
 
-const screenWidth = Dimensions.get('window').width;
+
 const MAX_WEEKS = 12;
 
 // Métricas que podemos calcular
@@ -227,6 +227,22 @@ function agregarDatosParaGrafico(logFiltrado, metrica, ejeX) {
 export default function EvolucionScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
+
+  // 📐 Responsive: usar ancho de ventana dinámico
+  const { width: windowWidth } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isLargeScreen = windowWidth > 768;
+  const isSmallScreen = windowWidth < 400;
+
+  // Ancho del contenido: 90% en web grande, 100% en móvil
+  const contentWidth = isWeb && isLargeScreen
+    ? Math.min(windowWidth * 0.9, 1200) // Max 1200px en web
+    : windowWidth;
+
+  // Ancho de los gráficos - menos padding en pantallas pequeñas
+  const chartPadding = isSmallScreen ? 16 : 32;
+  const chartWidth = contentWidth - chartPadding;
+
   const [log, setLog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -249,8 +265,8 @@ export default function EvolucionScreen() {
   const [muscleModalVisible, setMuscleModalVisible] = useState(false);
   const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
 
-  // Estado para tabla expandible por rutina
-  const [expandedRoutines, setExpandedRoutines] = useState({});
+  // Estado para tabla expandible por rutina (current expandido por defecto)
+  const [expandedRoutines, setExpandedRoutines] = useState({ current: true });
 
   // Modal para ver notas
   const [noteModal, setNoteModal] = useState({ visible: false, note: null });
@@ -319,8 +335,12 @@ export default function EvolucionScreen() {
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CARGAR LOG (DESDE NUBE O LOCAL SEGÚN TIPO DE USUARIO)
+  // CARGAR DATOS (DESDE NUBE O LOCAL SEGÚN TIPO DE USUARIO)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // Estado para almacenar workouts de la API directamente (para KPIs)
+  const [cloudWorkouts, setCloudWorkouts] = useState([]);
+
   const cargarLog = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -329,7 +349,7 @@ export default function EvolucionScreen() {
       // Premium: cargar desde la nube
       if (isPremium && token) {
         try {
-          console.log('[Evolucion] Cargando desde la nube (Premium)...');
+
           const response = await fetch(`${API_URL}/api/workouts?limit=500`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -337,29 +357,38 @@ export default function EvolucionScreen() {
           if (response.ok) {
             const data = await response.json();
             if (data.success && Array.isArray(data.workouts)) {
+              // Guardar los workouts originales directamente (para KPIs)
+              setCloudWorkouts(data.workouts);
+
+
+              // También transformar a log para totales y compatibilidad
               logData = transformarWorkoutsALog(data.workouts);
               setDataSource('cloud');
-              console.log(`[Evolucion] Cargados ${logData.length} registros de la nube`);
             }
           } else {
             console.warn('[Evolucion] Error API, usando local');
-            // Fallback a local si la API falla
             const logJson = await AsyncStorage.getItem('GLOBAL_LOG');
             logData = logJson ? JSON.parse(logJson) : [];
+            setCloudWorkouts([]);
             setDataSource('local');
           }
         } catch (apiError) {
           console.warn('[Evolucion] Error API:', apiError);
-          // Fallback a local
           const logJson = await AsyncStorage.getItem('GLOBAL_LOG');
           logData = logJson ? JSON.parse(logJson) : [];
+          setCloudWorkouts([]);
           setDataSource('local');
         }
       } else {
         // FREEUSER: cargar desde AsyncStorage local
-        console.log('[Evolucion] Cargando desde local (FREEUSER)...');
+
         const logJson = await AsyncStorage.getItem('GLOBAL_LOG');
         logData = logJson ? JSON.parse(logJson) : [];
+
+        if (logData.length > 0) {
+
+        }
+        setCloudWorkouts([]);
         setDataSource('local');
       }
 
@@ -414,24 +443,54 @@ export default function EvolucionScreen() {
   }, [log, selMusculo, selEjercicio, selMetrica, selEjeX]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // KPI 2.0 CALCULATIONS - Transformar log a formato sessions
+  // KPI 2.0 CALCULATIONS - Usar cloudWorkouts directamente o reconstruir desde log
   // ═══════════════════════════════════════════════════════════════════════════
   const sessions = useMemo(() => {
-    // Agrupar log entries por fecha para crear "sessions" compatibles con KPI functions
+    // Si tenemos cloudWorkouts (datos de la nube), ordenarlos y usarlos
+    // Esto es exactamente como funciona coach/progress/[clientId].jsx
+    if (cloudWorkouts.length > 0) {
+
+      // Ordenar: primero por fecha descendente, luego por semana descendente
+      const sorted = [...cloudWorkouts].sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        const dayA = dateA.toISOString().split('T')[0];
+        const dayB = dateB.toISOString().split('T')[0];
+        if (dayA !== dayB) {
+          return dayB.localeCompare(dayA);
+        }
+        return (b.week || 0) - (a.week || 0);
+      });
+      return sorted;
+    }
+
+    // Si no hay cloudWorkouts, reconstruir desde log (FREEUSER/local)
+
     const sessionMap = new Map();
 
     log.forEach(entry => {
-      const dateKey = entry.date?.split('T')[0] || 'unknown';
-      if (!sessionMap.has(dateKey)) {
-        sessionMap.set(dateKey, {
+      // Usar routineId + fecha + dayIndex + semana como clave para separar correctamente los días
+      // Esto permite separar entrenamientos de diferentes rutinas y diferentes días
+      const dateStr = entry.date?.split('T')[0] || 'unknown';
+      const week = entry.week || 1;
+      const dayIdx = entry.dayIndex ?? 0;
+      // Incluir routineId o routineName para separar por rutina
+      const routineKey = entry.routineId || entry.routineName || 'unknown';
+      const sessionKey = `${routineKey}_${dateStr}_D${dayIdx}_W${week}`;
+
+      if (!sessionMap.has(sessionKey)) {
+        sessionMap.set(sessionKey, {
           date: entry.date,
-          week: entry.week || 1,
+          week: week,
+          dayIndex: dayIdx,
+          dayLabel: entry.dayLabel || `Día ${dayIdx + 1}`,
+          routineId: entry.routineId || entry.routineName || 'unknown',
+          routineNameSnapshot: entry.routineName || 'Entreno',
           exercises: []
         });
       }
 
-      const session = sessionMap.get(dateKey);
-      // Buscar si ya existe el ejercicio
+      const session = sessionMap.get(sessionKey);
       let exercise = session.exercises.find(e => e.exerciseName === entry.exercise);
       if (!exercise) {
         exercise = {
@@ -450,8 +509,23 @@ export default function EvolucionScreen() {
       });
     });
 
-    return Array.from(sessionMap.values());
-  }, [log]);
+    // Ordenar: primero por fecha descendente, luego por semana descendente (a misma fecha)
+    const result = Array.from(sessionMap.values());
+    result.sort((a, b) => {
+      const dateA = new Date(a.date);
+      const dateB = new Date(b.date);
+      // Primero comparar fechas (solo día, sin hora)
+      const dayA = dateA.toISOString().split('T')[0];
+      const dayB = dateB.toISOString().split('T')[0];
+      if (dayA !== dayB) {
+        return dayB.localeCompare(dayA); // Descendente por fecha
+      }
+      // Si misma fecha, ordenar por semana descendente
+      return (b.week || 0) - (a.week || 0);
+    });
+
+    return result;
+  }, [cloudWorkouts, log]);
 
   // Lista de músculos para KPIs
   const listaMusculosKpi = useMemo(() => {
@@ -589,149 +663,158 @@ export default function EvolucionScreen() {
     }
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 📋 DATOS AGRUPADOS POR RUTINA → DÍA (PARA VISTA TABLA)
+  // ═══════════════════════════════════════════════════════════════════════════
   const datosPorRutina = useMemo(() => {
-    if (!log || log.length === 0) return { current: null, old: [] };
+    if (!sessions || sessions.length === 0) return { current: null, old: [] };
 
-    // Primero reconstruir sesiones desde el log (que tiene sets individuales)
-    const sessionsMap = new Map();
-
-    log.forEach(entry => {
-      const routineName = entry.routineName || 'Sin Rutina';
-      const dateKey = entry.date?.split('T')[0] || 'unknown';
-      const sessionKey = `${routineName}-${dateKey}-${entry.week || 1}`;
-
-      if (!sessionsMap.has(sessionKey)) {
-        sessionsMap.set(sessionKey, {
-          routineName,
-          date: new Date(entry.date),
-          week: entry.week || 1,
-          exercises: new Map()
-        });
-      }
-
-      const session = sessionsMap.get(sessionKey);
-      const exerciseName = entry.exercise || 'Ejercicio';
-
-      if (!session.exercises.has(exerciseName)) {
-        session.exercises.set(exerciseName, {
-          exerciseName,
-          muscleGroup: entry.muscle || 'SIN GRUPO',
-          sets: []
-        });
-      }
-
-      session.exercises.get(exerciseName).sets.push({
-        setNumber: entry.setIndex || session.exercises.get(exerciseName).sets.length + 1,
-        actualReps: entry.reps,
-        weight: entry.load,
-        notes: entry.notes || null
-      });
-    });
-
-    // Agrupar sesiones por rutina
+    // Agrupar sesiones por routineId
     const rutinasMap = new Map();
 
-    Array.from(sessionsMap.values()).forEach(session => {
-      if (!rutinasMap.has(session.routineName)) {
-        rutinasMap.set(session.routineName, {
-          routineName: session.routineName,
-          lastDate: session.date,
-          sessionsData: []
+    sessions.forEach((session) => {
+      const routineId = session.routineId || session.routineNameSnapshot || 'unknown';
+      const routineName = session.routineNameSnapshot || 'Rutina';
+
+      if (!rutinasMap.has(routineId)) {
+        rutinasMap.set(routineId, {
+          routineId,
+          routineName,
+          lastDate: new Date(session.date),
+          sessionsData: [],
         });
       }
 
-      const rutina = rutinasMap.get(session.routineName);
-      if (session.date > rutina.lastDate) rutina.lastDate = session.date;
-
-      rutina.sessionsData.push({
-        date: session.date,
-        week: session.week,
-        exercises: Array.from(session.exercises.values())
-      });
+      const rutina = rutinasMap.get(routineId);
+      const sessionDate = new Date(session.date);
+      if (sessionDate > rutina.lastDate) {
+        rutina.lastDate = sessionDate;
+      }
+      rutina.sessionsData.push(session);
     });
 
     // Ordenar por fecha más reciente
     const rutinasArray = Array.from(rutinasMap.values())
       .sort((a, b) => b.lastDate - a.lastDate);
 
-    // Procesar cada rutina (crear estructura como coach progress)
+    // Procesar cada rutina
     const procesarRutina = (rutina) => {
-      // Ordenar sesiones por fecha/week
-      rutina.sessionsData.sort((a, b) => {
-        const dateDiff = a.date - b.date;
-        if (dateDiff !== 0) return dateDiff;
-        return (a.week || 1) - (b.week || 1);
-      });
+      const diasMap = new Map();
 
-      // Obtener ejercicios únicos
-      const ejerciciosVistos = new Set();
-      const ejerciciosUnicos = [];
+      rutina.sessionsData.forEach((session) => {
+        const dayIdx = session.dayIndex ?? 0;
+        const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
 
-      rutina.sessionsData.forEach(s => {
-        s.exercises.forEach(ex => {
-          if (!ejerciciosVistos.has(ex.exerciseName)) {
-            ejerciciosVistos.add(ex.exerciseName);
-            ejerciciosUnicos.push({
-              exerciseName: ex.exerciseName,
-              muscleGroup: ex.muscleGroup
-            });
-          }
+        if (!diasMap.has(dayIdx)) {
+          diasMap.set(dayIdx, {
+            dayIndex: dayIdx,
+            dayLabel,
+            sessionsData: [],
+          });
+        }
+
+        diasMap.get(dayIdx).sessionsData.push({
+          sessionId: session._id,
+          date: new Date(session.date),
+          week: session.week ?? 1,
+          exercises: session.exercises || [],
         });
       });
 
-      // Para cada ejercicio, recopilar sesiones con trends
-      const exercises = ejerciciosUnicos.map(ej => {
-        const sesiones = rutina.sessionsData.map((s, sIdx) => {
-          const exData = s.exercises.find(e => e.exerciseName === ej.exerciseName);
-          if (!exData) return null;
+      // Procesar cada día
+      const dias = Array.from(diasMap.values()).map(dia => {
+        dia.sessionsData.sort((a, b) => {
+          const dateDiff = a.date - b.date;
+          if (dateDiff !== 0) return dateDiff;
+          return (a.week ?? 1) - (b.week ?? 1);
+        });
 
-          // Obtener sesión anterior para calcular trends
-          const prevSession = sIdx > 0 ? rutina.sessionsData[sIdx - 1] : null;
-          const prevExData = prevSession?.exercises?.find(e => e.exerciseName === ej.exerciseName);
-
-          const setsConTrend = (exData.sets || []).map((set, setIdx) => {
-            const prevSet = prevExData?.sets?.[setIdx];
-            return {
-              setNumber: set.setNumber || setIdx + 1,
-              reps: set.actualReps,
-              weight: set.weight,
-              notes: set.notes || null,
-              repTrend: (prevSet?.actualReps && set.actualReps && set.actualReps > prevSet.actualReps) ? 'up' : null,
-              weightTrend: (prevSet?.weight && set.weight && set.weight > prevSet.weight) ? 'up' : null,
-            };
+        // Ejercicios únicos
+        const ejerciciosVistos = new Set();
+        const ejerciciosUnicos = [];
+        dia.sessionsData.forEach(s => {
+          s.exercises.forEach(ex => {
+            if (!ejerciciosVistos.has(ex.exerciseName)) {
+              ejerciciosVistos.add(ex.exerciseName);
+              ejerciciosUnicos.push({
+                exerciseName: ex.exerciseName,
+                muscleGroup: ex.muscleGroup || 'SIN GRUPO',
+              });
+            }
           });
+        });
 
-          return {
-            sessionIdx: sIdx + 1,
-            week: s.week,
-            date: s.date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-            sets: setsConTrend
-          };
-        }).filter(Boolean);
+        // Ejercicios con sesiones y trends
+        const ejerciciosConSesiones = ejerciciosUnicos.map(ej => {
+          const sesionesEjercicio = dia.sessionsData.map((s, sIdx) => {
+            const exData = s.exercises.find(e => e.exerciseName === ej.exerciseName);
+            if (!exData) return null;
 
-        return { ...ej, sesiones };
-      });
+            const prevSession = sIdx > 0 ? dia.sessionsData[sIdx - 1] : null;
+            const prevExData = prevSession?.exercises?.find(e => e.exerciseName === ej.exerciseName);
+
+            const setsConTrend = (exData.sets || []).map((set, setIdx) => {
+              const prevSet = prevExData?.sets?.[setIdx];
+              return {
+                setNumber: set.setNumber || setIdx + 1,
+                reps: set.actualReps,
+                weight: set.weight,
+                targetMin: set.targetRepsMin,
+                targetMax: set.targetRepsMax,
+                status: getRepStatus(set.actualReps, set.targetRepsMin, set.targetRepsMax),
+                notes: set.notes || null,
+                repTrend: (prevSet?.actualReps && set.actualReps && set.actualReps > prevSet.actualReps) ? 'up' : null,
+                weightTrend: (prevSet?.weight && set.weight && set.weight > prevSet.weight) ? 'up' : null,
+              };
+            });
+
+            return {
+              sessionIdx: sIdx + 1,
+              week: s.week,
+              date: s.date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+              sets: setsConTrend,
+            };
+          }).filter(Boolean);
+
+          return { ...ej, sesiones: sesionesEjercicio };
+        });
+
+        return {
+          ...dia,
+          exercises: ejerciciosConSesiones,
+          totalSessions: dia.sessionsData.length,
+        };
+      }).sort((a, b) => a.dayIndex - b.dayIndex);
 
       return {
+        routineId: rutina.routineId,
         routineName: rutina.routineName,
         lastDate: rutina.lastDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
-        exercises,
-        totalSessions: rutina.sessionsData.length
+        dias,
       };
     };
 
-    // Rutina actual = más reciente, old = resto
+    // Rutina actual = la más reciente
     const current = rutinasArray.length > 0 ? procesarRutina(rutinasArray[0]) : null;
     const old = rutinasArray.slice(1).map(procesarRutina);
 
     return { current, old };
-  }, [log]);
+  }, [sessions]);
 
-  // Estado para expandir días (usando dayIndex para consistencia)
+  // Estado para expandir días
+  const [expandedDays, setExpandedDays] = useState({});
   const [expandedExercises, setExpandedExercises] = useState({});
 
-  const toggleExercise = (routineName, exerciseName) => {
-    const key = `${routineName}-${exerciseName}`;
+  const toggleDay = (routineName, dayIndex) => {
+    const key = `${routineName}-${dayIndex}`;
+    setExpandedDays(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const toggleExercise = (routineName, dayIndex, exerciseName) => {
+    const key = `${routineName}-${dayIndex}-${exerciseName}`;
     setExpandedExercises(prev => ({
       ...prev,
       [key]: !prev[key]
@@ -776,126 +859,7 @@ export default function EvolucionScreen() {
     );
   };
 
-  // NUEVO — Volcado masivo desde rutina activa
-  const bulkFillFromActiveRoutine = useCallback(async () => {
-    try {
-      setIsBulking(true);
 
-      // 1) Leer rutina activa y estructuras
-      const [[, activeId], [, listJSON], [, progressStr]] = await AsyncStorage.multiGet([
-        'active_routine',
-        'rutinas',
-        'progress',
-      ]);
-      if (!activeId) {
-        Alert.alert('Sin rutina activa', 'Selecciona una rutina en Rutinas antes de volcar.');
-        return;
-      }
-      const lista = listJSON ? JSON.parse(listJSON) : [];
-      const meta = lista.find((r) => r && r.id === activeId);
-      const nombreRutina = meta?.nombre || 'Rutina';
-
-      const storedRoutine = await AsyncStorage.getItem(`routine_${activeId}`);
-      if (!storedRoutine) {
-        Alert.alert('Rutina no disponible', 'No se ha encontrado la rutina activa en el almacenamiento.');
-        return;
-      }
-      const diasNorm = normalizeDias(JSON.parse(storedRoutine));
-      const totalDias = Array.isArray(diasNorm) ? diasNorm.length : 0;
-
-      const prog = progressStr ? JSON.parse(progressStr) : {};
-
-      // 2) Construir índice ejercicio -> {musculo, nombre, sets}
-      const ejMap = new Map();
-      for (let d = 0; d < totalDias; d++) {
-        const ejercicios = (diasNorm[d] || []).filter(Boolean);
-        ejercicios.forEach((ej) => {
-          ejMap.set(String(ej.id), {
-            musculo: ej.musculo,
-            nombre: ej.nombre,
-            sets: Array.isArray(ej.series) ? ej.series.length : 0,
-          });
-        });
-      }
-      if (ejMap.size === 0) {
-        Alert.alert('Rutina vacía', 'La rutina activa no tiene ejercicios.');
-        return;
-      }
-
-      // 3) Preparar entradas de log a partir de progress
-      const nowISO = new Date().toISOString();
-      const newEntries = [];
-
-      // Revisamos TODAS las claves de progress que correspondan a la rutina activa:
-      // Formato esperado: `${semana}|${dIdx}|${ej.id}|${sIdx}`
-      Object.keys(prog || {}).forEach((k) => {
-        const parts = String(k).split('|');
-        if (parts.length !== 4) return;
-        const [wStr, dStr, ejId, sStr] = parts;
-        const semana = Math.max(1, Math.min(Number(wStr) || 1, MAX_WEEKS));
-        const diaIdx = Math.max(0, Number(dStr) || 0);
-        const setIndex = Math.max(0, Number(sStr) || 0);
-
-        // Validar que ese ejercicio pertenece a la rutina activa
-        if (!ejMap.has(String(ejId))) return;
-
-        const dato = prog[k] || {};
-        const reps = Number(dato.reps) || 0;
-        const load = Number(dato.peso) || 0;
-
-        // Solo generamos entrada si hay reps o peso, para evitar ruido vacío
-        if (reps <= 0 && load <= 0) return;
-
-        const volume = reps * load;
-        const e1RM = reps > 0 ? load * (1 + reps / 30) : 0;
-
-        const ejInfo = ejMap.get(String(ejId));
-        // Huella determinista para evitar duplicar volcados anteriores
-        const fingerprint = `bulk|${activeId}|${semana}|${diaIdx}|${ejId}|${setIndex}`;
-
-        newEntries.push({
-          id: fingerprint,            // determinista
-          bulk: true,                 // marca de volcado
-          date: nowISO,               // fecha del volcado masivo
-          routineName: nombreRutina,
-          week: semana,
-          muscle: ejInfo.musculo,
-          exercise: ejInfo.nombre,
-          setIndex: setIndex + 1,     // humano
-          reps,
-          load,
-          volume,
-          e1RM,
-        });
-      });
-
-      if (newEntries.length === 0) {
-        Alert.alert('Sin datos que volcar', 'No hay reps/kg guardados en esta rutina.');
-        return;
-      }
-
-      // 4) Escribir en GLOBAL_LOG evitando duplicados de volcados anteriores
-      const currJson = await AsyncStorage.getItem('GLOBAL_LOG');
-      const curr = currJson ? JSON.parse(currJson) : [];
-
-      const existingIds = new Set(curr.filter(e => e?.bulk && e?.id).map(e => e.id));
-      // Evitar duplicar: si ya existe esa id de bulk, la quitamos y sustituimos
-      const filtered = curr.filter(e => !(e?.bulk && existingIds.has(e.id)));
-
-      // Añadimos los nuevos (si había alguno con misma id en curr sin bulk, lo dejamos; sólo limpiamos bulk duplicado)
-      const finalLog = [...filtered.filter(e => !(e?.bulk && newEntries.some(ne => ne.id === e.id))), ...newEntries];
-
-      await AsyncStorage.setItem('GLOBAL_LOG', JSON.stringify(finalLog));
-      await cargarLog();
-
-      Alert.alert('Volcado completado', `Se han añadido ${newEntries.length} sets al historial para "${nombreRutina}".`);
-    } catch (err) {
-      console.warn('Bulk fill error', err);
-      Alert.alert('Error', 'No se pudo volcar el progreso de la rutina activa.');
-    } finally {
-      setIsBulking(false);
-    }
-  }, [cargarLog]);
 
   if (isLoading) {
     return (
@@ -944,699 +908,763 @@ export default function EvolucionScreen() {
         }}
       />
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+      {/* Contenedor responsive */}
+      <View style={[
+        styles.responsiveContainer,
+        {
+          width: contentWidth,
+          alignSelf: isWeb && isLargeScreen ? 'center' : 'stretch',
+          paddingHorizontal: isSmallScreen ? 4 : 8,
+        }
+      ]}>
+
+        {/* ═══════════════════════════════════════════════════════════════════════════
           TOGGLE: GRÁFICA vs TABLA
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <View style={styles.viewModeToggle}>
-        <Pressable
-          style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
-          onPress={() => setViewMode('chart')}
-        >
-          <Ionicons name="bar-chart-outline" size={18} color={viewMode === 'chart' ? '#fff' : '#9ca3af'} />
-          <Text style={[styles.viewModeBtnText, viewMode === 'chart' && styles.viewModeBtnTextActive]}>
-            Gráfica
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
-          onPress={() => setViewMode('table')}
-        >
-          <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? '#fff' : '#9ca3af'} />
-          <Text style={[styles.viewModeBtnText, viewMode === 'table' && styles.viewModeBtnTextActive]}>
-            Tabla
-          </Text>
-        </Pressable>
-      </View>
+        <View style={styles.viewModeToggle}>
+          <Pressable
+            style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
+            onPress={() => setViewMode('chart')}
+          >
+            <Ionicons name="bar-chart-outline" size={18} color={viewMode === 'chart' ? '#fff' : '#9ca3af'} />
+            <Text style={[styles.viewModeBtnText, viewMode === 'chart' && styles.viewModeBtnTextActive]}>
+              Gráfica
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+            onPress={() => setViewMode('table')}
+          >
+            <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? '#fff' : '#9ca3af'} />
+            <Text style={[styles.viewModeBtnText, viewMode === 'table' && styles.viewModeBtnTextActive]}>
+              Tabla
+            </Text>
+          </Pressable>
+        </View>
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           VISTA GRÁFICA - KPI SYSTEM
           ═══════════════════════════════════════════════════════════════════════════ */}
-      {viewMode === 'chart' && (
-        <>
-          {/* Period Filter */}
-          <View style={styles.periodFilter}>
-            {PERIOD_OPTIONS.map(p => (
-              <Pressable
-                key={p.id}
-                style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
-                onPress={() => setSelectedPeriod(p.id)}
-              >
-                <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
-                  {p.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {/* KPI Selector */}
-          <Pressable style={styles.kpiSelector} onPress={() => setKpiModalVisible(true)}>
-            <View style={styles.kpiSelectorLeft}>
-              <View style={styles.kpiSelectorIconWrap}>
-                <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
-                <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
-              </View>
-            </View>
-            <View style={styles.kpiSelectorChevron}>
-              <Ionicons name="chevron-down" size={18} color="#fff" />
-            </View>
-          </Pressable>
-
-          {/* Muscle/Exercise Filters - Modal-based for iOS */}
-          {currentKpi.useFilters && (
-            <View style={styles.kpiFilters}>
-              <View style={styles.kpiFilterRow}>
-                <Text style={styles.kpiFilterLabel}>Músculo:</Text>
+        {viewMode === 'chart' && (
+          <>
+            {/* Period Filter */}
+            <View style={styles.periodFilter}>
+              {PERIOD_OPTIONS.map(p => (
                 <Pressable
-                  style={styles.filterButton}
-                  onPress={() => setMuscleModalVisible(true)}
+                  key={p.id}
+                  style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
+                  onPress={() => setSelectedPeriod(p.id)}
                 >
-                  <Text style={styles.filterButtonText}>
-                    {selKpiMusculo === 'TOTAL' ? 'Todos' : selKpiMusculo}
+                  <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
+                    {p.label}
                   </Text>
-                  <Ionicons name="chevron-down" size={16} color="#9ca3af" />
                 </Pressable>
+              ))}
+            </View>
+
+            {/* KPI Selector */}
+            <Pressable style={styles.kpiSelector} onPress={() => setKpiModalVisible(true)}>
+              <View style={styles.kpiSelectorLeft}>
+                <View style={styles.kpiSelectorIconWrap}>
+                  <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
+                  <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
+                </View>
               </View>
-              {selKpiMusculo !== 'TOTAL' && listaEjerciciosKpi.length > 0 && (
+              <View style={styles.kpiSelectorChevron}>
+                <Ionicons name="chevron-down" size={18} color="#fff" />
+              </View>
+            </Pressable>
+
+            {/* Muscle/Exercise Filters - Modal-based for iOS */}
+            {currentKpi.useFilters && (
+              <View style={styles.kpiFilters}>
                 <View style={styles.kpiFilterRow}>
-                  <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                  <Text style={styles.kpiFilterLabel}>Músculo:</Text>
                   <Pressable
                     style={styles.filterButton}
-                    onPress={() => setExerciseModalVisible(true)}
+                    onPress={() => setMuscleModalVisible(true)}
                   >
                     <Text style={styles.filterButtonText}>
-                      {selKpiEjercicio || 'Todos'}
+                      {selKpiMusculo === 'TOTAL' ? 'Todos' : selKpiMusculo}
                     </Text>
                     <Ionicons name="chevron-down" size={16} color="#9ca3af" />
                   </Pressable>
                 </View>
-              )}
-            </View>
-          )}
+                {selKpiMusculo !== 'TOTAL' && listaEjerciciosKpi.length > 0 && (
+                  <View style={styles.kpiFilterRow}>
+                    <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                    <Pressable
+                      style={styles.filterButton}
+                      onPress={() => setExerciseModalVisible(true)}
+                    >
+                      <Text style={styles.filterButtonText}>
+                        {selKpiEjercicio || 'Todos'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )}
 
-          {/* Chart Rendering */}
-          <View style={styles.chartContainer}>
-            {/* VOLUMEN */}
-            {selectedKpi === 'volume' && volumeData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>
-                    Volumen {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
-                  </Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={[styles.chartSummaryValue, { color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444' }]}>
-                      {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
+            {/* Chart Rendering */}
+            <View style={styles.chartContainer}>
+              {/* VOLUMEN */}
+              {selectedKpi === 'volume' && volumeData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>
+                      Volumen {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
                     </Text>
-                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={[styles.chartSummaryValue, { color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444' }]}>
+                        {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
+                      </Text>
+                      <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                    </View>
                   </View>
-                </View>
-                <LineChart
-                  data={volumeData}
-                  width={screenWidth - 32}
-                  height={220}
-                  chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
-                  bezier
-                  style={styles.chart}
-                  yAxisSuffix="%"
-                />
-                <Text style={styles.chartSubInfo}>Total período: {volumeData.totalVolK}k kg</Text>
-              </>
-            )}
-
-            {/* INTENSIDAD */}
-            {selectedKpi === 'intensity' && intensityData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>
-                    Intensidad {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
-                  </Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={[styles.chartSummaryValue, { color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444' }]}>
-                      {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
-                    </Text>
-                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
-                  </View>
-                </View>
-                <LineChart
-                  data={intensityData}
-                  width={screenWidth - 32}
-                  height={220}
-                  chartConfig={chartConfig}
-                  bezier
-                  style={styles.chart}
-                  yAxisSuffix="%"
-                />
-                <Text style={styles.chartSubInfo}>Carga media: {intensityData.lastAvgLoad} kg/rep</Text>
-              </>
-            )}
-
-            {/* CUMPLIMIENTO */}
-            {selectedKpi === 'compliance' && complianceWeeklyData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>Cumplimiento del Plan</Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={[styles.chartSummaryValue, {
-                      color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
-                        complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
-                    }]}>
-                      {complianceWeeklyData.lastValue}%
-                    </Text>
-                    <Text style={styles.chartSummaryLabel}>última semana</Text>
-                  </View>
-                </View>
-                <LineChart
-                  data={complianceWeeklyData}
-                  width={screenWidth - 32}
-                  height={220}
-                  chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
-                  bezier
-                  style={styles.chart}
-                  yAxisSuffix="%"
-                />
-                <Text style={styles.chartSubInfo}>Media: {complianceWeeklyData.avgValue}% de sets en rango</Text>
-              </>
-            )}
-
-            {/* CARGA ALTA */}
-            {selectedKpi === 'heavySets' && heavySetsData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>
-                    Carga Alta {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
-                  </Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={styles.chartSummaryValue}>{heavySetsData.lastValue}%</Text>
-                    <Text style={styles.chartSummaryLabel}>última semana</Text>
-                  </View>
-                </View>
-                <BarChart
-                  data={heavySetsData}
-                  width={screenWidth - 32}
-                  height={220}
-                  chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})` }}
-                  style={styles.chart}
-                  yAxisSuffix="%"
-                  showValuesOnTopOfBars
-                />
-                <Text style={styles.chartSubInfo}>Media: {heavySetsData.avgValue}% sets ≥85% máximo</Text>
-              </>
-            )}
-
-            {/* BALANCE MUSCULAR */}
-            {selectedKpi === 'muscleBalance' && muscleBalanceData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>Balance Muscular</Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={styles.chartSummaryValue}>{muscleBalanceData.fullData?.[0]?.share || 0}%</Text>
-                    <Text style={styles.chartSummaryLabel}>{muscleBalanceData.fullData?.[0]?.muscle || '-'}</Text>
-                  </View>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalChartScroll}>
-                  <BarChart
-                    data={muscleBalanceData}
-                    width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                  <LineChart
+                    data={volumeData}
+                    width={chartWidth}
                     height={220}
-                    chartConfig={{ ...barChartConfig, barPercentage: 0.6 }}
+                    chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                    bezier
+                    style={styles.chart}
+                    yAxisSuffix="%"
+                  />
+                  <Text style={styles.chartSubInfo}>Total período: {volumeData.totalVolK}k kg</Text>
+                </>
+              )}
+
+              {/* INTENSIDAD */}
+              {selectedKpi === 'intensity' && intensityData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>
+                      Intensidad {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
+                    </Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={[styles.chartSummaryValue, { color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444' }]}>
+                        {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
+                      </Text>
+                      <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                    </View>
+                  </View>
+                  <LineChart
+                    data={intensityData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={chartConfig}
+                    bezier
+                    style={styles.chart}
+                    yAxisSuffix="%"
+                  />
+                  <Text style={styles.chartSubInfo}>Carga media: {intensityData.lastAvgLoad} kg/rep</Text>
+                </>
+              )}
+
+              {/* CUMPLIMIENTO */}
+              {selectedKpi === 'compliance' && complianceWeeklyData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>Cumplimiento del Plan</Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={[styles.chartSummaryValue, {
+                        color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
+                          complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
+                      }]}>
+                        {complianceWeeklyData.lastValue}%
+                      </Text>
+                      <Text style={styles.chartSummaryLabel}>última semana</Text>
+                    </View>
+                  </View>
+                  <LineChart
+                    data={complianceWeeklyData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                    bezier
+                    style={styles.chart}
+                    yAxisSuffix="%"
+                  />
+                  <Text style={styles.chartSubInfo}>Media: {complianceWeeklyData.avgValue}% de sets en rango</Text>
+                </>
+              )}
+
+              {/* CARGA ALTA */}
+              {selectedKpi === 'heavySets' && heavySetsData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>
+                      Carga Alta {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
+                    </Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={styles.chartSummaryValue}>{heavySetsData.lastValue}%</Text>
+                      <Text style={styles.chartSummaryLabel}>última semana</Text>
+                    </View>
+                  </View>
+                  <BarChart
+                    data={heavySetsData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})` }}
                     style={styles.chart}
                     yAxisSuffix="%"
                     showValuesOnTopOfBars
                   />
-                </ScrollView>
-                <View style={styles.muscleBalanceLegend}>
-                  {muscleBalanceData.fullData?.slice(0, 6).map((m, i) => (
-                    <View key={i} style={styles.muscleBalanceItem}>
-                      <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
-                      <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            )}
-
-            {/* PRs */}
-            {selectedKpi === 'prCount' && prCountData && (
-              <>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartTitle}>PRs (Récords Personales)</Text>
-                  <View style={styles.chartSummary}>
-                    <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>{prCountData.totalPRs}</Text>
-                    <Text style={styles.chartSummaryLabel}>en el período</Text>
-                  </View>
-                </View>
-                <BarChart
-                  data={prCountData}
-                  width={screenWidth - 32}
-                  height={220}
-                  chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})` }}
-                  style={styles.chart}
-                  showValuesOnTopOfBars
-                />
-                <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
-              </>
-            )}
-
-            {/* No data */}
-            {((selectedKpi === 'volume' && !volumeData) ||
-              (selectedKpi === 'intensity' && !intensityData) ||
-              (selectedKpi === 'compliance' && !complianceWeeklyData) ||
-              (selectedKpi === 'heavySets' && !heavySetsData) ||
-              (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
-              (selectedKpi === 'prCount' && !prCountData)) && (
-                <View style={styles.noDataContainer}>
-                  <Ionicons name="bar-chart-outline" size={48} color="#475569" />
-                  <Text style={styles.noDataText}>Sin datos para este período</Text>
-                </View>
+                  <Text style={styles.chartSubInfo}>Media: {heavySetsData.avgValue}% sets ≥85% máximo</Text>
+                </>
               )}
-          </View>
-        </>
-      )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          VISTA TABLA - IGUAL QUE COACH PROGRESS
-          ═══════════════════════════════════════════════════════════════════════════ */}
-      {viewMode === 'table' && (
-        <View style={styles.tableContainer}>
-
-          {/* RUTINA ACTUAL */}
-          {datosPorRutina.current ? (
-            <View style={styles.routineSection}>
-              <Text style={styles.routineSectionTitle}>📋 Rutina Actual</Text>
-              <View style={styles.routineCard}>
-                {/* Cabecera de rutina */}
-                <Pressable
-                  style={styles.routineHeaderBlue}
-                  onPress={() => toggleRoutine('current')}
-                >
-                  <View>
-                    <Text style={styles.routineNameBlue}>{datosPorRutina.current.routineName}</Text>
-                    <Text style={styles.routineDateBlue}>Última: {datosPorRutina.current.lastDate}</Text>
+              {/* BALANCE MUSCULAR */}
+              {selectedKpi === 'muscleBalance' && muscleBalanceData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>Balance Muscular</Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={styles.chartSummaryValue}>{muscleBalanceData.fullData?.[0]?.share || 0}%</Text>
+                      <Text style={styles.chartSummaryLabel}>{muscleBalanceData.fullData?.[0]?.muscle || '-'}</Text>
+                    </View>
                   </View>
-                  <Ionicons
-                    name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'}
-                    size={22}
-                    color="#60a5fa"
-                  />
-                </Pressable>
-
-                {/* Contenido: Ejercicios con sesiones */}
-                {expandedRoutines['current'] && (
-                  <View style={styles.routineContent}>
-                    {datosPorRutina.current.exercises.map((exercise, exIdx) => (
-                      <View key={exIdx} style={styles.exerciseBlock}>
-                        {/* Cabecera del ejercicio */}
-                        <View style={styles.exerciseBlockHeader}>
-                          <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
-                          <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
-                        </View>
-
-                        {/* Sesiones S1, S2, S3... lado a lado */}
-                        <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
-                          {exercise.sesiones.map((sesion, sIdx) => (
-                            <View key={sIdx} style={styles.sessionBox}>
-                              {/* Header: S1 fecha */}
-                              <View style={styles.sessionBoxHeader}>
-                                <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
-                                <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
-                              </View>
-
-                              {/* Header de tabla */}
-                              <View style={styles.setHeaderRow}>
-                                <Text style={styles.setHeaderCell}>S</Text>
-                                <Text style={styles.setHeaderCellData}>Rep</Text>
-                                <Text style={styles.setHeaderCellData}>Kg</Text>
-                                <Text style={styles.setHeaderCellNote}>📝</Text>
-                              </View>
-
-                              {/* Rows de sets */}
-                              {sesion.sets.map((set, setIdx) => (
-                                <View key={setIdx} style={styles.setTableRow}>
-                                  <Text style={styles.setColNum}>{set.setNumber}</Text>
-                                  <View style={styles.setColData}>
-                                    <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
-                                    {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
-                                  </View>
-                                  <View style={styles.setColData}>
-                                    <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
-                                    {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
-                                  </View>
-                                  <Pressable
-                                    onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
-                                    style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
-                                  />
-                                </View>
-                              ))}
-                            </View>
-                          ))}
-                        </ScrollView>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={true}
+                    style={styles.horizontalChartScroll}
+                  >
+                    <BarChart
+                      data={muscleBalanceData}
+                      width={muscleBalanceData.labels.length * 60}
+                      height={220}
+                      chartConfig={{
+                        ...barChartConfig,
+                        barPercentage: 0.6,
+                      }}
+                      style={styles.chart}
+                      yAxisSuffix="%"
+                      showValuesOnTopOfBars
+                    />
+                  </ScrollView>
+                  <View style={styles.muscleBalanceLegend}>
+                    {muscleBalanceData.fullData?.slice(0, 6).map((m, i) => (
+                      <View key={i} style={styles.muscleBalanceItem}>
+                        <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
+                        <Text style={styles.muscleBalanceName} numberOfLines={1}>{m.muscle}</Text>
                       </View>
                     ))}
                   </View>
-                )}
-              </View>
-            </View>
-          ) : (
-            <View style={styles.noDataContainer}>
-              <Ionicons name="calendar-outline" size={48} color="#475569" />
-              <Text style={styles.noDataText}>Sin datos de rutinas</Text>
-            </View>
-          )}
+                </>
+              )}
 
-          {/* RUTINAS ANTIGUAS */}
-          {datosPorRutina.old.length > 0 && (
-            <View style={styles.routineSection}>
-              <Text style={styles.routineSectionTitleOld}>📦 Rutinas Antiguas</Text>
-              {datosPorRutina.old.map((rutina, rIdx) => (
-                <View key={rIdx} style={styles.routineCardOld}>
-                  <Pressable
-                    style={styles.routineHeaderOld}
-                    onPress={() => toggleRoutine(rutina.routineName)}
-                  >
-                    <View>
-                      <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
-                      <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+              {/* PRs */}
+              {selectedKpi === 'prCount' && prCountData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>PRs (Récords Personales)</Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>{prCountData.totalPRs}</Text>
+                      <Text style={styles.chartSummaryLabel}>en el período</Text>
                     </View>
-                    <Ionicons
-                      name={expandedRoutines[rutina.routineName] ? 'chevron-up' : 'chevron-down'}
-                      size={22}
-                      color="#64748b"
-                    />
-                  </Pressable>
+                  </View>
+                  <BarChart
+                    data={prCountData}
+                    width={chartWidth}
+                    height={220}
+                    chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})` }}
+                    style={styles.chart}
+                    showValuesOnTopOfBars
+                  />
+                  <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
+                </>
+              )}
 
-                  {expandedRoutines[rutina.routineName] && (
-                    <View style={styles.routineContent}>
-                      {rutina.exercises.map((exercise, exIdx) => (
-                        <View key={exIdx} style={styles.exerciseBlock}>
-                          <View style={styles.exerciseBlockHeader}>
-                            <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
-                            <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
-                          </View>
-                          <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
-                            {exercise.sesiones.map((sesion, sIdx) => (
-                              <View key={sIdx} style={styles.sessionBox}>
-                                <View style={styles.sessionBoxHeader}>
-                                  <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
-                                  <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
-                                </View>
-                                <View style={styles.setHeaderRow}>
-                                  <Text style={styles.setHeaderCell}>S</Text>
-                                  <Text style={styles.setHeaderCellData}>Rep</Text>
-                                  <Text style={styles.setHeaderCellData}>Kg</Text>
-                                  <Text style={styles.setHeaderCellNote}>📝</Text>
-                                </View>
-                                {sesion.sets.map((set, setIdx) => (
-                                  <View key={setIdx} style={styles.setTableRow}>
-                                    <Text style={styles.setColNum}>{set.setNumber}</Text>
-                                    <View style={styles.setColData}>
-                                      <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
-                                      {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+              {/* No data */}
+              {((selectedKpi === 'volume' && !volumeData) ||
+                (selectedKpi === 'intensity' && !intensityData) ||
+                (selectedKpi === 'compliance' && !complianceWeeklyData) ||
+                (selectedKpi === 'heavySets' && !heavySetsData) ||
+                (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+                (selectedKpi === 'prCount' && !prCountData)) && (
+                  <View style={styles.noDataContainer}>
+                    <Ionicons name="bar-chart-outline" size={48} color="#475569" />
+                    <Text style={styles.noDataText}>Sin datos para este período</Text>
+                  </View>
+                )}
+            </View>
+          </>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════════════
+          VISTA TABLA - IGUAL QUE COACH PROGRESS (Rutina → Día → Semanas)
+          ═══════════════════════════════════════════════════════════════════════════ */}
+        {viewMode === 'table' && (
+          <View style={styles.tableContainer}>
+
+            {/* RUTINAS ANTIGUAS (primero, si existen) */}
+            {datosPorRutina.old.length > 0 && (
+              <View style={styles.routineSectionOld}>
+                <View style={styles.sectionTitleRow}>
+                  <Ionicons name="archive-outline" size={18} color="#9ca3af" />
+                  <Text style={styles.routineSectionTitleOld}>Rutinas Anteriores</Text>
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{datosPorRutina.old.length}</Text>
+                  </View>
+                </View>
+                {datosPorRutina.old.map((rutina, rIdx) => (
+                  <View key={rIdx} style={styles.routineCardOld}>
+                    <Pressable
+                      style={styles.routineHeaderOld}
+                      onPress={() => toggleRoutine(rutina.routineName)}
+                    >
+                      <View style={styles.routineHeaderLeft}>
+                        <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
+                        <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                      </View>
+                      <View style={styles.routineHeaderRight}>
+                        <View style={styles.sessionsBadgeOld}>
+                          <Text style={styles.sessionsBadgeTextOld}>{rutina.dias?.length || 0} días</Text>
+                        </View>
+                        <Ionicons
+                          name={expandedRoutines[rutina.routineName] ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color="#6b7280"
+                        />
+                      </View>
+                    </Pressable>
+
+                    {expandedRoutines[rutina.routineName] && (
+                      <View style={styles.routineContent}>
+                        {rutina.dias.map((dia, diaIdx) => (
+                          <View key={diaIdx} style={styles.dayBlock}>
+                            <Pressable
+                              style={styles.dayHeader}
+                              onPress={() => toggleDay(rutina.routineName, dia.dayIndex)}
+                            >
+                              <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                              <View style={styles.dayMeta}>
+                                <Text style={styles.daySessionCount}>{dia.exercises?.length || 0} ej. • {dia.totalSessions} ses.</Text>
+                                <Ionicons
+                                  name={expandedDays[`${rutina.routineName}-${dia.dayIndex}`] ? 'chevron-up' : 'chevron-down'}
+                                  size={18}
+                                  color="#9ca3af"
+                                />
+                              </View>
+                            </Pressable>
+
+                            {expandedDays[`${rutina.routineName}-${dia.dayIndex}`] && (
+                              <View style={styles.dayContent}>
+                                {dia.exercises.map((exercise, exIdx) => (
+                                  <View key={exIdx} style={styles.exerciseBlock}>
+                                    <View style={styles.exerciseBlockHeader}>
+                                      <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                                      <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
                                     </View>
-                                    <View style={styles.setColData}>
-                                      <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
-                                      {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
-                                    </View>
-                                    <Pressable
-                                      onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
-                                      style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
-                                    />
+                                    <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
+                                      {exercise.sesiones.map((sesion, sIdx) => (
+                                        <View key={sIdx} style={styles.sessionBox}>
+                                          <View style={styles.sessionBoxHeader}>
+                                            <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                            <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                          </View>
+                                          <View style={styles.setHeaderRow}>
+                                            <Text style={styles.setHeaderCell}>S</Text>
+                                            <Text style={styles.setHeaderCellData}>Rep</Text>
+                                            <Text style={styles.setHeaderCellData}>Kg</Text>
+                                            <Text style={styles.setHeaderCellNote}>📝</Text>
+                                          </View>
+                                          {sesion.sets.map((set, setIdx) => (
+                                            <View key={setIdx} style={styles.setTableRow}>
+                                              <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                              <View style={styles.setColData}>
+                                                <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
+                                                {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                              </View>
+                                              <View style={styles.setColData}>
+                                                <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                                {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                              </View>
+                                              <Pressable
+                                                onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                                style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                              />
+                                            </View>
+                                          ))}
+                                        </View>
+                                      ))}
+                                    </ScrollView>
                                   </View>
                                 ))}
                               </View>
-                            ))}
-                          </ScrollView>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* RUTINA ACTUAL (después de antiguas) */}
+            {datosPorRutina.current ? (
+              <View style={styles.routineSection}>
+                <View style={styles.sectionTitleRow}>
+                  <Ionicons name="fitness-outline" size={18} color="#60a5fa" />
+                  <Text style={styles.routineSectionTitle}>Rutina Actual</Text>
+                  <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>ACTIVA</Text>
+                  </View>
+                </View>
+                <View style={styles.routineCard}>
+                  {/* Cabecera de rutina */}
+                  <Pressable
+                    style={styles.routineHeaderBlue}
+                    onPress={() => toggleRoutine('current')}
+                  >
+                    <View style={styles.routineHeaderLeft}>
+                      <Text style={styles.routineNameBlue}>{datosPorRutina.current.routineName}</Text>
+                      <Text style={styles.routineDateBlue}>Última: {datosPorRutina.current.lastDate}</Text>
+                    </View>
+                    <View style={styles.routineHeaderRight}>
+                      <View style={styles.sessionsBadge}>
+                        <Text style={styles.sessionsBadgeText}>{datosPorRutina.current.dias?.length || 0} días</Text>
+                      </View>
+                      <Ionicons
+                        name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'}
+                        size={22}
+                        color="#60a5fa"
+                      />
+                    </View>
+                  </Pressable>
+
+                  {/* Contenido: Días */}
+                  {expandedRoutines['current'] && (
+                    <View style={styles.routineContent}>
+                      {datosPorRutina.current.dias.map((dia, diaIdx) => (
+                        <View key={diaIdx} style={styles.dayBlock}>
+                          {/* Cabecera del día */}
+                          <Pressable
+                            style={styles.dayHeader}
+                            onPress={() => toggleDay('current', dia.dayIndex)}
+                          >
+                            <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                            <View style={styles.dayMeta}>
+                              <Text style={styles.daySessionCount}>{dia.exercises?.length || 0} ej. • {dia.totalSessions} ses.</Text>
+                              <Ionicons
+                                name={expandedDays[`current-${dia.dayIndex}`] ? 'chevron-up' : 'chevron-down'}
+                                size={18}
+                                color="#9ca3af"
+                              />
+                            </View>
+                          </Pressable>
+
+                          {/* Ejercicios del día */}
+                          {expandedDays[`current-${dia.dayIndex}`] && (
+                            <View style={styles.dayContent}>
+                              {dia.exercises.map((exercise, exIdx) => (
+                                <View key={exIdx} style={styles.exerciseBlock}>
+                                  {/* Cabecera del ejercicio */}
+                                  <View style={styles.exerciseBlockHeader}>
+                                    <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                                    <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                  </View>
+
+                                  {/* Sesiones S1, S2, S3... lado a lado */}
+                                  <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
+                                    {exercise.sesiones.map((sesion, sIdx) => (
+                                      <View key={sIdx} style={styles.sessionBox}>
+                                        {/* Header: S1 fecha */}
+                                        <View style={styles.sessionBoxHeader}>
+                                          <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                          <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                        </View>
+
+                                        {/* Header de tabla */}
+                                        <View style={styles.setHeaderRow}>
+                                          <Text style={styles.setHeaderCell}>S</Text>
+                                          <Text style={styles.setHeaderCellData}>Rep</Text>
+                                          <Text style={styles.setHeaderCellData}>Kg</Text>
+                                          <Text style={styles.setHeaderCellNote}>📝</Text>
+                                        </View>
+
+                                        {/* Rows de sets */}
+                                        {sesion.sets.map((set, setIdx) => (
+                                          <View key={setIdx} style={styles.setTableRow}>
+                                            <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                            <View style={styles.setColData}>
+                                              <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
+                                              {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                            </View>
+                                            <View style={styles.setColData}>
+                                              <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                              {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                            </View>
+                                            <Pressable
+                                              onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
+                                              style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
+                                            />
+                                          </View>
+                                        ))}
+                                      </View>
+                                    ))}
+                                  </ScrollView>
+                                </View>
+                              ))}
+                            </View>
+                          )}
                         </View>
                       ))}
                     </View>
                   )}
                 </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
+              </View>
+            ) : (
+              <View style={styles.noDataContainer}>
+                <Ionicons name="barbell-outline" size={48} color="#475569" />
+                <Text style={styles.noDataText}>¡Empieza a entrenar para ver tu progreso!</Text>
+                <Text style={styles.noDataSubtext}>Tus sesiones aparecerán aquí</Text>
+              </View>
+            )}
+          </View>
+        )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           SECCIÓN DE TOTALES CON MEDALLAS 🏆
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <View style={styles.totalesSection}>
-        <View style={styles.totalesHeader}>
-          <Text style={styles.totalesTitle}>🏆 Tu Progreso Total</Text>
-          <View style={styles.dataSourceBadge}>
-            <Ionicons
-              name={dataSource === 'cloud' ? 'cloud' : 'phone-portrait'}
-              size={12}
-              color={dataSource === 'cloud' ? '#10b981' : '#6b7280'}
-            />
-            <Text style={[
-              styles.dataSourceText,
-              { color: dataSource === 'cloud' ? '#10b981' : '#6b7280' }
-            ]}>
-              {dataSource === 'cloud' ? 'Nube' : 'Local'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Tarjeta: Repeticiones */}
-        <View style={styles.totalCard}>
-          <View style={styles.totalCardLeft}>
-            <Text style={styles.totalCardIcon}>📊</Text>
-            <View>
-              <Text style={styles.totalCardLabel}>Repeticiones Totales</Text>
-              <Text style={styles.totalCardValue}>{formatNumber(totales.reps)}</Text>
+        <View style={styles.totalesSection}>
+          <View style={styles.totalesHeader}>
+            <Text style={styles.totalesTitle}>🏆 Tu Progreso Total</Text>
+            <View style={styles.dataSourceBadge}>
+              <Ionicons
+                name={dataSource === 'cloud' ? 'cloud' : 'phone-portrait'}
+                size={12}
+                color={dataSource === 'cloud' ? '#10b981' : '#6b7280'}
+              />
+              <Text style={[
+                styles.dataSourceText,
+                { color: dataSource === 'cloud' ? '#10b981' : '#6b7280' }
+              ]}>
+                {dataSource === 'cloud' ? 'Nube' : 'Local'}
+              </Text>
             </View>
           </View>
-          <View style={styles.medallaBadge}>
-            <Text style={styles.medallaEmoji}>{totales.medallaReps.emoji}</Text>
-            <Text style={styles.medallaNombre}>{totales.medallaReps.nombre}</Text>
-          </View>
-        </View>
 
-        {/* Tarjeta: Peso Levantado */}
-        <View style={styles.totalCard}>
-          <View style={styles.totalCardLeft}>
-            <Text style={styles.totalCardIcon}>🏋️</Text>
-            <View>
-              <Text style={styles.totalCardLabel}>Peso Total Levantado</Text>
-              <Text style={styles.totalCardValue}>{formatNumber(totales.peso)} kg</Text>
+          {/* Tarjeta: Repeticiones */}
+          <View style={styles.totalCard}>
+            <View style={styles.totalCardLeft}>
+              <Text style={styles.totalCardIcon}>📊</Text>
+              <View>
+                <Text style={styles.totalCardLabel}>Repeticiones Totales</Text>
+                <Text style={styles.totalCardValue}>{formatNumber(totales.reps)}</Text>
+              </View>
+            </View>
+            <View style={styles.medallaBadge}>
+              <Text style={styles.medallaEmoji}>{totales.medallaReps.emoji}</Text>
+              <Text style={styles.medallaNombre}>{totales.medallaReps.nombre}</Text>
             </View>
           </View>
-          <View style={styles.medallaBadge}>
-            <Text style={styles.medallaEmoji}>{totales.medallaPeso.emoji}</Text>
-            <Text style={styles.medallaNombre}>{totales.medallaPeso.nombre}</Text>
-          </View>
-        </View>
 
-        {/* Tarjeta: Trabajo Total */}
-        <View style={styles.totalCard}>
-          <View style={styles.totalCardLeft}>
-            <Text style={styles.totalCardIcon}>💪</Text>
-            <View>
-              <Text style={styles.totalCardLabel}>Trabajo Total (Volumen)</Text>
-              <Text style={styles.totalCardValue}>{formatNumber(totales.trabajo)}</Text>
+          {/* Tarjeta: Peso Levantado */}
+          <View style={styles.totalCard}>
+            <View style={styles.totalCardLeft}>
+              <Text style={styles.totalCardIcon}>🏋️</Text>
+              <View>
+                <Text style={styles.totalCardLabel}>Peso Total Levantado</Text>
+                <Text style={styles.totalCardValue}>{formatNumber(totales.peso)} kg</Text>
+              </View>
+            </View>
+            <View style={styles.medallaBadge}>
+              <Text style={styles.medallaEmoji}>{totales.medallaPeso.emoji}</Text>
+              <Text style={styles.medallaNombre}>{totales.medallaPeso.nombre}</Text>
             </View>
           </View>
-          <View style={styles.medallaBadge}>
-            <Text style={styles.medallaEmoji}>{totales.medallaTrabajo.emoji}</Text>
-            <Text style={styles.medallaNombre}>{totales.medallaTrabajo.nombre}</Text>
+
+          {/* Tarjeta: Trabajo Total */}
+          <View style={styles.totalCard}>
+            <View style={styles.totalCardLeft}>
+              <Text style={styles.totalCardIcon}>💪</Text>
+              <View>
+                <Text style={styles.totalCardLabel}>Trabajo Total (Volumen)</Text>
+                <Text style={styles.totalCardValue}>{formatNumber(totales.trabajo)}</Text>
+              </View>
+            </View>
+            <View style={styles.medallaBadge}>
+              <Text style={styles.medallaEmoji}>{totales.medallaTrabajo.emoji}</Text>
+              <Text style={styles.medallaNombre}>{totales.medallaTrabajo.nombre}</Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      {/* Solo mostrar botón de volcado para usuarios locales (FREEUSER) */}
-      {dataSource === 'local' && (
-        <Pressable
-          onPress={bulkFillFromActiveRoutine}
-          disabled={isBulking}
-          style={({ pressed }) => [
-            styles.bulkButton,
-            pressed && styles.bulkButtonPressed,
-            isBulking && { opacity: 0.6 },
-          ]}
-        >
-          {isBulking ? (
-            <>
-              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.bulkButtonText}>Volcando progreso…</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="cloud-upload-outline" size={16} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.bulkButtonText}>Volcar progreso de rutina activa</Text>
-            </>
-          )}
-        </Pressable>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           KPI SELECTOR MODAL
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <Modal
-        visible={kpiModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setKpiModalVisible(false)}
-      >
-        <Pressable style={styles.kpiModalOverlay} onPress={() => setKpiModalVisible(false)}>
-          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.kpiModalHeader}>
-              <Text style={styles.kpiModalTitle}>Seleccionar KPI</Text>
-              <Pressable onPress={() => setKpiModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#64748b" />
-              </Pressable>
-            </View>
-            <FlatList
-              data={KPI_OPTIONS}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.kpiModalItem, selectedKpi === item.id && styles.kpiModalItemActive]}
-                  onPress={() => {
-                    setSelectedKpi(item.id);
-                    setKpiModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.kpiModalItemIcon}>{item.icon}</Text>
-                  <View style={styles.kpiModalItemText}>
-                    <Text style={[styles.kpiModalItemName, selectedKpi === item.id && styles.kpiModalItemNameActive]}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.kpiModalItemDesc}>{item.description}</Text>
-                  </View>
-                  {selectedKpi === item.id && (
-                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
-                  )}
+        <Modal
+          visible={kpiModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setKpiModalVisible(false)}
+        >
+          <Pressable style={styles.kpiModalOverlay} onPress={() => setKpiModalVisible(false)}>
+            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.kpiModalHeader}>
+                <Text style={styles.kpiModalTitle}>Seleccionar KPI</Text>
+                <Pressable onPress={() => setKpiModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#64748b" />
                 </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+              </View>
+              <FlatList
+                data={KPI_OPTIONS}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.kpiModalItem, selectedKpi === item.id && styles.kpiModalItemActive]}
+                    onPress={() => {
+                      setSelectedKpi(item.id);
+                      setKpiModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.kpiModalItemIcon}>{item.icon}</Text>
+                    <View style={styles.kpiModalItemText}>
+                      <Text style={[styles.kpiModalItemName, selectedKpi === item.id && styles.kpiModalItemNameActive]}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.kpiModalItemDesc}>{item.description}</Text>
+                    </View>
+                    {selectedKpi === item.id && (
+                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                    )}
+                  </Pressable>
+                )}
+              />
+            </View>
+          </Pressable>
+        </Modal>
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           MUSCLE SELECTOR MODAL
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <Modal
-        visible={muscleModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMuscleModalVisible(false)}
-      >
-        <Pressable style={styles.kpiModalOverlay} onPress={() => setMuscleModalVisible(false)}>
-          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.kpiModalHeader}>
-              <Text style={styles.kpiModalTitle}>Seleccionar Músculo</Text>
-              <Pressable onPress={() => setMuscleModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
-              </Pressable>
-            </View>
-            <FlatList
-              data={listaMusculosKpi}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.kpiModalItem, selKpiMusculo === item && styles.kpiModalItemActive]}
-                  onPress={() => {
-                    handleKpiMusculoChange(item);
-                    setMuscleModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.kpiModalItemName, selKpiMusculo === item && styles.kpiModalItemNameActive]}>
-                    {item === 'TOTAL' ? 'Todos los músculos' : item}
-                  </Text>
-                  {selKpiMusculo === item && (
-                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
-                  )}
+        <Modal
+          visible={muscleModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setMuscleModalVisible(false)}
+        >
+          <Pressable style={styles.kpiModalOverlay} onPress={() => setMuscleModalVisible(false)}>
+            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.kpiModalHeader}>
+                <Text style={styles.kpiModalTitle}>Seleccionar Músculo</Text>
+                <Pressable onPress={() => setMuscleModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#9ca3af" />
                 </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+              </View>
+              <FlatList
+                data={listaMusculosKpi}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.kpiModalItem, selKpiMusculo === item && styles.kpiModalItemActive]}
+                    onPress={() => {
+                      handleKpiMusculoChange(item);
+                      setMuscleModalVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.kpiModalItemName, selKpiMusculo === item && styles.kpiModalItemNameActive]}>
+                      {item === 'TOTAL' ? 'Todos los músculos' : item}
+                    </Text>
+                    {selKpiMusculo === item && (
+                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                    )}
+                  </Pressable>
+                )}
+              />
+            </View>
+          </Pressable>
+        </Modal>
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           EXERCISE SELECTOR MODAL
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <Modal
-        visible={exerciseModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setExerciseModalVisible(false)}
-      >
-        <Pressable style={styles.kpiModalOverlay} onPress={() => setExerciseModalVisible(false)}>
-          <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.kpiModalHeader}>
-              <Text style={styles.kpiModalTitle}>Seleccionar Ejercicio</Text>
-              <Pressable onPress={() => setExerciseModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
-              </Pressable>
-            </View>
-            <FlatList
-              data={[{ id: '', name: 'Todos los ejercicios' }, ...listaEjerciciosKpi.map(e => ({ id: e, name: e }))]}
-              keyExtractor={(item) => item.id || 'all'}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.kpiModalItem, selKpiEjercicio === item.id && styles.kpiModalItemActive]}
-                  onPress={() => {
-                    setSelKpiEjercicio(item.id);
-                    setExerciseModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.kpiModalItemName, selKpiEjercicio === item.id && styles.kpiModalItemNameActive]}>
-                    {item.name}
-                  </Text>
-                  {selKpiEjercicio === item.id && (
-                    <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
-                  )}
+        <Modal
+          visible={exerciseModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setExerciseModalVisible(false)}
+        >
+          <Pressable style={styles.kpiModalOverlay} onPress={() => setExerciseModalVisible(false)}>
+            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.kpiModalHeader}>
+                <Text style={styles.kpiModalTitle}>Seleccionar Ejercicio</Text>
+                <Pressable onPress={() => setExerciseModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#9ca3af" />
                 </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
+              </View>
+              <FlatList
+                data={[{ id: '', name: 'Todos los ejercicios' }, ...listaEjerciciosKpi.map(e => ({ id: e, name: e }))]}
+                keyExtractor={(item) => item.id || 'all'}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.kpiModalItem, selKpiEjercicio === item.id && styles.kpiModalItemActive]}
+                    onPress={() => {
+                      setSelKpiEjercicio(item.id);
+                      setExerciseModalVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.kpiModalItemName, selKpiEjercicio === item.id && styles.kpiModalItemNameActive]}>
+                      {item.name}
+                    </Text>
+                    {selKpiEjercicio === item.id && (
+                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                    )}
+                  </Pressable>
+                )}
+              />
+            </View>
+          </Pressable>
+        </Modal>
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════════════
           NOTE VIEW MODAL
           ═══════════════════════════════════════════════════════════════════════════ */}
-      <Modal
-        visible={noteModal.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setNoteModal({ visible: false, note: null })}
-      >
-        <Pressable
-          style={styles.noteModalOverlay}
-          onPress={() => setNoteModal({ visible: false, note: null })}
+        <Modal
+          visible={noteModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setNoteModal({ visible: false, note: null })}
         >
-          <View style={styles.noteModalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.noteModalHeader}>
-              <View style={styles.noteModalPriority}>
-                <View
-                  style={[
-                    styles.notePriorityDot,
-                    { backgroundColor: NOTE_COLORS[noteModal.note?.value] || '#6b7280' }
-                  ]}
-                />
-                <Text style={styles.notePriorityLabel}>
-                  {noteModal.note?.value === 'high' && '🔴 Alta prioridad'}
-                  {noteModal.note?.value === 'normal' && '🟠 Media'}
-                  {noteModal.note?.value === 'low' && '🟢 Ok'}
-                  {noteModal.note?.value === 'custom' && '🔵 Nota'}
-                </Text>
+          <Pressable
+            style={styles.noteModalOverlay}
+            onPress={() => setNoteModal({ visible: false, note: null })}
+          >
+            <View style={styles.noteModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.noteModalHeader}>
+                <View style={styles.noteModalPriority}>
+                  <View
+                    style={[
+                      styles.notePriorityDot,
+                      { backgroundColor: NOTE_COLORS[noteModal.note?.value] || '#6b7280' }
+                    ]}
+                  />
+                  <Text style={styles.notePriorityLabel}>
+                    {noteModal.note?.value === 'high' && '🔴 Alta prioridad'}
+                    {noteModal.note?.value === 'normal' && '🟠 Media'}
+                    {noteModal.note?.value === 'low' && '🟢 Ok'}
+                    {noteModal.note?.value === 'custom' && '🔵 Nota'}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setNoteModal({ visible: false, note: null })}>
+                  <Ionicons name="close" size={24} color="#9ca3af" />
+                </Pressable>
               </View>
-              <Pressable onPress={() => setNoteModal({ visible: false, note: null })}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
-              </Pressable>
+              <Text style={styles.noteModalText}>
+                {noteModal.note?.note || 'Sin texto adicional'}
+              </Text>
             </View>
-            <Text style={styles.noteModalText}>
-              {noteModal.note?.note || 'Sin texto adicional'}
-            </Text>
-          </View>
-        </Pressable>
-      </Modal>
+          </Pressable>
+        </Modal>
 
+      </View>{/* Cierre responsiveContainer */}
     </ScrollView>
   );
 }
@@ -1645,6 +1673,13 @@ const styles = StyleSheet.create({
   container: { backgroundColor: '#0D1B2A', padding: 10, marginTop: 30, flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: '#E5E7EB' },
+
+  // Contenedor responsive para web
+  responsiveContainer: {
+    flex: 1,
+    paddingHorizontal: 6,
+    maxWidth: '100%'
+  },
 
   controles: { backgroundColor: '#111827', borderRadius: 30, padding: 16, marginBottom: 24, paddingTop: 5 },
   label: { fontSize: 14, fontWeight: '600', color: '#9CA3AF', marginTop: 25, marginBottom: 0 },
@@ -1659,8 +1694,21 @@ const styles = StyleSheet.create({
   pickerItem: { color: '#E5E7EB', fontSize: 16, },
   pickerPlaceholder: { color: '#6B7280', fontSize: 16 },
 
-  chartContainer: { alignItems: 'center', marginBottom: 8 },
-  chart: { borderRadius: 16, marginVertical: 8 },
+  chartContainer: {
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+    overflow: 'visible',
+  },
+  chart: {
+    borderRadius: 16,
+    marginVertical: 8,
+    marginLeft: -16, // Compensar el padding para que el gráfico use todo el ancho
+  },
+  horizontalChartScroll: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
 
   // NUEVO: Botón "Volcar progreso"
   bulkButton: {
@@ -1950,19 +1998,29 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Horizontal scroll chart
+  // Horizontal scroll chart - Con soporte para web y scrollbar estilizado
   horizontalChartScroll: {
-    marginHorizontal: -10,
-    paddingHorizontal: 10,
+    marginHorizontal: 0,
+    paddingBottom: 12,
+    maxWidth: '100%',
+    ...(Platform.OS === 'web' && {
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      display: 'block',
+      WebkitOverflowScrolling: 'touch',
+      scrollbarWidth: 'thin',
+      scrollbarColor: '#6366f1 #1f2937',
+    }),
   },
 
-  // Muscle Balance Legend
+  // Muscle Balance Legend - Responsive
   muscleBalanceLegend: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     marginTop: 12,
-    gap: 8,
+    gap: 6,
+    paddingHorizontal: 8,
   },
   muscleBalanceItem: {
     backgroundColor: '#1f2937',
@@ -1970,16 +2028,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     alignItems: 'center',
+    minWidth: 75,
+    maxWidth: 120,
   },
   muscleBalanceShare: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#6366f1',
   },
   muscleBalanceName: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#9ca3af',
     marginTop: 2,
+    textAlign: 'center',
   },
 
   // No Data
@@ -2146,6 +2207,52 @@ const styles = StyleSheet.create({
   routineContent: {
     padding: 12,
   },
+
+  // Estilos para días (botones desplegables)
+  dayBlock: {
+    marginBottom: 6,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
+    marginBottom: 1,
+  },
+  dayLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#f3f4f6',
+    letterSpacing: 0.3,
+  },
+  dayMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  daySessionCount: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#60a5fa',
+    backgroundColor: '#1e3a5f',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  dayContent: {
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+
   exerciseBlock: {
     marginBottom: 16,
     backgroundColor: '#111827',
@@ -2188,18 +2295,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#E5E7EB',
   },
-  dayBlock: {
-    marginBottom: 4,
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1f2937',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
+  // Estilos de días ya definidos arriba (dayBlock, dayHeader, dayContent)
   dayTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2227,10 +2323,6 @@ const styles = StyleSheet.create({
   dayExerciseCount: {
     fontSize: 11,
     color: '#6b7280',
-  },
-  dayContent: {
-    paddingLeft: 8,
-    paddingTop: 6,
   },
 
   // Exercise Compact
@@ -2351,20 +2443,89 @@ const styles = StyleSheet.create({
 
   // Coach Progress Style - Routine Section
   routineSection: {
+    marginBottom: 20,
+  },
+  routineSectionOld: {
     marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   routineSectionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#E5E7EB',
-    marginBottom: 10,
+    color: '#60a5fa',
+    flex: 1,
   },
   routineSectionTitleOld: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#64748b',
-    marginBottom: 10,
-    marginTop: 8,
+    color: '#9ca3af',
+    flex: 1,
+  },
+  activeBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  countBadge: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  routineHeaderLeft: {
+    flex: 1,
+  },
+  routineHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sessionsBadge: {
+    backgroundColor: '#1e3a5f',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sessionsBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#60a5fa',
+  },
+  sessionsBadgeOld: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sessionsBadgeTextOld: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  noDataSubtext: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 6,
   },
   routineHeaderBlue: {
     flexDirection: 'row',

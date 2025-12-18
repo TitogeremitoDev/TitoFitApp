@@ -40,6 +40,7 @@ interface PromoCode {
     code: string;
     description: string;
     upgradeToType: string;
+    maxClients?: number | null;
     maxUses: number;
     usedCount: number;
     usesRemaining: number | string;
@@ -84,6 +85,7 @@ export default function AdminPanel() {
         code: '',
         description: '',
         upgradeToType: 'PREMIUM',
+        maxClients: '5',
         maxUses: '50',
         expiresAt: ''
     });
@@ -121,6 +123,7 @@ export default function AdminPanel() {
             code: '',
             description: '',
             upgradeToType: 'PREMIUM',
+            maxClients: '5',
             maxUses: '50',
             expiresAt: ''
         });
@@ -133,6 +136,7 @@ export default function AdminPanel() {
             code: code.code,
             description: code.description,
             upgradeToType: code.upgradeToType,
+            maxClients: code.maxClients ? String(code.maxClients) : '5',
             maxUses: String(code.maxUses),
             expiresAt: code.expiresAt ? code.expiresAt.split('T')[0] : ''
         });
@@ -153,6 +157,7 @@ export default function AdminPanel() {
                 code: codeFormData.code.toUpperCase().trim(),
                 description: codeFormData.description,
                 upgradeToType: codeFormData.upgradeToType,
+                maxClients: codeFormData.upgradeToType === 'ENTRENADOR' ? parseInt(codeFormData.maxClients) || 5 : null,
                 maxUses: parseInt(codeFormData.maxUses) || 50,
                 expiresAt: codeFormData.expiresAt || null,
                 active: true
@@ -387,11 +392,24 @@ export default function AdminPanel() {
                                             {code.description && (
                                                 <Text style={{ color: '#9CA3AF', fontSize: 12 }}>{code.description}</Text>
                                             )}
+                                            <View style={{ flexDirection: 'row', marginTop: 4, gap: 6 }}>
+                                                <View style={[styles.statusBadge, {
+                                                    backgroundColor: code.upgradeToType === 'ENTRENADOR' ? '#8B5CF6' : '#10B981'
+                                                }]}>
+                                                    <Text style={styles.statusText}>{code.upgradeToType}</Text>
+                                                </View>
+                                                {code.upgradeToType === 'ENTRENADOR' && code.maxClients && (
+                                                    <View style={[styles.statusBadge, { backgroundColor: '#6366F1' }]}>
+                                                        <Text style={styles.statusText}>{code.maxClients} clientes</Text>
+                                                    </View>
+                                                )}
+                                            </View>
                                         </View>
                                         <View style={[styles.statusBadge, { backgroundColor: status.color }]}>
                                             <Text style={styles.statusText}>{status.label}</Text>
                                         </View>
                                     </View>
+
 
                                     <View style={styles.codeStats}>
                                         <View style={styles.codeStat}>
@@ -597,18 +615,45 @@ export default function AdminPanel() {
                                     <Pressable
                                         style={[
                                             styles.upgradeTypeBtn,
-                                            codeFormData.upgradeToType === 'CLIENTE' && styles.upgradeTypeBtnActive
+                                            codeFormData.upgradeToType === 'ENTRENADOR' && [styles.upgradeTypeBtnActive, { backgroundColor: '#8B5CF6', borderColor: '#8B5CF6' }]
                                         ]}
-                                        onPress={() => setCodeFormData({ ...codeFormData, upgradeToType: 'CLIENTE' })}
+                                        onPress={() => setCodeFormData({ ...codeFormData, upgradeToType: 'ENTRENADOR' })}
                                     >
                                         <Text style={[
                                             styles.upgradeTypeBtnText,
-                                            codeFormData.upgradeToType === 'CLIENTE' && { color: '#FFF' }
-                                        ]}>CLIENTE</Text>
+                                            codeFormData.upgradeToType === 'ENTRENADOR' && { color: '#FFF' }
+                                        ]}>ENTRENADOR</Text>
                                     </Pressable>
                                 </View>
                             </View>
+
+                            {/* Selector de número de clientes (solo para ENTRENADOR) */}
+                            {codeFormData.upgradeToType === 'ENTRENADOR' && (
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>
+                                        Máximo de clientes
+                                    </Text>
+                                    <View style={styles.upgradeTypeRow}>
+                                        {['5', '10', '20'].map((num) => (
+                                            <Pressable
+                                                key={num}
+                                                style={[
+                                                    styles.upgradeTypeBtn,
+                                                    codeFormData.maxClients === num && { backgroundColor: '#8B5CF6', borderColor: '#8B5CF6' }
+                                                ]}
+                                                onPress={() => setCodeFormData({ ...codeFormData, maxClients: num })}
+                                            >
+                                                <Text style={[
+                                                    styles.upgradeTypeBtnText,
+                                                    codeFormData.maxClients === num && { color: '#FFF' }
+                                                ]}>{num}</Text>
+                                            </Pressable>
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
                         </ScrollView>
+
 
                         <Pressable
                             onPress={handleSaveCode}

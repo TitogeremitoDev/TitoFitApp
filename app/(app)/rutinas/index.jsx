@@ -216,6 +216,7 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
 export default function RutinasScreen() {
   const { theme } = useTheme();
   const [rutinas, setRutinas] = useState([]);
+  const [coachRoutines, setCoachRoutines] = useState([]); // 🆕 Rutinas asignadas por entrenador
   const [activeRoutineId, setActiveRoutineId] = useState(null);
   const [newRoutineName, setNewRoutineName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -236,6 +237,7 @@ export default function RutinasScreen() {
 
   const { user, token } = useAuth();
   const tipoUsuario = user?.tipoUsuario;
+  const hasCoach = !!user?.currentTrainerId; // 🆕 Tiene entrenador asignado
   const canSync = tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
   const showPremiumTeaser = tipoUsuario === PLAN.FREEUSER;
   const showPremiumRoutines = tipoUsuario === PLAN.PREMIUM || tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
@@ -253,6 +255,34 @@ export default function RutinasScreen() {
       if (storedRutinas) {
         const parsed = JSON.parse(storedRutinas);
         localRutinas = Array.isArray(parsed) ? parsed : [];
+      }
+
+      // 🆕 Cargar CurrentRoutines si el usuario tiene entrenador
+      if (hasCoach && token) {
+        try {
+          const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+          const response = await fetch(`${apiBaseUrl}/api/current-routines/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && Array.isArray(data.routines)) {
+              const coachRoutinesData = data.routines.map(r => ({
+                id: r._id,
+                nombre: r.nombre,
+                dias: r.dias,
+                origen: 'coach',
+                isFromCoach: true,
+                trainerId: r.trainerId?._id || r.trainerId,
+                trainerName: r.trainerId?.nombre || 'Tu Entrenador',
+                sourceRoutineId: r.sourceRoutineId,
+              }));
+              setCoachRoutines(coachRoutinesData);
+            }
+          }
+        } catch (error) {
+          console.error('[Rutinas] Error cargando CurrentRoutines:', error);
+        }
       }
 
       // Cargar rutinas desde el servidor (MongoDB)
@@ -290,6 +320,9 @@ export default function RutinasScreen() {
         ...safePremium.map(r => r?.id).filter(Boolean),
       ]);
 
+      // 🆕 IDs de rutinas que ya están asignadas por entrenador (para evitar duplicados)
+      const coachSourceIds = new Set(coachRoutines.map(r => r.sourceRoutineId).filter(Boolean));
+
       // Combinar rutinas: solo locales que no sean estáticas + todas las del servidor
       const filteredLocalRutinas = localRutinas.filter(r => r && !staticIds.has(r.id) && r.origen !== 'server');
 
@@ -297,7 +330,10 @@ export default function RutinasScreen() {
       const serverIds = new Set(serverRutinas.map(r => r.id));
       const finalLocalRutinas = filteredLocalRutinas.filter(r => !serverIds.has(r.id));
 
-      const allRutinas = [...serverRutinas, ...finalLocalRutinas];
+      // 🆕 Filtrar rutinas del servidor que ya están asignadas como CurrentRoutines
+      const filteredServerRutinas = serverRutinas.filter(r => !coachSourceIds.has(r.id));
+
+      const allRutinas = [...filteredServerRutinas, ...finalLocalRutinas];
       setRutinas(allRutinas);
 
       // Actualizar AsyncStorage con la lista combinada
@@ -316,7 +352,7 @@ export default function RutinasScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, hasCoach]);
   useEffect(() => {
     loadRutinasAndActiveId();
   }, [loadRutinasAndActiveId]);
@@ -377,18 +413,40 @@ export default function RutinasScreen() {
     try {
       const isGratis = section?.title === 'RUTINAS GRATIS';
       const isPremium = section?.title === 'RUTINAS PREMIUM';
+      const isFromCoach = section?.title === 'RUTINAS DE MI ENTRENADOR'; // 🆕
+
+      // 🆕 Para rutinas de entrenador, simplemente navegar a entreno
+      // La pantalla de entreno.jsx ya carga las CurrentRoutines directamente
+      if (isFromCoach) {
+        // Guardar referencia para que entreno sepa que debe cargar de CurrentRoutine
+        await AsyncStorage.multiSet([
+          ['active_routine', id],
+          ['active_routine_name', nombre || ''],
+          ['active_routine_from_coach', 'true'] // Flag para indicar que es de entrenador
+        ]);
+        setActiveRoutineId(id);
+        router.push('/entreno');
+        return;
+      }
 
       if (isGratis || isPremium) {
         const sourceArray = isGratis ? predefinedRoutines : premiumRoutines;
         const rutinaCompleta = sourceArray.find(r => r.id === id);
         if (rutinaCompleta && rutinaCompleta.diasArr) {
           const rutinaData = {};
-          rutinaCompleta.diasArr.forEach((diaEjercicios, index) => {
-            rutinaData[`dia${index + 1}`] = diaEjercicios;
+          rutinaCompleta.diasArr.forEach((diaEjercicios, diaIndex) => {
+            // Generar ID único para cada ejercicio si no tiene uno
+            rutinaData[`dia${diaIndex + 1}`] = diaEjercicios.map((ej, ejIndex) => ({
+              ...ej,
+              id: ej.id || `${id}_d${diaIndex + 1}_e${ejIndex + 1}_${ej.code || uid()}`
+            }));
           });
           await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutinaData));
         }
       }
+
+      // Limpiar flag de coach para rutinas normales
+      await AsyncStorage.removeItem('active_routine_from_coach');
       await AsyncStorage.multiSet([['active_routine', id], ['active_routine_name', nombre || '']]);
       setActiveRoutineId(id);
       router.push('/entreno');
@@ -552,6 +610,11 @@ export default function RutinasScreen() {
     const safePredefined = Array.isArray(predefinedRoutines) ? predefinedRoutines : [];
     const safePremium = Array.isArray(premiumRoutines) ? premiumRoutines : [];
 
+    // 🆕 Mostrar rutinas de entrenador primero si las hay
+    if (coachRoutines.length > 0) {
+      data.push({ title: 'RUTINAS DE MI ENTRENADOR', data: coachRoutines });
+    }
+
     data.push({ title: 'RUTINAS PROPIAS', data: filteredRutinas });
     data.push({ title: 'RUTINAS GRATIS', data: safePredefined });
 
@@ -561,7 +624,7 @@ export default function RutinasScreen() {
       data.push({ title: 'RUTINAS PREMIUM', data: [] });
     }
     return data;
-  }, [filteredRutinas, showPremiumRoutines, showPremiumTeaser]);
+  }, [filteredRutinas, coachRoutines, showPremiumRoutines, showPremiumTeaser]);
 
   /* Renderizadores */
   const RenderSectionHeader = useCallback(({ title, data }) => {
@@ -583,6 +646,7 @@ export default function RutinasScreen() {
         <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
         {title === 'RUTINAS GRATIS' && <Ionicons name="gift-outline" size={18} color={theme.success} style={{ marginLeft: 6 }} />}
         {title === 'RUTINAS PREMIUM' && <Ionicons name="star" size={18} color={theme.premium} style={{ marginLeft: 6 }} />}
+        {title === 'RUTINAS DE MI ENTRENADOR' && <Ionicons name="fitness" size={18} color="#f59e0b" style={{ marginLeft: 6 }} />}
       </View>
     );
   }, [theme, showPremiumTeaser, setIsPremiumOfferModalVisible]);
@@ -590,8 +654,9 @@ export default function RutinasScreen() {
   const RenderRutina = useCallback(({ item, section }) => {
     const isActive = activeRoutineId === item.id;
     const isPropia = section.title === 'RUTINAS PROPIAS';
+    const isFromCoach = section.title === 'RUTINAS DE MI ENTRENADOR'; // 🆕
     const canDelete = isPropia;
-    const canEdit = isPropia;
+    const canEdit = isPropia; // No se puede editar rutinas de entrenador
 
     return (
       <View style={styles.rutinaContainer}>
@@ -614,6 +679,15 @@ export default function RutinasScreen() {
                 <Text style={[styles.folderText, { color: theme.textSecondary }]}>{item.folder}</Text>
               </View>
             )}
+            {/* 🆕 Indicador de rutina de entrenador */}
+            {isFromCoach && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Ionicons name="lock-closed" size={12} color="#f59e0b" />
+                <Text style={{ fontSize: 11, color: '#f59e0b', marginLeft: 4, fontWeight: '600' }}>
+                  Asignada por tu entrenador
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.rutinaControles}>
@@ -629,7 +703,7 @@ export default function RutinasScreen() {
               </TouchableOpacity>
             )}
             {canEdit && (
-              <TouchableOpacity style={[styles.rutinaBtn, styles.rutinaBtnEdit]} onPress={() => router.push(`/rutinas/${item.id}?name=${encodeURIComponent(item.nombre)}`)}>
+              <TouchableOpacity style={[styles.rutinaBtn, { backgroundColor: theme.backgroundTertiary }]} onPress={() => router.push(`/rutinas/${item.id}?name=${encodeURIComponent(item.nombre)}`)}>
                 <Ionicons name="pencil" size={16} color={theme.primary} />
               </TouchableOpacity>
             )}
@@ -872,7 +946,7 @@ export default function RutinasScreen() {
             <View style={[styles.premiumBenefitsList, { backgroundColor: theme.backgroundTertiary, borderColor: theme.border }]}>
               <View style={styles.premiumBenefitItem}>
                 <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />
-                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Rutinas premium ilimitadas</Text>
+                <Text style={[styles.premiumBenefitText, { color: theme.text }]}>Rutinas premium avanzadas</Text>
               </View>
               <View style={styles.premiumBenefitItem}>
                 <Ionicons name="checkmark-circle" size={20} color={theme.success || '#22C55E'} />

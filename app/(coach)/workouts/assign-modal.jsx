@@ -8,25 +8,35 @@ import {
     FlatList,
     ActivityIndicator,
     Alert,
-    TextInput
+    TextInput,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 
-export default function AssignRoutineModal({ visible, onClose, routine }) {
+export default function AssignRoutineModal({ visible, onClose, routine, preselectedClient }) {
     const { token } = useAuth();
     const [clients, setClients] = useState([]);
+    const [routines, setRoutines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [assigning, setAssigning] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
+    // Mode: 'selectClient' when routine is provided, 'selectRoutine' when preselectedClient is provided
+    const mode = preselectedClient ? 'selectRoutine' : 'selectClient';
+
     useEffect(() => {
         if (visible) {
-            fetchClients();
+            setSearchQuery('');
+            if (mode === 'selectClient') {
+                fetchClients();
+            } else {
+                fetchRoutines();
+            }
         }
-    }, [visible]);
+    }, [visible, mode]);
 
     const fetchClients = async () => {
         try {
@@ -38,44 +48,101 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
             if (data.success) {
                 setClients(data.clients || []);
             } else {
-                Alert.alert('Error', 'No se pudieron cargar los clientes');
+                if (Platform.OS === 'web') {
+                    alert('No se pudieron cargar los clientes');
+                } else {
+                    Alert.alert('Error', 'No se pudieron cargar los clientes');
+                }
             }
         } catch (error) {
             console.error('Error fetching clients:', error);
-            Alert.alert('Error', 'Error de conexión');
+            if (Platform.OS === 'web') {
+                alert('Error de conexión');
+            } else {
+                Alert.alert('Error', 'Error de conexión');
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    const handleAssign = async (client) => {
+    const fetchRoutines = async () => {
+        try {
+            setLoading(true);
+            const response = await fetch(`${API_URL}/api/routines`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.success) {
+                setRoutines(data.routines || []);
+            } else {
+                if (Platform.OS === 'web') {
+                    alert('No se pudieron cargar las rutinas');
+                } else {
+                    Alert.alert('Error', 'No se pudieron cargar las rutinas');
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching routines:', error);
+            if (Platform.OS === 'web') {
+                alert('Error de conexión');
+            } else {
+                Alert.alert('Error', 'Error de conexión');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAssign = async (routineId, clientId) => {
         try {
             setAssigning(true);
-            const response = await fetch(`${API_URL}/api/routines/assign`, {
+            // Usar el nuevo endpoint que crea una copia en CurrentRoutine
+            const response = await fetch(`${API_URL}/api/current-routines/assign`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    routineId: routine._id,
-                    clientId: client._id
+                    routineId,
+                    clientId
                 })
             });
             const data = await response.json();
 
             if (data.success) {
-                Alert.alert('Éxito', `Rutina asignada a ${client.nombre}`);
+                if (Platform.OS === 'web') {
+                    alert('Rutina asignada correctamente');
+                } else {
+                    Alert.alert('Éxito', 'Rutina asignada correctamente');
+                }
                 onClose();
             } else {
-                Alert.alert('Error', data.message || 'No se pudo asignar la rutina');
+                if (Platform.OS === 'web') {
+                    alert(data.message || 'No se pudo asignar la rutina');
+                } else {
+                    Alert.alert('Error', data.message || 'No se pudo asignar la rutina');
+                }
             }
         } catch (error) {
             console.error('Error assigning routine:', error);
-            Alert.alert('Error', 'Error de conexión');
+            if (Platform.OS === 'web') {
+                alert('Error de conexión');
+            } else {
+                Alert.alert('Error', 'Error de conexión');
+            }
         } finally {
             setAssigning(false);
         }
+    };
+
+    const handleSelectClient = (client) => {
+        handleAssign(routine._id, client._id);
+    };
+
+    const handleSelectRoutine = (selectedRoutine) => {
+        handleAssign(selectedRoutine._id, preselectedClient._id);
     };
 
     const filteredClients = clients.filter(client =>
@@ -83,10 +150,14 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
         client.email.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const filteredRoutines = routines.filter(r =>
+        r.nombre.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     const renderClientItem = ({ item }) => (
         <TouchableOpacity
             style={styles.clientCard}
-            onPress={() => handleAssign(item)}
+            onPress={() => handleSelectClient(item)}
             disabled={assigning}
         >
             <View style={styles.clientAvatar}>
@@ -95,6 +166,25 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
             <View style={styles.clientInfo}>
                 <Text style={styles.clientName}>{item.nombre}</Text>
                 <Text style={styles.clientEmail}>{item.email}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+        </TouchableOpacity>
+    );
+
+    const renderRoutineItem = ({ item }) => (
+        <TouchableOpacity
+            style={styles.routineCard}
+            onPress={() => handleSelectRoutine(item)}
+            disabled={assigning}
+        >
+            <View style={styles.routineIcon}>
+                <Ionicons name="fitness" size={20} color="#f59e0b" />
+            </View>
+            <View style={styles.routineInfo}>
+                <Text style={styles.routineName}>{item.nombre}</Text>
+                <Text style={styles.routineDetails}>
+                    {item.dias} días • {item.enfoque || 'General'}
+                </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
         </TouchableOpacity>
@@ -110,21 +200,27 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
             <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                     <View style={styles.header}>
-                        <Text style={styles.title}>Asignar Rutina</Text>
+                        <Text style={styles.title}>
+                            {mode === 'selectClient' ? 'Asignar Rutina' : 'Seleccionar Rutina'}
+                        </Text>
                         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                             <Ionicons name="close" size={24} color="#64748b" />
                         </TouchableOpacity>
                     </View>
 
                     <Text style={styles.subtitle}>
-                        Selecciona un cliente para asignarle "{routine?.nombre}"
+                        {mode === 'selectClient'
+                            ? `Selecciona un cliente para asignarle "${routine?.nombre}"`
+                            : `Selecciona una rutina para ${preselectedClient?.nombre}`
+                        }
                     </Text>
 
                     <View style={styles.searchContainer}>
                         <Ionicons name="search" size={20} color="#94a3b8" />
                         <TextInput
                             style={styles.searchInput}
-                            placeholder="Buscar cliente..."
+                            placeholder={mode === 'selectClient' ? "Buscar cliente..." : "Buscar rutina..."}
+                            placeholderTextColor="#94a3b8"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                         />
@@ -132,7 +228,7 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
 
                     {loading ? (
                         <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 20 }} />
-                    ) : (
+                    ) : mode === 'selectClient' ? (
                         <FlatList
                             data={filteredClients}
                             renderItem={renderClientItem}
@@ -140,6 +236,22 @@ export default function AssignRoutineModal({ visible, onClose, routine }) {
                             contentContainerStyle={styles.listContent}
                             ListEmptyComponent={
                                 <Text style={styles.emptyText}>No se encontraron clientes</Text>
+                            }
+                        />
+                    ) : (
+                        <FlatList
+                            data={filteredRoutines}
+                            renderItem={renderRoutineItem}
+                            keyExtractor={item => item._id}
+                            contentContainerStyle={styles.listContent}
+                            ListEmptyComponent={
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="barbell-outline" size={48} color="#cbd5e1" />
+                                    <Text style={styles.emptyText}>No tienes rutinas creadas</Text>
+                                    <Text style={styles.emptySubtext}>
+                                        Ve a "Mis Rutinas" para crear una
+                                    </Text>
+                                </View>
                             }
                         />
                     )}
@@ -206,6 +318,7 @@ const styles = StyleSheet.create({
     listContent: {
         paddingBottom: 20
     },
+    // Client styles
     clientCard: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -239,11 +352,56 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#94a3b8'
     },
+    // Routine styles
+    routineCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: '#f8fafc',
+        marginBottom: 8
+    },
+    routineIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#fef3c7',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12
+    },
+    routineInfo: {
+        flex: 1
+    },
+    routineName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b'
+    },
+    routineDetails: {
+        fontSize: 13,
+        color: '#64748b',
+        marginTop: 2
+    },
+    // Empty state
+    emptyContainer: {
+        alignItems: 'center',
+        paddingVertical: 40
+    },
     emptyText: {
         textAlign: 'center',
         color: '#94a3b8',
-        marginTop: 20
+        marginTop: 12,
+        fontSize: 15
     },
+    emptySubtext: {
+        textAlign: 'center',
+        color: '#cbd5e1',
+        marginTop: 4,
+        fontSize: 13
+    },
+    // Assigning overlay
     assigningOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.7)',

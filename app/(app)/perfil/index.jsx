@@ -341,6 +341,7 @@ export default function PerfilScreen() {
         { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros' },
         { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos' },
         { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad' },
+        { title: 'Videoteca', icon: 'videocam-outline', route: '/perfil/videos' },
         { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes' },
     ];
 

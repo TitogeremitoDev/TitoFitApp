@@ -1,6 +1,6 @@
 /* app/(app)/seguimiento/index.jsx - Sistema de Seguimiento Completo */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -13,14 +13,18 @@ import {
     Platform,
     useWindowDimensions,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useAchievements } from '../../../context/AchievementsContext';
+import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTES REUTILIZABLES
@@ -216,11 +220,211 @@ const SubsectionTitle = ({ title, icon }) => (
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CALENDARIO MENSUAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+const DAYS_OF_WEEK = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+/**
+ * Calendario mensual que muestra días con datos
+ * @param {Set} dailyDates - Fechas con datos diarios (formato 'YYYY-MM-DD')
+ * @param {Set} weeklyDates - Fechas de inicio de semana con check-in semanal
+ */
+const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set() }) => {
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+
+    // Primer día del mes (0=domingo, 1=lunes...)
+    const firstDay = new Date(year, month, 1);
+    let startDay = firstDay.getDay() - 1; // Ajustar para que lunes sea 0
+    if (startDay < 0) startDay = 6;
+
+    // Días en el mes
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Generar array de días
+    const days = [];
+    // Espacios vacíos antes del primer día
+    for (let i = 0; i < startDay; i++) {
+        days.push({ day: null, key: `empty-${i}` });
+    }
+    // Días del mes
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const hasDaily = dailyDates.has(dateStr);
+        const hasWeekly = weeklyDates.has(dateStr);
+        const isToday = new Date().toISOString().split('T')[0] === dateStr;
+        days.push({ day: d, dateStr, hasDaily, hasWeekly, isToday, key: dateStr });
+    }
+
+    const goToPrevMonth = () => {
+        setCurrentMonth(new Date(year, month - 1, 1));
+    };
+
+    const goToNextMonth = () => {
+        setCurrentMonth(new Date(year, month + 1, 1));
+    };
+
+    return (
+        <View style={styles.calendarContainer}>
+            {/* Header con navegación */}
+            <View style={styles.calendarHeader}>
+                <TouchableOpacity onPress={goToPrevMonth} style={styles.calendarArrow}>
+                    <Ionicons name="chevron-back" size={24} color="#9CA3AF" />
+                </TouchableOpacity>
+                <Text style={styles.calendarMonthText}>
+                    {MONTHS[month]} {year}
+                </Text>
+                <TouchableOpacity onPress={goToNextMonth} style={styles.calendarArrow}>
+                    <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Días de la semana */}
+            <View style={styles.calendarWeekHeader}>
+                {DAYS_OF_WEEK.map(day => (
+                    <Text key={day} style={styles.calendarWeekDay}>{day}</Text>
+                ))}
+            </View>
+
+            {/* Grid de días */}
+            <View style={styles.calendarGrid}>
+                {days.map(({ day, hasDaily, hasWeekly, isToday, key }) => (
+                    <View key={key} style={styles.calendarDayCell}>
+                        {day !== null ? (
+                            <View style={[
+                                styles.calendarDay,
+                                isToday && styles.calendarDayToday
+                            ]}>
+                                <Text style={[
+                                    styles.calendarDayText,
+                                    isToday && styles.calendarDayTextToday
+                                ]}>
+                                    {day}
+                                </Text>
+                                {/* Indicadores */}
+                                <View style={styles.calendarIndicators}>
+                                    {hasDaily && <View style={styles.calendarDotDaily} />}
+                                    {hasWeekly && <View style={styles.calendarDotWeekly} />}
+                                </View>
+                            </View>
+                        ) : null}
+                    </View>
+                ))}
+            </View>
+
+            {/* Leyenda */}
+            <View style={styles.calendarLegend}>
+                <View style={styles.calendarLegendItem}>
+                    <View style={[styles.calendarDotDaily, { marginRight: 4 }]} />
+                    <Text style={styles.calendarLegendText}>Diario</Text>
+                </View>
+                <View style={styles.calendarLegendItem}>
+                    <View style={[styles.calendarDotWeekly, { marginRight: 4 }]} />
+                    <Text style={styles.calendarLegendText}>Semanal</Text>
+                </View>
+            </View>
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPONENTE DE MACROS CON CUADRADOS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Calcula el color según la desviación del objetivo
+ * @param {number} consumed - Valor consumido
+ * @param {number} target - Valor objetivo
+ * @returns {string} Color hex
+ */
+const getDeviationColor = (consumed, target) => {
+    if (!target || target === 0 || consumed === null || consumed === undefined || consumed === '') {
+        return '#6B7280'; // Gris si no hay datos
+    }
+    const deviation = Math.abs((consumed - target) / target);
+    if (deviation <= 0.05) return '#10B981'; // Verde - dentro del 5%
+    if (deviation <= 0.10) return '#F59E0B'; // Naranja - 5-10%
+    return '#EF4444'; // Rojo - más del 10%
+};
+
+/**
+ * Input GRANDE para Kcal - Prominente al top
+ */
+const KcalBigInput = ({ value, target, onChangeText }) => {
+    const numValue = parseFloat(value) || 0;
+    const numTarget = parseFloat(target) || 0;
+    const percentage = numTarget > 0 ? Math.min((numValue / numTarget) * 100, 100) : 0;
+    const color = getDeviationColor(numValue, numTarget);
+
+    return (
+        <View style={styles.kcalBigContainer}>
+            <View style={styles.kcalHeader}>
+                <Text style={styles.kcalEmoji}>🔥</Text>
+                <Text style={styles.kcalLabel}>Calorías</Text>
+                {numTarget > 0 && (
+                    <Text style={[styles.kcalPercentage, { color }]}>
+                        {Math.round(percentage)}%
+                    </Text>
+                )}
+            </View>
+            <View style={styles.kcalInputRow}>
+                <TextInput
+                    style={[styles.kcalInput, { borderColor: color }]}
+                    value={value}
+                    onChangeText={onChangeText}
+                    placeholder="0"
+                    placeholderTextColor="#6B7280"
+                    keyboardType="numeric"
+                />
+                <Text style={styles.kcalUnit}>kcal</Text>
+            </View>
+            {numTarget > 0 && (
+                <View style={styles.kcalProgressContainer}>
+                    <View style={styles.kcalProgressBg}>
+                        <View style={[styles.kcalProgressFill, { width: `${percentage}%`, backgroundColor: color }]} />
+                    </View>
+                    <Text style={styles.kcalTargetText}>de {numTarget} kcal</Text>
+                </View>
+            )}
+        </View>
+    );
+};
+
+/**
+ * Input COMPACTO para Macros - Solo borde con color
+ */
+const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
+    const numValue = parseFloat(value) || 0;
+    const numTarget = parseFloat(target) || 0;
+    const color = getDeviationColor(numValue, numTarget);
+
+    return (
+        <View style={styles.compactMacroItem}>
+            <Text style={styles.compactMacroEmoji}>{emoji}</Text>
+            <TextInput
+                style={[styles.compactMacroInput, { borderColor: color }]}
+                value={value}
+                onChangeText={onChangeText}
+                placeholder="0"
+                placeholderTextColor="#6B7280"
+                keyboardType="numeric"
+            />
+            <Text style={styles.compactMacroLabel}>{label}</Text>
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PANTALLA PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function SeguimientoScreen() {
-    const { user } = useAuth();
+    const { user, token } = useAuth();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
 
     // Estados de secciones expandidas
@@ -230,6 +434,34 @@ export default function SeguimientoScreen() {
 
     // Modal cámara
     const [cameraModalVisible, setCameraModalVisible] = useState(false);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ESTADOS DATOS MÍNIMOS (Siempre visibles)
+    // ─────────────────────────────────────────────────────────────────────────
+    const [minimalData, setMinimalData] = useState({
+        peso: '',
+        animo: 3,
+        kcalConsumed: '',
+        proteinConsumed: '',
+        carbsConsumed: '',
+        fatConsumed: '',
+    });
+    const [minimalDataSaved, setMinimalDataSaved] = useState(false);
+    const [minimalDataLoading, setMinimalDataLoading] = useState(true);
+
+    // Objetivos de nutrición (cargados del sistema)
+    const [nutritionTargets, setNutritionTargets] = useState({
+        kcal: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ESTADOS CALENDARIO
+    // ─────────────────────────────────────────────────────────────────────────
+    const [filledDailyDates, setFilledDailyDates] = useState(new Set());
+    const [filledWeeklyDates, setFilledWeeklyDates] = useState(new Set());
 
     // ─────────────────────────────────────────────────────────────────────────
     // ESTADOS CHECK-IN DIARIO
@@ -243,6 +475,11 @@ export default function SeguimientoScreen() {
         pasos: '',
         haIdoBien: '',
         nota: '',
+        // Macros (pre-rellenados desde datos mínimos)
+        kcalConsumed: '',
+        proteinConsumed: '',
+        carbsConsumed: '',
+        fatConsumed: '',
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -286,6 +523,275 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     const updateDiario = (key, value) => setDiario(prev => ({ ...prev, [key]: value }));
     const updateSemanal = (key, value) => setSemanal(prev => ({ ...prev, [key]: value }));
+    const updateMinimalData = (key, value) => setMinimalData(prev => ({ ...prev, [key]: value }));
+
+    // Verificar si es usuario premium (no FREEUSER)
+    const isPremium = useMemo(() => {
+        if (!user) return false;
+        return ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMINISTRADOR'].includes(user.tipoUsuario);
+    }, [user]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CARGAR OBJETIVOS DE NUTRICIÓN Y DATOS DEL DÍA
+    // ─────────────────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const loadNutritionAndData = async () => {
+            setMinimalDataLoading(true);
+            try {
+                const today = new Date().toISOString().split('T')[0];
+
+                // 1. Cargar objetivos de nutrición
+                if (isPremium && token) {
+                    try {
+                        // Intentar cargar plan del coach primero
+                        const res = await fetch(`${API_URL}/api/nutrition-plans/my-plan`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        const data = await res.json();
+                        if (data.success && data.todayTarget) {
+                            setNutritionTargets({
+                                kcal: data.todayTarget.kcal || 0,
+                                protein: data.todayTarget.protein_g || 0,
+                                carbs: data.todayTarget.carbs_g || 0,
+                                fat: data.todayTarget.fat_g || 0,
+                            });
+                        } else {
+                            // Si no hay plan del coach, calcular automáticamente
+                            const nutrition = calculateFullNutrition(
+                                user?.info_user,
+                                user?.info_user?.objetivoPrincipal || 'volumen',
+                                user?.info_user?.af || 1.55
+                            );
+                            if (nutrition) {
+                                setNutritionTargets({
+                                    kcal: nutrition.training.kcal,
+                                    protein: nutrition.training.protein,
+                                    carbs: nutrition.training.carbs,
+                                    fat: nutrition.training.fat,
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.log('[Seguimiento] Error cargando nutrición:', e.message);
+                    }
+                } else {
+                    // Para FREEUSER, calcular automáticamente
+                    const nutrition = calculateFullNutrition(
+                        user?.info_user,
+                        user?.info_user?.objetivoPrincipal || 'volumen',
+                        user?.info_user?.af || 1.55
+                    );
+                    if (nutrition) {
+                        setNutritionTargets({
+                            kcal: nutrition.training.kcal,
+                            protein: nutrition.training.protein,
+                            carbs: nutrition.training.carbs,
+                            fat: nutrition.training.fat,
+                        });
+                    }
+                }
+
+                // 2. Cargar datos del día actual
+                if (user?.tipoUsuario === 'FREEUSER') {
+                    // Cargar desde AsyncStorage
+                    const storageKey = `minimal_data_${today}`;
+                    const saved = await AsyncStorage.getItem(storageKey);
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        setMinimalData(parsed);
+                        setMinimalDataSaved(true);
+                        // Pre-rellenar diario
+                        setDiario(prev => ({
+                            ...prev,
+                            peso: parsed.peso || '',
+                            animo: parsed.animo || 3,
+                            kcalConsumed: parsed.kcalConsumed || '',
+                            proteinConsumed: parsed.proteinConsumed || '',
+                            carbsConsumed: parsed.carbsConsumed || '',
+                            fatConsumed: parsed.fatConsumed || '',
+                        }));
+                    }
+                } else if (token) {
+                    // Cargar desde la nube
+                    try {
+                        const res = await axios.get(`/monitoring/daily?startDate=${today}&endDate=${today}`);
+                        if (res.data?.data?.length > 0) {
+                            const todayData = res.data.data[0];
+                            setMinimalData({
+                                peso: todayData.peso?.toString() || '',
+                                animo: todayData.animo || 3,
+                                kcalConsumed: todayData.kcalConsumed?.toString() || '',
+                                proteinConsumed: todayData.proteinConsumed?.toString() || '',
+                                carbsConsumed: todayData.carbsConsumed?.toString() || '',
+                                fatConsumed: todayData.fatConsumed?.toString() || '',
+                            });
+                            setMinimalDataSaved(true);
+                            // Pre-rellenar diario
+                            setDiario(prev => ({
+                                ...prev,
+                                peso: todayData.peso?.toString() || '',
+                                animo: todayData.animo || 3,
+                                sueno: todayData.sueno?.toString() || '',
+                                energia: todayData.energia || 3,
+                                hambre: todayData.hambre || 3,
+                                pasos: todayData.pasos?.toString() || '',
+                                haIdoBien: todayData.haIdoBien || '',
+                                nota: todayData.nota || '',
+                                kcalConsumed: todayData.kcalConsumed?.toString() || '',
+                                proteinConsumed: todayData.proteinConsumed?.toString() || '',
+                                carbsConsumed: todayData.carbsConsumed?.toString() || '',
+                                fatConsumed: todayData.fatConsumed?.toString() || '',
+                            }));
+                        }
+                    } catch (e) {
+                        console.log('[Seguimiento] Error cargando datos del día:', e.message);
+                    }
+                }
+            } catch (error) {
+                console.error('[Seguimiento] Error cargando datos:', error);
+            } finally {
+                setMinimalDataLoading(false);
+            }
+        };
+
+        loadNutritionAndData();
+    }, [user, token, isPremium]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CARGAR FECHAS PARA EL CALENDARIO
+    // ─────────────────────────────────────────────────────────────────────────
+    const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
+
+    useEffect(() => {
+        const loadCalendarDates = async () => {
+            try {
+                const dailySet = new Set();
+                const weeklySet = new Set();
+
+                if (user?.tipoUsuario === 'FREEUSER') {
+                    // Cargar desde AsyncStorage
+                    const daysKey = 'daily_monitoring_days';
+                    const weeksKey = 'weekly_monitoring_weeks';
+
+                    const savedDays = await AsyncStorage.getItem(daysKey);
+                    const savedWeeks = await AsyncStorage.getItem(weeksKey);
+
+                    if (savedDays) {
+                        JSON.parse(savedDays).forEach(d => dailySet.add(d));
+                    }
+                    if (savedWeeks) {
+                        JSON.parse(savedWeeks).forEach(w => weeklySet.add(w));
+                    }
+
+                    // También verificar minimal_data guardados
+                    const today = new Date();
+                    for (let i = 0; i < 90; i++) { // Últimos 90 días
+                        const d = new Date(today);
+                        d.setDate(d.getDate() - i);
+                        const dateStr = d.toISOString().split('T')[0];
+                        const minimalKey = `minimal_data_${dateStr}`;
+                        const minimalData = await AsyncStorage.getItem(minimalKey);
+                        if (minimalData) {
+                            dailySet.add(dateStr);
+                        }
+                    }
+                    console.log('[Calendar] FREEUSER - Días cargados:', dailySet.size);
+                } else if (token) {
+                    // Cargar desde la nube - últimos 90 días
+                    const endDate = new Date().toISOString().split('T')[0];
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - 90);
+                    const startDateStr = startDate.toISOString().split('T')[0];
+
+                    try {
+                        const res = await fetch(`${API_URL}/api/monitoring/daily?startDate=${startDateStr}&endDate=${endDate}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        const data = await res.json();
+                        if (data?.data) {
+                            data.data.forEach(entry => {
+                                if (entry.date) {
+                                    dailySet.add(entry.date.split('T')[0]);
+                                }
+                            });
+                        }
+                        console.log('[Calendar] Cloud - Días cargados:', dailySet.size);
+                    } catch (e) {
+                        console.log('[Calendar] Error cargando datos diarios:', e.message);
+                    }
+
+                    try {
+                        const resWeekly = await fetch(`${API_URL}/api/monitoring/weekly?limit=20`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        const dataWeekly = await resWeekly.json();
+                        if (dataWeekly?.data) {
+                            dataWeekly.data.forEach(entry => {
+                                if (entry.weekStartDate) {
+                                    weeklySet.add(entry.weekStartDate.split('T')[0]);
+                                }
+                            });
+                        }
+                        console.log('[Calendar] Cloud - Semanas cargadas:', weeklySet.size);
+                    } catch (e) {
+                        console.log('[Calendar] Error cargando datos semanales:', e.message);
+                    }
+                }
+
+                setFilledDailyDates(dailySet);
+                setFilledWeeklyDates(weeklySet);
+            } catch (error) {
+                console.error('[Calendar] Error cargando fechas:', error);
+            }
+        };
+
+        if (user) {
+            loadCalendarDates();
+        }
+    }, [user, token, calendarRefreshTrigger]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUARDAR DATOS MÍNIMOS
+    // ─────────────────────────────────────────────────────────────────────────
+    const handleGuardarMinimalData = async () => {
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const dataToSave = { ...minimalData, date: today };
+
+            if (user?.tipoUsuario === 'FREEUSER') {
+                // Guardar en local
+                const storageKey = `minimal_data_${today}`;
+                await AsyncStorage.setItem(storageKey, JSON.stringify(dataToSave));
+
+                // Sincronizar peso al perfil local
+                if (minimalData.peso && parseFloat(minimalData.peso) > 0) {
+                    await AsyncStorage.setItem('USER_PESO', String(minimalData.peso));
+                }
+            } else {
+                // Guardar en la nube
+                await axios.post('/monitoring/daily', dataToSave);
+            }
+
+            // Pre-rellenar el check-in diario
+            setDiario(prev => ({
+                ...prev,
+                peso: minimalData.peso,
+                animo: minimalData.animo,
+                kcalConsumed: minimalData.kcalConsumed,
+                proteinConsumed: minimalData.proteinConsumed,
+                carbsConsumed: minimalData.carbsConsumed,
+                fatConsumed: minimalData.fatConsumed,
+            }));
+
+            setMinimalDataSaved(true);
+            // Refrescar calendario para mostrar el día actual
+            setCalendarRefreshTrigger(prev => prev + 1);
+            Alert.alert('✅ Guardado', 'Datos básicos guardados correctamente');
+        } catch (error) {
+            console.error('[SEGUIMIENTO] Error guardando datos mínimos:', error);
+            Alert.alert('Error', 'No se pudieron guardar los datos básicos');
+        }
+    };
 
     // Valores iniciales para resetear
     const initialDiario = {
@@ -297,6 +803,10 @@ export default function SeguimientoScreen() {
         pasos: '',
         haIdoBien: '',
         nota: '',
+        kcalConsumed: '',
+        proteinConsumed: '',
+        carbsConsumed: '',
+        fatConsumed: '',
     };
 
     const initialSemanal = {
@@ -365,6 +875,8 @@ export default function SeguimientoScreen() {
                 Alert.alert('✅ Guardado', 'Check-in diario guardado correctamente');
             }
 
+            // Refrescar calendario
+            setCalendarRefreshTrigger(prev => prev + 1);
             // Resetear campos
             setDiario(initialDiario);
         } catch (error) {
@@ -456,6 +968,8 @@ export default function SeguimientoScreen() {
                 Alert.alert('✅ Guardado', 'Check-in semanal guardado correctamente');
             }
 
+            // Refrescar calendario
+            setCalendarRefreshTrigger(prev => prev + 1);
             // Resetear campos
             setSemanal(initialSemanal);
         } catch (error) {
@@ -487,6 +1001,100 @@ export default function SeguimientoScreen() {
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>📏 Seguimiento</Text>
                     <Text style={styles.headerSubtitle}>Registra tu progreso diario y semanal</Text>
+                </View>
+
+                {/* ═══════════════════════════════════════════════════════════════════ */}
+                {/* SECCIÓN DATOS MÍNIMOS (Siempre visible) */}
+                {/* ═══════════════════════════════════════════════════════════════════ */}
+                <View style={styles.minimalDataCard}>
+                    <View style={styles.minimalDataHeader}>
+                        <Text style={styles.minimalDataIcon}>📊</Text>
+                        <Text style={styles.minimalDataTitle}>Datos de Hoy</Text>
+                        {minimalDataSaved && (
+                            <View style={styles.savedBadge}>
+                                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                                <Text style={styles.savedBadgeText}>Guardado</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {minimalDataLoading ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="small" color="#3B82F6" />
+                            <Text style={styles.loadingText}>Cargando datos...</Text>
+                        </View>
+                    ) : (
+                        <>
+                            {/* Peso */}
+                            <View style={styles.minimalInputRow}>
+                                <Text style={styles.minimalInputLabel}>⚖️ Peso</Text>
+                                <View style={styles.minimalInputWrapper}>
+                                    <TextInput
+                                        style={styles.minimalNumberInput}
+                                        value={minimalData.peso}
+                                        onChangeText={(v) => updateMinimalData('peso', v)}
+                                        placeholder="75.5"
+                                        placeholderTextColor="#6B7280"
+                                        keyboardType="numeric"
+                                    />
+                                    <Text style={styles.minimalInputSuffix}>kg</Text>
+                                </View>
+                            </View>
+
+                            {/* Macros Consumidos - Diseño condensado */}
+                            <Text style={styles.macrosSectionTitle}>🍽️ Macros Consumidos (opcional)</Text>
+
+                            {/* Kcal prominente arriba */}
+                            <KcalBigInput
+                                value={minimalData.kcalConsumed}
+                                target={nutritionTargets.kcal}
+                                onChangeText={(v) => updateMinimalData('kcalConsumed', v)}
+                            />
+
+                            {/* Macros en fila compacta */}
+                            <View style={styles.compactMacrosRow}>
+                                <CompactMacroInput
+                                    emoji="🥩"
+                                    label="Prot"
+                                    value={minimalData.proteinConsumed}
+                                    target={nutritionTargets.protein}
+                                    onChangeText={(v) => updateMinimalData('proteinConsumed', v)}
+                                />
+                                <CompactMacroInput
+                                    emoji="🍚"
+                                    label="Carbs"
+                                    value={minimalData.carbsConsumed}
+                                    target={nutritionTargets.carbs}
+                                    onChangeText={(v) => updateMinimalData('carbsConsumed', v)}
+                                />
+                                <CompactMacroInput
+                                    emoji="🥑"
+                                    label="Grasas"
+                                    value={minimalData.fatConsumed}
+                                    target={nutritionTargets.fat}
+                                    onChangeText={(v) => updateMinimalData('fatConsumed', v)}
+                                />
+                            </View>
+
+                            {/* Botón Guardar */}
+                            <TouchableOpacity
+                                style={[
+                                    styles.minimalSaveBtn,
+                                    minimalDataSaved && styles.minimalSaveBtnSaved
+                                ]}
+                                onPress={handleGuardarMinimalData}
+                            >
+                                <Ionicons
+                                    name={minimalDataSaved ? "checkmark-done" : "save-outline"}
+                                    size={20}
+                                    color="#FFF"
+                                />
+                                <Text style={styles.minimalSaveBtnText}>
+                                    {minimalDataSaved ? 'Actualizar Datos' : 'Guardar Datos Básicos'}
+                                </Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
                 </View>
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -777,25 +1385,11 @@ export default function SeguimientoScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* ═══════════════════════════════════════════════════════════════════ */}
-                {/* SECCIÓN NUTRICIÓN (Placeholder) */}
-                {/* ═══════════════════════════════════════════════════════════════════ */}
-                <ExpandableSection
-                    title="Nutrición"
-                    icon="🍽️"
-                    expanded={nutricionExpanded}
-                    onToggle={() => setNutricionExpanded(!nutricionExpanded)}
-                    color="#F59E0B"
-                >
-                    <View style={styles.placeholderContent}>
-                        <Text style={styles.placeholderEmoji}>🚧</Text>
-                        <Text style={styles.placeholderTitle}>Próximamente</Text>
-                        <Text style={styles.placeholderText}>
-                            Aquí encontrarás tu plan de nutrición personalizado,
-                            recetas y seguimiento de macros.
-                        </Text>
-                    </View>
-                </ExpandableSection>
+                {/* Calendario mensual */}
+                <MonthlyCalendar
+                    dailyDates={filledDailyDates}
+                    weeklyDates={filledWeeklyDates}
+                />
 
                 {/* Espaciado inferior */}
                 <View style={{ height: 40 }} />
@@ -861,13 +1455,14 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scrollContent: {
-        padding: 20,
+        padding: 16,
         paddingTop: Platform.OS === 'ios' ? 60 : 40,
         ...(Platform.OS === 'web' && {
-            maxWidth: 600,
+            maxWidth: 520,
             alignSelf: 'center',
             width: '100%',
         }),
+        overflow: 'hidden',
     },
 
     // Header
@@ -1015,7 +1610,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         flexWrap: 'wrap',
-        gap: 8,
+        gap: 2,
     },
     moodBtn: {
         alignItems: 'center',
@@ -1165,6 +1760,107 @@ const styles = StyleSheet.create({
         marginLeft: 6,
     },
 
+    // ═══ KCAL BIG INPUT ═══
+    kcalBigContainer: {
+        marginBottom: 16,
+    },
+    kcalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    kcalEmoji: {
+        fontSize: 20,
+        marginRight: 8,
+    },
+    kcalLabel: {
+        color: '#E5E7EB',
+        fontSize: 18,
+        fontWeight: '700',
+        flex: 1,
+    },
+    kcalPercentage: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    kcalInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    kcalInput: {
+        maxWidth: '80%',
+        flex: 1,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        color: '#FFF',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 10,
+        fontSize: 24,
+        fontWeight: '700',
+        textAlign: 'center',
+        borderWidth: 2,
+    },
+    kcalUnit: {
+        color: '#9CA3AF',
+        fontSize: 16,
+        marginLeft: 10,
+        fontWeight: '600',
+    },
+    kcalProgressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+        gap: 8,
+    },
+    kcalProgressBg: {
+        flex: 1,
+        height: 6,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    kcalProgressFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    kcalTargetText: {
+        color: '#9CA3AF',
+        fontSize: 12,
+    },
+
+    // ═══ COMPACT MACRO INPUT ═══
+    compactMacrosRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 16,
+    },
+    compactMacroItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    compactMacroEmoji: {
+        fontSize: 16,
+        marginBottom: 4,
+    },
+    compactMacroInput: {
+        width: '100%',
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        color: '#FFF',
+        paddingHorizontal: 8,
+        paddingVertical: 10,
+        borderRadius: 8,
+        fontSize: 16,
+        fontWeight: '600',
+        textAlign: 'center',
+        borderWidth: 2,
+    },
+    compactMacroLabel: {
+        color: '#9CA3AF',
+        fontSize: 10,
+        marginTop: 4,
+        fontWeight: '600',
+    },
+
     // Save Button
     saveBtn: {
         flexDirection: 'row',
@@ -1291,5 +1987,296 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: '700',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ESTILOS DATOS MÍNIMOS
+    // ═══════════════════════════════════════════════════════════════════════════
+    minimalDataCard: {
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.3)',
+        padding: 18,
+        marginBottom: 20,
+    },
+    minimalDataHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        gap: 10,
+    },
+    minimalDataIcon: {
+        fontSize: 24,
+    },
+    minimalDataTitle: {
+        color: '#E5E7EB',
+        fontSize: 20,
+        fontWeight: '700',
+        flex: 1,
+    },
+    savedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    savedBadgeText: {
+        color: '#10B981',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    loadingContainer: {
+        alignItems: 'center',
+        paddingVertical: 30,
+        gap: 10,
+    },
+    loadingText: {
+        color: '#9CA3AF',
+        fontSize: 14,
+    },
+    minimalInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        padding: 12,
+        borderRadius: 10,
+    },
+    minimalInputLabel: {
+        color: '#E5E7EB',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    minimalInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    minimalNumberInput: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        color: '#FFF',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 8,
+        fontSize: 18,
+        minWidth: 80,
+        textAlign: 'center',
+        fontWeight: '600',
+    },
+    minimalInputSuffix: {
+        color: '#9CA3AF',
+        marginLeft: 8,
+        fontSize: 14,
+    },
+    macrosSectionTitle: {
+        color: '#9CA3AF',
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 12,
+        marginTop: 4,
+    },
+    macrosGrid: {
+        gap: 12,
+    },
+    minimalSaveBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#3B82F6',
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginTop: 16,
+        gap: 8,
+        shadowColor: '#3B82F6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    minimalSaveBtnSaved: {
+        backgroundColor: '#10B981',
+    },
+    minimalSaveBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ESTILOS MACRO SQUARES INPUT
+    // ═══════════════════════════════════════════════════════════════════════════
+    macroSquaresContainer: {
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 12,
+        padding: 14,
+    },
+    macroSquaresHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+        gap: 8,
+    },
+    macroSquaresEmoji: {
+        fontSize: 18,
+    },
+    macroSquaresLabel: {
+        color: '#E5E7EB',
+        fontSize: 14,
+        fontWeight: '600',
+        flex: 1,
+    },
+    macroSquaresTarget: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    macroSquaresRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    squaresContainer: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    macroSquare: {
+        width: 28,
+        height: 28,
+        borderRadius: 6,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+    },
+    macroSquarePartial: {
+        height: '100%',
+        borderRadius: 5,
+    },
+    macroInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    macroNumberInput: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        color: '#FFF',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        fontSize: 16,
+        minWidth: 70,
+        textAlign: 'center',
+        fontWeight: '600',
+        borderWidth: 2,
+    },
+    macroUnit: {
+        color: '#9CA3AF',
+        marginLeft: 6,
+        fontSize: 12,
+    },
+    macroTargetText: {
+        color: '#6B7280',
+        fontSize: 11,
+        marginTop: 8,
+        textAlign: 'right',
+    },
+
+    // ═══ CALENDARIO MENSUAL ═══
+    calendarContainer: {
+        marginTop: 20,
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        borderRadius: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    calendarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    calendarArrow: {
+        padding: 8,
+    },
+    calendarMonthText: {
+        color: '#E5E7EB',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    calendarWeekHeader: {
+        flexDirection: 'row',
+        marginBottom: 8,
+    },
+    calendarWeekDay: {
+        flex: 1,
+        textAlign: 'center',
+        color: '#6B7280',
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    calendarGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    calendarDayCell: {
+        width: '14.28%',
+        aspectRatio: 1,
+        padding: 2,
+    },
+    calendarDay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    calendarDayToday: {
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+        borderWidth: 1,
+        borderColor: '#3B82F6',
+    },
+    calendarDayText: {
+        color: '#9CA3AF',
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    calendarDayTextToday: {
+        color: '#3B82F6',
+        fontWeight: '700',
+    },
+    calendarIndicators: {
+        flexDirection: 'row',
+        gap: 2,
+        marginTop: 2,
+    },
+    calendarDotDaily: {
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
+        backgroundColor: '#10B981',
+    },
+    calendarDotWeekly: {
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
+        backgroundColor: '#8B5CF6',
+    },
+    calendarLegend: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 16,
+        marginTop: 10,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+    },
+    calendarLegendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    calendarLegendText: {
+        color: '#6B7280',
+        fontSize: 10,
     },
 });

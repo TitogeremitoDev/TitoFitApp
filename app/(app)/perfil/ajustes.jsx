@@ -706,39 +706,89 @@ export default function AjustesScreen() {
                   const isExpanded = expandedSections[option.section] || false;
                   const isBasicSection = option.section === 'Básicos';
 
+                  // Mostrar título de Tienda de Temas antes de la sección Monsters (primera sección de temas comprables)
+                  const showStoreHeader = option.section === 'Monsters';
+
                   return (
-                    <TouchableOpacity
-                      key={`section-${option.section}`}
-                      onPress={() => !isBasicSection && toggleSection(option.section)}
-                      activeOpacity={isBasicSection ? 1 : 0.7}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginTop: index === 0 ? 8 : 20,
-                        marginBottom: 8,
-                        paddingHorizontal: 4,
-                      }}
-                    >
-                      <Text
+                    <React.Fragment key={`section-${option.section}`}>
+                      {showStoreHeader && (
+                        <View style={{
+                          marginTop: 24,
+                          marginBottom: 12,
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          backgroundColor: `${theme.primary}15`,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: `${theme.primary}30`,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 8,
+                        }}>
+                          <Text style={{ fontSize: 20 }}>🏪</Text>
+                          <Text style={{
+                            color: theme.primary,
+                            fontWeight: '700',
+                            fontSize: 16,
+                            letterSpacing: 0.5,
+                          }}>
+                            Tienda de Temas
+                          </Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => !isBasicSection && toggleSection(option.section)}
+                        activeOpacity={isBasicSection ? 1 : 0.7}
                         style={{
-                          color: theme.textSecondary,
-                          fontWeight: '700',
-                          fontSize: 12,
-                          textTransform: 'uppercase',
-                          letterSpacing: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginTop: isBasicSection ? 8 : 6,
+                          marginBottom: 10,
+                          paddingHorizontal: 14,
+                          paddingVertical: isBasicSection ? 4 : 12,
+                          backgroundColor: isBasicSection ? 'transparent' : `${theme.background}`,
+                          borderRadius: isBasicSection ? 0 : 10,
+                          borderWidth: isBasicSection ? 0 : 1,
+                          borderColor: isBasicSection ? 'transparent' : theme.border,
                         }}
                       >
-                        {option.section}
-                      </Text>
-                      {!isBasicSection && (
-                        <Ionicons
-                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                          size={18}
-                          color={theme.textSecondary}
-                        />
-                      )}
-                    </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          {!isBasicSection && (
+                            <Ionicons
+                              name="pricetag"
+                              size={16}
+                              color={theme.textSecondary}
+                            />
+                          )}
+                          <Text
+                            style={{
+                              color: isBasicSection ? theme.textSecondary : theme.text,
+                              fontWeight: '700',
+                              fontSize: isBasicSection ? 12 : 14,
+                              textTransform: 'uppercase',
+                              letterSpacing: 1,
+                            }}
+                          >
+                            {option.section}
+                          </Text>
+                        </View>
+                        {!isBasicSection && (
+                          <View style={{
+                            backgroundColor: `${theme.primary}20`,
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                          }}>
+                            <Ionicons
+                              name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                              size={16}
+                              color={theme.primary}
+                            />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </React.Fragment>
                   );
                 }
 

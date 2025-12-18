@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -178,12 +179,12 @@ const ExerciseCard = React.memo(({
             <Text style={styles.inlineLabel}>Ejercicio</Text>
             <View style={[styles.pickerWrapper, { flex: 1 }]}>
               <Picker
-                selectedValue={item.dbId || exercises.find(e => e.name === item.nombre && e.muscle === item.musculo)?._id || ''}
+                selectedValue={item.dbId || ''}
                 onValueChange={(val) => onExerciseChange(diaKey, item.id, val)}
                 style={styles.picker}
                 enabled={!!item.musculo}
               >
-                <Picker.Item label={item.musculo ? "Seleccionar..." : "Primero selecciona músculo"} value="" />
+                <Picker.Item label={item.musculo ? (item.nombre || "Seleccionar...") : "Primero selecciona músculo"} value="" />
                 {exercises.filter(e => e.muscle === item.musculo).map(e => (
                   <Picker.Item key={e._id} label={e.name} value={e._id} />
                 ))}
@@ -233,8 +234,9 @@ const ExerciseCard = React.memo(({
 /* ───────────────────────── Main Component ───────────────────────── */
 export default function CreateRoutineScreen() {
   const router = useRouter();
-  const { id, name, days: paramDays } = useLocalSearchParams();
-  const { token ,user} = useAuth();
+  // 🆕 Añadir parámetros para CurrentRoutine
+  const { id, currentRoutineId, isCurrentRoutine, clientId, clientName, name, days: paramDays } = useLocalSearchParams();
+  const { token, user } = useAuth();
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   const [routineName, setRoutineName] = useState(name || '');
@@ -242,6 +244,12 @@ export default function CreateRoutineScreen() {
   const [rutina, setRutina] = useState({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 🆕 Estado para CurrentRoutine
+  const [editingCurrentRoutineId, setEditingCurrentRoutineId] = useState(currentRoutineId || null);
+  const [editingClientInfo, setEditingClientInfo] = useState(
+    clientId ? { id: clientId, name: clientName } : null
+  );
 
   const [diasAbiertos, setDiasAbiertos] = useState({});
   const [openSet, setOpenSet] = useState(new Set());
@@ -256,11 +264,19 @@ export default function CreateRoutineScreen() {
 
   const isFirstLoad = useRef(true);
 
+  // 🆕 Estado para modal de confirmación al modificar CurrentRoutine
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [pendingSaveData, setPendingSaveData] = useState(null);
+
   /* ───────── Initial Load ───────── */
   useEffect(() => {
     fetchMuscles();
     fetchAllExercises();
-    if (id) {
+
+    // 🆕 Si hay currentRoutineId, cargar desde CurrentRoutines API
+    if (currentRoutineId && isCurrentRoutine === 'true') {
+      loadCurrentRoutine(currentRoutineId);
+    } else if (id) {
       loadRoutine(id);
     } else {
       const init = normalizeRoutine({});
@@ -273,7 +289,39 @@ export default function CreateRoutineScreen() {
     setTimeout(() => {
       isFirstLoad.current = false;
     }, 500);
-  }, [id]);
+  }, [id, currentRoutineId]);
+
+  // 🆕 Función para cargar CurrentRoutine (rutina asignada a cliente)
+  const loadCurrentRoutine = async (crId) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/current-routines/${crId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        Alert.alert('Error', 'No se pudo cargar la rutina del cliente');
+        return;
+      }
+
+      const data = await response.json();
+      if (data.success && data.routine) {
+        processRoutineData(data.routine);
+        setEditingCurrentRoutineId(crId);
+        if (data.routine.userId) {
+          setEditingClientInfo({
+            id: data.routine.userId._id || data.routine.userId,
+            name: data.routine.userId.nombre || clientName || 'Cliente'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading CurrentRoutine:', error);
+      Alert.alert('Error', 'Error de conexión al cargar rutina del cliente');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchMuscles = async () => {
     try {
@@ -679,65 +727,145 @@ export default function CreateRoutineScreen() {
   }, []);
 
   /* ───────── Save ───────── */
-const handleSaveRoutine = async () => {
-  if (!routineName.trim()) {
-    Alert.alert('Error', 'Ingresa un nombre para la rutina');
-    return;
-  }
+  const handleSaveRoutine = async () => {
+    if (!routineName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la rutina');
+      return;
+    }
 
-  setSaving(true);
-  try {
-    const isFreeUser = user?.tipoUsuario === 'FREEUSER';
-    
-    if (isFreeUser) {
-      // GUARDADO LOCAL para usuarios FREE
-      await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
-      
-      // Actualizar metadatos en la lista 'rutinas'
-      const storedRutinas = await AsyncStorage.getItem('rutinas');
-      if (storedRutinas) {
-        let rutinasList = JSON.parse(storedRutinas);
-        const exists = rutinasList.find(r => r.id === id);
-        if (exists) {
-          rutinasList = rutinasList.map(r => 
-            r.id === id ? { ...r, nombre: routineName, updatedAt: new Date().toISOString() } : r
-          );
-        } else {
-          rutinasList.push({
-            id: id,
-            nombre: routineName,
-            origen: 'local',
-            updatedAt: new Date().toISOString(),
-            folder: null
-          });
+    setSaving(true);
+    try {
+      const isFreeUser = user?.tipoUsuario === 'FREEUSER';
+
+      if (isFreeUser) {
+        // GUARDADO LOCAL para usuarios FREE
+        await AsyncStorage.setItem(`routine_${id}`, JSON.stringify(rutina));
+
+        // Actualizar metadatos en la lista 'rutinas'
+        const storedRutinas = await AsyncStorage.getItem('rutinas');
+        if (storedRutinas) {
+          let rutinasList = JSON.parse(storedRutinas);
+          const exists = rutinasList.find(r => r.id === id);
+          if (exists) {
+            rutinasList = rutinasList.map(r =>
+              r.id === id ? { ...r, nombre: routineName, updatedAt: new Date().toISOString() } : r
+            );
+          } else {
+            rutinasList.push({
+              id: id,
+              nombre: routineName,
+              origen: 'local',
+              updatedAt: new Date().toISOString(),
+              folder: null
+            });
+          }
+          await AsyncStorage.setItem('rutinas', JSON.stringify(rutinasList));
         }
-        await AsyncStorage.setItem('rutinas', JSON.stringify(rutinasList));
-      }
-      
-      Alert.alert('Éxito', 'Rutina guardada localmente');
-      router.back();
-    } else {
-      // GUARDADO EN MONGODB para usuarios PREMIUM/CLIENTE
-      const daysArray = [];
-      const entries = Object.entries(rutina);
-      for (let i = 0; i < entries.length; i++) {
-        daysArray.push(entries[i][1] || []);
-      }
 
+        Alert.alert('Éxito', 'Rutina guardada localmente');
+        router.back();
+      } else if (editingCurrentRoutineId) {
+        // 🆕 Mostrar modal de confirmación para elegir reiniciar o mantener datos
+        const daysArray = [];
+        const entries = Object.entries(rutina);
+        for (let i = 0; i < entries.length; i++) {
+          daysArray.push(entries[i][1] || []);
+        }
+
+        const payload = {
+          nombre: routineName,
+          dias: entries.length,
+          diasArr: daysArray,
+          isModified: true
+        };
+
+        // Guardar datos pendientes y mostrar modal
+        setPendingSaveData(payload);
+        setShowResetModal(true);
+        setSaving(false);
+        return; // Salir aquí, el guardado real se hace en executeCurrentRoutineSave
+      } else {
+        // GUARDADO EN MONGODB para usuarios PREMIUM/CLIENTE (rutinas propias)
+        const daysArray = [];
+        const entries = Object.entries(rutina);
+        for (let i = 0; i < entries.length; i++) {
+          daysArray.push(entries[i][1] || []);
+        }
+
+        const payload = {
+          nombre: routineName,
+          dias: entries.length,
+          diasArr: daysArray,
+          division: 'Personalizada',
+          enfoque: 'General',
+          nivel: 'Intermedio'
+        };
+
+        const endpoint = id ? `${API_URL}/api/routines/${id}` : `${API_URL}/api/routines`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(endpoint, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 404 && id) {
+          const retryResponse = await fetch(`${API_URL}/api/routines`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+          });
+          const retryData = await retryResponse.json();
+
+          if (retryData.success) {
+            Alert.alert('Éxito', 'Rutina creada como nueva en la nube');
+            router.back();
+            return;
+          } else {
+            Alert.alert('Error', retryData.message || 'Error al guardar');
+            return;
+          }
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+          Alert.alert('Éxito', 'Rutina guardada en la nube');
+          router.back();
+        } else {
+          Alert.alert('Error', data.message || 'Error al guardar');
+        }
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      Alert.alert('Error', 'Error al guardar la rutina');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 🆕 Función para ejecutar el guardado de CurrentRoutine después de elegir en el modal
+  const executeCurrentRoutineSave = async (resetWorkouts) => {
+    if (!pendingSaveData) return;
+
+    setShowResetModal(false);
+    setSaving(true);
+
+    try {
       const payload = {
-        nombre: routineName,
-        dias: entries.length,
-        diasArr: daysArray,
-        division: 'Personalizada',
-        enfoque: 'General',
-        nivel: 'Intermedio'
+        ...pendingSaveData,
+        resetWorkouts // Enviar al backend si debe reiniciar los workouts
       };
 
-      const endpoint = id ? `${API_URL}/api/routines/${id}` : `${API_URL}/api/routines`;
-      const method = id ? 'PUT' : 'POST';
-
-      const response = await fetch(endpoint, {
-        method,
+      const response = await fetch(`${API_URL}/api/current-routines/${editingCurrentRoutineId}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
@@ -745,43 +873,26 @@ const handleSaveRoutine = async () => {
         body: JSON.stringify(payload)
       });
 
-      if (response.status === 404 && id) {
-        const retryResponse = await fetch(`${API_URL}/api/routines`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const retryData = await retryResponse.json();
-
-        if (retryData.success) {
-          Alert.alert('Éxito', 'Rutina creada como nueva en la nube');
-          router.back();
-          return;
-        } else {
-          Alert.alert('Error', retryData.message || 'Error al guardar');
-          return;
-        }
-      }
-
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert('Éxito', 'Rutina guardada en la nube');
+        const clientName = editingClientInfo?.name || 'cliente';
+        const message = resetWorkouts
+          ? `Rutina de ${clientName} actualizada. Datos de entrenamientos reiniciados.`
+          : `Rutina de ${clientName} actualizada. Datos de entrenamientos anteriores conservados.`;
+        Alert.alert('Éxito', message);
         router.back();
       } else {
-        Alert.alert('Error', data.message || 'Error al guardar');
+        Alert.alert('Error', data.message || 'Error al actualizar la rutina del cliente');
       }
+    } catch (error) {
+      console.error('Save CurrentRoutine error:', error);
+      Alert.alert('Error', 'Error al guardar la rutina');
+    } finally {
+      setSaving(false);
+      setPendingSaveData(null);
     }
-  } catch (error) {
-    console.error('Save error:', error);
-    Alert.alert('Error', 'Error al guardar la rutina');
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   /* ───────── Sections ───────── */
   const sections = useMemo(() => {
@@ -960,19 +1071,63 @@ const handleSaveRoutine = async () => {
               onPress={handleSaveRoutine}
               disabled={saving}
             >
-                    {user?.tipoUsuario === 'FREEUSER' && (
-        <View style={styles.warningContainer}>
-          <Ionicons name="warning-outline" size={16} color="#f59e0b" />
-          <Text style={styles.warningText}>
-            Modo FREE: Las rutinas se guardan solo en este dispositivo. Pasa a Premium para sincronizar en la nube.
-          </Text>
-        </View>
-      )}
+              {user?.tipoUsuario === 'FREEUSER' && (
+                <View style={styles.warningContainer}>
+                  <Ionicons name="warning-outline" size={16} color="#f59e0b" />
+                  <Text style={styles.warningText}>
+                    Modo FREE: Las rutinas se guardan solo en este dispositivo. Pasa a Premium para sincronizar en la nube.
+                  </Text>
+                </View>
+              )}
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Rutina</Text>}
             </TouchableOpacity>
           </View>
         }
       />
+
+      {/* 🆕 Modal de confirmación para reiniciar/mantener datos */}
+      <Modal
+        visible={showResetModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowResetModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>¿Qué deseas hacer con los datos de entrenamientos?</Text>
+            <Text style={styles.modalDescription}>
+              Esta rutina tiene entrenamientos guardados. Puedes reiniciar todos los datos o mantener los datos de ejercicios que sigan existiendo.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonKeep]}
+              onPress={() => executeCurrentRoutineSave(false)}
+            >
+              <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+              <Text style={styles.modalButtonText}>Mantener datos compatibles</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonReset]}
+              onPress={() => executeCurrentRoutineSave(true)}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#fff" />
+              <Text style={styles.modalButtonText}>Reiniciar todos los datos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButtonCancel}
+              onPress={() => {
+                setShowResetModal(false);
+                setPendingSaveData(null);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1231,7 +1386,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-    warningContainer: {
+  warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fffbeb',
@@ -1247,5 +1402,65 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#92400e',
     lineHeight: 16,
+  },
+  // 🆕 Estilos del modal de confirmación
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    width: '100%',
+    marginBottom: 10,
+  },
+  modalButtonKeep: {
+    backgroundColor: '#10b981',
+  },
+  modalButtonReset: {
+    backgroundColor: '#ef4444',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonCancel: {
+    marginTop: 8,
+    paddingVertical: 10,
+  },
+  modalCancelText: {
+    color: '#94a3b8',
+    fontSize: 14,
   },
 });

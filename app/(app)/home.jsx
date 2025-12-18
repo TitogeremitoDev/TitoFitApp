@@ -275,6 +275,10 @@ export default function HomeScreen() {
             <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" />
           </Link>
           <View style={{ height: 10 }} />
+          <Link href="/nutricion" asChild>
+            <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
+          </Link>
+          <View style={{ height: 10 }} />
           <ActionButton
             title="Perfil"
             icon="person-outline"
@@ -398,7 +402,7 @@ const BORDER = 'rgba(255,255,255,0.18)';
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  contentContainer: { width: '86%', alignItems: 'center' },
+  contentContainer: { width: '86%', alignItems: 'center' ,bottom: -20},
   blob: {
     position: 'absolute',
     width: 280,

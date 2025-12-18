@@ -875,26 +875,28 @@ export default function PaymentScreen() {
           ))}
         </View>
 
-        {/* SECCIÓN 4: COACHING (HIGH TICKET UPSELL) */}
-        <LinearGradient
-          colors={['#FCD34D', '#F59E0B']}
-          style={styles.coachingCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.coachingHeader}>
-            <Text style={styles.coachingTitle}>
-              🔥 ¿Quieres resultados garantizados?
+        {/* SECCIÓN 4: COACHING (HIGH TICKET UPSELL) - Solo para atletas */}
+        {userType !== 'coach' && (
+          <LinearGradient
+            colors={['#FCD34D', '#F59E0B']}
+            style={styles.coachingCard}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.coachingHeader}>
+              <Text style={styles.coachingTitle}>
+                🔥 ¿Quieres resultados garantizados?
+              </Text>
+            </View>
+            <Text style={styles.coachingDesc}>
+              Coaching personalizado 1:1 con seguimiento semanal, plan de nutrición y
+              asesoramiento directo conmigo.
             </Text>
-          </View>
-          <Text style={styles.coachingDesc}>
-            Coaching personalizado 1:1 con seguimiento semanal, plan de nutrición y
-            asesoramiento directo conmigo.
-          </Text>
-          <Pressable onPress={openCoaching} style={styles.coachingButton}>
-            <Text style={styles.coachingBtnText}>CONSULTAR DISPONIBILIDAD</Text>
-          </Pressable>
-        </LinearGradient>
+            <Pressable onPress={openCoaching} style={styles.coachingButton}>
+              <Text style={styles.coachingBtnText}>CONSULTAR DISPONIBILIDAD</Text>
+            </Pressable>
+          </LinearGradient>
+        )}
 
         {/* SECCIÓN 5: MÉTODOS DE PAGO */}
         <View style={styles.paymentSection}>

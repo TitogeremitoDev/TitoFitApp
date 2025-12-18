@@ -20,6 +20,7 @@ import axios from 'axios';
 
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -51,13 +52,14 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, loginWithApple } = useAuth();
 
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
   const [secure, setSecure] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
 
   const processedResponseRef = useRef<string | null>(null); // ✅ Para trackear respuestas ya procesadas
   const urlTokenProcessedRef = useRef(false); // ✅ Para evitar procesar URL token múltiples veces
@@ -356,18 +358,89 @@ export default function LoginScreen() {
   }, [response]); // ✅ Solo depende de 'response', NO de loginWithGoogle
 
   // ════════════════════════════════════════════════════════════════════════
-  // PLACEHOLDERS PARA OTROS PROVIDERS
+  // LOGIN CON APPLE (SOLO iOS)
   // ════════════════════════════════════════════════════════════════════════
 
-  const socialSoon = (provider: string) => {
-    Alert.alert('Próximamente', `Inicio de sesión con ${provider} aún no disponible.`);
+  const handleAppleLogin = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('No disponible', 'Sign in with Apple solo está disponible en iOS');
+      return;
+    }
+
+    try {
+      setIsAppleLoading(true);
+
+      if (__DEV__) {
+        console.log('[Login] Iniciando Apple Login...');
+      }
+
+      // Verificar si Apple Auth está disponible
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('No disponible', 'Sign in with Apple no está disponible en este dispositivo');
+        setIsAppleLoading(false);
+        return;
+      }
+
+      // Solicitar credenciales de Apple
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (__DEV__) {
+        console.log('[Login] Credencial Apple recibida:', {
+          user: credential.user,
+          email: credential.email,
+          fullName: credential.fullName,
+          hasIdentityToken: !!credential.identityToken,
+        });
+      }
+
+      if (!credential.identityToken) {
+        Alert.alert('Error', 'No se recibió token de identidad de Apple');
+        setIsAppleLoading(false);
+        return;
+      }
+
+      // Enviar al backend
+      await loginWithApple(credential.identityToken, credential.fullName);
+
+      if (__DEV__) {
+        console.log('[Login] Login con Apple completado exitosamente');
+      }
+    } catch (e: any) {
+      console.error('[Login] Error en Apple Login:', e);
+
+      // Si el usuario cancela, no mostrar error
+      if (e.code === 'ERR_REQUEST_CANCELED') {
+        if (__DEV__) {
+          console.log('[Login] Usuario canceló el login de Apple');
+        }
+        setIsAppleLoading(false);
+        return;
+      }
+
+      let msg = 'No se pudo iniciar sesión con Apple';
+      if (axios.isAxiosError(e)) {
+        msg = e.response?.data?.message || e.message || msg;
+      } else if (e instanceof Error) {
+        msg = e.message;
+      }
+
+      Alert.alert('Error', msg);
+    } finally {
+      setIsAppleLoading(false);
+    }
   };
 
   // ════════════════════════════════════════════════════════════════════════
   // RENDER UI
   // ════════════════════════════════════════════════════════════════════════
 
-  const isLoading = isSubmitting || isGoogleLoading;
+  const isLoading = isSubmitting || isGoogleLoading || isAppleLoading;
 
   return (
     <LinearGradient colors={['#0B1220', '#0D1B2A', '#111827']} style={styles.bg}>
@@ -466,12 +539,18 @@ export default function LoginScreen() {
 
               {Platform.OS === 'ios' && (
                 <Pressable
-                  style={[styles.socialBtn, styles.apple]}
-                  onPress={() => socialSoon('Apple')}
+                  style={[styles.socialBtn, styles.apple, isAppleLoading && { opacity: 0.7 }]}
+                  onPress={handleAppleLogin}
                   disabled={isLoading}
                 >
-                  <Ionicons name="logo-apple" size={18} color="#111827" />
-                  <Text style={[styles.socialTxt, { color: '#111827' }]}>Apple</Text>
+                  {isAppleLoading ? (
+                    <ActivityIndicator size="small" color="#111827" />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-apple" size={18} color="#111827" />
+                      <Text style={[styles.socialTxt, { color: '#111827' }]}>Apple</Text>
+                    </>
+                  )}
                 </Pressable>
               )}
             </View>

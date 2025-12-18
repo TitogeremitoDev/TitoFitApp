@@ -1,164 +1,822 @@
 // src/data/premiumRoutines.js
 // ⚠️ IMPORTANTE: Este archivo contiene SOLO rutinas PREMIUM
 
-// --- DATOS DE EJERCICIOS PREMIUM ---
-
-// Rutina Premium 1: Torso-Pierna Avanzada (4 días)
-const TORSO_PIERNA_AVANZADA_DATA = [
-  // Día 1 - Torso Superior (Empuje dominante)
-  [
-    { id: 'prem_tp_1_1', musculo: 'PECTORAL', nombre: 'Press Banca Inclinado con Barra', series: [ { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '8', repMax: '10', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_1_2', musculo: 'PECTORAL', nombre: 'Press Plano con Mancuernas', series: [ { repMin: '8', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '10', extra: 'Ninguno' }, { repMin: '10', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_1_3', musculo: 'HOMBRO', nombre: 'Press Arnold', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_1_4', musculo: 'HOMBRO', nombre: 'Elevaciones Laterales con Disco', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_1_5', musculo: 'TRÍCEPS', nombre: 'Fondos en Paralelas', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 2 - Pierna Completa
-  [
-    { id: 'prem_tp_2_1', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla Frontal', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_2_2', musculo: 'GLÚTEOS', nombre: 'Hip Thrust con Barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_2_3', musculo: 'ISQUIOS', nombre: 'Peso Muerto Piernas Rígidas', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_2_4', musculo: 'CUÁDRICEPS', nombre: 'Prensa a Una Pierna', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_2_5', musculo: 'GEMELOS', nombre: 'Gemelo de Pie con Barra', series: [ { repMin: '12', repMax: '20', extra: 'Ninguno' }, { repMin: '12', repMax: '20', extra: 'Ninguno' } ] },
-  ],
-  // Día 3 - Torso Superior (Tirón dominante)
-  [
-    { id: 'prem_tp_3_1', musculo: 'ESPALDA', nombre: 'Dominadas Lastradas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_3_2', musculo: 'ESPALDA', nombre: 'Remo Pendlay', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_3_3', musculo: 'ESPALDA', nombre: 'Pullover con Mancuerna', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_3_4', musculo: 'HOMBRO POSTERIOR', nombre: 'Face Pulls con Cuerda', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_3_5', musculo: 'BÍCEPS', nombre: 'Curl Martillo Alterno', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 4 - Pierna + Core
-  [
-    { id: 'prem_tp_4_1', musculo: 'CUÁDRICEPS', nombre: 'Zancadas Caminando con Barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_4_2', musculo: 'ISQUIOS', nombre: 'Good Morning', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_4_3', musculo: 'GLÚTEOS', nombre: 'Patada de Glúteo en Polea', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_4_4', musculo: 'ABDOMEN', nombre: 'Ab Wheel Rollout', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_tp_4_5', musculo: 'OBLICUOS', nombre: 'Pallof Press', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-];
-
-// Rutina Premium 2: Push/Pull/Legs Avanzado (6 días)
-const PPL_AVANZADO_DATA = [
-  // Día 1 - Push 1
-  [
-    { id: 'prem_ppl_1_1', musculo: 'PECTORAL', nombre: 'Press Banca Plano Pausa', series: [ { repMin: '4', repMax: '6', extra: 'Ninguno' }, { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '8', repMax: '10', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_1_2', musculo: 'HOMBRO', nombre: 'Press Militar de Pie', series: [ { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '8', repMax: '10', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_1_3', musculo: 'PECTORAL', nombre: 'Aperturas en Banco Inclinado', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_1_4', musculo: 'TRÍCEPS', nombre: 'Press Cerrado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 2 - Pull 1
-  [
-    { id: 'prem_ppl_2_1', musculo: 'ESPALDA', nombre: 'Peso Muerto Convencional', series: [ { repMin: '4', repMax: '6', extra: 'Ninguno' }, { repMin: '6', repMax: '8', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_2_2', musculo: 'DORSALES', nombre: 'Dominadas Supinas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_2_3', musculo: 'ESPALDA', nombre: 'Remo con Barra', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_2_4', musculo: 'BÍCEPS', nombre: 'Curl con Barra Z', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 3 - Legs 1
-  [
-    { id: 'prem_ppl_3_1', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla Baja Barra', series: [ { repMin: '4', repMax: '6', extra: 'Ninguno' }, { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '8', repMax: '10', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_3_2', musculo: 'ISQUIOS', nombre: 'Curl Femoral Acostado', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_3_3', musculo: 'CUÁDRICEPS', nombre: 'Hack Squat', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_3_4', musculo: 'GEMELOS', nombre: 'Gemelo Sentado', series: [ { repMin: '15', repMax: '20', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-  ],
-  // Día 4 - Push 2 (volumen)
-  [
-    { id: 'prem_ppl_4_1', musculo: 'HOMBRO', nombre: 'Press con Mancuernas Sentado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_4_2', musculo: 'PECTORAL', nombre: 'Press Inclinado Máquina', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_4_3', musculo: 'HOMBRO', nombre: 'Elevaciones Laterales Cuerda', series: [ { repMin: '12', repMax: '20', extra: 'Ninguno' }, { repMin: '12', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_4_4', musculo: 'TRÍCEPS', nombre: 'Extensión Polea Alta Cuerda', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-  ],
-  // Día 5 - Pull 2 (volumen)
-  [
-    { id: 'prem_ppl_5_1', musculo: 'DORSALES', nombre: 'Jalón Agarre Amplio', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_5_2', musculo: 'ESPALDA', nombre: 'Remo en Máquina Apoyado', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_5_3', musculo: 'TRAPECIO', nombre: 'Encogimientos con Barra', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_5_4', musculo: 'BÍCEPS', nombre: 'Curl Concentrado', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 6 - Legs 2 (volumen)
-  [
-    { id: 'prem_ppl_6_1', musculo: 'CUÁDRICEPS', nombre: 'Prensa 45°', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_6_2', musculo: 'GLÚTEOS', nombre: 'Hip Thrust Máquina', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_6_3', musculo: 'CUÁDRICEPS', nombre: 'Extensión de Rodilla', series: [ { repMin: '15', repMax: '20', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_ppl_6_4', musculo: 'ABDOMEN', nombre: 'Elevación de Piernas', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-];
-
-// Rutina Premium 3: Powerbuilding 5 días
-const POWERBUILDING_5_DATA = [
-  // Día 1 - Fuerza Press Banca
-  [
-    { id: 'prem_pb_1_1', musculo: 'PECTORAL', nombre: 'Press Banca Competición', series: [ { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '5', repMax: '8', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_1_2', musculo: 'PECTORAL', nombre: 'Press Inclinado Mancuernas', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_1_3', musculo: 'TRÍCEPS', nombre: 'JM Press', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_1_4', musculo: 'HOMBRO', nombre: 'Press Militar Sentado', series: [ { repMin: '8', repMax: '12', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 2 - Fuerza Sentadilla
-  [
-    { id: 'prem_pb_2_1', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla Competición', series: [ { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '5', repMax: '8', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_2_2', musculo: 'CUÁDRICEPS', nombre: 'Sentadilla Pausa', series: [ { repMin: '6', repMax: '8', extra: 'Ninguno' }, { repMin: '6', repMax: '8', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_2_3', musculo: 'CUÁDRICEPS', nombre: 'Prensa', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '10', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_2_4', musculo: 'ISQUIOS', nombre: 'Femoral Tumbado', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 3 - Fuerza Peso Muerto
-  [
-    { id: 'prem_pb_3_1', musculo: 'ESPALDA', nombre: 'Peso Muerto Convencional', series: [ { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '3', repMax: '5', extra: 'Ninguno' }, { repMin: '5', repMax: '8', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_3_2', musculo: 'ESPALDA', nombre: 'Remo Pendlay', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_3_3', musculo: 'DORSALES', nombre: 'Dominadas Lastradas', series: [ { repMin: '6', repMax: '10', extra: 'Ninguno' }, { repMin: '8', repMax: '12', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_3_4', musculo: 'BÍCEPS', nombre: 'Curl con Barra', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-  ],
-  // Día 4 - Hipertrofia Superior
-  [
-    { id: 'prem_pb_4_1', musculo: 'PECTORAL', nombre: 'Press Máquina Convergente', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_4_2', musculo: 'ESPALDA', nombre: 'Jalón Agarre Neutro', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_4_3', musculo: 'HOMBRO', nombre: 'Elevaciones Laterales', series: [ { repMin: '12', repMax: '20', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_4_4', musculo: 'TRÍCEPS', nombre: 'Extensión Polea', series: [ { repMin: '15', repMax: '20', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-  ],
-  // Día 5 - Hipertrofia Inferior
-  [
-    { id: 'prem_pb_5_1', musculo: 'CUÁDRICEPS', nombre: 'Hack Squat', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_5_2', musculo: 'GLÚTEOS', nombre: 'Hip Thrust', series: [ { repMin: '10', repMax: '15', extra: 'Ninguno' }, { repMin: '12', repMax: '15', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_5_3', musculo: 'ISQUIOS', nombre: 'Curl Femoral Sentado', series: [ { repMin: '12', repMax: '15', extra: 'Ninguno' }, { repMin: '15', repMax: '20', extra: 'Ninguno' } ] },
-    { id: 'prem_pb_5_4', musculo: 'GEMELOS', nombre: 'Gemelo en Prensa', series: [ { repMin: '15', repMax: '25', extra: 'Ninguno' }, { repMin: '20', repMax: '25', extra: 'Ninguno' } ] },
-  ],
-];
-
-// --- ARRAY PRINCIPAL DE RUTINAS PREMIUM ---
 export const premiumRoutines = [
   {
-    id: 'premium_torso_pierna_avanzada',
-    nombre: 'Torso-Pierna Avanzada Pro',
-    dias: 4,
-    fecha: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    division: 'Torso/Pierna',
-    enfoque: 'Hipertrofia Avanzada',
-    nivel: 'Avanzado',
-    diasArr: TORSO_PIERNA_AVANZADA_DATA
+    id: 'premium_8d_avanz_4d4d',
+    nombre: "RUT 8D AVANZ 4D+4D",
+    dias: 10,
+    diasArr: [
+      // DÍA 1 - Pierna Cuádriceps/Isquios
+      [
+        {
+          code: "cuad_hack_squat", musculo: "CUÁDRICEPS", nombre: "Hack Squat", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        },
+        {
+          code: "isq_buenos_dias_mp", musculo: "ISQUIOS", nombre: "Buenos Dias Multipower", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "isq_rumano_mancuernas", musculo: "ISQUIOS", nombre: "Rumano Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_prensa", musculo: "CUÁDRICEPS", nombre: "Prensa", series: [
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "adu_aductor_maq", musculo: "ADUCTORES", nombre: "Aductor Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "isq_femoral_sentado", musculo: "ISQUIOS", nombre: "Femoral Sentado", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_ext_rodilla", musculo: "CUÁDRICEPS", nombre: "Extension Rodilla", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        }
+      ],
+      // DÍA 2 - Espalda + Posterior + Bíceps
+      [
+        {
+          code: "dor_jalon_pecho", musculo: "DORSALES", nombre: "Jalon Pecho", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "esp_remo_gironda", musculo: "ESPALDA ALTA/MEDIA", nombre: "Remo Gironda", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "dor_jalon_maq_bilat", musculo: "DORSALES", nombre: "Jalon Maquina Bilateral", series: [
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "dor_pullover_unilat_estiramiento", musculo: "DORSALES", nombre: "Pull Over Unilateral Estiramiento", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_face_pulls", musculo: "DELTOIDES POSTERIOR", nombre: "Face Pulls", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_maq", musculo: "DELTOIDES POSTERIOR", nombre: "Posterior Maquina", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_polea_bilat", musculo: "DELTOIDES POSTERIOR", nombre: "Posterior Polea Bilateral", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_barra", musculo: "BÍCEPS", nombre: "Curl Barra", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 3 - Pecho + Hombros
+      [
+        {
+          code: "pec_press_inc_manc", musculo: "PECTORAL", nombre: "Press Inclinado Mancuernas", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_press_plano_maq", musculo: "PECTORAL", nombre: "Press Plano Maquina", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_aperturas_pec_deck", musculo: "PECTORAL", nombre: "Aperturas Pec Deck", series: [
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_cruce_poleas", musculo: "PECTORAL", nombre: "Cruce Poleas", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_press_militar_manc", musculo: "DELTOIDES ANTERIOR", nombre: "Press Militar Mancuernas", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_elev_frontal_cuerda", musculo: "DELTOIDES ANTERIOR", nombre: "Elevacion Frontal Cuerda", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Rest-Pause" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Rest-Pause" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_manc", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Mancuerna", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_polea", musculo: "DELTOIDES LATERAL", nombre: "Elevaciones Laterales Polea", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_maq", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 4 - Gemelos + Abdomen + Brazos
+      [
+        {
+          code: "gem_elev_talon_maq", musculo: "GEMELO", nombre: "Elevacion Talon Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "abd_crunch_polea", musculo: "ABDOMEN", nombre: "Crunch Polea", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "gem_elev_talon_sentado", musculo: "GEMELO", nombre: "Elevacion Talon Sentado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "abd_elev_piernas_colgado", musculo: "ABDOMEN", nombre: "Elevacion Piernas Colgado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_sentado_manc", musculo: "BÍCEPS", nombre: "Curl Sentado Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_martillo_sentado", musculo: "BÍCEPS", nombre: "Martillo Sentado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_scott_barra", musculo: "BÍCEPS", nombre: "Curl Scott Barra", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_tras_nuca", musculo: "TRÍCEPS", nombre: "Extension Codo Tras Nuca", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_unilat", musculo: "TRÍCEPS", nombre: "Extension Codo Unilateral", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_fondos_maq", musculo: "TRÍCEPS", nombre: "Fondos Maquina Triceps", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 6 - Isquios + Glúteo + Cuádriceps
+      [
+        {
+          code: "isq_femoral_tumbado", musculo: "ISQUIOS", nombre: "Femoral Tumbado", series: [
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "isq_peso_muerto_rumano", musculo: "ISQUIOS", nombre: "Peso Muerto Rumano", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "glu_hip_thrust", musculo: "GLÚTEO", nombre: "Hip Thrust", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "adu_aductor_maq", musculo: "ADUCTORES", nombre: "Aductor Maquina", series: [
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_ext_rodilla", musculo: "CUÁDRICEPS", nombre: "Extension Rodilla", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        },
+        {
+          code: "isq_femoral_sentado", musculo: "ISQUIOS", nombre: "Femoral Sentado", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 7 - Espalda + Posterior + Bíceps
+      [
+        {
+          code: "dor_remo_gironda_unilat", musculo: "DORSALES", nombre: "Remo Gironda Unilateral", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "esp_remo_hammer_bilat", musculo: "ESPALDA ALTA/MEDIA", nombre: "Remo Hammer Bilateral", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "dor_jalon_maq_bilat", musculo: "DORSALES", nombre: "Jalon Maquina Bilateral", series: [
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" },
+            { repMin: "12", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "esp_seal_row_barra", musculo: "ESPALDA ALTA/MEDIA", nombre: "Seal Row Barra", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_face_pulls", musculo: "DELTOIDES POSTERIOR", nombre: "Face Pulls", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_maq", musculo: "DELTOIDES POSTERIOR", nombre: "Posterior Maquina", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_polea_bilat", musculo: "DELTOIDES POSTERIOR", nombre: "Posterior Polea Bilateral", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_barra", musculo: "BÍCEPS", nombre: "Curl Barra", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 8 - Hombros + Pecho
+      [
+        {
+          code: "del_lat_elev_lat_manc", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Mancuerna", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_polea", musculo: "DELTOIDES LATERAL", nombre: "Elevaciones Laterales Polea", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_maq", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_remo_menton", musculo: "DELTOIDES LATERAL", nombre: "Remo Menton", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_press_militar_mp", musculo: "DELTOIDES ANTERIOR", nombre: "Press Militar Multipower", series: [
+            { repMin: "6", repMax: "8", extra: "Ninguno" },
+            { repMin: "8", repMax: "10", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_elev_frontal_cuerda", musculo: "DELTOIDES ANTERIOR", nombre: "Elevacion Frontal Cuerda", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Rest-Pause" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Rest-Pause" }
+          ]
+        },
+        {
+          code: "pec_fondos_libres", musculo: "PECTORAL", nombre: "Fondos Libres", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 9 - Gemelos + Abdomen + Brazos
+      [
+        {
+          code: "gem_elev_talon_maq", musculo: "GEMELO", nombre: "Elevacion Talon Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "abd_crunch_polea", musculo: "ABDOMEN", nombre: "Crunch Polea", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "gem_elev_talon_sentado", musculo: "GEMELO", nombre: "Elevacion Talon Sentado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "abd_elev_piernas_colgado", musculo: "ABDOMEN", nombre: "Elevacion Piernas Colgado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_tras_nuca", musculo: "TRÍCEPS", nombre: "Extension Codo Tras Nuca", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_unilat", musculo: "TRÍCEPS", nombre: "Extension Codo Unilateral", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_fondos_maq", musculo: "TRÍCEPS", nombre: "Fondos Maquina Triceps", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_sentado_manc", musculo: "BÍCEPS", nombre: "Curl Sentado Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Biserie" },
+            { repMin: "12", repMax: "15", extra: "Biserie" },
+            { repMin: "15", repMax: "20", extra: "Biserie" }
+          ]
+        },
+        {
+          code: "bic_martillo_sentado", musculo: "BÍCEPS", nombre: "Martillo Sentado", series: [
+            { repMin: "12", repMax: "15", extra: "Biserie" },
+            { repMin: "12", repMax: "15", extra: "Biserie" },
+            { repMin: "15", repMax: "20", extra: "Biserie" }
+          ]
+        },
+        {
+          code: "bic_curl_scott_barra", musculo: "BÍCEPS", nombre: "Curl Scott Barra", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        }
+      ],
+    ],
+    division: "4D+4D (8 días)",
+    enfoque: "Hipertrofia Avanzada",
+    nivel: "Avanzado",
+    fecha: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
   },
+
+  // ═══════════════ RUTINA 6D WEIDER DIFICIL ═══════════════
   {
-    id: 'premium_ppl_avanzado_6dias',
-    nombre: 'PPL Avanzado 6 Días',
+    id: 'premium_6d_weider_dificil',
+    nombre: "RUTINA 6D - WEIDER-DIFICIL",
     dias: 6,
-    fecha: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    division: 'Push/Pull/Legs',
-    enfoque: 'Volumen Alto',
-    nivel: 'Avanzado',
-    diasArr: PPL_AVANZADO_DATA
-  },
-  {
-    id: 'premium_powerbuilding_5dias',
-    nombre: 'Powerbuilding Elite 5 Días',
-    dias: 5,
-    fecha: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    division: 'Fuerza/Hipertrofia',
-    enfoque: 'Powerlifting + Estética',
-    nivel: 'Avanzado',
-    diasArr: POWERBUILDING_5_DATA
-  },
+    diasArr: [
+      // DÍA 1 - Pierna
+      [
+        {
+          code: "cuad_hack_squat", musculo: "CUÁDRICEPS", nombre: "Hack Squat", series: [
+            { repMin: "6", repMax: "10", extra: "Ninguno" },
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "isq_peso_muerto_rumano", musculo: "ISQUIOS", nombre: "Peso Muerto Rumano", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_prensa", musculo: "CUÁDRICEPS", nombre: "Prensa", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "adu_aductor_maq", musculo: "ADUCTORES", nombre: "Aductor Maquina", series: [
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "isq_femoral_sentado", musculo: "ISQUIOS", nombre: "Femoral Sentado", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_ext_rodilla", musculo: "CUÁDRICEPS", nombre: "Extension Rodilla", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        }
+      ],
+      // DÍA 2 - Pecho + Hombro
+      [
+        {
+          code: "pec_press_inc_manc", musculo: "PECTORAL", nombre: "Press Inclinado Mancuernas", series: [
+            { repMin: "6", repMax: "10", extra: "Ninguno" },
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_press_plano_maq", musculo: "PECTORAL", nombre: "Press Plano Maquina", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_fondos_libres", musculo: "PECTORAL", nombre: "Fondos Libres", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_aperturas_pec_deck", musculo: "PECTORAL", nombre: "Aperturas Pec Deck", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_press_militar_manc", musculo: "DELTOIDES ANTERIOR", nombre: "Press Militar Mancuernas", series: [
+            { repMin: "8", repMax: "10", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_manc", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Mancuerna", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 3 - Espalda + Posterior
+      [
+        {
+          code: "dor_remo_gironda_unilat", musculo: "DORSALES", nombre: "Remo Gironda Unilateral", series: [
+            { repMin: "6", repMax: "10", extra: "Ninguno" },
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "dor_jalon_pecho", musculo: "DORSALES", nombre: "Jalon Pecho", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "esp_remo_sentado_agarre_abierto", musculo: "ESPALDA ALTA/MEDIA", nombre: "Remo Sentado Agarre Abierto", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "dor_pullover_cuerda", musculo: "DORSALES", nombre: "Pull Over Cuerda", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_face_pulls", musculo: "DELTOIDES POSTERIOR", nombre: "Face Pulls", series: [
+            { repMin: "8", repMax: "10", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_post_maq", musculo: "DELTOIDES POSTERIOR", nombre: "Posterior Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 4 - Hombro + Gemelo + Abs + Brazos
+      [
+        {
+          code: "del_lat_elev_lat_manc", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Mancuerna", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_polea", musculo: "DELTOIDES LATERAL", nombre: "Elevaciones Laterales Polea", series: [
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "gem_elev_talon_maq", musculo: "GEMELO", nombre: "Elevacion Talon Maquina", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "abd_crunch_polea", musculo: "ABDOMEN", nombre: "Crunch Polea", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_curl_sentado_manc", musculo: "BÍCEPS", nombre: "Curl Sentado Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "bic_martillo_sentado", musculo: "BÍCEPS", nombre: "Martillo Sentado", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_tras_nuca", musculo: "TRÍCEPS", nombre: "Extension Codo Tras Nuca", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "tri_ext_codo_cuerda", musculo: "TRÍCEPS", nombre: "Extension Codo Cuerda", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 5 - Pierna 2
+      [
+        {
+          code: "isq_peso_muerto_rumano", musculo: "ISQUIOS", nombre: "Peso Muerto Rumano", series: [
+            { repMin: "6", repMax: "10", extra: "Ninguno" },
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_sentadilla_bulgara_manc", musculo: "CUÁDRICEPS", nombre: "Sentadilla Bulgara Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_prensa", musculo: "CUÁDRICEPS", nombre: "Prensa", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        },
+        {
+          code: "adu_aductor_maq", musculo: "ADUCTORES", nombre: "Aductor Maquina", series: [
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "12", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "cuad_ext_rodilla", musculo: "CUÁDRICEPS", nombre: "Extension Rodilla", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Descendentes" }
+          ]
+        },
+        {
+          code: "isq_femoral_sentado", musculo: "ISQUIOS", nombre: "Femoral Sentado", series: [
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "10", repMax: "15", extra: "Ninguno" },
+            { repMin: "Fallo", repMax: "Fallo", extra: "Ninguno" }
+          ]
+        }
+      ],
+      // DÍA 6 - Torso Ligero
+      [
+        {
+          code: "dor_jalon_pecho", musculo: "DORSALES", nombre: "Jalon Pecho", series: [
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "esp_remo_gironda", musculo: "ESPALDA ALTA/MEDIA", nombre: "Remo Gironda", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_press_plano_maq", musculo: "PECTORAL", nombre: "Press Plano Maquina", series: [
+            { repMin: "8", repMax: "12", extra: "Ninguno" },
+            { repMin: "10", repMax: "12", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "pec_press_inc_manc", musculo: "PECTORAL", nombre: "Press Inclinado Mancuernas", series: [
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "12", repMax: "15", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_ant_press_militar_maq", musculo: "DELTOIDES ANTERIOR", nombre: "Press Militar Maquina", series: [
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        },
+        {
+          code: "del_lat_elev_lat_maq", musculo: "DELTOIDES LATERAL", nombre: "Elevacion Lateral Maquina", series: [
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" },
+            { repMin: "15", repMax: "20", extra: "Ninguno" }
+          ]
+        }
+      ]
+    ],
+    division: "6 Días Weider",
+    enfoque: "Hipertrofia",
+    nivel: "Avanzado",
+    fecha: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
 ];
 
 // Exportar IDs
-export const TORSO_PIERNA_ID = premiumRoutines[0].id;
-export const PPL_AVANZADO_ID = premiumRoutines[1].id;
-export const POWERBUILDING_ID = premiumRoutines[2].id;
+export const RUT_8D_AVANZ_4D4D_ID = premiumRoutines[0].id;
+export const RUT_6D_WEIDER_DIFICIL_ID = premiumRoutines[1].id;

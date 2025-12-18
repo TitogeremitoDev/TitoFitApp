@@ -198,11 +198,20 @@ export default function InformacionPersonal() {
             />
 
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
-                </TouchableOpacity>
                 <Text style={styles.headerTitle}>Información Personal</Text>
                 <View style={{ width: 24 }} />
+                    <TouchableOpacity
+                        style={[styles.saveButton, { backgroundColor: theme.primary }]}
+                        onPress={handleSubmit(onSubmit)}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.saveButtonText}>Guardar Cambios</Text>
+                        )}
+                    </TouchableOpacity>
+
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -441,7 +450,9 @@ export default function InformacionPersonal() {
                                 options={[
                                     { label: 'Hipertrofia (Masa Muscular)', value: 'hipertrofia' },
                                     { label: 'Fuerza (Powerlifting)', value: 'fuerza' },
+                                    { label: 'Pérdida de grasa', value: 'perdida_grasa' },
                                     { label: 'Resistencia / Funcional', value: 'resistencia' },
+                                    { label: 'Salud general', value: 'salud' },
                                     { label: 'Híbrido', value: 'hibrido' },
                                 ]}
                             />
@@ -539,6 +550,7 @@ export default function InformacionPersonal() {
                                 options={[
                                     { label: 'Flexible (IIFYM)', value: 'flexible' },
                                     { label: 'Estricta (Clean Eating)', value: 'estricta' },
+                                    { label: 'Sin control', value: 'sin_control' },
                                     { label: 'Vegetariana/Vegana', value: 'vegetariana' },
                                     { label: 'Keto/Low Carb', value: 'keto' },
                                 ]}

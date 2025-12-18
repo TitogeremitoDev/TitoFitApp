@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
 
@@ -18,6 +18,7 @@ type UStatus = 'idle' | 'checking' | 'available' | 'taken' | 'error';
 
 export default function RegisterScreen() {
   const { register } = useAuth();
+  const router = useRouter();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -66,6 +67,8 @@ export default function RegisterScreen() {
     setIsSubmitting(true);
     try {
       await register(nombre.trim(), email.trim().toLowerCase(), username.trim(), password, clientCode.trim());
+      // ✅ Registro exitoso - redirigir al onboarding para completar perfil
+      router.replace('/onboarding');
     } catch (e) {
       let msg = 'No se pudo registrar';
       if (axios.isAxiosError(e) && e.response?.data?.message) msg = e.response.data.message;

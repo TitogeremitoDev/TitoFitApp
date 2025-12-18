@@ -23,6 +23,8 @@ export type User = {
   username: string;
   tipoUsuario: 'FREEUSER' | 'CLIENTE' | 'PREMIUM' | 'ADMINISTRADOR' | 'ENTRENADOR';
   token?: string;
+  // Flag de onboarding completado
+  onboardingCompleted?: boolean;
   // Campos de referidos
   referralCode?: string;
   subscriptionExpiry?: string;
@@ -61,6 +63,8 @@ export type User = {
     trainerCode?: string;
   };
   currentTrainerId?: string;
+  // Factor de actividad para cálculos nutricionales
+  af?: number;
 };
 
 type AuthContextData = {
@@ -71,6 +75,7 @@ type AuthContextData = {
   register: (nombre: string, email: string, username: string, password: string, clientCode?: string) => Promise<User>;
   upgradeByCode: (clientCode: string) => Promise<User>;
   loginWithGoogle: (googleAccessToken: string) => Promise<User>;
+  loginWithApple: (identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | undefined>;
   // 🔄 Sincronización de datos al cambiar de plan
@@ -225,6 +230,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           await syncRoutinesFromServer(API_BASE, s.token);
           if (__DEV__) {
             console.log('[Auth] Rutinas sincronizadas tras login Google');
+          }
+        } catch (syncError) {
+          console.error('[Auth] Error sincronizando rutinas:', syncError);
+        }
+
+        return { ...s.user, token: s.token };
+      },
+
+      async loginWithApple(identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) {
+        if (__DEV__) {
+          console.log('[Auth] Login con Apple iniciado');
+        }
+        const { data } = await axios.post<User & { token: string }>(
+          '/users/apple-login',
+          {
+            identityToken,
+            fullName: fullName ? {
+              givenName: fullName.givenName || '',
+              familyName: fullName.familyName || ''
+            } : null
+          }
+        );
+        const s = await persistSession(data);
+        setToken(s.token);
+        setUser(s.user);
+
+        // Sincroniza rutinas al entrar con Apple
+        try {
+          await syncRoutinesFromServer(API_BASE, s.token);
+          if (__DEV__) {
+            console.log('[Auth] Rutinas sincronizadas tras login Apple');
           }
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);

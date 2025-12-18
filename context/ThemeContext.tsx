@@ -34,6 +34,14 @@ export type Theme = {
   premium: string;
   premiumLight: string;
   premiumDark: string;
+  // ═══════════════════════════════════════════════════════════════
+  // NUEVOS BORDES DECORATIVOS - Para hacer los temas más espectaculares
+  // ═══════════════════════════════════════════════════════════════
+  accentBorder: string;       // Borde con color accent para destacar elementos
+  primaryBorder: string;      // Borde con color primario
+  borderGlow: string;         // Color para efectos de sombra/glow en bordes
+  borderAccentLight: string;  // Borde accent con opacidad reducida para sutileza
+  cardBorderAccent: string;   // Borde de tarjeta con toque de color accent
   // Font family suggestion (optional usage in UI components)
   fontFamily?: string;
 };
@@ -108,6 +116,25 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
   const border = isDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb';
   const borderLight = isDark ? 'rgba(255,255,255,0.06)' : '#eef2f7';
 
+  // ═══════════════════════════════════════════════════════════════
+  // NUEVOS BORDES DECORATIVOS - Colores vibrantes y espectaculares
+  // ═══════════════════════════════════════════════════════════════
+  // Convertir hex a rgba para crear efectos con opacidad
+  const hexToRgba = (hex: string, alpha: number): string => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  // Borde accent con diferentes intensidades
+  const accentBorder = accent;
+  const primaryBorder = primary;
+  const borderGlow = hexToRgba(accent, isDark ? 0.6 : 0.4);
+  const borderAccentLight = hexToRgba(accent, isDark ? 0.25 : 0.15);
+  const cardBorderAccent = hexToRgba(primary, isDark ? 0.35 : 0.2);
+
   return {
     background,
     backgroundSecondary,
@@ -128,28 +155,21 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
     primary: primary,
     primaryText: isDark ? '#ffffff' : '#ffffff', // Usually white on primary
 
-    // Standard semantic colors - keeping them relatively consistent but themed if needed
+    // Standard semantic colors - keeping them relatively consistent for predictability
     success: '#10b981',
     successLight: isDark ? '#064e3b' : '#ecfdf5',
     successBorder: isDark ? '#065f46' : '#d1fae5',
     successText: isDark ? '#6ee7b7' : '#065f46',
 
-    danger: accent, // Using accent as danger/highlight often works for these custom themes or strictly stick to red? 
-    // Let's keep strict semantic danger but usually accent is the "Action" color.
-    // Wait, standard UI expects 'primary' as main action. 'Accent' in the request was for buttons/CTA.
-    // So Primary = Theme Primary, Accent = CTA/Buttons. 
-    // In our Theme types, 'primary' is usually the main brand color. 
-    // Let's map Request Primary -> Theme Primary.
-    // Request Accent -> We might use this for specific highlights or secondary buttons?
-    // actually, let's mix: 'danger' implies error. Let's keep standard red for error to avoid confusion.
-    // We will use Accent for 'premium' or other highlights.
-    dangerLight: isDark ? '#7f1d1d' : '#fee2e2',
+    // Danger uses semantic red for consistency (not theme accent) 
+    danger: '#ef4444',
+    dangerLight: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fee2e2',
 
     warning: '#f59e0b',
     warningLight: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.08)',
 
     cardBackground,
-    cardBorder: border,
+    cardBorder: cardBorderAccent, // 🎨 Borde colorido según el tema (antes era border neutral)
     cardHeaderBorder: borderLight,
 
     sectionHeader: isDark ? backgroundTertiary : '#f3f4f6',
@@ -159,24 +179,44 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
     premiumLight: isDark ? adjustOpacity(accent, 0.15) : adjustOpacity(accent, 0.1),
     premiumDark: adjustColor(accent, -20),
 
+    // ═══════════════════════════════════════════════════════════════
+    // BORDES DECORATIVOS - Hacen los temas más espectaculares
+    // ═══════════════════════════════════════════════════════════════
+    accentBorder,           // Color accent puro para bordes destacados
+    primaryBorder,          // Color primario puro para bordes
+    borderGlow,             // Con opacidad para efectos de sombra/glow
+    borderAccentLight,      // Accent sutil para bordes de fondo
+    cardBorderAccent,       // Borde de tarjeta con toque de color primario
+
     fontFamily: def.fontFamily,
   };
 };
 
-/* Helper simplificado para ajustar brillo de color hex (solo para soporte básico) */
-function adjustColor(color: string, amount: number) {
-  return color; // Placeholder simplificado para no añadir enorme librería de color por ahora
-  // En una implementación real usaríamos 'color' o similar. 
-  // Dado que los temas son fijos, definiremos los colores clave manualmente si el ajuste automático no es ideal.
-  // Para este MVP, confiaremos en los colores base o definiremos los derivados explícitamente si es crítico.
-  // NOTE: For better results in future, add 'tinycolor2' or strict manual definitions.
+/* Helper para ajustar brillo de color hex */
+function adjustColor(color: string, amount: number): string {
+  if (!color.startsWith('#')) return color;
+
+  const hex = color.replace('#', '');
+  const num = parseInt(hex, 16);
+
+  let r = (num >> 16) + amount;
+  let g = ((num >> 8) & 0x00FF) + amount;
+  let b = (num & 0x0000FF) + amount;
+
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
-function adjustOpacity(color: string, opacity: number) {
-  // Si es hex
+
+function adjustOpacity(color: string, opacity: number): string {
   if (color.startsWith('#')) {
-    // simple conversion logic or return rgba equivalent
-    // Para simplificar, retornamos el color original o un valor hardcodeado si es complejo
-    return color;
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   }
   return color;
 }

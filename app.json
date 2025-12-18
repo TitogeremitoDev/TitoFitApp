@@ -20,6 +20,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.german92.titofitapp",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -66,6 +67,7 @@
       ],
       "expo-notifications",
       "expo-secure-store",
+      "expo-apple-authentication",
       [
         "expo-build-properties",
         {

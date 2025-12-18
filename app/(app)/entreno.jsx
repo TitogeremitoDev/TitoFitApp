@@ -60,6 +60,10 @@ const EXTRA_ABBR = {
   Descendentes: 'DESC',
   'Mio Reps': 'MR',
   Parciales: 'PARC',
+  'Rest-Pause': 'RP',
+  Biserie: 'BS',
+  Biseries: 'BS',
+  bs: 'BS',
 };
 
 const sessionKeyFor = (routineId) => `last_session_${routineId || 'global'}`;
@@ -114,7 +118,7 @@ const normalizeStr = (s) =>
 
 /**
  * Construye un índice de ejercicios desde una lista plana de ejercicios de MongoDB
- * Estructura MongoDB: [{ _id, name, muscle, tecnicaCorrecta, videoId }, ...]
+ * Estructura MongoDB: [{ _id, name, muscle, instructions, videoId }, ...]
  * Resultado: { MUSCULO: { byName: {originalName: obj}, byNorm: {normName: obj} } }
  */
 function buildExerciseIndex(exercises) {
@@ -127,11 +131,13 @@ function buildExerciseIndex(exercises) {
     if (!out[mus]) out[mus] = { byName: {}, byNorm: {} };
 
     // Adaptamos la estructura MongoDB a la esperada por el código existente
+    // Priorizamos 'instructions' (nuevo formato) sobre 'tecnicaCorrecta' (antiguo)
     const adaptedExercise = {
       nombre: ej.name,
       musculo: ej.muscle,
-      tecnicaCorrecta: ej.tecnicaCorrecta || [],
+      tecnicaCorrecta: ej.instructions || ej.tecnicaCorrecta || [],
       videoId: ej.videoId || null,
+      imagenEjercicioId: ej.imagen_ejercicio_ID || null,
       _id: ej._id
     };
 
@@ -567,6 +573,92 @@ const notesModalStyles = StyleSheet.create({
   },
 });
 
+/* ───────── 🚪 Estilos del Modal de Salida ───────── */
+const exitModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  description: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+    width: '100%',
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  exitBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  exitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  saveBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  saveText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+});
+
 /* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
 function StatsModal({ visible, onClose, stats }) {
   const { theme } = useTheme();
@@ -670,13 +762,6 @@ function StatsModal({ visible, onClose, stats }) {
                 <Text style={[styles.statsSubtitle, { color: theme.primary }]}>
                   Has superado tus metas
                 </Text>
-              </View>
-
-              {/* 💪 Imagen motivacional */}
-              <View style={styles.motivationalSection}>
-                <View style={styles.dumbbellContainer}>
-                  <Ionicons name="barbell" size={80} color={theme.primary} />
-                </View>
               </View>
 
               {/* 📊 Estadísticas comparativas */}
@@ -1777,9 +1862,10 @@ export default function Entreno() {
   const [prog, setProg] = useState({});
   const [openId, setOpenId] = useState(null);
 
-  // Modales de Técnica y Vídeo
+  // Modales de Técnica, Imagen y Vídeo
   const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
-  const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false });
+  const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false, title: '' });
+  const [imageModal, setImageModal] = useState({ visible: false, imageUrl: null, title: '' });
 
   // Modal de Sin Rutina Activa
   const [showNoRoutineModal, setShowNoRoutineModal] = useState(false);
@@ -1801,6 +1887,11 @@ export default function Entreno() {
     value: 'normal',
     note: ''
   });
+
+  // 🚪 Modal de confirmación de salida (cambios sin guardar)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const pendingNavigationRef = useRef(null);
 
   const listRef = useRef(null);
 
@@ -1936,17 +2027,110 @@ export default function Entreno() {
 
   /* Hidratar todo (rutina activa, días, progreso y última sesión) */
   const hydrate = useCallback(async () => {
+    const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Leer la rutina activa de AsyncStorage primero
+    // ════════════════════════════════════════════════════════════════════════
+    const activeRoutineId = await AsyncStorage.getItem('active_routine');
+    const isFromCoachFlag = await AsyncStorage.getItem('active_routine_from_coach');
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Si el usuario tiene entrenador Y la rutina es de coach, cargar de CurrentRoutine
+    // ════════════════════════════════════════════════════════════════════════
+    if (user?.currentTrainerId && token && isFromCoachFlag === 'true') {
+      try {
+        console.log('[Entreno] 👨‍🏫 Usuario tiene entrenador, cargando de CurrentRoutine...');
+        const response = await fetch(`${API_URL}/api/current-routines/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (data.success && data.routines?.length > 0) {
+          // 🆕 Buscar la rutina específica que el usuario seleccionó (por activeRoutineId)
+          // Si no hay activeRoutineId, tomar la primera
+          let currentRoutine = data.routines[0];
+          if (activeRoutineId) {
+            const found = data.routines.find(r => r._id === activeRoutineId);
+            if (found) {
+              currentRoutine = found;
+            }
+          }
+
+          console.log('[Entreno] ✅ CurrentRoutine encontrada:', currentRoutine.nombre);
+
+          // Convertir diasArr a formato normalizado
+          const diasNorm = normalizeDias(currentRoutine.diasArr || []);
+
+          setActiveId(currentRoutine._id);
+          setRutina({
+            id: currentRoutine._id,
+            nombre: currentRoutine.nombre,
+            dias: currentRoutine.dias || diasNorm.length || 1,
+            isFromCoach: true,
+            sourceRoutineId: currentRoutine.sourceRoutineId
+          });
+          setDiasEj(diasNorm);
+
+          // Cargar última sesión guardada
+          try {
+            const sessionStr = await AsyncStorage.getItem(sessionKeyFor(currentRoutine._id));
+            if (sessionStr) {
+              const { lastSemana, lastDiaIdx } = JSON.parse(sessionStr);
+              const total = diasNorm.length || 1;
+              const safeDia = Math.max(0, Math.min(Number(lastDiaIdx) || 0, total - 1));
+              const safeSem = Math.max(1, Math.min(Number(lastSemana) || 1, SEMANAS_MAX));
+              setSemana(safeSem);
+              setDiaIdx(safeDia);
+            } else {
+              setSemana(1);
+              setDiaIdx(0);
+            }
+          } catch { }
+
+          // Cargar progreso local
+          const progStr = await AsyncStorage.getItem('progress') || '{}';
+          const localProg = JSON.parse(progStr);
+          setProg(localProg);
+
+          // Cargar progreso de la nube - usar el _id de la CurrentRoutine
+          const mongoRoutineId = currentRoutine._id;
+          if (mongoRoutineId) {
+            const cloudData = await fetchAllCloudProgress(mongoRoutineId, diasNorm);
+            if (cloudData?.cloudProg && Object.keys(cloudData.cloudProg).length > 0) {
+              setProg(prev => ({ ...prev, ...cloudData.cloudProg }));
+            }
+            if (cloudData?.cloudNotes && Object.keys(cloudData.cloudNotes).length > 0) {
+              setNotes(prev => ({ ...prev, ...cloudData.cloudNotes }));
+            }
+          }
+
+          setHydrated(true);
+          return; // Salir, no continuar con flujo normal
+        }
+        console.log('[Entreno] ⚠️ No hay CurrentRoutines asignadas, usando flujo normal');
+      } catch (error) {
+        console.error('[Entreno] Error cargando CurrentRoutine:', error);
+        // Continuar con flujo normal si hay error
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // FLUJO ORIGINAL: Cargar desde AsyncStorage
+    // ════════════════════════════════════════════════════════════════════════
     const result = await AsyncStorage.multiGet([
       'active_routine',
+      'active_routine_name', // 🆕 Cargar también el nombre guardado
       'rutinas',
       'progress',
     ]);
 
     const idAct = result[0]?.[1] || null;
+    const savedRoutineName = result[1]?.[1] || null; // 🆕 Nombre guardado
     setActiveId(idAct);
 
-    const listJSON = result[1]?.[1] || '[]';
-    const progStr = result[2]?.[1] || '{}';
+    const listJSON = result[2]?.[1] || '[]';
+    const progStr = result[3]?.[1] || '{}';
 
     if (!idAct) {
       setShowNoRoutineModal(true);
@@ -1959,7 +2143,8 @@ export default function Entreno() {
     const stored = await AsyncStorage.getItem(`routine_${idAct}`);
 
     const diasNorm = normalizeDias(stored ? JSON.parse(stored) : []);
-    const metaBase = activa || { id: idAct, nombre: 'Rutina' };
+    // 🆕 Usar nombre guardado como fallback si la rutina no está en la lista
+    const metaBase = activa || { id: idAct, nombre: savedRoutineName || 'Rutina Desconocida' };
 
     setRutina({ ...metaBase, dias: diasNorm.length || 1 });
     setDiasEj(diasNorm);
@@ -2089,11 +2274,71 @@ export default function Entreno() {
     saveLastSession(semana, diaIdx);
   }, [semana, diaIdx, hydrated, saveLastSession]);
 
+  // 🚪 Interceptar navegación cuando hay cambios sin guardar
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      // Si no hay cambios sin guardar, permitir la navegación
+      if (!hasUnsavedChanges) return;
+
+      // Prevenir la navegación por defecto
+      e.preventDefault();
+
+      // Guardar la acción de navegación pendiente
+      pendingNavigationRef.current = e.data.action;
+
+      // Mostrar el modal de confirmación
+      setShowExitModal(true);
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges]);
+
+  // 🌐 Protección adicional para WEB: cierre de pestaña y botón retroceso del navegador
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    // Manejar cierre de pestaña / recarga de página
+    const handleBeforeUnload = (e) => {
+      if (!hasUnsavedChanges) return;
+
+      // Mostrar el diálogo nativo del navegador
+      e.preventDefault();
+      e.returnValue = '¿Seguro que quieres salir? Tienes cambios sin guardar.';
+      return e.returnValue;
+    };
+
+    // Manejar el botón de retroceso del navegador
+    const handlePopState = (e) => {
+      if (!hasUnsavedChanges) return;
+
+      // Agregar una entrada al historial para poder interceptar de nuevo
+      window.history.pushState(null, '', window.location.href);
+
+      // Mostrar nuestro modal personalizado
+      setShowExitModal(true);
+    };
+
+    // Agregar entrada inicial al historial para poder interceptar el retroceso
+    if (hasUnsavedChanges) {
+      window.history.pushState(null, '', window.location.href);
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [hasUnsavedChanges]);
+
   /* ───────── Cambio de estado SIN guardado inmediato ───────── */
   const setEstadoEjLocal = (clave, val) => {
     // Solo cambio local del estado, NO guardamos en AsyncStorage aquí
     const nextVal = val === 'OJ' ? 'OE' : val;
     setProg((prev) => ({ ...prev, [clave]: nextVal }));
+    // 🚪 Marcar que hay cambios sin guardar
+    setHasUnsavedChanges(true);
   };
 
   /* ───────── Buscar datos del día anterior ───────── */
@@ -2275,6 +2520,8 @@ export default function Entreno() {
                 date: now,
                 routineId: activeId || null,
                 routineName: rutina?.nombre || 'Rutina Desconocida',
+                dayIndex: diaIdx, // 🆕 Para separar por días
+                dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`, // 🆕 Nombre del día
                 week: semana,
                 muscle: ejercicio.musculo,
                 exercise: ejercicio.nombre,
@@ -2289,35 +2536,23 @@ export default function Entreno() {
             logEntriesToAdd.push(...seriesData);
           }
         } else {
-          // Sin estado: usar datos del día anterior
+          // Sin estado: marcar como NC y dejar campos vacíos
           ejerciciosSinEstado++;
 
-          // Buscar si hay datos del día anterior para copiar
-          let hayDatosAnteriores = false;
+          // 🆕 Marcar el ejercicio como NC (No Completado) en lugar de copiar datos anteriores
+          nextProg[ejerKey] = 'NC';
 
-          for (let idx = 0; idx < (ejercicio.series || []).length; idx++) {
-            const serieKey = `${ejerKey}|${idx}`;
-            const prevReps = findPrevDayData(ejercicio.id, idx, 'reps');
-            const prevPeso = findPrevDayData(ejercicio.id, idx, 'peso');
-
-            if (prevReps || prevPeso) {
-              hayDatosAnteriores = true;
-              // Copiar los datos del día anterior si no hay datos actuales
-              if (!prog[serieKey]?.reps && prevReps) {
-                nextProg[serieKey] = { ...(nextProg[serieKey] || {}), reps: prevReps };
-              }
-              if (!prog[serieKey]?.peso && prevPeso) {
-                nextProg[serieKey] = { ...(nextProg[serieKey] || {}), peso: prevPeso };
-              }
-            }
-          }
+          // Los campos de series se dejan vacíos - no copiar datos del día anterior
+          // Esto permite que el usuario vea claramente qué ejercicios no completó
         }
 
         ejerciciosProcesados++;
       }
 
       // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
-      // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
+      // 🏆 Flag para saber si el workout ya existía (para no contar logros duplicados)
+      let wasUpdated = false;
+
       try {
         // Construir los ejercicios para la API con el esquema del modelo Workout
         const exercisesForAPI = ejerciciosDia.map((ejercicio, orderIndex) => {
@@ -2383,20 +2618,42 @@ export default function Entreno() {
           return null;
         };
 
+        // 🆕 Para rutinas de entrenador, usar sourceRoutineId (referencia a Routine)
+        // Para otras rutinas, usar activeId directamente
+        const routineIdForWorkout = rutina?.isFromCoach && rutina?.sourceRoutineId
+          ? extractMongoId(rutina.sourceRoutineId)
+          : extractMongoId(activeId);
+
         const workoutPayload = {
-          routineId: extractMongoId(activeId),
+          routineId: routineIdForWorkout,
           trainerId: rutina?.trainerId || null, // 🆕 Agregar trainerId de la rutina
           routineNameSnapshot: rutina?.nombre || 'Rut Desconocida',
           dayIndex: diaIdx + 1,
           dayLabel: rutina?.dias?.[diaIdx]?.nombre || `Día ${diaIdx + 1}`,
-          week: semana, // 🔥 Added week number for uniqueness
+          week: semana,
           date: now,
           status: 'completed',
           exercises: exercisesForAPI,
           totalSets: totalSets,
           totalVolume: totalVolume,
-          durationMinutes: 0
+          durationMinutes: 0,
+          // 🆕 Agregar referencia a CurrentRoutine para trazabilidad
+          currentRoutineId: rutina?.isFromCoach ? activeId : null
         };
+
+        // 🔍 DEBUG: Log para diagnosticar el guardado
+        console.log('[Entreno] 📤 Guardando workout:', {
+          activeId,
+          routineIdForWorkout,
+          sourceRoutineId: rutina?.sourceRoutineId,
+          isFromCoach: rutina?.isFromCoach,
+          trainerId: workoutPayload.trainerId,
+          isFreeUser,
+          tipoUsuario: user?.tipoUsuario,
+          hasToken: !!token,
+          hasApiUrl: !!API_URL
+        });
+
 
 
         if (API_URL && token && !isFreeUser) {
@@ -2411,7 +2668,8 @@ export default function Entreno() {
 
           if (response.ok) {
             const result = await response.json();
-            console.log(result.updated ? '✅ Workout actualizado:' : '✅ Workout creado:', result.workout?._id);
+            wasUpdated = result.updated === true;
+            console.log(wasUpdated ? '✅ Workout actualizado:' : '✅ Workout creado:', result.workout?._id);
           } else {
             const errorData = await response.json();
             console.error('❌ Error al guardar en la API:', errorData);
@@ -2455,17 +2713,54 @@ export default function Entreno() {
       const bestImprovement = findBestImprovement(currentStats, previousStats);
 
       // 🏆 PROCESAR LOGROS - Estilo Steam
-      // Extraer grupos musculares únicos del día
-      const muscleGroupsWorked = [...new Set(
-        ejerciciosDia.map(ej => ej.musculo).filter(Boolean)
-      )];
+      // Solo contar logros si es un workout NUEVO (no actualización de uno existente)
+      // Para usuarios PREMIUM: usamos wasUpdated del API
+      // Para usuarios FREE: usamos un sistema local de tracking
 
-      processWorkoutCompletion({
-        totalVolumeKg: currentStats.volume || 0,
-        totalReps: currentStats.totalReps || 0,
-        muscleGroups: muscleGroupsWorked,
-        durationMinutes: 0, // TODO: integrar cronómetro si disponible
-      });
+      let shouldProcessAchievements = !wasUpdated;
+
+      // Para usuarios FREE, verificar si ya se procesaron logros para este workout localmente
+      if (isFreeUser) {
+        const workoutKey = `${activeId || 'local'}_${semana}_${diaIdx}`;
+        const processedKey = 'totalgains_processed_workouts';
+
+        try {
+          const processedJson = await AsyncStorage.getItem(processedKey);
+          const processedSet = processedJson ? new Set(JSON.parse(processedJson)) : new Set();
+
+          if (processedSet.has(workoutKey)) {
+            shouldProcessAchievements = false;
+            console.log('⏭️ Usuario FREE: workout ya procesado localmente:', workoutKey);
+          } else {
+            // Marcar como procesado para futuras ejecuciones
+            processedSet.add(workoutKey);
+            await AsyncStorage.setItem(processedKey, JSON.stringify([...processedSet]));
+            console.log('📝 Usuario FREE: workout marcado como procesado:', workoutKey);
+          }
+        } catch (e) {
+          console.warn('Error verificando workouts procesados:', e);
+        }
+      }
+
+      if (shouldProcessAchievements) {
+        // Extraer grupos musculares únicos del día
+        const muscleGroupsWorked = [...new Set(
+          ejerciciosDia.map(ej => ej.musculo).filter(Boolean)
+        )];
+
+        processWorkoutCompletion({
+          totalVolumeKg: currentStats.volume || 0,
+          totalReps: currentStats.totalReps || 0,
+          muscleGroups: muscleGroupsWorked,
+          durationMinutes: 0, // TODO: integrar cronómetro si disponible
+        });
+        console.log('🏆 Logros procesados (workout nuevo)');
+      } else {
+        console.log('⏭️ Logros NO procesados (workout ya existía, solo actualización)');
+      }
+
+      // 🚪 Marcar que ya no hay cambios sin guardar
+      setHasUnsavedChanges(false);
 
       setStatsModal({
         visible: true,
@@ -2509,6 +2804,8 @@ export default function Entreno() {
       [serieKey]: { ...(prog[serieKey] || {}), [campo]: val },
     };
     setProg(nextProg);
+    // 🚪 Marcar que hay cambios sin guardar
+    setHasUnsavedChanges(true);
 
     // Guardado inmediato para las series (mantener comportamiento original)
     if (activeId) {
@@ -2664,6 +2961,13 @@ export default function Entreno() {
     setTechModal({ visible: true, title: item.nombre, tips: ej.tecnicaCorrecta });
   };
 
+  // Abrir Imagen del ejercicio
+  const onOpenImage = (item) => {
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
+    const url = ej?.imagenEjercicioId?.trim() || null;
+    setImageModal({ visible: true, imageUrl: url, title: item.nombre });
+  };
+
   // Abrir Vídeo
   const onOpenVideo = (item) => {
     if (user?.tipoUsuario === 'FREEUSER') {
@@ -2672,12 +2976,8 @@ export default function Entreno() {
     }
 
     const ej = findExerciseInIndex(item.musculo, item.nombre);
-    const id = ej?.videoId?.trim();
-    if (!id) {
-      Alert.alert('Vídeo no disponible', 'No hay vídeo asignado a este ejercicio.');
-      return;
-    }
-    setVideoModal({ visible: true, videoId: id, playing: true });
+    const id = ej?.videoId?.trim() || null;
+    setVideoModal({ visible: true, videoId: id, playing: !!id, title: item.nombre });
   };
 
   const goToPayment = () => {
@@ -2745,220 +3045,299 @@ export default function Entreno() {
             // Compat visual con datos antiguos "OJ" -> se muestra como OE
             const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
 
+            // Detectar si este ejercicio es parte de una biserie
+            const isBiserie = (ej) => {
+              if (!ej?.series || !Array.isArray(ej.series)) return false;
+              return ej.series.some(serie => {
+                const extra = String(serie?.extra || '').toLowerCase().trim();
+                return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
+              });
+            };
+
+            const currentIsBiserie = isBiserie(item);
+            const nextItem = ejerciciosDia[index + 1];
+            const nextIsBiserie = isBiserie(nextItem);
+
+            // Mostrar el "+" si este Y el siguiente son biseries
+            const showBiserieConnector = currentIsBiserie && nextIsBiserie;
+
             return (
-              <View style={[styles.card, {
-                backgroundColor: theme.cardBackground,
-                borderColor: theme.cardBorder
-              }]}>
-                <TouchableOpacity
-                  style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder }]}
-                  onPress={() => setOpenId(abierto ? null : item.id)}
-                >
-                  <Text style={[styles.cardTxt, { color: theme.text }]}>
-                    {item.musculo} — {item.nombre}
-                  </Text>
-                  <Ionicons
-                    name={abierto ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
+              <>
+                <View style={[styles.card, {
+                  backgroundColor: theme.cardBackground,
+                  borderColor: currentIsBiserie ? '#F59E0B' : theme.cardBorder,
+                  borderWidth: currentIsBiserie ? 2 : 1,
+                }]}>
+                  {/* Badge BS para biseries */}
+                  {currentIsBiserie && (
+                    <View style={styles.biserieBadge}>
+                      <Text style={styles.biserieBadgeText}>BS</Text>
+                    </View>
+                  )}
 
-                {/* Estados + Herramientas (TC/Vídeo) */}
-                <View style={styles.stateToolsRow}>
-                  <View style={styles.stateRow}>
-                    {ESTADOS.map((e) => (
-                      <TouchableOpacity
-                        key={e}
-                        style={[
-                          styles.radio,
-                          { borderColor: theme.border },
-                          currentState === e && [styles.radioSel, {
-                            backgroundColor: theme.success,
-                            borderColor: theme.success
-                          }]
-                        ]}
-                        onPress={() => setEstadoEjLocal(ejerKey, e)}
-                      >
-                        <Text
+                  <TouchableOpacity
+                    style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder }]}
+                    onPress={() => setOpenId(abierto ? null : item.id)}
+                  >
+                    <Text style={[styles.cardTxt, { color: theme.text }]}>
+                      {item.musculo} — {item.nombre}
+                    </Text>
+                    <Ionicons
+                      name={abierto ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+
+                  {/* Estados + Herramientas (TC/Vídeo) */}
+                  <View style={styles.stateToolsRow}>
+                    <View style={styles.stateRow}>
+                      {ESTADOS.map((e) => (
+                        <TouchableOpacity
+                          key={e}
                           style={[
-                            styles.radioTxt,
-                            { color: theme.text },
-                            currentState === e && styles.radioTxtSel,
+                            styles.radio,
+                            { borderColor: theme.border },
+                            currentState === e && [styles.radioSel, {
+                              backgroundColor: theme.success,
+                              borderColor: theme.success
+                            }]
                           ]}
+                          onPress={() => setEstadoEjLocal(ejerKey, e)}
                         >
-                          {e}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <View style={styles.toolsRow}>
-                    <TouchableOpacity
-                      onPress={() => onOpenTC(item)}
-                      style={[styles.toolBtn, {
-                        backgroundColor: theme.backgroundTertiary,
-                        borderColor: theme.border
-                      }]}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => onOpenVideo(item)}
-                      style={[styles.toolBtn, styles.toolBtnIcon, {
-                        backgroundColor: theme.backgroundTertiary,
-                        borderColor: theme.border
-                      }]}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name="videocam-outline" size={16} color={theme.text} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {abierto && (
-                  <View style={styles.seriesBox}>
-                    <View style={styles.serieRowHeader}>
-                      <Text style={[styles.serieLabel, { fontWeight: 'bold', color: theme.textSecondary }]}>#</Text>
-                      <View style={styles.inputCol}>
-                        <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Reps</Text>
-                      </View>
-                      <View style={styles.inputCol}>
-                        <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Kg</Text>
-                      </View>
-                      <View style={{ flex: 1 }} />
+                          <Text
+                            style={[
+                              styles.radioTxt,
+                              { color: theme.text },
+                              currentState === e && styles.radioTxtSel,
+                            ]}
+                          >
+                            {e}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
 
-                    {(item.series || []).map((serie, idx) => {
-                      const serieKey = `${ejerKey}|${idx}`;
-                      const prevReps = findPrev(semana, diaIdx, item.id, idx, 'reps');
-                      const prevKg = findPrev(semana, diaIdx, item.id, idx, 'peso');
-                      const curr = prog[serieKey] || {};
-
-                      let bgColor = theme.cardBackground;
-                      const repMin = serie?.repMin != null ? Number(serie.repMin) : null;
-                      const repMax = serie?.repMax != null ? Number(serie.repMax) : null;
-                      const reps = curr?.reps != null ? Number(curr.reps) : null;
-                      if (reps !== null && repMin !== null && repMax !== null) {
-                        if (reps < repMin) bgColor = '#fecaca';
-                        else if (reps > repMax) bgColor = '#bfdbfe';
-                        else bgColor = '#bbf7d0';
-                      }
-
-                      const prevExceeded =
-                        prevReps !== null && repMax !== null && Number(prevReps) > repMax;
-                      const iconReps = getTrendIcon(curr.reps, prevReps);
-                      const iconKg = getTrendIcon(curr.peso, prevKg);
-
-                      return (
-                        <View key={idx} style={[styles.serieRow, {
-                          backgroundColor: bgColor,
+                    <View style={styles.toolsRow}>
+                      <TouchableOpacity
+                        onPress={() => onOpenTC(item)}
+                        style={[styles.toolBtn, {
+                          backgroundColor: theme.backgroundTertiary,
                           borderColor: theme.border
-                        }]}>
-                          <View style={{ width: 70, justifyContent: 'center' }}>
-                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
-                            {repMin !== null && repMax !== null && (
-                              <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
-                                {repMin}-{repMax}
-                              </Text>
-                            )}
-                          </View>
+                        }]}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
+                      </TouchableOpacity>
 
-                          {/* Reps */}
-                          <View style={styles.inputWithTrend}>
-                            <TextInput
-                              style={[styles.serieInput, {
-                                borderColor: theme.inputBorder,
-                                backgroundColor: theme.inputBackground,
-                                color: theme.inputText
-                              }]}
-                              placeholder={prevReps ? String(prevReps) : ''}
-                              placeholderTextColor={theme.placeholder}
-                              keyboardType="numeric"
-                              value={curr.reps || ''}
-                              onFocus={() => {
-                                try {
-                                  listRef.current?.scrollToIndex({
-                                    index,
-                                    animated: true,
-                                    viewPosition: 0.3,
-                                  });
-                                } catch { }
-                              }}
-                              onChangeText={(v) => setSerieDato(serieKey, 'reps', v)}
-                            />
-                            {iconReps && (
-                              <Ionicons
-                                name={iconReps.name}
-                                size={14}
-                                color={iconReps.color}
-                                style={styles.trendIcon}
-                              />
-                            )}
-                          </View>
-
-                          {/* Kg */}
-                          <View style={styles.inputWithTrend}>
-                            <TextInput
-                              style={[styles.serieInput, {
-                                borderColor: theme.inputBorder,
-                                backgroundColor: theme.inputBackground,
-                                color: theme.inputText
-                              }]}
-                              placeholder={prevKg ? String(prevKg) : ''}
-                              placeholderTextColor={theme.placeholder}
-                              keyboardType="numeric"
-                              value={curr.peso || ''}
-                              onChangeText={(v) => setSerieDato(serieKey, 'peso', v)}
-                            />
-                            {iconKg && (
-                              <Ionicons
-                                name={iconKg.name}
-                                size={14}
-                                color={iconKg.color}
-                                style={styles.trendIcon}
-                              />
-                            )}
-                          </View>
-
-                          {/* SP flag */}
-                          {prevExceeded && <Text style={[styles.sp, { color: theme.primary }]}>¡SP!</Text>}
-
-                          <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
-                            {EXTRA_ABBR[serie?.extra] || ''}
-                          </Text>
-
-                          {/* 📝 Botón de Notas */}
+                      {(() => {
+                        const ejImg = findExerciseInIndex(item.musculo, item.nombre);
+                        const hasImage = !!ejImg?.imagenEjercicioId?.trim();
+                        return (
                           <TouchableOpacity
-                            onPress={() => {
-                              const existingNote = notes[serieKey];
-                              setNotesModal({
-                                visible: true,
-                                serieKey,
-                                value: existingNote?.value || 'normal',
-                                note: existingNote?.note || '',
-                              });
-                            }}
-                            style={styles.noteBtn}
-                            activeOpacity={0.7}
+                            onPress={() => onOpenImage(item)}
+                            style={[styles.toolBtn, styles.toolBtnIcon, {
+                              backgroundColor: theme.backgroundTertiary,
+                              borderColor: theme.border,
+                              opacity: hasImage ? 1 : 0.5
+                            }]}
+                            activeOpacity={0.85}
                           >
-                            {notes[serieKey] ? (
-                              <View style={[
-                                styles.noteDot,
-                                { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
-                              ]} />
-                            ) : (
-                              <Ionicons name="chatbubble" size={14} color={theme.background === '#0d0d0d' ? '#1a1a1a' : '#ffffff'} />
-                            )}
+                            <Text style={{ fontSize: 14 }}>{hasImage ? '🖼️' : '🚫'}</Text>
                           </TouchableOpacity>
+                        );
+                      })()}
+
+                      {(() => {
+                        const ejVid = findExerciseInIndex(item.musculo, item.nombre);
+                        const hasVideo = !!ejVid?.videoId?.trim();
+                        return (
+                          <TouchableOpacity
+                            onPress={() => onOpenVideo(item)}
+                            style={[styles.toolBtn, styles.toolBtnIcon, {
+                              backgroundColor: theme.backgroundTertiary,
+                              borderColor: theme.border,
+                              opacity: hasVideo ? 1 : 0.5
+                            }]}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons
+                              name={hasVideo ? "videocam-outline" : "videocam-off-outline"}
+                              size={16}
+                              color={theme.text}
+                            />
+                          </TouchableOpacity>
+                        );
+                      })()}
+                    </View>
+                  </View>
+
+                  {abierto && (
+                    <View style={styles.seriesBox}>
+                      <View style={styles.serieRowHeader}>
+                        <Text style={[styles.serieLabel, { fontWeight: 'bold', color: theme.textSecondary }]}>#</Text>
+                        <View style={styles.inputCol}>
+                          <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Reps</Text>
                         </View>
-                      );
-                    })}
+                        <View style={styles.inputCol}>
+                          <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Kg</Text>
+                        </View>
+                        <View style={{ flex: 1 }} />
+                      </View>
+
+                      {(item.series || []).map((serie, idx) => {
+                        const serieKey = `${ejerKey}|${idx}`;
+                        const prevReps = findPrev(semana, diaIdx, item.id, idx, 'reps');
+                        const prevKg = findPrev(semana, diaIdx, item.id, idx, 'peso');
+                        const curr = prog[serieKey] || {};
+
+                        let bgColor = theme.cardBackground;
+
+                        // Detectar si es serie al Fallo
+                        const repMinRaw = serie?.repMin;
+                        const repMaxRaw = serie?.repMax;
+                        const isFallo = String(repMinRaw).toLowerCase() === 'fallo' ||
+                          String(repMaxRaw).toLowerCase() === 'fallo';
+
+                        const repMin = !isFallo && repMinRaw != null ? Number(repMinRaw) : null;
+                        const repMax = !isFallo && repMaxRaw != null ? Number(repMaxRaw) : null;
+                        const reps = curr?.reps != null ? Number(curr.reps) : null;
+
+                        // Solo aplicar colores si NO es fallo
+                        if (!isFallo && reps !== null && repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) {
+                          if (reps < repMin) bgColor = '#fecaca';
+                          else if (reps > repMax) bgColor = '#bfdbfe';
+                          else bgColor = '#bbf7d0';
+                        }
+
+                        const prevExceeded =
+                          !isFallo && prevReps !== null && repMax !== null && Number(prevReps) > repMax;
+                        const iconReps = getTrendIcon(curr.reps, prevReps);
+                        const iconKg = getTrendIcon(curr.peso, prevKg);
+
+                        return (
+                          <View key={idx} style={[styles.serieRow, {
+                            backgroundColor: bgColor,
+                            borderColor: theme.border
+                          }]}>
+                            <View style={{ width: 70, justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
+                              {isFallo ? (
+                                <Text style={{ fontSize: 10, color: '#ef4444', marginTop: 2, fontWeight: '600' }}>
+                                  🔥 Fallo
+                                </Text>
+                              ) : (repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) && (
+                                <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
+                                  {repMin}-{repMax}
+                                </Text>
+                              )}
+                            </View>
+
+                            {/* Reps */}
+                            <View style={styles.inputWithTrend}>
+                              <TextInput
+                                style={[styles.serieInput, {
+                                  borderColor: theme.inputBorder,
+                                  backgroundColor: theme.inputBackground,
+                                  color: theme.inputText
+                                }]}
+                                placeholder={prevReps ? String(prevReps) : ''}
+                                placeholderTextColor={theme.placeholder}
+                                keyboardType="numeric"
+                                value={curr.reps || ''}
+                                onFocus={() => {
+                                  try {
+                                    listRef.current?.scrollToIndex({
+                                      index,
+                                      animated: true,
+                                      viewPosition: 0.3,
+                                    });
+                                  } catch { }
+                                }}
+                                onChangeText={(v) => setSerieDato(serieKey, 'reps', v)}
+                              />
+                              {iconReps && (
+                                <Ionicons
+                                  name={iconReps.name}
+                                  size={14}
+                                  color={iconReps.color}
+                                  style={styles.trendIcon}
+                                />
+                              )}
+                            </View>
+
+                            {/* Kg */}
+                            <View style={styles.inputWithTrend}>
+                              <TextInput
+                                style={[styles.serieInput, {
+                                  borderColor: theme.inputBorder,
+                                  backgroundColor: theme.inputBackground,
+                                  color: theme.inputText
+                                }]}
+                                placeholder={prevKg ? String(prevKg) : ''}
+                                placeholderTextColor={theme.placeholder}
+                                keyboardType="numeric"
+                                value={curr.peso || ''}
+                                onChangeText={(v) => setSerieDato(serieKey, 'peso', v)}
+                              />
+                              {iconKg && (
+                                <Ionicons
+                                  name={iconKg.name}
+                                  size={14}
+                                  color={iconKg.color}
+                                  style={styles.trendIcon}
+                                />
+                              )}
+                            </View>
+
+                            {/* SP flag */}
+                            {prevExceeded && <Text style={[styles.sp, { color: theme.primary }]}>¡SP!</Text>}
+
+                            <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
+                              {EXTRA_ABBR[serie?.extra] || ''}
+                            </Text>
+
+                            {/* 📝 Botón de Notas */}
+                            <TouchableOpacity
+                              onPress={() => {
+                                const existingNote = notes[serieKey];
+                                setNotesModal({
+                                  visible: true,
+                                  serieKey,
+                                  value: existingNote?.value || 'normal',
+                                  note: existingNote?.note || '',
+                                });
+                              }}
+                              style={styles.noteBtn}
+                              activeOpacity={0.7}
+                            >
+                              {notes[serieKey] ? (
+                                <View style={[
+                                  styles.noteDot,
+                                  { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
+                                ]} />
+                              ) : (
+                                <Ionicons name="chatbubble" size={14} color={theme.background === '#0d0d0d' ? '#1a1a1a' : '#ffffff'} />
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                {/* Conector "+" para biseries */}
+                {showBiserieConnector && (
+                  <View style={styles.biserieConnector}>
+                    <View style={styles.biserieLine} />
+                    <View style={styles.biseriePlusContainer}>
+                      <Text style={styles.biseriePlusText}>+</Text>
+                    </View>
+                    <View style={styles.biserieLine} />
                   </View>
                 )}
-              </View>
+              </>
             );
           }}
           ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.textSecondary }}>Sin ejercicios</Text>}
@@ -2977,10 +3356,10 @@ export default function Entreno() {
             ) : null
           }
         />
-      </View>
+      </View >
 
       {/* 🔥 Modal de Estadísticas ÉPICO */}
-      <StatsModal
+      < StatsModal
         visible={statsModal.visible}
         onClose={() => setStatsModal({ visible: false, stats: null })}
         stats={statsModal.stats}
@@ -3032,6 +3411,90 @@ export default function Entreno() {
         }}
       />
 
+      {/* 🚪 Modal de Confirmación de Salida */}
+      <Modal
+        visible={showExitModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExitModal(false)}
+      >
+        <View style={exitModalStyles.overlay}>
+          <View style={[exitModalStyles.card, {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: theme.border
+          }]}>
+            {/* Icono de advertencia */}
+            <View style={exitModalStyles.iconContainer}>
+              <Ionicons name="warning" size={48} color="#f59e0b" />
+            </View>
+
+            {/* Título */}
+            <Text style={[exitModalStyles.title, { color: theme.text }]}>
+              ¿Salir sin guardar?
+            </Text>
+
+            {/* Descripción */}
+            <Text style={[exitModalStyles.description, { color: theme.textSecondary }]}>
+              Tienes cambios sin guardar en tu entrenamiento. Si sales ahora, perderás el progreso de este día.
+            </Text>
+
+            {/* Botones */}
+            <View style={exitModalStyles.buttonRow}>
+              <TouchableOpacity
+                style={[exitModalStyles.cancelBtn, { borderColor: theme.border }]}
+                onPress={() => setShowExitModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[exitModalStyles.cancelText, { color: theme.text }]}>
+                  Continuar Editando
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[exitModalStyles.exitBtn, { backgroundColor: '#ef4444' }]}
+                onPress={() => {
+                  setShowExitModal(false);
+                  setHasUnsavedChanges(false);
+                  // Ejecutar la navegación pendiente (para React Navigation)
+                  if (pendingNavigationRef.current) {
+                    navigation.dispatch(pendingNavigationRef.current);
+                    pendingNavigationRef.current = null;
+                  } else if (Platform.OS === 'web') {
+                    // Para el botón de retroceso del navegador, ir atrás en el historial
+                    window.history.back();
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="exit-outline" size={18} color="#fff" />
+                <Text style={exitModalStyles.exitText}>Salir</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sugerencia de guardar */}
+            <TouchableOpacity
+              style={[exitModalStyles.saveBtn, { backgroundColor: theme.primary }]}
+              onPress={async () => {
+                setShowExitModal(false);
+                await saveAllDayData();
+                // Navegar después de guardar exitosamente
+                if (pendingNavigationRef.current) {
+                  navigation.dispatch(pendingNavigationRef.current);
+                  pendingNavigationRef.current = null;
+                } else if (Platform.OS === 'web') {
+                  // Para el botón de retroceso del navegador
+                  window.history.back();
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="save" size={18} color="#fff" />
+              <Text style={exitModalStyles.saveText}>Guardar y Salir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal Técnica Correcta */}
       <Modal
         visible={techModal.visible}
@@ -3081,28 +3544,101 @@ export default function Entreno() {
             backgroundColor: theme.backgroundSecondary,
             borderColor: theme.border
           }]}>
-            <Pressable
-              onPress={() =>
-                setVideoModal((s) => ({ ...s, visible: false, playing: false }))
+            <View style={styles.imageModalHeader}>
+              <Text style={[styles.imageModalTitle, { color: theme.text }]} numberOfLines={2}>
+                {videoModal.title}
+              </Text>
+              <Pressable
+                onPress={() =>
+                  setVideoModal((s) => ({ ...s, visible: false, playing: false }))
+                }
+                style={styles.modalClose}
+              >
+                <Ionicons name="close-outline" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            {videoModal.videoId ? (() => {
+              const screenWidth = Dimensions.get('window').width;
+              // En pantallas pequeñas (<600px) usar 90%, en grandes usar 50% con max 500px
+              const videoWidth = screenWidth < 600
+                ? screenWidth * 0.85
+                : Math.min(screenWidth * 0.5, 500);
+              const videoHeight = videoWidth * 9 / 16;
+
+              // En web usamos iframe HTML nativo, en móvil usamos YoutubeIframe
+              if (Platform.OS === 'web') {
+                return (
+                  <iframe
+                    width={videoWidth}
+                    height={videoHeight}
+                    src={`https://www.youtube.com/embed/${videoModal.videoId}?autoplay=1&rel=0`}
+                    title="YouTube video"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    style={{ borderRadius: 8 }}
+                  />
+                );
               }
-              style={styles.modalClose}
-            >
-              <Ionicons name="close-outline" size={24} color={theme.text} />
-            </Pressable>
-            {videoModal.videoId ? (
-              <YoutubeIframe
-                height={(Dimensions.get('window').width * 9) / 16}
-                width={Dimensions.get('window').width * 0.9}
-                play={videoModal.playing}
-                videoId={videoModal.videoId}
-                onChangeState={(st) => {
-                  if (st === 'ended' || st === 'error') {
-                    setVideoModal((s) => ({ ...s, playing: false, visible: false }));
-                  }
-                }}
+
+              return (
+                <YoutubeIframe
+                  height={videoHeight}
+                  width={videoWidth}
+                  play={videoModal.playing}
+                  videoId={videoModal.videoId}
+                  onChangeState={(st) => {
+                    if (st === 'ended' || st === 'error') {
+                      setVideoModal((s) => ({ ...s, playing: false, visible: false }));
+                    }
+                  }}
+                />
+              );
+            })() : (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Ionicons name="videocam-off-outline" size={48} color={theme.textSecondary} />
+                <Text style={{ color: theme.textSecondary, marginTop: 12, fontSize: 16, textAlign: 'center' }}>
+                  Vídeo no disponible
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Imagen del Ejercicio */}
+      <Modal
+        visible={imageModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageModal({ visible: false, imageUrl: null, title: '' })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.imageModalCard, {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: theme.border
+          }]}>
+            <View style={styles.imageModalHeader}>
+              <Text style={[styles.imageModalTitle, { color: theme.text }]} numberOfLines={2}>
+                {imageModal.title}
+              </Text>
+              <Pressable
+                onPress={() => setImageModal({ visible: false, imageUrl: null, title: '' })}
+                style={styles.modalClose}
+              >
+                <Ionicons name="close-outline" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            {imageModal.imageUrl ? (
+              <Image
+                source={{ uri: imageModal.imageUrl }}
+                style={styles.exerciseImage}
+                resizeMode="contain"
               />
             ) : (
-              <Text style={{ color: theme.text }}>Vídeo no disponible</Text>
+              <Text style={{ color: theme.textSecondary, textAlign: 'center', padding: 20 }}>
+                Imagen no disponible
+              </Text>
             )}
           </View>
         </View>
@@ -3559,6 +4095,34 @@ const styles = StyleSheet.create({
   tipBullet: { fontSize: 18, lineHeight: 18, marginTop: 2 },
   tipText: { fontSize: 14, lineHeight: 20 },
 
+  // Modal Imagen del Ejercicio
+  imageModalCard: {
+    width: '94%',
+    maxWidth: 500,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  imageModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 12,
+    paddingRight: 30,
+  },
+  imageModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+  },
+  exerciseImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 10,
+  },
+
   // Modal Sin Rutina Activa
   noRoutineCard: {
     width: '90%',
@@ -3689,5 +4253,58 @@ const styles = StyleSheet.create({
   upgradeCancelText: {
     color: '#6B7280',
     fontSize: 14,
+  },
+
+  // ═══════════════ BISERIES ═══════════════
+  biserieBadge: {
+    position: 'absolute',
+    top: -6,
+    right: 14,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    zIndex: 10,
+  },
+  biserieBadgeText: {
+    color: '#000',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  biserieConnector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 0,
+    marginHorizontal: 20,
+    zIndex: 10,
+    top: -6,
+  },
+  biserieLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#F59E0B',
+  },
+  biseriePlusContainer: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 6,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  biseriePlusText: {
+    color: '#000',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
+    marginTop: -1,
   },
 });

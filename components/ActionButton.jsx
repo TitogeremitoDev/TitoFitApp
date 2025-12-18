@@ -22,6 +22,7 @@ export default function ActionButton({
   title,
   icon,
   variant = 'primary',
+  compact = false,
   ...pressableProps // Acepta onPress, onPressIn, onPressOut, etc.
 }) {
   const { theme } = useTheme();
@@ -48,14 +49,17 @@ export default function ActionButton({
       borderColor: theme.border,
     }];
 
+  // Estilos compactos para grid
+  const compactStyle = compact ? styles.btnCompact : null;
+
   const textStyle = isPrimary
     ? [styles.btnPrimaryTxt, { color: theme.primaryText }]
-    : [styles.btnSecondaryTxt, { color: theme.text }];
+    : [styles.btnSecondaryTxt, { color: theme.text }, compact && styles.btnCompactTxt];
 
   const iconColor = isPrimary ? theme.primaryText : theme.text;
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={[{ transform: [{ scale }] }, compact && { width: '100%' }]}>
       <Pressable
         {...pressableProps} // Pasa el onPress (de Link o normal)
         onPressIn={() => animate(0.98)}
@@ -63,11 +67,12 @@ export default function ActionButton({
         android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
         style={({ pressed }) => [
           baseStyle,
+          compactStyle,
           pressed && Platform.OS === 'ios' ? { opacity: 0.9 } : null,
           typeof pressableProps.style === 'function' ? pressableProps.style({ pressed }) : pressableProps.style,
         ]}
       >
-        {icon ? <Ionicons name={icon} size={18} color={iconColor} /> : null}
+        {icon ? <Ionicons name={icon} size={compact ? 16 : 18} color={iconColor} /> : null}
         <Text style={textStyle}>{title}</Text>
       </Pressable>
     </Animated.View>
@@ -119,5 +124,17 @@ const styles = StyleSheet.create({
     // color aplicado dinámicamente
     fontWeight: '700',
     letterSpacing: 0.4,
+  },
+
+  /* Estilos compactos para grid de 2 columnas */
+  btnCompact: {
+    width: '100%',
+    height: 40,
+    borderRadius: 12,
+    gap: 6,
+  },
+  btnCompactTxt: {
+    fontSize: 13,
+    letterSpacing: 0.2,
   },
 });
