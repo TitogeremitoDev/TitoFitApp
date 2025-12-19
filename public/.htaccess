@@ -1,0 +1,42 @@
+# TotalGains SPA Routing for Hostinger (Apache)
+# =============================================
+# Soluciona el problema de rutas cuando se refresca o accede directamente a URLs como /app/home
+# 
+# INSTRUCCIONES: Copia este archivo a la carpeta dist/ después de cada build
+# O súbelo directamente a la raíz de tu hosting en Hostinger
+
+RewriteEngine On
+RewriteBase /
+
+# Si el archivo o directorio existe, servirlo directamente
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Rutas /app/* -> buscar el archivo correspondiente sin /app
+# Ejemplo: /app/home -> home.html, /app/payment -> payment.html
+RewriteRule ^app/(.*)$ $1 [L]
+
+# Si aún no encuentra archivo, servir index.html para que React Router maneje la ruta
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
+
+# Configuración adicional para mejor rendimiento
+<IfModule mod_headers.c>
+    # Cache de assets estáticos (1 año)
+    <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
+        Header set Cache-Control "max-age=31536000, public"
+    </FilesMatch>
+    
+    # No cachear HTML para siempre tener la versión más reciente
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
+# Prevenir listado de directorios
+Options -Indexes
+
+# Configuración de errores - redirige 404 a index.html
+ErrorDocument 404 /index.html
