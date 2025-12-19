@@ -402,13 +402,19 @@ export default function PerfilScreen() {
                         <Text style={[styles.name, { color: theme.text }]}>{user?.nombre || 'Usuario'}</Text>
                         <Text style={[styles.username, { color: theme.textSecondary }]}>@{user?.username || 'usuario'}</Text>
 
+
                         <View style={styles.badgesRow}>
                             <View style={[styles.badge, { backgroundColor: theme.successLight }]}>
-                                <Text style={[styles.badgeText, { color: theme.successText }]}>{user?.tipoUsuario || 'ADMINISTRADOR'}</Text>
+                                <Text style={[styles.badgeText, { color: theme.successText }]}>
+                                    {user?.tipoUsuario === 'ENTRENADOR' && user?.currentTrainerId
+                                        ? 'ENTRENADOR-CLIENTE'
+                                        : (user?.tipoUsuario || 'FREEUSER')}
+                                </Text>
                             </View>
                         </View>
 
-                        {/* Subscription Expiry Info - Only show if user has subscriptionExpiry */}
+
+                        {/* Subscription Expiry Info - Only show if subscription is expired or urgent (cancelled) */}
                         {user?.subscriptionExpiry && user?.tipoUsuario !== 'FREEUSER' && (() => {
                             const expiryDate = new Date(user.subscriptionExpiry);
                             const now = new Date();
@@ -418,18 +424,22 @@ export default function PerfilScreen() {
                             const isExpired = daysRemaining <= 0;
                             const isUrgent = daysRemaining <= 7 && daysRemaining > 0;
 
-                            const statusColor = isExpired ? '#EF4444' : isUrgent ? '#F59E0B' : '#10B981';
-                            const statusBgColor = isExpired ? 'rgba(239, 68, 68, 0.15)' : isUrgent ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+                            // Solo mostrar si está expirada o próxima a expirar (cancelada)
+                            // El estado "activo" normal se muestra solo en Ajustes
+                            if (!isExpired && !isUrgent) {
+                                return null;
+                            }
+
+                            const statusColor = isExpired ? '#EF4444' : '#F59E0B';
+                            const statusBgColor = isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
                             const statusText = isExpired
                                 ? 'Suscripción expirada'
-                                : isUrgent
-                                    ? `⚠️ Expira en ${daysRemaining} día${daysRemaining !== 1 ? 's' : ''}`
-                                    : `✓ Activo hasta ${expiryDate.toLocaleDateString()}`;
+                                : `⚠️ Expira en ${daysRemaining} día${daysRemaining !== 1 ? 's' : ''}`;
 
                             return (
                                 <View style={[styles.subscriptionExpiryBanner, { backgroundColor: statusBgColor, borderColor: statusColor }]}>
                                     <Ionicons
-                                        name={isExpired ? 'warning' : isUrgent ? 'time' : 'checkmark-circle'}
+                                        name={isExpired ? 'warning' : 'time'}
                                         size={18}
                                         color={statusColor}
                                     />
@@ -437,13 +447,11 @@ export default function PerfilScreen() {
                                         <Text style={[styles.subscriptionExpiryText, { color: statusColor }]}>
                                             {statusText}
                                         </Text>
-                                        {(isExpired || isUrgent) && (
-                                            <TouchableOpacity onPress={() => router.push('/payment')}>
-                                                <Text style={[styles.subscriptionRenewLink, { color: statusColor }]}>
-                                                    Renovar ahora →
-                                                </Text>
-                                            </TouchableOpacity>
-                                        )}
+                                        <TouchableOpacity onPress={() => router.push('/payment')}>
+                                            <Text style={[styles.subscriptionRenewLink, { color: statusColor }]}>
+                                                Renovar ahora →
+                                            </Text>
+                                        </TouchableOpacity>
                                     </View>
                                 </View>
                             );
@@ -953,14 +961,25 @@ const styles = StyleSheet.create({
     },
     blob: {
         position: 'absolute',
-        width: 280,
-        height: 280,
+        width: Platform.OS === 'android' ? 220 : 280,
+        height: Platform.OS === 'android' ? 220 : 280,
         borderRadius: 160,
-        opacity: 0.25,
+        opacity: Platform.OS === 'android' ? 0.12 : 0.25,
         filter: Platform.OS === 'web' ? 'blur(70px)' : undefined,
+        // En Android, simular difuminado con bordes suaves
+        ...(Platform.OS === 'android' && {
+            borderWidth: 40,
+            borderColor: 'rgba(59, 130, 246, 0.05)',
+        }),
     },
-    blobTop: { top: -40, left: -40 },
-    blobBottom: { bottom: -30, right: -30 },
+    blobTop: { top: -60, left: -60 },
+    blobBottom: {
+        bottom: -50,
+        right: -50,
+        ...(Platform.OS === 'android' && {
+            borderColor: 'rgba(16, 185, 129, 0.05)',
+        }),
+    },
 
     header: {
         alignItems: 'center',

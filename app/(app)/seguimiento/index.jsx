@@ -444,7 +444,7 @@ const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function SeguimientoScreen() {
-    const { user, token } = useAuth();
+    const { user, token, refreshUser } = useAuth();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
 
     // Estados de secciones expandidas
@@ -1013,6 +1013,19 @@ export default function SeguimientoScreen() {
             } else {
                 // Guardar en la nube
                 await axios.post('/monitoring/daily', dataToSave);
+
+                // 📌 Sincronizar peso al perfil del usuario (solo si es el día actual)
+                if (isToday && minimalData.peso && parseFloat(minimalData.peso) > 0 && token) {
+                    try {
+                        await axios.put('/users/info', {
+                            info_user: { ...user.info_user, peso: parseFloat(minimalData.peso) }
+                        });
+                        // Refrescar usuario para que otros componentes vean el peso actualizado
+                        if (refreshUser) await refreshUser();
+                    } catch (updateErr) {
+                        console.log('[SEGUIMIENTO] Error actualizando peso en perfil:', updateErr.message);
+                    }
+                }
             }
 
             // Pre-rellenar el check-in diario
@@ -1365,7 +1378,7 @@ export default function SeguimientoScreen() {
                             disabled={isToday}
                         >
                             <Ionicons name="chevron-forward" size={26} color={isToday ? '#4B5563' : '#3B82F6'} />
-                            
+
                         </TouchableOpacity>
 
 
@@ -1796,15 +1809,27 @@ const styles = StyleSheet.create({
     },
     blob: {
         position: 'absolute',
-        width: 280,
-        height: 280,
+        width: Platform.OS === 'android' ? 220 : 280,
+        height: Platform.OS === 'android' ? 220 : 280,
         borderRadius: 160,
-        opacity: 0.25,
+        opacity: Platform.OS === 'android' ? 0.12 : 0.25,
         backgroundColor: '#3B82F6',
         filter: Platform.OS === 'web' ? 'blur(70px)' : undefined,
+        // En Android, simular difuminado con bordes suaves
+        ...(Platform.OS === 'android' && {
+            borderWidth: 40,
+            borderColor: 'rgba(59, 130, 246, 0.05)',
+        }),
     },
-    blobTop: { top: -40, left: -40 },
-    blobBottom: { bottom: -30, right: -30, backgroundColor: '#10B981' },
+    blobTop: { top: -60, left: -60 },
+    blobBottom: {
+        bottom: -50,
+        right: -50,
+        backgroundColor: '#10B981',
+        ...(Platform.OS === 'android' && {
+            borderColor: 'rgba(16, 185, 129, 0.05)',
+        }),
+    },
 
     scrollView: {
         flex: 1,

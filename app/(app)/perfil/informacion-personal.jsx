@@ -11,21 +11,23 @@ import axios from 'axios';
 const CustomSlider = ({ label, value, onValueChange, min, max, leftIcon, rightIcon, descriptions }) => {
     const { theme } = useTheme();
     const percentage = ((value - min) / (max - min)) * 100;
-    const [trackWidth, setTrackWidth] = useState(0);
+    const trackWidthRef = useRef(0);
 
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
             onMoveShouldSetPanResponder: () => true,
             onPanResponderGrant: (evt) => {
+                if (trackWidthRef.current <= 0) return; // Guard against 0 width
                 const locationX = evt.nativeEvent.locationX;
-                const newPercentage = Math.max(0, Math.min(100, (locationX / trackWidth) * 100));
+                const newPercentage = Math.max(0, Math.min(100, (locationX / trackWidthRef.current) * 100));
                 const newValue = Math.round((newPercentage / 100) * (max - min) + min);
                 onValueChange(Math.max(min, Math.min(max, newValue)));
             },
             onPanResponderMove: (evt) => {
+                if (trackWidthRef.current <= 0) return; // Guard against 0 width
                 const locationX = evt.nativeEvent.locationX;
-                const newPercentage = Math.max(0, Math.min(100, (locationX / trackWidth) * 100));
+                const newPercentage = Math.max(0, Math.min(100, (locationX / trackWidthRef.current) * 100));
                 const newValue = Math.round((newPercentage / 100) * (max - min) + min);
                 onValueChange(Math.max(min, Math.min(max, newValue)));
             },
@@ -33,7 +35,7 @@ const CustomSlider = ({ label, value, onValueChange, min, max, leftIcon, rightIc
     ).current;
 
     const onTrackLayout = (event) => {
-        setTrackWidth(event.nativeEvent.layout.width);
+        trackWidthRef.current = event.nativeEvent.layout.width;
     };
 
     const isWeb = Platform.OS === 'web';
@@ -42,13 +44,15 @@ const CustomSlider = ({ label, value, onValueChange, min, max, leftIcon, rightIc
         <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
             <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
             <View style={styles.sliderContainer}>
-                {!isWeb && (
+                {!isWeb && Platform.OS !== 'ios' && (
                     <View
-                        style={styles.sliderTrack}
+                        style={styles.sliderTouchArea}
                         onLayout={onTrackLayout}
                         {...panResponder.panHandlers}
                     >
-                        <View pointerEvents="none" style={[styles.sliderFill, { width: `${percentage}%`, backgroundColor: theme.primary }]} />
+                        <View style={styles.sliderTrack}>
+                            <View pointerEvents="none" style={[styles.sliderFill, { width: `${percentage}%`, backgroundColor: theme.primary }]} />
+                        </View>
                     </View>
                 )}
 
@@ -199,19 +203,17 @@ export default function InformacionPersonal() {
 
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Información Personal</Text>
-                <View style={{ width: 24 }} />
-                    <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: theme.primary }]}
-                        onPress={handleSubmit(onSubmit)}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.saveButtonText}>Guardar Cambios</Text>
-                        )}
-                    </TouchableOpacity>
-
+                <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: theme.primary }]}
+                    onPress={handleSubmit(onSubmit)}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <Text style={styles.saveButtonText}>Guardar</Text>
+                    )}
+                </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -741,17 +743,22 @@ const styles = StyleSheet.create({
     sliderContainer: {
         marginTop: 8,
     },
-    sliderTrack: {
-        height: 6,
-        backgroundColor: '#e0e0e0',
-        borderRadius: 3,
+    sliderTouchArea: {
+        // Invisible touch target - tall for easy tapping
+        paddingVertical: Platform.OS === 'ios' ? 16 : 10,
         marginBottom: 12,
+        justifyContent: 'center',
+    },
+    sliderTrack: {
+        // Visual track - thin bar
+        height: Platform.OS === 'ios' ? 8 : 6,
+        backgroundColor: '#e0e0e0',
+        borderRadius: Platform.OS === 'ios' ? 4 : 3,
         overflow: 'hidden',
-        paddingVertical: 10,
     },
     sliderFill: {
         height: '100%',
-        borderRadius: 3,
+        borderRadius: Platform.OS === 'ios' ? 4 : 3,
     },
     sliderControls: {
         flexDirection: 'row',
@@ -821,7 +828,8 @@ const styles = StyleSheet.create({
         marginTop: 12,
     },
     saveButton: {
-        paddingVertical: 16,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
         borderRadius: 12,
         alignItems: 'center',
         shadowColor: '#000',
@@ -832,7 +840,7 @@ const styles = StyleSheet.create({
     },
     saveButtonText: {
         color: '#fff',
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: 'bold',
     },
 });

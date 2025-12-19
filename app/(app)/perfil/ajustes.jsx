@@ -1018,8 +1018,8 @@ export default function AjustesScreen() {
           </View>
         )}
 
-        {/* Sección de Suscripción - Visible para usuarios con plan activo o premium */}
-        {(subscriptionData || user?.tipoUsuario === 'PREMIUM' || user?.tipoUsuario === 'CLIENTE') && (
+        {/* Sección de Suscripción - Visible para usuarios con plan activo (premium/entrenador) */}
+        {(subscriptionData || user?.tipoUsuario === 'PREMIUM' || user?.tipoUsuario === 'ENTRENADOR') && (
           <View style={styles.section}>
             <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
               <Ionicons name="card-outline" size={20} color={theme.text} />

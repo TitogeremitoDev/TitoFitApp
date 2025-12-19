@@ -10,6 +10,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -236,14 +237,6 @@ export default function HomeScreen() {
     } catch { }
   };
 
-  const handleVideosPress = () => {
-    if (user?.tipoUsuario === 'FREEUSER') {
-      setShowUpgradeModal(true);
-    } else {
-      router.push('/videos');
-    }
-  };
-
   const handlePerfilPress = () => {
     router.push('/perfil');
   };
@@ -280,8 +273,115 @@ export default function HomeScreen() {
     user?.tipoUsuario === 'ADMINISTRADOR' ||
     user?.tipoUsuario === 'PREMIUM';
 
+  const { width, height } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  // "Pequeño" si es < 750px de alto (iPhone SE/8/Mini range)
+  const isSmallHeight = height < 750 && !isWeb;
+
+  // Calculamos márgenes dinámicos para evitar solapamiento con botones flotantes
+  const topMargin = isWeb ? 0 : (Platform.OS === 'ios' ? 120 : 100);
+
+  const renderContent = () => (
+    <>
+      <View style={[styles.card, !isWeb && { width: '100%', maxWidth: 500, alignSelf: 'center', paddingVertical: isSmallHeight ? 16 : 24, marginTop: topMargin }]}>
+        {/* Logo: mostrar logo del entrenador si es cliente con trainer */}
+        {currentTrainer?.profile?.logoUrl ? (
+          <Image
+            source={{ uri: currentTrainer.profile.logoUrl }}
+            resizeMode="contain"
+            style={[styles.logo, styles.logoVIP, !isWeb && { width: width * 0.3, height: width * 0.3, maxHeight: isSmallHeight ? 90 : 140, maxWidth: isSmallHeight ? 90 : 140, marginBottom: isSmallHeight ? 8 : 12 }]}
+          />
+        ) : (
+          <Image
+            source={require('../../assets/logo.png')}
+            resizeMode="contain"
+            style={[styles.logo, isPremiumUser && styles.logoVIP, !isWeb && { width: width * 0.3, height: width * 0.3, maxHeight: isSmallHeight ? 90 : 140, maxWidth: isSmallHeight ? 90 : 140, marginBottom: isSmallHeight ? 8 : 12 }]}
+          />
+        )}
+        {/* Título: mostrar nombre del entrenador si es cliente con trainer */}
+        <Text style={[styles.title, isSmallHeight && { fontSize: 20 }]}>
+          {currentTrainer?.profile?.brandName || currentTrainer?.nombre || 'TotalGains'}
+        </Text>
+        <Text style={[styles.subtitle, isSmallHeight && { marginBottom: 12 }]}>Tu progreso, bien medido.</Text>
+
+        {/* Botón Principal siempre destacado */}
+        <Link href="/entreno" asChild>
+          <ActionButton title="Empezar entreno" icon="barbell-outline" compact={isSmallHeight} />
+        </Link>
+        <View style={{ height: isSmallHeight ? 10 : 12 }} />
+
+        {/* Grid para botones secundarios en pantallas pequeñas, Lista en grandes */}
+        {isSmallHeight ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', width: '100%', gap: 10 }}>
+            {/* Fila 1 */}
+            <View style={{ width: '48%' }}>
+              <Link href="/rutinas" asChild>
+                <ActionButton title="Rutina" icon="construct-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+              </Link>
+            </View>
+            <View style={{ width: '48%' }}>
+              <Link href="/seguimiento" asChild>
+                <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+              </Link>
+            </View>
+
+            {/* Fila 2 */}
+            <View style={{ width: '48%' }}>
+              <Link href="/nutricion" asChild>
+                <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+              </Link>
+            </View>
+            <View style={{ width: '48%' }}>
+              <ActionButton
+                title="Perfil"
+                icon="person-outline"
+                variant="secondary"
+                onPress={handlePerfilPress}
+                compact={true}
+                style={{ height: 50, justifyContent: 'center' }}
+              />
+            </View>
+          </View>
+        ) : (
+          <>
+            <Link href="/rutinas" asChild>
+              <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
+            </Link>
+            <View style={{ height: 10 }} />
+            <Link href="/seguimiento" asChild>
+              <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" />
+            </Link>
+            <View style={{ height: 10 }} />
+            <Link href="/nutricion" asChild>
+              <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
+            </Link>
+            <View style={{ height: 10 }} />
+            <ActionButton
+              title="Perfil"
+              icon="person-outline"
+              variant="secondary"
+              onPress={handlePerfilPress}
+            />
+          </>
+        )}
+
+        <View style={{ height: isSmallHeight ? 8 : 10 }} />
+
+        <Text style={styles.version}>v{APP_VERSION} • TotalGains</Text>
+        {/* Enlace a la web */}
+        <Link href="https://totalgains.es/app" asChild>
+          <Text style={styles.website}>www.TotalGains.es</Text>
+        </Link>
+      </View>
+
+      <View style={[styles.bannerContainer, isSmallHeight && { marginTop: 10, paddingVertical: 12 }]}>
+        <Text style={styles.bannerText}>{fraseActual}</Text>
+      </View>
+    </>
+  );
+
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, !isWeb && { justifyContent: 'flex-start' }]}>
       <StatusBar style="light" />
       <LinearGradient
         colors={['#0B1220', '#0D1B2A', '#111827']}
@@ -349,67 +449,7 @@ export default function HomeScreen() {
       )}
 
       <View style={styles.contentContainer}>
-        <View style={styles.card}>
-          {/* Logo: mostrar logo del entrenador si es cliente con trainer */}
-          {currentTrainer?.profile?.logoUrl ? (
-            <Image
-              source={{ uri: currentTrainer.profile.logoUrl }}
-              resizeMode="contain"
-              style={[styles.logo, styles.logoVIP]}
-            />
-          ) : (
-            <Image
-              source={require('../../assets/logo.png')}
-              resizeMode="contain"
-              style={[styles.logo, isPremiumUser && styles.logoVIP]}
-            />
-          )}
-          {/* Título: mostrar nombre del entrenador si es cliente con trainer */}
-          <Text style={styles.title}>
-            {currentTrainer?.profile?.brandName || currentTrainer?.nombre || 'TotalGains'}
-          </Text>
-          <Text style={styles.subtitle}>Tu progreso, bien medido.</Text>
-
-          <Link href="/entreno" asChild>
-            <ActionButton title="Empezar entreno" icon="barbell-outline" />
-          </Link>
-          <View style={{ height: 10 }} />
-          <Link href="/rutinas" asChild>
-            <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
-          </Link>
-          <View style={{ height: 10 }} />
-          <Link href="/seguimiento" asChild>
-            <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" />
-          </Link>
-          <View style={{ height: 10 }} />
-          <Link href="/nutricion" asChild>
-            <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
-          </Link>
-          <View style={{ height: 10 }} />
-          <ActionButton
-            title="Perfil"
-            icon="person-outline"
-            variant="secondary"
-            onPress={handlePerfilPress}
-          />
-          <View style={{ height: 10 }} />
-          <ActionButton
-            title="Videos"
-            icon="videocam-outline"
-            variant="secondary"
-            onPress={handleVideosPress}
-          />
-
-          <Text style={styles.version}>v{APP_VERSION} • TotalGains</Text>
-          {/* Enlace a la web */}
-          <Link href="https://totalgains.es/app" asChild>
-            <Text style={styles.website}>www.TotalGains.es</Text>
-          </Link>
-        </View>
-
-        <View style={styles.bannerContainer}>
-          <Text style={styles.bannerText}>{fraseActual}</Text>
-        </View>
+        {renderContent()}
       </View>
 
       <Modal
@@ -525,15 +565,27 @@ const styles = StyleSheet.create({
   contentContainer: { width: '86%', alignItems: 'center', bottom: -20 },
   blob: {
     position: 'absolute',
-    width: 280,
-    height: 280,
+    width: Platform.OS === 'android' ? 220 : 280,
+    height: Platform.OS === 'android' ? 220 : 280,
     borderRadius: 160,
-    opacity: 0.25,
+    opacity: Platform.OS === 'android' ? 0.12 : 0.25,
     backgroundColor: '#3B82F6',
     filter: Platform.OS === 'web' ? 'blur(70px)' : undefined,
+    // En Android, simular difuminado con bordes suaves
+    ...(Platform.OS === 'android' && {
+      borderWidth: 40,
+      borderColor: 'rgba(59, 130, 246, 0.05)',
+    }),
   },
-  blobTop: { top: -40, left: -40 },
-  blobBottom: { bottom: -30, right: -30, backgroundColor: '#10B981' },
+  blobTop: { top: -60, left: -60 },
+  blobBottom: {
+    bottom: -50,
+    right: -50,
+    backgroundColor: '#10B981',
+    ...(Platform.OS === 'android' && {
+      borderColor: 'rgba(16, 185, 129, 0.05)',
+    }),
+  },
   paymentButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 40,

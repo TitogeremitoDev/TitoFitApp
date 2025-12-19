@@ -332,25 +332,23 @@ export default function TransformacionScreen() {
 
     // Check if goal reached
     useEffect(() => {
-        if (goalChecked || !targetWeight || dailyData.length === 0) return;
+        if (goalChecked || !targetWeight) return;
 
-        const latestWeight = dailyData
-            .filter(d => d.peso && d.peso > 0)
-            .slice(-1)[0]?.peso;
+        // Use current weight from user profile
+        const currentUserWeight = user?.info_user?.peso;
+        if (!currentUserWeight) return;
 
-        if (!latestWeight) return;
+        // Determine direction: if target > current, user wants to GAIN weight
+        const wantsToGain = targetWeight > currentUserWeight;
 
-        const objetivo = user?.info_user?.objetivoPrincipal || '';
-        const isVolumen = objetivo.toLowerCase().includes('volumen') || objetivo.toLowerCase().includes('masa');
-
-        // Check if goal reached
-        if (isVolumen && latestWeight >= targetWeight) {
+        // Check if goal reached based on direction
+        if (wantsToGain && currentUserWeight >= targetWeight) {
             setGoalReachedModal(true);
-        } else if (!isVolumen && latestWeight <= targetWeight) {
+        } else if (!wantsToGain && currentUserWeight <= targetWeight) {
             setGoalReachedModal(true);
         }
         setGoalChecked(true);
-    }, [targetWeight, dailyData, goalChecked, user]);
+    }, [targetWeight, user, goalChecked]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // SAVE TARGET WEIGHT
@@ -408,53 +406,40 @@ export default function TransformacionScreen() {
         };
     }, [dailyData]);
 
-    // Current weight
+    // Current weight from user profile (most reliable source)
     const currentWeight = useMemo(() => {
-        const weightEntries = dailyData.filter(d => d.peso && d.peso > 0);
-        return weightEntries.length > 0 ? weightEntries[weightEntries.length - 1].peso : null;
-    }, [dailyData]);
+        return user?.info_user?.peso || null;
+    }, [user]);
 
-    // Weight progress percentage
+    // Weight progress percentage - simple direct comparison
     const weightProgress = useMemo(() => {
         if (!targetWeight || !currentWeight) return null;
-        const startWeight = dailyData.filter(d => d.peso && d.peso > 0)[0]?.peso;
-        if (!startWeight) return null;
 
-        const totalDiff = Math.abs(targetWeight - startWeight);
-        const currentDiff = Math.abs(currentWeight - startWeight);
-        return totalDiff > 0 ? Math.min(100, (currentDiff / totalDiff) * 100) : 0;
+        // If already at or past target
+        if (currentWeight === targetWeight) return 100;
+
+        // Determine direction: target > current = wants to GAIN, target < current = wants to LOSE
+        const wantsToGain = targetWeight > currentWeight;
+
+        // Calculate how much progress has been made
+        // Use initial weight from profile or assume a reasonable starting point
+        const initialWeight = dailyData.filter(d => d.peso && d.peso > 0)[0]?.peso || currentWeight;
+
+        const totalNeeded = Math.abs(targetWeight - initialWeight);
+        if (totalNeeded === 0) return currentWeight === targetWeight ? 100 : 0;
+
+        if (wantsToGain) {
+            // Gaining: progress = how much we've gained from initial towards target
+            const gained = currentWeight - initialWeight;
+            if (gained < 0) return 0; // Going wrong direction
+            return Math.min(100, (gained / totalNeeded) * 100);
+        } else {
+            // Losing: progress = how much we've lost from initial towards target
+            const lost = initialWeight - currentWeight;
+            if (lost < 0) return 0; // Going wrong direction (gaining instead of losing)
+            return Math.min(100, (lost / totalNeeded) * 100);
+        }
     }, [targetWeight, currentWeight, dailyData]);
-
-    // Calculate target line position for weight chart
-    const targetLinePosition = useMemo(() => {
-        if (!targetWeight || !weightChartData) return null;
-
-        const weights = weightChartData.datasets[0].data;
-        const minWeight = Math.min(...weights);
-        const maxWeight = Math.max(...weights);
-
-        // Expand range to include target if outside current data
-        const chartMin = Math.min(minWeight, targetWeight) - 2;
-        const chartMax = Math.max(maxWeight, targetWeight) + 2;
-        const range = chartMax - chartMin;
-
-        if (range <= 0) return null;
-
-        // Calculate percentage from top (since Y axis is inverted visually)
-        const percentFromBottom = (targetWeight - chartMin) / range;
-        const chartHeight = 200; // Same as chart height
-        const paddingTop = 16; // Chart internal padding
-        const paddingBottom = 40; // Space for labels
-        const graphHeight = chartHeight - paddingTop - paddingBottom;
-
-        // Position from top of chart area
-        const positionFromTop = paddingTop + graphHeight * (1 - percentFromBottom);
-
-        return {
-            top: positionFromTop,
-            visible: targetWeight >= chartMin && targetWeight <= chartMax,
-        };
-    }, [targetWeight, weightChartData]);
 
     // Mood chart data
     const moodChartData = useMemo(() => {
@@ -664,14 +649,6 @@ export default function TransformacionScreen() {
                                     </Text>
                                 )}
                             </View>
-                            {weightProgress !== null && (
-                                <View style={styles.progressBarContainer}>
-                                    <View style={styles.progressBarBg}>
-                                        <View style={[styles.progressBarFill, { width: `${Math.min(100, weightProgress)}%` }]} />
-                                    </View>
-                                    <Text style={styles.progressText}>{Math.round(weightProgress)}% del camino</Text>
-                                </View>
-                            )}
                         </View>
                     ) : (
                         <Text style={styles.noTargetText}>Define tu peso objetivo para empezar</Text>
@@ -689,49 +666,20 @@ export default function TransformacionScreen() {
 
                     {weightChartData ? (
                         <View style={styles.chartWrapper}>
-                            {/* Chart container with relative positioning for overlay */}
-                            <View style={{ position: 'relative' }}>
-                                <LineChart
-                                    data={weightChartData}
-                                    width={chartWidth}
-                                    height={200}
-                                    chartConfig={{
-                                        ...chartConfig,
-                                        color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                                    }}
-                                    bezier
-                                    style={styles.chart}
-                                    yAxisSuffix=" kg"
-                                    withHorizontalLines={true}
-                                    withVerticalLines={false}
-                                />
-                                {/* Target weight horizontal line overlay */}
-                                {targetWeight && targetLinePosition && targetLinePosition.visible && (
-                                    <View
-                                        style={[
-                                            styles.targetLineOverlay,
-                                            {
-                                                top: targetLinePosition.top,
-                                                left: 50, // Y-axis label space
-                                                right: 10,
-                                            }
-                                        ]}
-                                    >
-                                        <View style={styles.targetLine} />
-                                        <View style={styles.targetLineBadge}>
-                                            <Text style={styles.targetLineBadgeText}>🎯 {targetWeight}</Text>
-                                        </View>
-                                    </View>
-                                )}
-                            </View>
-                            {targetWeight && (
-                                <View style={styles.targetLineInfo}>
-                                    <View style={styles.targetLineLegend}>
-                                        <View style={styles.targetLineDash} />
-                                        <Text style={styles.targetLineLegendText}>Línea objetivo: {targetWeight} kg</Text>
-                                    </View>
-                                </View>
-                            )}
+                            <LineChart
+                                data={weightChartData}
+                                width={chartWidth}
+                                height={200}
+                                chartConfig={{
+                                    ...chartConfig,
+                                    color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                }}
+                                bezier
+                                style={styles.chart}
+                                yAxisSuffix=" kg"
+                                withHorizontalLines={false}
+                                withVerticalLines={false}
+                            />
                         </View>
                     ) : (
                         <View style={styles.noDataContainer}>

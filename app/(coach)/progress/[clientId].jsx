@@ -20,6 +20,8 @@ import {
     Modal,
     TouchableOpacity,
     FlatList,
+    Platform,
+    ActionSheetIOS,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -858,33 +860,79 @@ export default function ClientProgressDetail() {
                             <View style={styles.kpiFilters}>
                                 <View style={styles.kpiFilterRow}>
                                     <Text style={styles.kpiFilterLabel}>Músculo:</Text>
-                                    <View style={styles.kpiFilterPicker}>
-                                        <Picker
-                                            selectedValue={selMusculo}
-                                            onValueChange={handleMusculoChange}
-                                            style={styles.kpiPickerStyle}
+                                    {Platform.OS === 'ios' ? (
+                                        <TouchableOpacity
+                                            style={styles.iosPickerButton}
+                                            onPress={() => {
+                                                const options = ['Cancelar', ...listaMusculos.map(m => m === 'TOTAL' ? 'Todos' : m)];
+                                                ActionSheetIOS.showActionSheetWithOptions(
+                                                    { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
+                                                    (buttonIndex) => {
+                                                        if (buttonIndex > 0) {
+                                                            handleMusculoChange(listaMusculos[buttonIndex - 1]);
+                                                        }
+                                                    }
+                                                );
+                                            }}
                                         >
-                                            {listaMusculos.map(m => (
-                                                <Picker.Item key={m} label={m === 'TOTAL' ? 'Todos' : m} value={m} />
-                                            ))}
-                                        </Picker>
-                                    </View>
+                                            <Text style={styles.iosPickerText}>
+                                                {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
+                                            </Text>
+                                            <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                        </TouchableOpacity>
+                                    ) : (
+                                        <View style={styles.kpiFilterPicker}>
+                                            <Picker
+                                                selectedValue={selMusculo}
+                                                onValueChange={handleMusculoChange}
+                                                style={styles.kpiPickerStyle}
+                                            >
+                                                {listaMusculos.map(m => (
+                                                    <Picker.Item key={m} label={m === 'TOTAL' ? 'Todos' : m} value={m} />
+                                                ))}
+                                            </Picker>
+                                        </View>
+                                    )}
                                 </View>
                                 {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
                                     <View style={styles.kpiFilterRow}>
                                         <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
-                                        <View style={styles.kpiFilterPicker}>
-                                            <Picker
-                                                selectedValue={selEjercicio}
-                                                onValueChange={setSelEjercicio}
-                                                style={styles.kpiPickerStyle}
+                                        {Platform.OS === 'ios' ? (
+                                            <TouchableOpacity
+                                                style={styles.iosPickerButton}
+                                                onPress={() => {
+                                                    const options = ['Cancelar', 'Todos', ...listaEjercicios];
+                                                    ActionSheetIOS.showActionSheetWithOptions(
+                                                        { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                                                        (buttonIndex) => {
+                                                            if (buttonIndex === 1) {
+                                                                setSelEjercicio('');
+                                                            } else if (buttonIndex > 1) {
+                                                                setSelEjercicio(listaEjercicios[buttonIndex - 2]);
+                                                            }
+                                                        }
+                                                    );
+                                                }}
                                             >
-                                                <Picker.Item label="Todos" value="" />
-                                                {listaEjercicios.map(e => (
-                                                    <Picker.Item key={e} label={e} value={e} />
-                                                ))}
-                                            </Picker>
-                                        </View>
+                                                <Text style={styles.iosPickerText}>
+                                                    {selEjercicio || 'Todos'}
+                                                </Text>
+                                                <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <View style={styles.kpiFilterPicker}>
+                                                <Picker
+                                                    selectedValue={selEjercicio}
+                                                    onValueChange={setSelEjercicio}
+                                                    style={styles.kpiPickerStyle}
+                                                >
+                                                    <Picker.Item label="Todos" value="" />
+                                                    {listaEjercicios.map(e => (
+                                                        <Picker.Item key={e} label={e} value={e} />
+                                                    ))}
+                                                </Picker>
+                                            </View>
+                                        )}
                                     </View>
                                 )}
                             </View>
@@ -2458,6 +2506,24 @@ const styles = StyleSheet.create({
     },
     kpiPickerStyle: {
         height: 40,
+    },
+    // iOS ActionSheet button styles
+    iosPickerButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        minHeight: 40,
+    },
+    iosPickerText: {
+        fontSize: 14,
+        color: '#1e293b',
     },
 
     // KPI Selector - Estilo de botón más visible

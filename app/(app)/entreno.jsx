@@ -153,17 +153,30 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
   const { theme } = useTheme();
   const listRef = useRef(null);
   const [wrapW, setWrapW] = useState(Dimensions.get('window').width);
-  const SLIDE_W = Math.max(1, wrapW - ARROW_W * 2);
+  const SLIDE_W = Math.max(150, wrapW - ARROW_W * 2);
 
   const safeInitial = Math.max(0, Math.min(initialIndex, Math.max(0, data.length - 1)));
-  const idxRef = useRef(safeInitial);
+  const [currentIndex, setCurrentIndex] = useState(safeInitial);
+
+  // Sync with external initialIndex changes (e.g., when key changes trigger remount)
+  useEffect(() => {
+    const safe = Math.max(0, Math.min(initialIndex, data.length - 1));
+    setCurrentIndex(safe);
+  }, [initialIndex, data.length]);
+
+  // Scroll to current index when it changes
+  useEffect(() => {
+    if (listRef.current && SLIDE_W > 0) {
+      listRef.current.scrollToOffset({ offset: currentIndex * SLIDE_W, animated: false });
+    }
+  }, [currentIndex, SLIDE_W]);
 
   const move = (dir) => {
-    let next = idxRef.current + dir;
-    next = Math.max(0, Math.min(next, Math.max(0, data.length - 1)));
-    idxRef.current = next;
-    listRef.current?.scrollToIndex({ index: next, animated: true });
-    onIndexChange?.(next);
+    const next = Math.max(0, Math.min(currentIndex + dir, data.length - 1));
+    if (next !== currentIndex) {
+      setCurrentIndex(next);
+      onIndexChange?.(next);
+    }
   };
 
   return (
@@ -172,7 +185,12 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
         borderColor: theme.border,
         backgroundColor: theme.backgroundSecondary
       }]}
-      onLayout={(e) => setWrapW(e.nativeEvent.layout.width)}
+      onLayout={(e) => {
+        const newWidth = e.nativeEvent.layout.width;
+        if (newWidth > 100) {
+          setWrapW(newWidth);
+        }
+      }}
     >
       <Pressable
         onPress={() => move(-1)}
@@ -194,11 +212,11 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
       <FlatList
         ref={listRef}
         horizontal
-        pagingEnabled
+        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         data={data}
         keyExtractor={(_, i) => String(i)}
-        initialScrollIndex={idxRef.current}
+        initialScrollIndex={safeInitial}
         renderItem={(props) => (
           <View style={[styles.slide, { width: SLIDE_W }]}>{renderItem(props)}</View>
         )}
@@ -207,12 +225,6 @@ function Carousel({ data, renderItem, onIndexChange, initialIndex = 0 }) {
           offset: SLIDE_W * i,
           index: i,
         })}
-        onMomentumScrollEnd={(ev) => {
-          const i = Math.round(ev.nativeEvent.contentOffset.x / (SLIDE_W || 1));
-          const clamped = Math.max(0, Math.min(i, Math.max(0, data.length - 1)));
-          idxRef.current = clamped;
-          onIndexChange?.(clamped);
-        }}
       />
 
       <Pressable

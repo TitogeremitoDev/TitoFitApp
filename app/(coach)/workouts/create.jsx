@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Platform,
+  ActionSheetIOS,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -178,33 +180,79 @@ const ExerciseCard = React.memo(({
         <View style={styles.editBlock}>
           <View style={styles.inlineRow}>
             <Text style={styles.inlineLabel}>Músculo</Text>
-            <View style={[styles.pickerWrapper, { flex: 1 }]}>
-              <Picker
-                selectedValue={item.musculo ?? ''}
-                onValueChange={(val) => onMuscleChange(diaKey, item.id, val)}
-                style={styles.picker}
+            {Platform.OS === 'ios' ? (
+              <TouchableOpacity
+                style={[styles.iosPickerButton, { flex: 1 }]}
+                onPress={() => {
+                  const options = ['Cancelar', ...muscles];
+                  ActionSheetIOS.showActionSheetWithOptions(
+                    { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
+                    (buttonIndex) => {
+                      if (buttonIndex > 0) {
+                        onMuscleChange(diaKey, item.id, muscles[buttonIndex - 1]);
+                      }
+                    }
+                  );
+                }}
               >
-                <Picker.Item label="Seleccionar..." value="" />
-                {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
-              </Picker>
-            </View>
+                <Text style={[styles.iosPickerText, !item.musculo && { color: '#94a3b8' }]}>
+                  {item.musculo || 'Seleccionar...'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#64748b" />
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.pickerWrapper, { flex: 1 }]}>
+                <Picker
+                  selectedValue={item.musculo ?? ''}
+                  onValueChange={(val) => onMuscleChange(diaKey, item.id, val)}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Seleccionar..." value="" />
+                  {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
+                </Picker>
+              </View>
+            )}
           </View>
 
           <View style={[styles.inlineRow, { marginTop: 8 }]}>
             <Text style={styles.inlineLabel}>Ejercicio</Text>
-            <View style={[styles.pickerWrapper, { flex: 1 }]}>
-              <Picker
-                selectedValue={item.dbId || ''}
-                onValueChange={(val) => onExerciseChange(diaKey, item.id, val)}
-                style={styles.picker}
-                enabled={!!item.musculo}
+            {Platform.OS === 'ios' ? (
+              <TouchableOpacity
+                style={[styles.iosPickerButton, { flex: 1 }, !item.musculo && { opacity: 0.5 }]}
+                disabled={!item.musculo}
+                onPress={() => {
+                  const filteredExercises = exercises.filter(e => e.muscle === item.musculo);
+                  const options = ['Cancelar', ...filteredExercises.map(e => e.name)];
+                  ActionSheetIOS.showActionSheetWithOptions(
+                    { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                    (buttonIndex) => {
+                      if (buttonIndex > 0) {
+                        onExerciseChange(diaKey, item.id, filteredExercises[buttonIndex - 1]._id);
+                      }
+                    }
+                  );
+                }}
               >
-                <Picker.Item label={item.musculo ? (item.nombre || "Seleccionar...") : "Primero selecciona músculo"} value="" />
-                {exercises.filter(e => e.muscle === item.musculo).map(e => (
-                  <Picker.Item key={e._id} label={e.name} value={e._id} />
-                ))}
-              </Picker>
-            </View>
+                <Text style={[styles.iosPickerText, !item.nombre && { color: '#94a3b8' }]}>
+                  {item.nombre || (item.musculo ? 'Seleccionar...' : 'Primero selecciona músculo')}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#64748b" />
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.pickerWrapper, { flex: 1 }]}>
+                <Picker
+                  selectedValue={item.dbId || ''}
+                  onValueChange={(val) => onExerciseChange(diaKey, item.id, val)}
+                  style={styles.picker}
+                  enabled={!!item.musculo}
+                >
+                  <Picker.Item label={item.musculo ? (item.nombre || "Seleccionar...") : "Primero selecciona músculo"} value="" />
+                  {exercises.filter(e => e.muscle === item.musculo).map(e => (
+                    <Picker.Item key={e._id} label={e.name} value={e._id} />
+                  ))}
+                </Picker>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -960,28 +1008,72 @@ export default function CreateRoutineScreen() {
           <View style={styles.selectorContainer}>
             <View style={styles.pickerGroup}>
               <Text style={styles.pickerLabel}>Músculo</Text>
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={selectedMuscle}
-                  onValueChange={(val) => {
-                    setSelectedMuscle(val);
-                    fetchExercisesForMuscle(val);
+              {Platform.OS === 'ios' ? (
+                <TouchableOpacity
+                  style={styles.iosPickerButton}
+                  onPress={() => {
+                    const options = ['Cancelar', ...muscles];
+                    ActionSheetIOS.showActionSheetWithOptions(
+                      { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
+                      (buttonIndex) => {
+                        if (buttonIndex > 0) {
+                          const selected = muscles[buttonIndex - 1];
+                          setSelectedMuscle(selected);
+                          fetchExercisesForMuscle(selected);
+                        }
+                      }
+                    );
                   }}
-                  style={styles.picker}
                 >
-                  <Picker.Item label="Seleccionar..." value="" />
-                  {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
-                </Picker>
-              </View>
+                  <Text style={[styles.iosPickerText, !selectedMuscle && { color: '#94a3b8' }]}>
+                    {selectedMuscle || 'Seleccionar...'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#64748b" />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={selectedMuscle}
+                    onValueChange={(val) => {
+                      setSelectedMuscle(val);
+                      fetchExercisesForMuscle(val);
+                    }}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Seleccionar..." value="" />
+                    {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
+                  </Picker>
+                </View>
+              )}
             </View>
 
             {selectedMuscle && (
               <View style={styles.pickerGroup}>
                 <Text style={styles.pickerLabel}>Ejercicio</Text>
-                <View style={styles.pickerWrapper}>
-                  {loadingExercises ? (
-                    <ActivityIndicator color="#3b82f6" style={{ padding: 14 }} />
-                  ) : (
+                {loadingExercises ? (
+                  <ActivityIndicator color="#3b82f6" style={{ padding: 14 }} />
+                ) : Platform.OS === 'ios' ? (
+                  <TouchableOpacity
+                    style={styles.iosPickerButton}
+                    onPress={() => {
+                      const options = ['Cancelar', ...exercises.map(e => e.name)];
+                      ActionSheetIOS.showActionSheetWithOptions(
+                        { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                        (buttonIndex) => {
+                          if (buttonIndex > 0) {
+                            setSelectedExercise(exercises[buttonIndex - 1]._id);
+                          }
+                        }
+                      );
+                    }}
+                  >
+                    <Text style={[styles.iosPickerText, !selectedExercise && { color: '#94a3b8' }]}>
+                      {exercises.find(e => e._id === selectedExercise)?.name || 'Seleccionar...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="#64748b" />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.pickerWrapper}>
                     <Picker
                       selectedValue={selectedExercise}
                       onValueChange={setSelectedExercise}
@@ -990,8 +1082,8 @@ export default function CreateRoutineScreen() {
                       <Picker.Item label="Seleccionar..." value="" />
                       {exercises.map(e => <Picker.Item key={e._id} label={e.name} value={e._id} />)}
                     </Picker>
-                  )}
-                </View>
+                  </View>
+                )}
               </View>
             )}
 
@@ -1424,6 +1516,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  // iOS ActionSheet button styles
+  iosPickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#0073ffff',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    minHeight: 50,
+  },
+  iosPickerText: {
+    fontSize: 16,
+    color: '#1e293b',
+  },
   warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
