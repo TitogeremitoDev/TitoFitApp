@@ -1670,7 +1670,7 @@ export default function EvolucionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#0D1B2A', padding: 10, marginTop: 30, flex: 1 },
+  container: { backgroundColor: '#0D1B2A', padding: 10, flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: '#E5E7EB' },
 

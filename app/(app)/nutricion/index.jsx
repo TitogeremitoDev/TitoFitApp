@@ -834,14 +834,14 @@ const styles = StyleSheet.create({
     weekPreviewRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        gap: Math.min(6, width * 0.015),
+        gap: 4,
     },
     weekPreviewDay: {
-        width: (width - 40 - 6 * 6) / 7, // (screenWidth - padding - gaps) / 7 days
-        minWidth: 36,
-        maxWidth: 60,
+        // Calculate: screenWidth - margins(40) - cardPadding(32) - gaps(4*6=24) = available width / 7
+        flex: 1,
+        maxWidth: 44,
         alignItems: 'center',
-        paddingVertical: Math.min(10, width * 0.025),
+        paddingVertical: 8,
         borderRadius: 10,
     },
     weekPreviewDayToday: {

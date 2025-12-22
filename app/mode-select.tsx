@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -20,6 +21,7 @@ interface Mode {
 export default function ModeSelect() {
     const { user, logout } = useAuth();
     const { theme, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
 
     const isAdmin = user?.tipoUsuario === 'ADMINISTRADOR';
     // Acceso coach: es admin, tiene tipo ENTRENADOR, O tiene código de entrenador configurado
@@ -98,7 +100,11 @@ export default function ModeSelect() {
     return (
         <View style={[
             styles.container,
-            { backgroundColor: isDark ? '#111827' : '#f3f4f6' }
+            {
+                backgroundColor: isDark ? '#111827' : '#f3f4f6',
+                paddingTop: Math.max(insets.top, 60),
+                paddingBottom: insets.bottom > 0 ? insets.bottom : 20,
+            }
         ]}>
             <View style={styles.header}>
                 <Text style={[
@@ -156,7 +162,7 @@ export default function ModeSelect() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        paddingTop: 60,
+        // paddingTop ahora se aplica dinámicamente con insets
         paddingHorizontal: 20,
     },
     header: {

@@ -7,21 +7,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { predefinedRoutines } from '../../src/data/predefinedRoutines'; // Ajusta la ruta si es necesario
 
 // --- 2. IMPORTACIONES EXISTENTES ---
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+// ThemeProvider de @react-navigation/native removido para evitar múltiples NavigationContainers
+// Expo Router ya maneja la navegación internamente
 import { useFonts } from 'expo-font';
 import { SplashScreen, Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable, View } from 'react-native';
 import 'react-native-reanimated';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // Asegúrate de que la importación de Ionicons sea correcta para tu proyecto
 // Puede ser '@expo/vector-icons' o '@react-vector-icons/ionicons'
 import { Ionicons } from '@expo/vector-icons';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+// useColorScheme ya no es necesario aquí
 
 // AÑADIDO: Importar nuestro ThemeProvider personalizado
-import { ThemeProvider as CustomThemeProvider } from '../../context/ThemeContext';
+import { ThemeProvider as CustomThemeProvider, useTheme } from '../../context/ThemeContext';
 
 // AÑADIDO: Sistema de logros estilo Steam
 import AchievementToast from '../../components/AchievementToast';
@@ -151,8 +152,27 @@ function AchievementsSyncWrapper({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Componente SafeAreaView con tema aplicado
+// Usa useSafeAreaInsets para manejar correctamente tanto navegación por botones como por gestos
+function ThemedSafeAreaView({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={{
+      flex: 1,
+      backgroundColor: theme.background,
+      paddingTop: insets.top,
+      // Solo aplicar padding bottom si hay un inset real (navegación por botones)
+      // En navegación por gestos, insets.bottom es muy pequeño (~20-30px) o 0
+      paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
+    }}>
+      {children}
+    </View>
+  );
+}
+
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const [loaded, fontError] = useFonts({ // Capturamos error de fuentes
     SpaceMono: require('../../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -223,64 +243,56 @@ export default function RootLayout() {
         <AchievementsSyncWrapper>
           <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
             <SafeAreaProvider>
-              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-                  <Stack
-                    screenOptions={{
-                      headerShown: false,
-                      // Habilitar gesto de swipe back en iOS
+              <ThemedSafeAreaView>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    // Habilitar gesto de swipe back en iOS
+                    gestureEnabled: true,
+                    // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
+                    fullScreenGestureEnabled: true,
+                    animation: 'slide_from_right',
+                    // Tus screenOptions existentes para el header
+                    headerTransparent: true,
+                    ...(Platform.OS === 'android'
+                      ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
+                      : {}),
+                    headerTitle: '',
+                    headerTintColor: 'black',
+                    headerShadowVisible: true,
+                    headerLeft: (props) => { // Tu headerLeft personalizado
+                      if (!props.canGoBack) return null;
+                      return (
+                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                          <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                            <Ionicons name="arrow-back" size={24} color="black" />
+                          </Pressable>
+                        </View>
+                      );
+                    },
+                  }}
+                >
+                  {/* Tus Stack.Screen existentes */}
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="home" options={{ headerShown: false }} />
+                  <Stack.Screen name="entreno" />
+                  <Stack.Screen
+                    name="rutinas/[id]"
+                    options={{
                       gestureEnabled: true,
-                      // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
                       fullScreenGestureEnabled: true,
                       animation: 'slide_from_right',
-                      // Tus screenOptions existentes para el header
-                      headerTransparent: true,
-                      ...(Platform.OS === 'android'
-                        ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
-                        : {}),
-                      headerTitle: '',
-                      headerTintColor: 'black',
-                      headerShadowVisible: true,
-                      headerLeft: (props) => { // Tu headerLeft personalizado
-                        if (!props.canGoBack) return null;
-                        return (
-                          <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                            <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                              <Ionicons name="arrow-back" size={24} color="black" />
-                            </Pressable>
-                          </View>
-                        );
-                      },
                     }}
-                  >
-                    {/* Tus Stack.Screen existentes */}
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    <Stack.Screen name="home" options={{ headerShown: false }} />
-                    <Stack.Screen name="entreno" />
-                    <Stack.Screen
-                      name="rutinas/[id]"
-                      options={{
-                        gestureEnabled: true,
-                        fullScreenGestureEnabled: true,
-                        animation: 'slide_from_right',
-                      }}
-                    />
-                    <Stack.Screen name="perfil/evolucion" />
-                    <Stack.Screen name="videos" />
-                    <Stack.Screen name="+not-found" />
+                  />
+                  <Stack.Screen name="perfil/evolucion" />
+                  <Stack.Screen name="videos" />
+                  <Stack.Screen name="+not-found" />
 
-                  </Stack>
-                </SafeAreaView>
+                </Stack>
+              </ThemedSafeAreaView>
 
-                <StatusBar
-                  style="auto"
-                  translucent={Platform.OS === 'android' ? false : undefined}
-                  backgroundColor="transparent"
-                />
-
-                {/* 🏆 Toast de logros estilo Steam */}
-                <AchievementToast />
-              </ThemeProvider>
+              {/* 🏆 Toast de logros estilo Steam */}
+              <AchievementToast />
             </SafeAreaProvider>
           </View>
         </AchievementsSyncWrapper>

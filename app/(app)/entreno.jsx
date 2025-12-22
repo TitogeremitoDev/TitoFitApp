@@ -3949,7 +3949,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
   },
-  stateRow: { flexDirection: 'row', gap: 6, flexShrink: 1, flexWrap: 'wrap' },
+  stateRow: { flexDirection: 'row', gap: 4, flexShrink: 1, flexWrap: 'nowrap' },
   toolsRow: {
     marginLeft: 'auto',
     flexDirection: 'row',
@@ -3958,7 +3958,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  radio: { borderWidth: 1, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  radio: { borderWidth: 1, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, minWidth: 28 },
   radioSel: {},
   radioTxt: { fontSize: 11, fontWeight: 'bold' },
   radioTxtSel: { color: '#fff' },

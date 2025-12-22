@@ -9,12 +9,14 @@ import {
     SafeAreaView,
     Image,
     ActivityIndicator,
-    Alert
+    Alert,
+    Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
+import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
 
 export default function TrainerDashboard() {
     const { token, user } = useAuth();
@@ -22,12 +24,24 @@ export default function TrainerDashboard() {
     const [loading, setLoading] = useState(true);
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [currentClients, setCurrentClients] = useState(0);
+    const [showOnboarding, setShowOnboarding] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     useEffect(() => {
         loadTrainerData();
+        checkOnboarding();
     }, []);
+
+    const checkOnboarding = async () => {
+        const completed = await hasCompletedCoachOnboarding();
+        if (!completed) {
+            setTimeout(() => setShowOnboarding(true), 800);
+        }
+    };
+
+    const handleOnboardingComplete = () => setShowOnboarding(false);
+    const handleOnboardingSkip = () => setShowOnboarding(false);
 
     const loadTrainerData = async () => {
         try {
@@ -87,15 +101,15 @@ export default function TrainerDashboard() {
         { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
         { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
         { icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6' },
-        { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4' },
-        { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899' },
-        { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6' },
-        { icon: 'calendar', name: 'Calendario', route: '/(coach)/calendar', color: '#6366f1' },
-        { icon: 'analytics', name: 'Análisis Técnico', route: '/(coach)/analysis', color: '#f97316' },
-        { icon: 'trophy', name: 'Objetivos', route: '/(coach)/goals', color: '#eab308' },
-        { icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7' },
+        { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
+        { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899', webOnly: true },
+        { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6', webOnly: true },
+        { icon: 'calendar', name: 'Calendario', route: '/(coach)/calendar', color: '#6366f1', webOnly: true },
+        { icon: 'analytics', name: 'Análisis Técnico', route: '/(coach)/analysis', color: '#f97316', webOnly: true },
+        { icon: 'trophy', name: 'Objetivos', route: '/(coach)/goals', color: '#eab308', webOnly: true },
+        { icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7', webOnly: true },
         { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
-    ];
+    ].filter(item => !item.webOnly || Platform.OS === 'web');
 
     if (loading) {
         return (
@@ -220,6 +234,13 @@ export default function TrainerDashboard() {
                     </View>
                 </View>
             </ScrollView>
+
+            {/* Modal de Onboarding */}
+            <CoachOnboardingModal
+                visible={showOnboarding}
+                onComplete={handleOnboardingComplete}
+                onSkip={handleOnboardingSkip}
+            />
         </SafeAreaView>
     );
 }

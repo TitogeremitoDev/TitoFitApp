@@ -1,9 +1,16 @@
 import { Stack } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AdminLayout() {
+    const insets = useSafeAreaInsets();
+
     return (
-        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <View style={{
+            flex: 1,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
+        }}>
             <Stack
                 screenOptions={{
                     headerShown: false,
@@ -13,6 +20,6 @@ export default function AdminLayout() {
                     animation: 'slide_from_right',
                 }}
             />
-        </SafeAreaView>
+        </View>
     );
 }

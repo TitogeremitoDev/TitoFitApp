@@ -675,9 +675,11 @@ export default function RoutinesLibraryScreen() {
                         <TouchableOpacity onPress={handleImportCSV} style={styles.iconButton}>
                             <Ionicons name="document-text-outline" size={20} color="#334155" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={handleImportIA} style={styles.iconButton}>
-                            <Ionicons name="sparkles-outline" size={20} color="#334155" />
-                        </TouchableOpacity>
+                        {Platform.OS === 'web' && (
+                            <TouchableOpacity onPress={handleImportIA} style={styles.iconButton}>
+                                <Ionicons name="sparkles-outline" size={20} color="#334155" />
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                             onPress={() => router.push('/(coach)/workouts/create')}
                             style={styles.createButton}

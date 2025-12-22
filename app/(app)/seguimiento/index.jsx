@@ -1737,19 +1737,22 @@ export default function SeguimientoScreen() {
                 {/* ═══════════════════════════════════════════════════════════════════ */}
                 {/* BOTONES ADICIONALES */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                <View style={styles.actionButtons}>
-                    <TouchableOpacity style={styles.feedbackBtn}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={22} color="#FFF" />
-                        <Text style={styles.feedbackBtnText}>Feedback del Entrenador</Text>
-                    </TouchableOpacity>
+                {/* Botones adicionales - Solo visibles en Web */}
+                {Platform.OS === 'web' && (
+                    <View style={styles.actionButtons}>
+                        <TouchableOpacity style={styles.feedbackBtn}>
+                            <Ionicons name="chatbubble-ellipses-outline" size={22} color="#FFF" />
+                            <Text style={styles.feedbackBtnText}>Feedback del Entrenador</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.cameraBtn}
-                        onPress={() => setCameraModalVisible(true)}
-                    >
-                        <Ionicons name="camera-outline" size={24} color="#FFF" />
-                    </TouchableOpacity>
-                </View>
+                        <TouchableOpacity
+                            style={styles.cameraBtn}
+                            onPress={() => setCameraModalVisible(true)}
+                        >
+                            <Ionicons name="camera-outline" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {/* Calendario mensual - interactivo */}
                 <MonthlyCalendar

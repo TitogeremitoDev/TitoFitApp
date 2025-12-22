@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// expo-navigation-bar es opcional - solo funciona en Android native builds
+let NavigationBar: typeof import('expo-navigation-bar') | null = null;
+if (Platform.OS === 'android') {
+  try {
+    NavigationBar = require('expo-navigation-bar');
+  } catch (e) {
+    console.log('[ThemeContext] expo-navigation-bar not available (this is OK in Expo Go)');
+  }
+}
 
 // Definir el tipo del tema completo usado en la app
 export type Theme = {
@@ -389,6 +399,30 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     };
     loadTheme();
   }, []);
+
+  // ═══════════════════════════════════════════════════════════════
+  // 🎨 ACTUALIZAR COLOR DE BARRA DE NAVEGACIÓN ANDROID SEGÚN TEMA
+  // ═══════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const updateNavigationBar = async () => {
+      // Solo en Android y si el módulo está disponible
+      if (Platform.OS !== 'android' || !NavigationBar) return;
+
+      try {
+        // Usar el color de fondo del tema para la barra de navegación
+        await NavigationBar.setBackgroundColorAsync(theme.background);
+
+        // Ajustar el estilo de los botones (iconos) según si el tema es claro u oscuro
+        await NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark');
+
+        console.log(`[ThemeContext] Navigation bar updated: ${theme.background}, style: ${isDark ? 'light' : 'dark'}`);
+      } catch (error) {
+        console.warn('[ThemeContext] Error updating navigation bar:', error);
+      }
+    };
+
+    updateNavigationBar();
+  }, [theme.background, isDark]);
 
   // Listener para cambios de sistema SI el usuario está usando temas default (o un modo "auto" explícito si lo tuviéramos)
   // Por ahora, para simplificar, si el usuario elige un tema, se queda con ese.

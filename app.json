@@ -2,8 +2,8 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "0.9.0",
-    "runtimeVersion": "0.9.0",
+    "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/mi-logo-icono.png",
@@ -72,16 +72,22 @@
         "expo-build-properties",
         {
           "android": {
-            "newArchEnabled": false
+            "newArchEnabled": true,
+            "kotlinVersion": "2.1.20",
+            "extraMavenRepos": [
+              "https://maven.google.com"
+            ],
+            "flipper": false
           }
         }
       ],
       [
         "expo-updates",
         {
-          "runtimeVersion": "0.9.0"
+          "runtimeVersion": "1.0.0"
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true,

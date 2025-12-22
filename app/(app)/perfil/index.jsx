@@ -351,10 +351,10 @@ export default function PerfilScreen() {
         { title: 'Mi Transformación', icon: 'body-outline', route: '/perfil/transformacion', color: '#8B5CF6' },
         { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros', color: '#F59E0B' },
         { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos', color: '#EC4899' },
-        { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad', color: '#06B6D4' },
+        { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad', color: '#06B6D4', webOnly: true },
         { title: 'Videoteca', icon: 'videocam-outline', route: '/perfil/videos', color: '#EF4444' },
         { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes', color: '#6B7280' },
-    ];
+    ].filter(item => !item.webOnly || Platform.OS === 'web');
 
     const gradientColors = isDark
         ? ['#0B1220', '#0D1B2A', '#111827']

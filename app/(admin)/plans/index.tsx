@@ -478,7 +478,7 @@ export default function AdminPanel() {
                                     <Text style={[styles.planName, { color: isDark ? '#FFF' : '#000' }]}>{plan.nombre}</Text>
                                     {plan.isCoach && plan.clientRange && (
                                         <Text style={{ color: '#8B5CF6', fontSize: 12, marginBottom: 4 }}>
-                                            Hasta {plan.clientRange} clientes
+                                            {plan.clientRange === 9999 ? '+100 clientes' : `Hasta ${plan.clientRange} clientes`}
                                         </Text>
                                     )}
                                     <Text style={{ color: '#10B981', fontWeight: 'bold' }}>
@@ -663,7 +663,7 @@ export default function AdminPanel() {
                                         Máximo de clientes
                                     </Text>
                                     <View style={styles.upgradeTypeRow}>
-                                        {['5', '10', '20'].map((num) => (
+                                        {['5', '10', '20', '50', '100', '9999'].map((num) => (
                                             <Pressable
                                                 key={num}
                                                 style={[
@@ -675,7 +675,7 @@ export default function AdminPanel() {
                                                 <Text style={[
                                                     styles.upgradeTypeBtnText,
                                                     codeFormData.maxClients === num && { color: '#FFF' }
-                                                ]}>{num}</Text>
+                                                ]}>{num === '9999' ? '+100' : num}</Text>
                                             </Pressable>
                                         ))}
                                     </View>

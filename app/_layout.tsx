@@ -8,6 +8,7 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { StripeProvider } from '../utils/stripeWrapper';
 
 // Mantén el splash visible hasta que el router + auth estén listos
@@ -178,12 +179,24 @@ function RootLayoutNav() {
         <Stack.Screen name="(coach)" />
         <Stack.Screen name="(admin)" />
       </Stack>
+    </>
+  );
+}
 
-      {/* StatusBar global: no translúcida en Android para que el contenido empiece debajo */}
+
+// Componente que aplica el tema al contenedor raíz
+function ThemedRootView({ children }: { children: React.ReactNode }) {
+  const { isDark, theme } = useTheme();
+
+  return (
+    <>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.background }}>
+        {children}
+      </GestureHandlerRootView>
       <StatusBar
-        style="light"
+        style={isDark ? 'light' : 'dark'}
         translucent={Platform.OS === 'android' ? false : undefined}
-        backgroundColor="#000000"
+        backgroundColor={theme.background}
       />
     </>
   );
@@ -194,14 +207,16 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <StripeProvider
-        publishableKey={publishableKey}
-        merchantIdentifier="merchant.com.totalgains" // Opcional, para Apple Pay
-      >
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <RootLayoutNav />
-        </GestureHandlerRootView>
-      </StripeProvider>
+      <ThemeProvider>
+        <StripeProvider
+          publishableKey={publishableKey}
+          merchantIdentifier="merchant.com.totalgains" // Opcional, para Apple Pay
+        >
+          <ThemedRootView>
+            <RootLayoutNav />
+          </ThemedRootView>
+        </StripeProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

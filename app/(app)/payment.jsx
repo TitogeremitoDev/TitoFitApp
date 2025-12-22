@@ -31,6 +31,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useStripe } from '../../utils/stripeWrapper';
 import SyncProgressModal from '../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../src/lib/dataSyncService';
+import IAPService, { getGoogleProductIdFromPlan, getAppleProductIdFromPlan } from '../../utils/iapService';
 
 // API URL - Usa la variable de entorno
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -72,7 +73,13 @@ export default function PaymentScreen() {
 
   // Estado de UI
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('stripe');
+  // Método de pago por defecto según plataforma
+  const getDefaultPaymentMethod = () => {
+    if (Platform.OS === 'android') return 'googlepay';
+    if (Platform.OS === 'ios') return 'applepay';
+    return 'stripe'; // Web
+  };
+  const [paymentMethod, setPaymentMethod] = useState(getDefaultPaymentMethod());
   const [loading, setLoading] = useState(false);
   const [userToken, setUserToken] = useState(null);
   const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
@@ -623,8 +630,7 @@ export default function PaymentScreen() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const subtotal = selectedPlan?.precioActual || 0;
-  const tax = subtotal * 0.21; // IVA 21%
-  const total = subtotal + tax;
+  const total = subtotal; // Precio ya incluye IVA
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDERIZADO
@@ -737,37 +743,21 @@ export default function PaymentScreen() {
           <View style={styles.clientCountContainer}>
             <Text style={styles.clientCountLabel}>Número de clientes</Text>
             <View style={styles.clientCountOptions}>
-              <Pressable
-                style={[styles.clientCountOption, coachClientCount === 5 && styles.clientCountOptionActive]}
-                onPress={() => setCoachClientCount(5)}
-              >
-                <View style={[styles.radioOuter, coachClientCount === 5 && styles.radioOuterSelected]}>
-                  {coachClientCount === 5 && <View style={styles.radioInner} />}
-                </View>
-                <Text style={[styles.clientCountText, coachClientCount === 5 && styles.clientCountTextActive]}>5</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.clientCountOption, coachClientCount === 10 && styles.clientCountOptionActive]}
-                onPress={() => setCoachClientCount(10)}
-              >
-                <View style={[styles.radioOuter, coachClientCount === 10 && styles.radioOuterSelected]}>
-                  {coachClientCount === 10 && <View style={styles.radioInner} />}
-                </View>
-                <Text style={[styles.clientCountText, coachClientCount === 10 && styles.clientCountTextActive]}>10</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.clientCountOption, coachClientCount === 20 && styles.clientCountOptionActive]}
-                onPress={() => setCoachClientCount(20)}
-              >
-                <View style={[styles.radioOuter, coachClientCount === 20 && styles.radioOuterSelected]}>
-                  {coachClientCount === 20 && <View style={styles.radioInner} />}
-                </View>
-                <Text style={[styles.clientCountText, coachClientCount === 20 && styles.clientCountTextActive]}>20</Text>
-              </Pressable>
+              {[5, 10, 20, 50, 100, 9999].map((count) => (
+                <Pressable
+                  key={count}
+                  style={[styles.clientCountOption, coachClientCount === count && styles.clientCountOptionActive]}
+                  onPress={() => setCoachClientCount(count)}
+                >
+                  <View style={[styles.radioOuter, coachClientCount === count && styles.radioOuterSelected]}>
+                    {coachClientCount === count && <View style={styles.radioInner} />}
+                  </View>
+                  <Text style={[styles.clientCountText, coachClientCount === count && styles.clientCountTextActive]}>
+                    {count === 9999 ? '+100' : count}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-            <Text style={styles.clientCountHint}>
-              ¿Necesitas un plan mayor? <Text style={styles.clientCountHintLink} onPress={openEmailContact}>Contáctame</Text>
-            </Text>
           </View>
         )}
 
@@ -898,52 +888,77 @@ export default function PaymentScreen() {
           </LinearGradient>
         )}
 
-        {/* SECCIÓN 5: MÉTODOS DE PAGO */}
+        {/* SECCIÓN 5: MÉTODOS DE PAGO - Por plataforma */}
         <View style={styles.paymentSection}>
           <Text style={styles.sectionHeader}>Método de pago</Text>
 
           <View style={styles.methodsRow}>
-            <Pressable
-              onPress={() => setPaymentMethod('stripe')}
-              style={[styles.methodBadge, paymentMethod === 'stripe' && styles.methodBadgeActive]}
-            >
-              <Ionicons
-                name="card-outline"
-                size={20}
-                color={paymentMethod === 'stripe' ? '#FFF' : '#94A3B8'}
-              />
-              <Text style={[styles.methodText, paymentMethod === 'stripe' && styles.methodTextActive]}>
-                Tarjeta
-              </Text>
-            </Pressable>
+            {/* WEB: Solo Stripe y PayPal */}
+            {Platform.OS === 'web' && (
+              <>
+                <Pressable
+                  onPress={() => setPaymentMethod('stripe')}
+                  style={[styles.methodBadge, paymentMethod === 'stripe' && styles.methodBadgeActive]}
+                >
+                  <Ionicons
+                    name="card-outline"
+                    size={20}
+                    color={paymentMethod === 'stripe' ? '#FFF' : '#94A3B8'}
+                  />
+                  <Text style={[styles.methodText, paymentMethod === 'stripe' && styles.methodTextActive]}>
+                    Tarjeta
+                  </Text>
+                </Pressable>
 
-            <Pressable
-              onPress={() => setPaymentMethod('paypal')}
-              style={[styles.methodBadge, paymentMethod === 'paypal' && styles.methodBadgeActive]}
-            >
-              <Ionicons
-                name="logo-paypal"
-                size={20}
-                color={paymentMethod === 'paypal' ? '#FFF' : '#94A3B8'}
-              />
-              <Text style={[styles.methodText, paymentMethod === 'paypal' && styles.methodTextActive]}>
-                PayPal
-              </Text>
-            </Pressable>
+                <Pressable
+                  onPress={() => setPaymentMethod('paypal')}
+                  style={[styles.methodBadge, paymentMethod === 'paypal' && styles.methodBadgeActive]}
+                >
+                  <Ionicons
+                    name="logo-paypal"
+                    size={20}
+                    color={paymentMethod === 'paypal' ? '#FFF' : '#94A3B8'}
+                  />
+                  <Text style={[styles.methodText, paymentMethod === 'paypal' && styles.methodTextActive]}>
+                    PayPal
+                  </Text>
+                </Pressable>
+              </>
+            )}
 
-            <Pressable
-              onPress={() => setPaymentMethod('googlepay')}
-              style={[styles.methodBadge, paymentMethod === 'googlepay' && styles.methodBadgeActive]}
-            >
-              <Ionicons
-                name="logo-google"
-                size={20}
-                color={paymentMethod === 'googlepay' ? '#FFF' : '#94A3B8'}
-              />
-              <Text style={[styles.methodText, paymentMethod === 'googlepay' && styles.methodTextActive]}>
-                Google Pay
-              </Text>
-            </Pressable>
+            {/* ANDROID: Solo Google Play Billing */}
+            {Platform.OS === 'android' && (
+              <Pressable
+                onPress={() => setPaymentMethod('googlepay')}
+                style={[styles.methodBadge, styles.methodBadgeActive]}
+              >
+                <Ionicons
+                  name="logo-google"
+                  size={20}
+                  color="#FFF"
+                />
+                <Text style={[styles.methodText, styles.methodTextActive]}>
+                  Google Play
+                </Text>
+              </Pressable>
+            )}
+
+            {/* iOS: Solo Apple Pay / In-App Purchase */}
+            {Platform.OS === 'ios' && (
+              <Pressable
+                onPress={() => setPaymentMethod('applepay')}
+                style={[styles.methodBadge, styles.methodBadgeActive]}
+              >
+                <Ionicons
+                  name="logo-apple"
+                  size={20}
+                  color="#FFF"
+                />
+                <Text style={[styles.methodText, styles.methodTextActive]}>
+                  Apple Pay
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           {/* Formulario de tarjeta (solo si Stripe está seleccionado) */}
@@ -958,25 +973,13 @@ export default function PaymentScreen() {
 
         {/* SECCIÓN 6: RESUMEN Y PAGO */}
         <View style={styles.summaryContainer}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal ({selectedPlan?.nombre})</Text>
-            <Text style={styles.summaryVal}>
-              {selectedPlan?.moneda === 'EUR' ? '€' : '$'}{subtotal.toFixed(2)}
-            </Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>IVA (21%)</Text>
-            <Text style={styles.summaryVal}>
-              {selectedPlan?.moneda === 'EUR' ? '€' : '$'}{tax.toFixed(2)}
-            </Text>
-          </View>
-          <View style={styles.divider} />
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>TOTAL A PAGAR</Text>
             <Text style={styles.totalVal}>
               {selectedPlan?.moneda === 'EUR' ? '€' : '$'}{total.toFixed(2)}
             </Text>
           </View>
+          <Text style={styles.taxIncludedText}>Impuestos incluidos</Text>
 
           <Pressable
             onPress={async () => {
@@ -1094,6 +1097,148 @@ export default function PaymentScreen() {
                 } finally {
                   setLoading(false);
                 }
+              } else if (paymentMethod === 'googlepay') {
+                // Google Play Billing con react-native-iap
+                setLoading(true);
+                try {
+                  // 1. Iniciar conexión con Google Play
+                  const connected = await IAPService.initConnection();
+                  if (!connected) {
+                    throw new Error('No se pudo conectar con Google Play');
+                  }
+
+                  // 2. Obtener el Product ID de Google Play para este plan
+                  const googleProductId = getGoogleProductIdFromPlan(selectedPlan);
+                  console.log('[GooglePlay] Product ID:', googleProductId);
+
+                  if (!googleProductId) {
+                    throw new Error('Este plan no tiene un Product ID de Google Play configurado');
+                  }
+
+                  // 3. Obtener la suscripción desde Google Play para verificar que existe
+                  const subscriptions = await IAPService.getSubscriptions([googleProductId]);
+                  console.log('[GooglePlay] Suscripciones encontradas:', subscriptions);
+
+                  if (!subscriptions || subscriptions.length === 0) {
+                    throw new Error(
+                      `El producto "${googleProductId}" no está disponible en Google Play. ` +
+                      'Asegúrate de haberlo creado en Google Play Console.'
+                    );
+                  }
+
+                  const subscription = subscriptions[0];
+
+                  // 4. Obtener offer token (requerido para Android Billing v5+)
+                  let offerToken = null;
+                  if (subscription.subscriptionOfferDetails && subscription.subscriptionOfferDetails.length > 0) {
+                    offerToken = subscription.subscriptionOfferDetails[0].offerToken;
+                  }
+
+                  // 5. Iniciar la compra
+                  console.log('[GooglePlay] Iniciando compra con offerToken:', offerToken);
+                  const purchase = await IAPService.purchaseSubscription(googleProductId, offerToken);
+                  console.log('[GooglePlay] Compra completada:', purchase);
+
+                  // 6. Verificar el recibo en nuestro backend
+                  const verifyResponse = await fetch(`${API_URL}/api/payments/google/verify-purchase`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify({
+                      purchaseToken: purchase.purchaseToken,
+                      productId: googleProductId,
+                      planId: selectedPlan.id
+                    })
+                  });
+
+                  const verifyData = await verifyResponse.json();
+                  console.log('[GooglePlay] Verificación backend:', verifyData);
+
+                  if (verifyData.success) {
+                    // 7. Acknowledge la compra (requerido en Android)
+                    await IAPService.acknowledgePurchase(purchase.purchaseToken);
+                    await IAPService.finishTransaction(purchase);
+
+                    // 8. Refrescar usuario
+                    if (refreshUser) await refreshUser();
+
+                    Alert.alert(
+                      '¡Bienvenido al Team! 🚀',
+                      `Suscripción ${selectedPlan.nombre} activada correctamente.`,
+                      [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]
+                    );
+                  } else {
+                    throw new Error(verifyData.message || 'Error verificando la compra');
+                  }
+
+                } catch (error) {
+                  console.error('[GooglePlay] Error:', error);
+
+                  // Manejar errores específicos de IAP
+                  if (error.code === 'E_USER_CANCELLED') {
+                    Alert.alert('Compra cancelada', 'Has cancelado la compra.');
+                  } else if (error.code === 'E_ITEM_UNAVAILABLE') {
+                    Alert.alert(
+                      'Producto no disponible',
+                      'Este producto no está disponible en Google Play. Contacta con soporte.'
+                    );
+                  } else {
+                    Alert.alert('Error', error.message || 'Error al procesar el pago');
+                  }
+                } finally {
+                  setLoading(false);
+                  await IAPService.endConnection();
+                }
+              } else if (paymentMethod === 'applepay') {
+                // Apple In-App Purchase usando expo-iap
+                setLoading(true);
+                try {
+                  const connected = await IAPService.initConnection();
+                  if (!connected) throw new Error('No se pudo conectar con App Store');
+
+                  const appleProductId = getAppleProductIdFromPlan(selectedPlan);
+                  console.log('[ApplePay] Product ID:', appleProductId);
+                  if (!appleProductId) throw new Error('Este plan no tiene un Product ID de Apple configurado');
+
+                  const subscriptions = await IAPService.getSubscriptions([appleProductId]);
+                  console.log('[ApplePay] Suscripciones:', subscriptions);
+                  if (!subscriptions || subscriptions.length === 0) {
+                    throw new Error(`Producto "${appleProductId}" no disponible en App Store.`);
+                  }
+
+                  console.log('[ApplePay] Iniciando compra...');
+                  const purchase = await IAPService.purchaseSubscription(appleProductId);
+                  console.log('[ApplePay] Compra completada:', purchase);
+
+                  const verifyResponse = await fetch(`${API_URL}/api/payments/apple/verify-purchase`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+                    body: JSON.stringify({ receiptData: purchase.transactionReceipt, productId: appleProductId, planId: selectedPlan.id })
+                  });
+                  const verifyData = await verifyResponse.json();
+                  console.log('[ApplePay] Verificación:', verifyData);
+
+                  if (verifyData.success) {
+                    await IAPService.finishTransaction(purchase);
+                    if (refreshUser) await refreshUser();
+                    Alert.alert('¡Bienvenido al Team! 🚀', `Suscripción ${selectedPlan.nombre} activada.`,
+                      [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]);
+                  } else {
+                    throw new Error(verifyData.message || 'Error verificando la compra');
+                  }
+                } catch (error) {
+                  console.error('[ApplePay] Error:', error);
+                  if (error.code === 'E_USER_CANCELLED' || error.message?.includes('cancelled')) {
+                    Alert.alert('Compra cancelada', 'Has cancelado la compra.');
+                  } else {
+                    Alert.alert('Error', error.message || 'Error al procesar el pago');
+                  }
+                } finally {
+                  setLoading(false);
+                  await IAPService.endConnection();
+                }
               } else {
                 handlePay();
               }
@@ -1125,7 +1270,7 @@ export default function PaymentScreen() {
 
         {/* SECCIÓN 7: CONTACTO */}
         <View style={styles.contactSection}>
-          <Text style={styles.contactTitle}>¿Quieres contactar conmigo?</Text>
+          <Text style={styles.contactTitle}>¿Dudas o Soporte? Escríbeme</Text>
           <Pressable onPress={() => Linking.openURL('mailto:titogeremitocoach@gmail.com')}>
             <Text style={styles.contactEmail}>titogeremitocoach@gmail.com</Text>
           </Pressable>
@@ -1317,6 +1462,7 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   totalLabel: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
   totalVal: { color: '#10B981', fontSize: 24, fontWeight: '800' },
+  taxIncludedText: { color: '#64748B', fontSize: 11, textAlign: 'center', marginTop: -12, marginBottom: 16 },
 
   payButton: { borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
   payButtonDim: { opacity: 0.7 },
