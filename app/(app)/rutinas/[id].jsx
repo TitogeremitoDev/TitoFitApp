@@ -21,7 +21,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales'];
+const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales', 'Biserie'];
 
 /* ───────────────────────── Helpers ───────────────────────── */
 const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(4);
@@ -76,33 +76,68 @@ const nextDayKey = (entries) => {
 
 /* ───────────────────────── Components ───────────────────────── */
 
-const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, updateSerieCampo, toggleSerieExtra, deleteSerie }) => {
-  return (
-    <View style={styles.serieRow}>
-      <Text style={styles.serieLabel}>Serie {index + 1}</Text>
+const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, updateSerieCampo, toggleSerieExtra, toggleFallo, deleteSerie }) => {
+  // Detectar si está en modo Fallo
+  const isFallo = String(s.repMin).toLowerCase() === 'fallo' || String(s.repMax).toLowerCase() === 'fallo';
+  const isBiserie = s.extra === 'Biserie';
 
-      <TextInput
-        style={styles.serieInput}
-        placeholder="min"
-        keyboardType="numeric"
-        value={String(s.repMin ?? '')}
-        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
-      />
-      <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
-      <TextInput
-        style={styles.serieInput}
-        placeholder="max"
-        keyboardType="numeric"
-        value={String(s.repMax ?? '')}
-        onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
-      />
+  return (
+    <View style={[styles.serieRow, isBiserie && styles.serieRowBiserie]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={styles.serieLabel}>Serie {index + 1}</Text>
+        {isFallo && (
+          <View style={styles.falloBadge}>
+            <Text style={styles.falloBadgeText}>🔥</Text>
+          </View>
+        )}
+        {isBiserie && (
+          <View style={styles.biserieBadge}>
+            <Text style={styles.biserieBadgeText}>🔗</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Botón Fallo toggle */}
+      <TouchableOpacity
+        style={[styles.falloBtn, isFallo && styles.falloBtnActive]}
+        onPress={() => toggleFallo(diaKey, ejercicioId, s.id)}
+      >
+        <Text style={[styles.falloBtnTxt, isFallo && styles.falloBtnTxtActive]}>
+          {isFallo ? 'FALLO' : 'Fallo'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Inputs de repeticiones (deshabilitados si Fallo) */}
+      {!isFallo ? (
+        <>
+          <TextInput
+            style={styles.serieInput}
+            placeholder="min"
+            keyboardType="numeric"
+            value={String(s.repMin ?? '')}
+            onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
+          />
+          <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
+          <TextInput
+            style={styles.serieInput}
+            placeholder="max"
+            keyboardType="numeric"
+            value={String(s.repMax ?? '')}
+            onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
+          />
+        </>
+      ) : (
+        <View style={styles.falloIndicator}>
+          <Text style={styles.falloIndicatorText}>Al Fallo</Text>
+        </View>
+      )}
 
       <TouchableOpacity
-        style={styles.extraPill}
+        style={[styles.extraPill, isBiserie && styles.extraPillBiserie]}
         onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
       >
-        <Text style={styles.extraPillTxt}>{s.extra || 'Ninguno'}</Text>
-        <Ionicons name="chevron-down-outline" size={16} color="#475569" />
+        <Text style={[styles.extraPillTxt, isBiserie && styles.extraPillTxtBiserie]}>{s.extra || 'Ninguno'}</Text>
+        <Ionicons name="chevron-down-outline" size={16} color={isBiserie ? '#92400e' : '#475569'} />
       </TouchableOpacity>
 
       <IconBtn
@@ -126,18 +161,20 @@ const ExerciseCard = React.memo(({
   addSerie,
   updateSerieCampo,
   toggleSerieExtra,
+  toggleFallo,
   deleteSerie,
   muscles,
   exercises,
   onMuscleChange,
   onExerciseChange,
+  isBiserie = false,
 }) => {
   const diaKey = section.title;
   const abierto = isOpen(item.id);
   const isValidated = !!item.dbId || exercises.some(e => e.name === item.nombre && e.muscle === item.musculo);
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isBiserie && styles.cardBiserie]}>
       {/* Header ejercicio */}
       <View style={styles.cardHeaderContainer}>
         <TouchableOpacity
@@ -264,6 +301,7 @@ const ExerciseCard = React.memo(({
               index={idx}
               updateSerieCampo={updateSerieCampo}
               toggleSerieExtra={toggleSerieExtra}
+              toggleFallo={toggleFallo}
               deleteSerie={deleteSerie}
             />
           ))}
@@ -737,6 +775,28 @@ export default function UserRoutineEditorScreen() {
     });
   }, []);
 
+  // Toggle Fallo mode for a serie
+  const toggleFallo = useCallback((diaKey, ejercicioId, serieId) => {
+    setRutina((prev) => {
+      const newList = (prev[diaKey] || []).map((e) => {
+        if (e.id !== ejercicioId) return e;
+        const series = (e.series || []).map((s) => {
+          if (s.id !== serieId) return s;
+          const isFallo = String(s.repMin).toLowerCase() === 'fallo' || String(s.repMax).toLowerCase() === 'fallo';
+          if (isFallo) {
+            // Volver a modo normal
+            return { ...s, repMin: '8', repMax: '12' };
+          } else {
+            // Activar modo Fallo
+            return { ...s, repMin: 'fallo', repMax: 'fallo' };
+          }
+        });
+        return { ...e, series };
+      });
+      return { ...prev, [diaKey]: newList };
+    });
+  }, []);
+
   const deleteSerie = useCallback((diaKey, ejercicioId, serieId) => {
     setRutina((prev) => {
       const newList = (prev[diaKey] || []).map((e) => {
@@ -1128,26 +1188,60 @@ export default function UserRoutineEditorScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item, index) => item?.id ?? `idx-${index}-${uid()}`}
-        renderItem={({ item, section }) => (
-          <ExerciseCard
-            item={item}
-            section={section}
-            isOpen={isOpen}
-            toggleOpen={toggleOpen}
-            moveExercise={moveExercise}
-            addExerciseAfter={addExerciseAfter}
-            deleteExercise={deleteExercise}
-            updateEjercicioCampo={updateEjercicioCampo}
-            addSerie={addSerie}
-            updateSerieCampo={updateSerieCampo}
-            toggleSerieExtra={toggleSerieExtra}
-            deleteSerie={deleteSerie}
-            muscles={muscles}
-            exercises={exercises}
-            onMuscleChange={onMuscleChange}
-            onExerciseChange={onExerciseChange}
-          />
-        )}
+        renderItem={({ item, section, index }) => {
+          // Detectar si este ejercicio tiene alguna serie marcada como biserie
+          const isBiserie = (ej) => {
+            if (!ej?.series || !Array.isArray(ej.series)) return false;
+            return ej.series.some(serie => {
+              const extra = String(serie?.extra || '').toLowerCase().trim();
+              return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
+            });
+          };
+
+          const currentIsBiserie = isBiserie(item);
+          const dayExercises = rutina[section.title] || [];
+          const nextItem = dayExercises[index + 1];
+          const nextIsBiserie = isBiserie(nextItem);
+
+          // Mostrar conector "+" si este Y el siguiente son biseries
+          const showBiserieConnector = currentIsBiserie && nextIsBiserie;
+
+          return (
+            <>
+              <ExerciseCard
+                item={item}
+                section={section}
+                isOpen={isOpen}
+                toggleOpen={toggleOpen}
+                moveExercise={moveExercise}
+                addExerciseAfter={addExerciseAfter}
+                deleteExercise={deleteExercise}
+                updateEjercicioCampo={updateEjercicioCampo}
+                addSerie={addSerie}
+                updateSerieCampo={updateSerieCampo}
+                toggleSerieExtra={toggleSerieExtra}
+                toggleFallo={toggleFallo}
+                deleteSerie={deleteSerie}
+                muscles={muscles}
+                exercises={exercises}
+                onMuscleChange={onMuscleChange}
+                onExerciseChange={onExerciseChange}
+                isBiserie={currentIsBiserie}
+              />
+
+              {/* Conector "+" para biseries */}
+              {showBiserieConnector && (
+                <View style={styles.biserieConnector}>
+                  <View style={styles.biserieLine} />
+                  <View style={styles.biseriePlusContainer}>
+                    <Text style={styles.biseriePlusText}>+</Text>
+                  </View>
+                  <View style={styles.biserieLine} />
+                </View>
+              )}
+            </>
+          );
+        }}
         renderSectionHeader={({ section }) => (
           <DiaHeader diaKey={section.title} ord={section.ord} />
         )}
@@ -1454,5 +1548,46 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   confirmAddText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  // Conectores de biseries
+  biserieConnector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 0,
+    marginHorizontal: 20,
+    zIndex: 10,
+    marginTop: -6,
+    marginBottom: -6,
+  },
+  biserieLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#F59E0B',
+  },
+  biseriePlusContainer: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 6,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  biseriePlusText: {
+    color: '#000',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
+    marginTop: -1,
+  },
+  cardBiserie: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
+  },
 })
   ;

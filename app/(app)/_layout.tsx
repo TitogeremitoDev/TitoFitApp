@@ -24,6 +24,9 @@ import { Ionicons } from '@expo/vector-icons';
 // AÑADIDO: Importar nuestro ThemeProvider personalizado
 import { ThemeProvider as CustomThemeProvider, useTheme } from '../../context/ThemeContext';
 
+// AÑADIDO: Chat Theme Provider (aislado del tema general)
+import { ChatThemeProvider } from '../../context/ChatThemeContext';
+
 // AÑADIDO: Sistema de logros estilo Steam
 import AchievementToast from '../../components/AchievementToast';
 import { AchievementsProvider, useAchievements } from '../../context/AchievementsContext';
@@ -243,53 +246,55 @@ export default function RootLayout() {
         <AchievementsSyncWrapper>
           <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
             <SafeAreaProvider>
-              <ThemedSafeAreaView>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    // Habilitar gesto de swipe back en iOS
-                    gestureEnabled: true,
-                    // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
-                    fullScreenGestureEnabled: true,
-                    animation: 'slide_from_right',
-                    // Tus screenOptions existentes para el header
-                    headerTransparent: true,
-                    ...(Platform.OS === 'android'
-                      ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
-                      : {}),
-                    headerTitle: '',
-                    headerTintColor: 'black',
-                    headerShadowVisible: true,
-                    headerLeft: (props) => { // Tu headerLeft personalizado
-                      if (!props.canGoBack) return null;
-                      return (
-                        <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
-                          <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
-                            <Ionicons name="arrow-back" size={24} color="black" />
-                          </Pressable>
-                        </View>
-                      );
-                    },
-                  }}
-                >
-                  {/* Tus Stack.Screen existentes */}
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="home" options={{ headerShown: false }} />
-                  <Stack.Screen name="entreno" />
-                  <Stack.Screen
-                    name="rutinas/[id]"
-                    options={{
+              <ChatThemeProvider>
+                <ThemedSafeAreaView>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      // Habilitar gesto de swipe back en iOS
                       gestureEnabled: true,
+                      // Permitir swipe desde cualquier parte de la pantalla (solo iOS)
                       fullScreenGestureEnabled: true,
                       animation: 'slide_from_right',
+                      // Tus screenOptions existentes para el header
+                      headerTransparent: true,
+                      ...(Platform.OS === 'android'
+                        ? { statusBarTranslucent: false as any } // Ajusta 'as any' si no usas TS
+                        : {}),
+                      headerTitle: '',
+                      headerTintColor: 'black',
+                      headerShadowVisible: true,
+                      headerLeft: (props) => { // Tu headerLeft personalizado
+                        if (!props.canGoBack) return null;
+                        return (
+                          <View style={{ marginTop: Platform.OS === 'android' ? 10 : 5, marginLeft: Platform.OS === 'ios' ? 10 : 0 }}>
+                            <Pressable onPress={() => router.back()} hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 5 })}>
+                              <Ionicons name="arrow-back" size={24} color="black" />
+                            </Pressable>
+                          </View>
+                        );
+                      },
                     }}
-                  />
-                  <Stack.Screen name="perfil/evolucion" />
-                  <Stack.Screen name="videos" />
-                  <Stack.Screen name="+not-found" />
+                  >
+                    {/* Tus Stack.Screen existentes */}
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="home" options={{ headerShown: false }} />
+                    <Stack.Screen name="entreno" />
+                    <Stack.Screen
+                      name="rutinas/[id]"
+                      options={{
+                        gestureEnabled: true,
+                        fullScreenGestureEnabled: true,
+                        animation: 'slide_from_right',
+                      }}
+                    />
+                    <Stack.Screen name="perfil/evolucion" />
+                    <Stack.Screen name="videos" />
+                    <Stack.Screen name="+not-found" />
 
-                </Stack>
-              </ThemedSafeAreaView>
+                  </Stack>
+                </ThemedSafeAreaView>
+              </ChatThemeProvider>
 
               {/* 🏆 Toast de logros estilo Steam */}
               <AchievementToast />

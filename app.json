@@ -15,14 +15,18 @@
       "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": [
-      "**/*"
+      "assets/images/**",
+      "assets/fonts/**"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.german92.titofitapp",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "TotalGains necesita acceso a la cámara para que puedas tomar fotos de tu progreso físico o actualizar tu foto de perfil.",
+        "NSPhotoLibraryUsageDescription": "TotalGains necesita acceso a tu galería de fotos para que puedas subir imágenes de tu progreso o cambiar tu foto de perfil.",
+        "NSPhotoLibraryAddUsageDescription": "TotalGains necesita permiso para guardar fotos de tu progreso en tu galería."
       }
     },
     "android": {

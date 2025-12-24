@@ -244,8 +244,12 @@ export default function RutinasScreen() {
         localRutinas = Array.isArray(parsed) ? parsed : [];
       }
 
-      // 🆕 Cargar CurrentRoutines si el usuario tiene entrenador
-      if (hasCoach && token) {
+      // 🆕 Variable LOCAL para las rutinas del coach (evita race condition con useState)
+      let localCoachRoutines = [];
+
+      // 🆕 Cargar CurrentRoutines para CUALQUIER usuario autenticado
+      // Esto permite que entrenadores que también son clientes de otro entrenador vean sus rutinas asignadas
+      if (token) {
         try {
           const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
           const response = await fetch(`${apiBaseUrl}/api/current-routines/me`, {
@@ -264,6 +268,8 @@ export default function RutinasScreen() {
                 trainerName: r.trainerId?.nombre || 'Tu Entrenador',
                 sourceRoutineId: r.sourceRoutineId,
               }));
+              // 🔧 FIX: Guardar en variable local ANTES de actualizar estado
+              localCoachRoutines = coachRoutinesData;
               setCoachRoutines(coachRoutinesData);
             }
           }
@@ -307,8 +313,8 @@ export default function RutinasScreen() {
         ...safePremium.map(r => r?.id).filter(Boolean),
       ]);
 
-      // 🆕 IDs de rutinas que ya están asignadas por entrenador (para evitar duplicados)
-      const coachSourceIds = new Set(coachRoutines.map(r => r.sourceRoutineId).filter(Boolean));
+      // 🔧 FIX: Usar variable LOCAL en lugar del estado (que no está actualizado aún)
+      const coachSourceIds = new Set(localCoachRoutines.map(r => r.sourceRoutineId).filter(Boolean));
 
       // Combinar rutinas: solo locales que no sean estáticas + todas las del servidor
       const filteredLocalRutinas = localRutinas.filter(r => r && !staticIds.has(r.id) && r.origen !== 'server');
@@ -339,7 +345,7 @@ export default function RutinasScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, hasCoach]);
+  }, [token]);
   // 🆕 Recargar rutinas cada vez que la pantalla obtiene foco (ej: volver del editor)
   useFocusEffect(
     useCallback(() => {

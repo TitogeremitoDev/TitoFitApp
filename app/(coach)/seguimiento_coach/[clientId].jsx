@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '../../../context/AuthContext';
+import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1088,7 +1089,7 @@ const styles = StyleSheet.create({
         borderColor: '#5f9ae92d',
         borderWidth: 10,
         borderRadius: 50,
-        
+
     },
     backBtn: {
         marginRight: 12,

@@ -2075,16 +2075,18 @@ export default function Entreno() {
 
   // 🆕 Recuperar TODOS los datos de workout desde la nube (usuarios premium)
   // Carga todos los workouts de la rutina de una vez para evitar múltiples llamadas
-  const fetchAllCloudProgress = useCallback(async (routineId, diasNorm) => {
+  // 🔧 FIX: Añadido parámetro isFromCoach para usar currentRoutineId en lugar de routineId
+  const fetchAllCloudProgress = useCallback(async (routineId, diasNorm, isFromCoach = false) => {
     // Solo para usuarios premium y con routineId válido de MongoDB
     if (!token || user?.tipoUsuario === 'FREEUSER' || !routineId?.match(/^[0-9a-fA-F]{24}$/)) {
       return null;
     }
 
     try {
-      // Cargar TODOS los workouts de esta rutina de una vez
+      // 🔧 FIX: Usar currentRoutineId para rutinas de entrenador
+      const queryParam = isFromCoach ? `currentRoutineId=${routineId}` : `routineId=${routineId}`;
       const response = await fetch(
-        `${API_URL}/api/workouts?routineId=${routineId}&limit=100`,
+        `${API_URL}/api/workouts?${queryParam}&limit=100`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -2104,8 +2106,27 @@ export default function Entreno() {
           const exercisesList = diasNorm[workoutDayIdx] || [];
 
           workout.exercises?.forEach((ex, orderIdx) => {
-            // Buscar ejercicio correspondiente en la rutina local por orden
-            const localEx = exercisesList[orderIdx];
+            // 🔧 FIX: Buscar ejercicio por dbId primero, luego por nombre+músculo, finalmente por posición
+            let localEx = null;
+
+            // 1. Intentar match por exerciseId/dbId (más preciso)
+            if (ex.exerciseId) {
+              localEx = exercisesList.find(e => e.dbId === ex.exerciseId || e.dbId === String(ex.exerciseId));
+            }
+
+            // 2. Si no hay match por ID, intentar por nombre + músculo
+            if (!localEx && ex.exerciseName) {
+              localEx = exercisesList.find(e =>
+                e.nombre === ex.exerciseName &&
+                e.musculo?.toUpperCase() === ex.muscleGroup?.toUpperCase()
+              );
+            }
+
+            // 3. Fallback: match por posición (comportamiento original)
+            if (!localEx) {
+              localEx = exercisesList[orderIdx];
+            }
+
             if (!localEx) return;
 
             // 🆕 Marcar el ejercicio como completado si el workout está completado
@@ -2168,11 +2189,12 @@ export default function Entreno() {
     const isFromCoachFlag = await AsyncStorage.getItem('active_routine_from_coach');
 
     // ════════════════════════════════════════════════════════════════════════
-    // Si el usuario tiene entrenador Y la rutina es de coach, cargar de CurrentRoutine
+    // Si la rutina es de coach (flag establecido), cargar de CurrentRoutine
+    // Esto funciona incluso si el usuario es también un entrenador con rutinas asignadas
     // ════════════════════════════════════════════════════════════════════════
-    if (user?.currentTrainerId && token && isFromCoachFlag === 'true') {
+    if (token && isFromCoachFlag === 'true') {
       try {
-        console.log('[Entreno] 👨‍🏫 Usuario tiene entrenador, cargando de CurrentRoutine...');
+        console.log('[Entreno] 👨‍🏫 Rutina de entrenador, cargando de CurrentRoutine...');
         const response = await fetch(`${API_URL}/api/current-routines/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -2228,7 +2250,8 @@ export default function Entreno() {
           // Cargar progreso de la nube - usar el _id de la CurrentRoutine
           const mongoRoutineId = currentRoutine._id;
           if (mongoRoutineId) {
-            const cloudData = await fetchAllCloudProgress(mongoRoutineId, diasNorm);
+            // 🔧 FIX: Pasar isFromCoach=true para usar currentRoutineId en la query
+            const cloudData = await fetchAllCloudProgress(mongoRoutineId, diasNorm, true);
             if (cloudData?.cloudProg && Object.keys(cloudData.cloudProg).length > 0) {
               setProg(prev => ({ ...prev, ...cloudData.cloudProg }));
             }

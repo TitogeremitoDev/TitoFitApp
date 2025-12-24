@@ -83,7 +83,7 @@ export default function PaymentScreen() {
   const [loading, setLoading] = useState(false);
   const [userToken, setUserToken] = useState(null);
   const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
-  const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20 clientes
+  const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20, 50, 100, ilimitado clientes
 
   // 🔄 Estado para modal de sincronización de datos
   const [syncModal, setSyncModal] = useState({
@@ -742,8 +742,26 @@ export default function PaymentScreen() {
         {userType === 'coach' && (
           <View style={styles.clientCountContainer}>
             <Text style={styles.clientCountLabel}>Número de clientes</Text>
+            {/* Primera fila: 5, 10, 20 */}
             <View style={styles.clientCountOptions}>
-              {[5, 10, 20, 50, 100, 9999].map((count) => (
+              {[5, 10, 20].map((count) => (
+                <Pressable
+                  key={count}
+                  style={[styles.clientCountOption, coachClientCount === count && styles.clientCountOptionActive]}
+                  onPress={() => setCoachClientCount(count)}
+                >
+                  <View style={[styles.radioOuter, coachClientCount === count && styles.radioOuterSelected]}>
+                    {coachClientCount === count && <View style={styles.radioInner} />}
+                  </View>
+                  <Text style={[styles.clientCountText, coachClientCount === count && styles.clientCountTextActive]}>
+                    {count}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {/* Segunda fila: 50, 100, +100 */}
+            <View style={[styles.clientCountOptions, { marginTop: 8 }]}>
+              {[50, 100, 9999].map((count) => (
                 <Pressable
                   key={count}
                   style={[styles.clientCountOption, coachClientCount === count && styles.clientCountOptionActive]}
@@ -777,6 +795,11 @@ export default function PaymentScreen() {
         <View style={styles.plansContainer}>
           {planes.filter(p => {
             if (userType === 'coach') {
+              // Para 100 e ilimitado, solo mostrar planes anuales (restricción Apple/Play Store)
+              const soloAnual = [100, 9999].includes(coachClientCount);
+              if (soloAnual) {
+                return p.isCoach && p.clientRange === coachClientCount && p.duracionMeses >= 12;
+              }
               return p.isCoach && p.clientRange === coachClientCount;
             } else {
               return !p.isCoach;
@@ -943,19 +966,19 @@ export default function PaymentScreen() {
               </Pressable>
             )}
 
-            {/* iOS: Solo Apple Pay / In-App Purchase */}
+            {/* iOS: In-App Purchase (NO usar marca Apple Pay - Guideline 1.1.6) */}
             {Platform.OS === 'ios' && (
               <Pressable
                 onPress={() => setPaymentMethod('applepay')}
                 style={[styles.methodBadge, styles.methodBadgeActive]}
               >
                 <Ionicons
-                  name="logo-apple"
+                  name="card-outline"
                   size={20}
                   color="#FFF"
                 />
                 <Text style={[styles.methodText, styles.methodTextActive]}>
-                  Apple Pay
+                  Suscribirse
                 </Text>
               </Pressable>
             )}
@@ -1276,6 +1299,19 @@ export default function PaymentScreen() {
           </Pressable>
         </View>
 
+        {/* SECCIÓN 8: LEGAL LINKS - Términos y Privacidad (Guideline 3.1.2) */}
+        <View style={styles.legalSection}>
+          <Text style={styles.legalText}>
+            Al suscribirte, aceptas nuestros términos de servicio y política de privacidad.
+          </Text>
+          <Pressable onPress={() => Linking.openURL('https://totalgains.es/terms')}>
+            <Text style={styles.legalLink}>Consulta nuestros Términos y Condiciones aquí</Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL('https://totalgains.es/privacy')}>
+            <Text style={styles.legalLink}>Consulta nuestra Política de Privacidad aquí</Text>
+          </Pressable>
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView >
 
@@ -1519,5 +1555,25 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontWeight: '600',
     textDecorationLine: 'underline'
+  },
+
+  // LEGAL LINKS (Términos y Privacidad)
+  legalSection: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+    paddingHorizontal: 20
+  },
+  legalText: {
+    color: '#64748B',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 12
+  },
+  legalLink: {
+    color: '#10B981',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+    marginBottom: 8
   }
 });

@@ -1,6 +1,6 @@
 /* app/(app)/seguimiento/index.jsx - Sistema de Seguimiento Completo */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -24,6 +24,8 @@ import { useAchievements } from '../../../context/AchievementsContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import FeedbackChatModal from '../../../components/FeedbackChatModal';
+import FeedbackHistoryModal from '../../../components/FeedbackHistoryModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -455,6 +457,18 @@ export default function SeguimientoScreen() {
     // Modal cámara
     const [cameraModalVisible, setCameraModalVisible] = useState(false);
 
+    // Feedback del entrenador
+    const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+    const [unreadFeedback, setUnreadFeedback] = useState(0);
+    const feedbackGlowAnim = useRef(new Animated.Value(1)).current;
+
+    // Feedback Reports (separado del chat)
+    const [feedbackHistoryVisible, setFeedbackHistoryVisible] = useState(false);
+    const [unreadFeedbackReports, setUnreadFeedbackReports] = useState(0);
+
+    // Verificar si el usuario tiene entrenador
+    const hasTrainer = user?.currentTrainerId != null;
+
     // ─────────────────────────────────────────────────────────────────────────
     // ESTADOS DATOS MÍNIMOS (Siempre visibles)
     // ─────────────────────────────────────────────────────────────────────────
@@ -630,9 +644,77 @@ export default function SeguimientoScreen() {
         setSelectedDate(dateStr);
     };
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────────
+    // CARGAR FEEDBACK NO LEÍDO
+    // ─────────────────────────────────────────────────────────────────────────────
+    const loadUnreadFeedback = useCallback(async () => {
+        if (!token || !hasTrainer) return;
+        try {
+            // Cargar feedback reports no leídos
+            const [chatRes, reportsRes] = await Promise.all([
+                fetch(`${API_URL}/api/chat/total-unread`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                fetch(`${API_URL}/api/feedback-reports/unread-count`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => ({ json: () => ({ success: false }) }))
+            ]);
+
+            const chatData = await chatRes.json();
+            const reportsData = await reportsRes.json();
+
+            if (chatData.success) {
+                setUnreadFeedback(chatData.totalUnread || 0);
+            }
+
+            if (reportsData.success) {
+                setUnreadFeedbackReports(reportsData.count || 0);
+            }
+
+            // Animar si hay feedback reports no leídos (sombra dorada)
+            const totalUnread = (chatData.totalUnread || 0) + (reportsData.count || 0);
+            if (totalUnread > 0) {
+                Animated.loop(
+                    Animated.sequence([
+                        Animated.timing(feedbackGlowAnim, {
+                            toValue: 1.05,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                        Animated.timing(feedbackGlowAnim, {
+                            toValue: 1,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                    ])
+                ).start();
+            }
+        } catch (error) {
+            console.log('[Seguimiento] Error loading unread feedback:', error.message);
+        }
+    }, [token, hasTrainer]);
+
+    // 🔄 Refrescar usuario al cargar para obtener currentTrainerId actualizado
+    useEffect(() => {
+        if (token && refreshUser) {
+            refreshUser().catch(err =>
+                console.log('[Seguimiento] Error refreshing user:', err.message)
+            );
+        }
+    }, [token]);
+
+    useEffect(() => {
+        loadUnreadFeedback();
+    }, [loadUnreadFeedback]);
+
+    const handleFeedbackClose = () => {
+        setFeedbackModalVisible(false);
+        loadUnreadFeedback(); // Refresh unread count
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // CARGAR OBJETIVOS DE NUTRICIÓN Y DATOS DEL DÍA
-    // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         const loadNutritionAndData = async () => {
             setMinimalDataLoading(true);
@@ -1735,15 +1817,32 @@ export default function SeguimientoScreen() {
                 </ExpandableSection>
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                {/* BOTONES ADICIONALES */}
+                {/* FEEDBACK DEL ENTRENADOR */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                {/* Botones adicionales - Solo visibles en Web */}
-                {Platform.OS === 'web' && (
+                {hasTrainer && (
                     <View style={styles.actionButtons}>
-                        <TouchableOpacity style={styles.feedbackBtn}>
-                            <Ionicons name="chatbubble-ellipses-outline" size={22} color="#FFF" />
-                            <Text style={styles.feedbackBtnText}>Feedback del Entrenador</Text>
-                        </TouchableOpacity>
+                        <Animated.View style={[
+                            styles.feedbackBtnWrapper,
+                            unreadFeedback > 0 && {
+                                transform: [{ scale: feedbackGlowAnim }]
+                            }
+                        ]}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.feedbackBtn,
+                                    unreadFeedbackReports > 0 && styles.feedbackBtnGolden
+                                ]}
+                                onPress={() => setFeedbackHistoryVisible(true)}
+                            >
+                                <Ionicons name="document-text-outline" size={22} color="#FFF" />
+                                <Text style={styles.feedbackBtnText}>Ver Feedback</Text>
+                                {unreadFeedbackReports > 0 && (
+                                    <View style={styles.feedbackUnreadBadgeGolden}>
+                                        <Text style={styles.feedbackUnreadText}>{unreadFeedbackReports}</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                        </Animated.View>
 
                         <TouchableOpacity
                             style={styles.cameraBtn}
@@ -1795,6 +1894,24 @@ export default function SeguimientoScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Modal Feedback del Entrenador */}
+            <FeedbackChatModal
+                visible={feedbackModalVisible}
+                onClose={handleFeedbackClose}
+                clientId={user?._id}
+                clientName={user?.nombre}
+                isCoach={false}
+            />
+
+            {/* Modal Historial de Feedback Reports */}
+            <FeedbackHistoryModal
+                visible={feedbackHistoryVisible}
+                onClose={() => {
+                    setFeedbackHistoryVisible(false);
+                    loadUnreadFeedback(); // Refresh unread count
+                }}
+            />
         </View>
     );
 }
@@ -2286,6 +2403,63 @@ const styles = StyleSheet.create({
     feedbackBtnText: {
         color: '#FFF',
         fontSize: 16,
+        fontWeight: '700',
+    },
+    feedbackBtnWrapper: {
+        flex: 4,
+    },
+    feedbackBtnGlow: {
+        shadowColor: '#8B5CF6',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 16,
+        elevation: 12,
+        borderWidth: 2,
+        borderColor: '#A78BFA',
+    },
+    feedbackBtnGolden: {
+        shadowColor: '#FFD700',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 20,
+        elevation: 15,
+        borderWidth: 2,
+        borderColor: '#FFD700',
+    },
+    feedbackUnreadBadgeGolden: {
+        position: 'absolute',
+        top: -8,
+        right: -8,
+        backgroundColor: '#FFD700',
+        borderRadius: 12,
+        minWidth: 24,
+        height: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        borderWidth: 2,
+        borderColor: '#FFF',
+    },
+    feedbackBtnInactive: {
+        backgroundColor: '#6b7280',
+        opacity: 0.7,
+    },
+    feedbackUnreadBadge: {
+        position: 'absolute',
+        top: -8,
+        right: -8,
+        backgroundColor: '#EF4444',
+        borderRadius: 12,
+        minWidth: 24,
+        height: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#1F2937',
+    },
+    feedbackUnreadText: {
+        color: '#FFF',
+        fontSize: 11,
         fontWeight: '700',
     },
     cameraBtn: {

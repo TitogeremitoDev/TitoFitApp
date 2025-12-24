@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
+import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition, ACTIVITY_FACTORS } from '../../../src/utils/nutritionCalculator';
 
 const DAYS_OF_WEEK = [

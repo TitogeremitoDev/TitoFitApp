@@ -10,13 +10,18 @@ import {
     Image,
     ActivityIndicator,
     Alert,
-    Platform
+    Platform,
+    Modal,
+    FlatList,
+    TextInput
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
+import FeedbackChatModal from '../../components/FeedbackChatModal';
+import BroadcastModal from '../../components/BroadcastModal';
 
 export default function TrainerDashboard() {
     const { token, user } = useAuth();
@@ -25,6 +30,16 @@ export default function TrainerDashboard() {
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [currentClients, setCurrentClients] = useState(0);
     const [showOnboarding, setShowOnboarding] = useState(false);
+    const [unreadMessages, setUnreadMessages] = useState(0);
+    const [messagesModalVisible, setMessagesModalVisible] = useState(false);
+    const [clientsList, setClientsList] = useState([]);
+    const [feedbackSummary, setFeedbackSummary] = useState({});
+    const [chatModalVisible, setChatModalVisible] = useState(false);
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'replied'
+    const [loadingClients, setLoadingClients] = useState(false);
+    const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -46,26 +61,68 @@ export default function TrainerDashboard() {
     const loadTrainerData = async () => {
         try {
             setLoading(true);
-            const [profileRes, clientsRes] = await Promise.all([
+            const [profileRes, clientsRes, unreadRes] = await Promise.all([
                 fetch(`${API_URL}/api/trainers/profile`, {
                     headers: { Authorization: `Bearer ${token}` }
                 }),
                 fetch(`${API_URL}/api/trainers/clients`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                fetch(`${API_URL}/api/chat/total-unread`, {
                     headers: { Authorization: `Bearer ${token}` }
                 })
             ]);
 
             const profileData = await profileRes.json();
             const clientsData = await clientsRes.json();
+            const unreadData = await unreadRes.json();
 
             setTrainerProfile(profileData.profile || {});
             setCurrentClients(clientsData.count || 0);
+            setUnreadMessages(unreadData.totalUnread || 0);
         } catch (error) {
             console.error('Error loading trainer data:', error);
             Alert.alert('Error', 'No se pudieron cargar los datos del entrenador');
         } finally {
             setLoading(false);
         }
+    };
+
+    const openMessagesModal = async () => {
+        setMessagesModalVisible(true);
+        try {
+            const [clientsRes, summaryRes] = await Promise.all([
+                fetch(`${API_URL}/api/trainers/clients-extended`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                fetch(`${API_URL}/api/chat/summary`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+            ]);
+            const clientsData = await clientsRes.json();
+            const summaryData = await summaryRes.json();
+            setClientsList(clientsData.clients || []);
+            setFeedbackSummary(summaryData.summary || {});
+        } catch (error) {
+            console.error('Error loading messages:', error);
+        }
+    };
+
+    const openClientChat = (client) => {
+        setSelectedClient(client);
+        setMessagesModalVisible(false);
+        setChatModalVisible(true);
+    };
+
+    const closeClientChat = () => {
+        setChatModalVisible(false);
+        setSelectedClient(null);
+        // Refresh unread count
+        fetch(`${API_URL}/api/chat/total-unread`, {
+            headers: { Authorization: `Bearer ${token}` }
+        }).then(res => res.json()).then(data => {
+            setUnreadMessages(data.totalUnread || 0);
+        }).catch(() => { });
     };
 
     const copyCodeToClipboard = () => {
@@ -181,6 +238,31 @@ export default function TrainerDashboard() {
                             </View>
                         </View>
 
+                        {/* Messages Button with Badge */}
+                        <TouchableOpacity
+                            style={styles.messagesButton}
+                            onPress={openMessagesModal}
+                        >
+                            <Ionicons name="chatbubbles" size={22} color="#fff" />
+                            <Text style={styles.buttonLabel}>Chat</Text>
+                            {unreadMessages > 0 && (
+                                <View style={styles.messageBadge}>
+                                    <Text style={styles.messageBadgeText}>
+                                        {unreadMessages > 99 ? '99+' : unreadMessages}
+                                    </Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Feedbacks Button - NEW */}
+                        <TouchableOpacity
+                            style={styles.feedbacksButton}
+                            onPress={() => router.push('/(coach)/feedbacks')}
+                        >
+                            <Ionicons name="document-text" size={22} color="#fff" />
+                            <Text style={styles.buttonLabel}>Feedback</Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity
                             style={[
                                 styles.upgradeButton,
@@ -240,6 +322,233 @@ export default function TrainerDashboard() {
                 visible={showOnboarding}
                 onComplete={handleOnboardingComplete}
                 onSkip={handleOnboardingSkip}
+            />
+
+            {/* Modal Lista de Mensajes - PANTALLA COMPLETA */}
+            <Modal
+                visible={messagesModalVisible}
+                animationType="slide"
+                transparent={false}
+                onRequestClose={() => setMessagesModalVisible(false)}
+            >
+                <SafeAreaView style={styles.fullScreenModal}>
+                    {/* Header */}
+                    <View style={styles.fullModalHeader}>
+                        <TouchableOpacity
+                            onPress={() => setMessagesModalVisible(false)}
+                            style={styles.fullModalBackBtn}
+                        >
+                            <Ionicons name="arrow-back" size={24} color="#1e293b" />
+                        </TouchableOpacity>
+                        <Text style={styles.fullModalTitle}>💬 Centro de Mensajes</Text>
+                        <TouchableOpacity
+                            style={styles.broadcastBtn}
+                            onPress={() => {
+                                setMessagesModalVisible(false);
+                                setBroadcastModalVisible(true);
+                            }}
+                        >
+                            <Ionicons name="megaphone" size={20} color="#8b5cf6" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Stats Bar */}
+                    <View style={styles.statsBar}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{clientsList.length}</Text>
+                            <Text style={styles.statLabel}>Clientes</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={[styles.statNumber, { color: '#3b82f6' }]}>{unreadMessages}</Text>
+                            <Text style={styles.statLabel}>Pendientes</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={[styles.statNumber, { color: '#10b981' }]}>
+                                {clientsList.filter(c => {
+                                    const s = feedbackSummary[c._id];
+                                    return s && s.unreadMessages === 0 && s.totalMessages > 0;
+                                }).length}
+                            </Text>
+                            <Text style={styles.statLabel}>Al día</Text>
+                        </View>
+                    </View>
+
+                    {/* Search Bar */}
+                    <View style={styles.searchContainer}>
+                        <Ionicons name="search" size={20} color="#94a3b8" />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Buscar cliente..."
+                            placeholderTextColor="#94a3b8"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                <Ionicons name="close-circle" size={20} color="#94a3b8" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Filter Tabs */}
+                    <View style={styles.filterTabs}>
+                        {[
+                            { id: 'all', label: 'Todos', icon: 'people' },
+                            { id: 'unread', label: 'Pendientes', icon: 'mail-unread' },
+                            { id: 'replied', label: 'Respondidos', icon: 'checkmark-done' }
+                        ].map(tab => (
+                            <TouchableOpacity
+                                key={tab.id}
+                                style={[styles.filterTab, activeFilter === tab.id && styles.filterTabActive]}
+                                onPress={() => setActiveFilter(tab.id)}
+                            >
+                                <Ionicons
+                                    name={tab.icon}
+                                    size={16}
+                                    color={activeFilter === tab.id ? '#fff' : '#64748b'}
+                                />
+                                <Text style={[
+                                    styles.filterTabText,
+                                    activeFilter === tab.id && styles.filterTabTextActive
+                                ]}>
+                                    {tab.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    {/* Clients List */}
+                    {loadingClients ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#3b82f6" />
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={clientsList
+                                .filter(client => {
+                                    // Search filter
+                                    const matchesSearch = client.nombre?.toLowerCase().includes(searchQuery.toLowerCase());
+
+                                    // Tab filter
+                                    const summary = feedbackSummary[client._id] || {};
+                                    if (activeFilter === 'unread') {
+                                        return matchesSearch && summary.unreadMessages > 0;
+                                    } else if (activeFilter === 'replied') {
+                                        return matchesSearch && summary.unreadMessages === 0 && summary.totalMessages > 0;
+                                    }
+                                    return matchesSearch;
+                                })
+                                .sort((a, b) => {
+                                    const aUnread = feedbackSummary[a._id]?.unreadMessages || 0;
+                                    const bUnread = feedbackSummary[b._id]?.unreadMessages || 0;
+                                    return bUnread - aUnread;
+                                })
+                            }
+                            keyExtractor={item => item._id}
+                            numColumns={1}
+                            contentContainerStyle={styles.clientsListContent}
+                            renderItem={({ item }) => {
+                                const summary = feedbackSummary[item._id] || {};
+                                const hasUnread = summary.unreadMessages > 0;
+                                const totalMsgs = summary.totalMessages || 0;
+
+                                // Calcular estado del cliente basado en última comunicación
+                                let statusColor = '#6b7280'; // Gris - sin datos
+                                let statusLabel = 'Sin contacto';
+                                if (summary.lastFeedbackDate) {
+                                    const daysSince = Math.floor(
+                                        (new Date() - new Date(summary.lastFeedbackDate)) / (1000 * 60 * 60 * 24)
+                                    );
+                                    if (daysSince < 7) {
+                                        statusColor = '#10b981'; // Verde
+                                        statusLabel = 'Activo';
+                                    } else if (daysSince < 14) {
+                                        statusColor = '#f59e0b'; // Naranja
+                                        statusLabel = 'Atención';
+                                    } else {
+                                        statusColor = '#ef4444'; // Rojo
+                                        statusLabel = 'Urgente';
+                                    }
+                                }
+
+                                return (
+                                    <TouchableOpacity
+                                        style={[styles.clientCard, hasUnread && styles.clientCardUnread]}
+                                        onPress={() => openClientChat(item)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.clientCardLeft}>
+                                            <View style={[
+                                                styles.clientAvatar,
+                                                hasUnread && styles.clientAvatarUnread
+                                            ]}>
+                                                <Text style={[
+                                                    styles.clientAvatarText,
+                                                    hasUnread && { color: '#fff' }
+                                                ]}>
+                                                    {item.nombre?.charAt(0)?.toUpperCase() || '?'}
+                                                </Text>
+                                                {/* Status Dot */}
+                                                <View style={[
+                                                    styles.statusDot,
+                                                    { backgroundColor: statusColor }
+                                                ]} />
+                                            </View>
+                                            <View style={styles.clientCardInfo}>
+                                                <Text style={styles.clientCardName}>{item.nombre}</Text>
+                                                <Text style={styles.clientCardMeta}>
+                                                    {totalMsgs > 0
+                                                        ? `${totalMsgs} msgs • ${statusLabel}`
+                                                        : 'Sin conversación aún'
+                                                    }
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.clientCardRight}>
+                                            {hasUnread && (
+                                                <View style={styles.unreadBadgeLarge}>
+                                                    <Text style={styles.unreadBadgeText}>{summary.unreadMessages}</Text>
+                                                </View>
+                                            )}
+                                            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            }}
+                            ListEmptyComponent={
+                                <View style={styles.emptyFullScreen}>
+                                    <Ionicons name="chatbubbles-outline" size={64} color="#cbd5e1" />
+                                    <Text style={styles.emptyTitle}>
+                                        {activeFilter === 'unread' ? 'Sin mensajes pendientes' :
+                                            activeFilter === 'replied' ? 'Sin conversaciones respondidas' :
+                                                searchQuery ? 'Sin resultados' : 'Sin clientes'}
+                                    </Text>
+                                    <Text style={styles.emptySubtitle}>
+                                        {activeFilter === 'unread' ? '¡Excelente! Estás al día con todos' :
+                                            searchQuery ? 'Intenta con otro nombre' : ''}
+                                    </Text>
+                                </View>
+                            }
+                        />
+                    )}
+                </SafeAreaView>
+            </Modal>
+
+            {/* Modal Chat Individual */}
+            <FeedbackChatModal
+                visible={chatModalVisible}
+                onClose={closeClientChat}
+                clientId={selectedClient?._id}
+                clientName={selectedClient?.nombre}
+                isCoach={true}
+            />
+
+            {/* Broadcast Modal */}
+            <BroadcastModal
+                visible={broadcastModalVisible}
+                onClose={() => setBroadcastModalVisible(false)}
             />
         </SafeAreaView>
     );
@@ -435,5 +744,332 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#334155',
         textAlign: 'center'
+    },
+    // Messages Button
+    messagesButton: {
+        width: 52,
+        height: 58,
+        borderRadius: 14,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+        position: 'relative',
+        paddingVertical: 6
+    },
+    messageBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#ef4444',
+        borderRadius: 12,
+        minWidth: 20,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        borderWidth: 2,
+        borderColor: '#334155'
+    },
+    messageBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '700'
+    },
+    // Feedbacks Button
+    feedbacksButton: {
+        width: 60,
+        height: 58,
+        borderRadius: 14,
+        backgroundColor: '#f59e0b',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+        position: 'relative',
+        paddingVertical: 6
+    },
+    // Button Label
+    buttonLabel: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '600',
+        marginTop: 2
+    },
+    // Messages Modal
+    messagesModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end'
+    },
+    messagesModalContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '80%',
+        paddingBottom: 32
+    },
+    messagesModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0'
+    },
+    messagesModalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    clientMessageItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9'
+    },
+    clientMessageItemUnread: {
+        backgroundColor: '#eff6ff'
+    },
+    clientMessageInfo: {
+        flex: 1,
+        marginLeft: 12
+    },
+    clientMessageName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1e293b'
+    },
+    clientMessageDate: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2
+    },
+    clientUnreadBadge: {
+        backgroundColor: '#3b82f6',
+        borderRadius: 12,
+        minWidth: 24,
+        height: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8
+    },
+    clientUnreadText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700'
+    },
+    statusDot: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        borderWidth: 2,
+        borderColor: '#fff'
+    },
+    broadcastBtn: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f3f0ff',
+        borderRadius: 20
+    },
+    emptyMessages: {
+        padding: 40,
+        alignItems: 'center'
+    },
+    emptyMessagesText: {
+        color: '#94a3b8',
+        marginTop: 12
+    },
+    // Full Screen Modal Styles
+    fullScreenModal: {
+        flex: 1,
+        backgroundColor: '#f8fafc'
+    },
+    fullModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0'
+    },
+    fullModalBackBtn: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    fullModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    statsBar: {
+        flexDirection: 'row',
+        backgroundColor: '#fff',
+        paddingVertical: 16,
+        paddingHorizontal: 24,
+        justifyContent: 'space-around',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0'
+    },
+    statItem: {
+        alignItems: 'center'
+    },
+    statNumber: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#1e293b'
+    },
+    statLabel: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2
+    },
+    statDivider: {
+        width: 1,
+        backgroundColor: '#e2e8f0'
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        margin: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0'
+    },
+    searchInput: {
+        flex: 1,
+        marginLeft: 12,
+        fontSize: 15,
+        color: '#1e293b'
+    },
+    filterTabs: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        marginBottom: 16,
+        gap: 8
+    },
+    filterTab: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        gap: 6
+    },
+    filterTabActive: {
+        backgroundColor: '#3b82f6',
+        borderColor: '#3b82f6'
+    },
+    filterTabText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b'
+    },
+    filterTabTextActive: {
+        color: '#fff'
+    },
+    clientsListContent: {
+        paddingHorizontal: 16,
+        paddingBottom: 32
+    },
+    clientCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#fff',
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0'
+    },
+    clientCardUnread: {
+        borderColor: '#3b82f6',
+        borderWidth: 2,
+        backgroundColor: '#eff6ff'
+    },
+    clientCardLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1
+    },
+    clientAvatar: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#e2e8f0',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    clientAvatarUnread: {
+        backgroundColor: '#3b82f6'
+    },
+    clientAvatarText: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#64748b'
+    },
+    clientCardInfo: {
+        marginLeft: 12,
+        flex: 1
+    },
+    clientCardName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b'
+    },
+    clientCardMeta: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2
+    },
+    clientCardRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    unreadBadgeLarge: {
+        backgroundColor: '#ef4444',
+        borderRadius: 12,
+        minWidth: 24,
+        height: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 8
+    },
+    unreadBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700'
+    },
+    emptyFullScreen: {
+        alignItems: 'center',
+        paddingVertical: 60
+    },
+    emptyTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#64748b',
+        marginTop: 16
+    },
+    emptySubtitle: {
+        fontSize: 14,
+        color: '#94a3b8',
+        marginTop: 4
     }
 });

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 export default function CoachHeader({
     title,
@@ -11,8 +12,11 @@ export default function CoachHeader({
     badgeColor = '#dbeafe',
     badgeTextColor = '#3b82f6',
     rightContent,
-    onBackPress = undefined
+    onBackPress = undefined,
+    showBackOnWeb = true // Auto-show back button on web by default
 }) {
+    const router = useRouter();
+
     // Convert hex color to rgba with 10% opacity for background
     const getIconBackgroundColor = (color) => {
         // Remove # if present
@@ -26,12 +30,23 @@ export default function CoachHeader({
         return `rgba(${r}, ${g}, ${b}, 0.1)`;
     };
 
+    // Show back button: if onBackPress is provided OR if on web with showBackOnWeb enabled
+    const shouldShowBack = onBackPress || (Platform.OS === 'web' && showBackOnWeb);
+
+    const handleBack = () => {
+        if (onBackPress) {
+            onBackPress();
+        } else {
+            router.back();
+        }
+    };
+
     return (
         <View style={styles.header}>
             <View style={styles.headerLeft}>
-                {onBackPress && (
+                {shouldShowBack && (
                     <TouchableOpacity
-                        onPress={onBackPress}
+                        onPress={handleBack}
                         style={styles.backButton}
                     >
                         <Ionicons name="arrow-back" size={24} color="#1e293b" />

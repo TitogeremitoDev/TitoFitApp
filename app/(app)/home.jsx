@@ -73,6 +73,9 @@ export default function HomeScreen() {
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [showRetentionModal, setShowRetentionModal] = useState(false);
 
+  // Estado para mensajes no leídos del chat
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
@@ -115,6 +118,28 @@ export default function HomeScreen() {
     };
     fetchTrainer();
   }, [user?.tipoUsuario, token]);
+
+  // Obtener mensajes no leídos del chat
+  useEffect(() => {
+    const fetchUnreadChat = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch(`${API_URL}/api/chat/total-unread`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+          setUnreadChatCount(data.totalUnread || 0);
+        }
+      } catch (error) {
+        console.error('[Home] Error fetching unread chat:', error);
+      }
+    };
+    fetchUnreadChat();
+    // Refrescar cada 30 segundos
+    const interval = setInterval(fetchUnreadChat, 30000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   // Verificar changelog
   useEffect(() => {
@@ -553,6 +578,28 @@ export default function HomeScreen() {
         userType={user?.tipoUsuario}
         subscriptionStatus={subscriptionData?.status}
       />
+
+      {/* FAB de Chat */}
+      <Pressable
+        style={styles.chatFab}
+        onPress={() => router.push('/chat')}
+      >
+        <LinearGradient
+          colors={['#8B5CF6', '#6366F1']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.chatFabGradient}
+        >
+          <Ionicons name="chatbubbles" size={26} color="#FFF" />
+          {unreadChatCount > 0 && (
+            <View style={styles.chatFabBadge}>
+              <Text style={styles.chatFabBadgeText}>
+                {unreadChatCount > 99 ? '99+' : unreadChatCount}
+              </Text>
+            </View>
+          )}
+        </LinearGradient>
+      </Pressable>
     </View>
   );
 }
@@ -884,5 +931,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 10,
     marginBottom: 20,
+  },
+  // FAB de Chat
+  chatFab: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 130,
+    right: 20,
+    zIndex: 999,
+    borderRadius: 30,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  chatFabGradient: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatFabBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#EF4444',
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: '#0B1220',
+  },
+  chatFabBadgeText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+import FeedbackChatModal from '../../../components/FeedbackChatModal';
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -77,52 +78,21 @@ export default function ClientsScreen() {
         clientName: ''
     });
 
-    // Feedback modal state
-    const [feedbackModal, setFeedbackModal] = useState({
-        visible: false,
-        clientId: null,
-        clientName: '',
-    });
-    const [feedbackMessage, setFeedbackMessage] = useState('');
-    const [feedbackType, setFeedbackType] = useState('general');
-    const [sendingFeedback, setSendingFeedback] = useState(false);
+    // Feedback modal state - Usando el nuevo Chat Modal
+    const [chatModalVisible, setChatModalVisible] = useState(false);
+    const [selectedClient, setSelectedClient] = useState(null);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
-    // Enviar feedback rápido
-    const handleSendFeedback = async () => {
-        if (!feedbackMessage.trim() || !feedbackModal.clientId) return;
-
-        try {
-            setSendingFeedback(true);
-            const response = await fetch(`${API_URL}/api/feedback`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    clientId: feedbackModal.clientId,
-                    message: feedbackMessage.trim(),
-                    type: feedbackType,
-                }),
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                setFeedbackModal({ visible: false, clientId: null, clientName: '' });
-                setFeedbackMessage('');
-                setFeedbackType('general');
-            }
-        } catch (error) {
-            console.error('[SendFeedback] Error:', error);
-        } finally {
-            setSendingFeedback(false);
-        }
+    const openFeedbackChat = (clientId, clientName) => {
+        setSelectedClient({ _id: clientId, nombre: clientName });
+        setChatModalVisible(true);
     };
 
-    const openFeedbackModal = (clientId, clientName) => {
-        setFeedbackModal({ visible: true, clientId, clientName });
+    const closeFeedbackChat = () => {
+        setChatModalVisible(false);
+        setSelectedClient(null);
+        fetchClients(); // Refresh to update unread counts
     };
 
     useEffect(() => {
@@ -427,10 +397,10 @@ export default function ClientsScreen() {
 
                             <TouchableOpacity
                                 style={[styles.actionButton, styles.feedbackButton]}
-                                onPress={() => openFeedbackModal(item._id, item.nombre)}
+                                onPress={() => openFeedbackChat(item._id, item.nombre)}
                             >
                                 <Text style={[styles.actionLabel, { color: '#10b981' }]}>Feedback</Text>
-                                <Ionicons name="create" size={22} color="#10b981" />
+                                <Ionicons name="chatbubbles" size={22} color="#10b981" />
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -498,80 +468,14 @@ export default function ClientsScreen() {
                 }
             />
 
-            {/* Modal de Feedback Rápido */}
-            <Modal
-                transparent={true}
-                visible={feedbackModal.visible}
-                animationType="slide"
-                onRequestClose={() => setFeedbackModal({ visible: false, clientId: null, clientName: '' })}
-            >
-                <View style={styles.feedbackModalOverlay}>
-                    <View style={styles.feedbackModalContainer}>
-                        <View style={styles.feedbackModalHeader}>
-                            <View style={styles.feedbackModalTitleRow}>
-                                <Ionicons name="create" size={24} color="#10b981" />
-                                <Text style={styles.feedbackModalTitle}>Feedback para {feedbackModal.clientName}</Text>
-                            </View>
-                            <TouchableOpacity onPress={() => setFeedbackModal({ visible: false, clientId: null, clientName: '' })}>
-                                <Ionicons name="close-circle" size={28} color="#94a3b8" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Type Selector */}
-                        <View style={styles.feedbackTypeRow}>
-                            {[
-                                { id: 'general', label: 'General', icon: 'chatbubble' },
-                                { id: 'entreno', label: 'Entreno', icon: 'barbell' },
-                                { id: 'nutricion', label: 'Nutrición', icon: 'nutrition' },
-                                { id: 'evolucion', label: 'Evolución', icon: 'trending-up' },
-                            ].map(type => (
-                                <TouchableOpacity
-                                    key={type.id}
-                                    style={[styles.feedbackTypeBtn, feedbackType === type.id && styles.feedbackTypeBtnActive]}
-                                    onPress={() => setFeedbackType(type.id)}
-                                >
-                                    <Ionicons
-                                        name={type.icon}
-                                        size={14}
-                                        color={feedbackType === type.id ? '#fff' : '#64748b'}
-                                    />
-                                    <Text style={[styles.feedbackTypeLabel, feedbackType === type.id && styles.feedbackTypeLabelActive]}>
-                                        {type.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-
-                        {/* Message Input */}
-                        <TextInput
-                            style={styles.feedbackInput}
-                            placeholder="Escribe tu mensaje..."
-                            placeholderTextColor="#94a3b8"
-                            value={feedbackMessage}
-                            onChangeText={setFeedbackMessage}
-                            multiline
-                            numberOfLines={4}
-                            textAlignVertical="top"
-                        />
-
-                        {/* Send Button */}
-                        <TouchableOpacity
-                            style={[styles.sendFeedbackBtn, !feedbackMessage.trim() && styles.sendFeedbackBtnDisabled]}
-                            onPress={handleSendFeedback}
-                            disabled={!feedbackMessage.trim() || sendingFeedback}
-                        >
-                            {sendingFeedback ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <>
-                                    <Ionicons name="paper-plane" size={18} color="#fff" />
-                                    <Text style={styles.sendFeedbackBtnText}>Enviar</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+            {/* Modal de Feedback Chat */}
+            <FeedbackChatModal
+                visible={chatModalVisible}
+                onClose={closeFeedbackChat}
+                clientId={selectedClient?._id}
+                clientName={selectedClient?.nombre}
+                isCoach={true}
+            />
 
             {/* Modal de Confirmación */}
             <Modal

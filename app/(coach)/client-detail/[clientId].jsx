@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '../../../context/AuthContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
+import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import {
     calcVolumeByWeek,
     calcIntensityByWeek,
@@ -148,6 +149,7 @@ export default function ClientDetailScreen() {
     const router = useRouter();
     const { clientId, clientName } = useLocalSearchParams();
     const { token } = useAuth();
+    const { setActiveClient } = useFeedbackBubble();
 
     const [isLoading, setIsLoading] = useState(true);
     const [clientInfo, setClientInfo] = useState(null);
@@ -190,7 +192,7 @@ export default function ClientDetailScreen() {
 
         try {
             setSendingFeedback(true);
-            const response = await fetch(`${API_URL}/api/feedback`, {
+            const response = await fetch(`${API_URL}/api/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -200,6 +202,7 @@ export default function ClientDetailScreen() {
                     clientId,
                     message: feedbackMessage.trim(),
                     type: feedbackType,
+                    isCoach: true,
                 }),
             });
 
@@ -301,6 +304,17 @@ export default function ClientDetailScreen() {
     useEffect(() => {
         fetchAllData();
     }, [fetchAllData]);
+
+    // Activar cliente para la burbuja de notas global
+    useEffect(() => {
+        if (clientId) {
+            setActiveClient(clientId, clientName || 'Cliente');
+        }
+        return () => {
+            // No limpiamos al salir - el usuario puede querer seguir navegando datos del cliente
+            // Solo limpiaremos cuando salga del área de coach o cambie de cliente
+        };
+    }, [clientId, clientName, setActiveClient]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // KPI CALCULATIONS - TRAINING

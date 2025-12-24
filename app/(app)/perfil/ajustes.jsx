@@ -67,7 +67,7 @@ const TIER_LABELS = {
 export default function AjustesScreen() {
   const router = useRouter();
   const { theme, themeMode, currentThemeId, setThemeId } = useTheme();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { serverPoints } = useAchievements();
 
   const [subscriptionData, setSubscriptionData] = useState(null);
@@ -108,6 +108,10 @@ export default function AjustesScreen() {
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [selectedThemeToPurchase, setSelectedThemeToPurchase] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
+
+  // Estados para eliminar cuenta (Apple Guideline 5.1.1(v))
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
 
   // Determinar si el usuario es premium/cliente/entrenador/admin
@@ -654,6 +658,45 @@ export default function AjustesScreen() {
       Alert.alert('Error', 'No se pudo cambiar la contraseña.');
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ELIMINAR CUENTA (Apple Guideline 5.1.1(v))
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      const token = await AsyncStorage.getItem('totalgains_token');
+      const response = await fetch(`${API_URL}/api/users/delete-account`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Cerrar modal
+        setShowDeleteAccountModal(false);
+
+        // Cerrar sesión (limpia AsyncStorage y estado)
+        await logout();
+
+        Alert.alert(
+          '✅ Cuenta Eliminada',
+          'Tu cuenta y todos tus datos han sido eliminados correctamente.',
+          [{ text: 'OK', onPress: () => router.replace('/') }]
+        );
+      } else {
+        Alert.alert('Error', data.message || 'No se pudo eliminar la cuenta.');
+      }
+    } catch (error) {
+      console.error('[Ajustes] Error eliminando cuenta:', error);
+      Alert.alert('Error', 'No se pudo eliminar la cuenta. Inténtalo de nuevo.');
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -1220,6 +1263,44 @@ export default function AjustesScreen() {
           </View>
         </View>
 
+        {/* ═══════════════════════════════════════════════════════════════════
+            SECCIÓN DE CUENTA - Eliminar Cuenta (Apple Guideline 5.1.1(v))
+        ═══════════════════════════════════════════════════════════════════ */}
+        <View style={styles.section}>
+          <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
+            <Ionicons name="person-outline" size={20} color={theme.text} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Cuenta
+            </Text>
+          </View>
+
+          <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
+            <TouchableOpacity
+              style={[styles.deleteAccountButton, {
+                backgroundColor: theme.dangerLight || '#FEE2E2',
+                borderColor: theme.dangerBorder || '#FECACA'
+              }]}
+              onPress={() => setShowDeleteAccountModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.deleteAccountButtonContent}>
+                <View style={[styles.iconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                  <Ionicons name="trash-outline" size={20} color={theme.danger || '#EF4444'} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.deleteAccountTitle, { color: theme.danger || '#EF4444' }]}>
+                    Eliminar Cuenta
+                  </Text>
+                  <Text style={[styles.deleteAccountSubtitle, { color: theme.textSecondary }]}>
+                    Borra permanentemente tu cuenta y todos tus datos
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.danger || '#EF4444'} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Espacio final */}
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -1495,6 +1576,71 @@ export default function AjustesScreen() {
                 </>
               );
             })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          MODAL ELIMINAR CUENTA (Apple Guideline 5.1.1(v))
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={showDeleteAccountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteAccountModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <View style={styles.cancelModalIconContainer}>
+              <Ionicons name="warning-outline" size={48} color={theme.danger || '#EF4444'} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Eliminar Cuenta
+            </Text>
+
+            <Text style={[styles.modalDescription, { color: theme.textSecondary, textAlign: 'center' }]}>
+              ¿Estás seguro de que deseas eliminar tu cuenta?{'\n\n'}
+              <Text style={{ fontWeight: '700', color: theme.danger || '#EF4444' }}>
+                ⚠️ Esta acción es IRREVERSIBLE
+              </Text>
+              {'\n\n'}
+              Se eliminarán permanentemente:{'\n'}
+              • Todos tus entrenamientos{'\n'}
+              • Tus rutinas y progreso{'\n'}
+              • Datos de seguimiento{'\n'}
+              • Tu información personal
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: theme.border }]}
+                onPress={() => setShowDeleteAccountModal(false)}
+                disabled={deletingAccount}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonPrimary,
+                  { backgroundColor: theme.danger || '#EF4444' },
+                ]}
+                onPress={handleDeleteAccount}
+                disabled={deletingAccount}
+              >
+                {deletingAccount ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                    Eliminar
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2006,5 +2152,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ESTILOS PARA ELIMINAR CUENTA (Apple Guideline 5.1.1(v))
+  // ═══════════════════════════════════════════════════════════════════════════
+  deleteAccountButton: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  deleteAccountButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteAccountTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteAccountSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
   },
 });

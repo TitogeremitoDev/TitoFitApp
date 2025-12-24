@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Picker } from '@react-native-picker/picker'
 import { useAuth } from '../../../context/AuthContext';
+import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 
 // KPI Utilities
 import {
@@ -94,6 +95,10 @@ export default function ClientProgressDetail() {
     // Nuevos estados para filtros
     const [selMusculo, setSelMusculo] = useState('TOTAL'); // 'TOTAL' = todos
     const [selEjercicio, setSelEjercicio] = useState('');
+
+    // 📊 Modales para pickers Android
+    const [androidMusculoModal, setAndroidMusculoModal] = useState(false);
+    const [androidEjercicioModal, setAndroidEjercicioModal] = useState(false);
 
     // 📊 Vista: gráfica o tabla detallada
     const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table'
@@ -881,17 +886,15 @@ export default function ClientProgressDetail() {
                                             <Ionicons name="chevron-down" size={18} color="#64748b" />
                                         </TouchableOpacity>
                                     ) : (
-                                        <View style={styles.kpiFilterPicker}>
-                                            <Picker
-                                                selectedValue={selMusculo}
-                                                onValueChange={handleMusculoChange}
-                                                style={styles.kpiPickerStyle}
-                                            >
-                                                {listaMusculos.map(m => (
-                                                    <Picker.Item key={m} label={m === 'TOTAL' ? 'Todos' : m} value={m} />
-                                                ))}
-                                            </Picker>
-                                        </View>
+                                        <TouchableOpacity
+                                            style={styles.iosPickerButton}
+                                            onPress={() => setAndroidMusculoModal(true)}
+                                        >
+                                            <Text style={styles.iosPickerText}>
+                                                {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
+                                            </Text>
+                                            <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                        </TouchableOpacity>
                                     )}
                                 </View>
                                 {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
@@ -920,18 +923,15 @@ export default function ClientProgressDetail() {
                                                 <Ionicons name="chevron-down" size={18} color="#64748b" />
                                             </TouchableOpacity>
                                         ) : (
-                                            <View style={styles.kpiFilterPicker}>
-                                                <Picker
-                                                    selectedValue={selEjercicio}
-                                                    onValueChange={setSelEjercicio}
-                                                    style={styles.kpiPickerStyle}
-                                                >
-                                                    <Picker.Item label="Todos" value="" />
-                                                    {listaEjercicios.map(e => (
-                                                        <Picker.Item key={e} label={e} value={e} />
-                                                    ))}
-                                                </Picker>
-                                            </View>
+                                            <TouchableOpacity
+                                                style={styles.iosPickerButton}
+                                                onPress={() => setAndroidEjercicioModal(true)}
+                                            >
+                                                <Text style={styles.iosPickerText}>
+                                                    {selEjercicio || 'Todos'}
+                                                </Text>
+                                                <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                            </TouchableOpacity>
                                         )}
                                     </View>
                                 )}
@@ -1526,6 +1526,102 @@ export default function ClientProgressDetail() {
                                     </View>
                                     {selectedKpi === item.id && (
                                         <Ionicons name="checkmark-circle" size={24} color="#3b82f6" />
+                                    )}
+                                </Pressable>
+                            )}
+                        />
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* ═══ ANDROID MUSCLE PICKER MODAL ═══ */}
+            <Modal
+                visible={androidMusculoModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setAndroidMusculoModal(false)}
+            >
+                <Pressable
+                    style={styles.kpiModalOverlay}
+                    onPress={() => setAndroidMusculoModal(false)}
+                >
+                    <View style={styles.kpiModalContent}>
+                        <View style={styles.kpiModalHeader}>
+                            <Text style={styles.kpiModalTitle}>💪 Seleccionar Músculo</Text>
+                            <Pressable onPress={() => setAndroidMusculoModal(false)}>
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </Pressable>
+                        </View>
+                        <FlatList
+                            data={listaMusculos}
+                            keyExtractor={(item) => item}
+                            renderItem={({ item }) => (
+                                <Pressable
+                                    style={[
+                                        styles.androidPickerItem,
+                                        selMusculo === item && styles.androidPickerItemActive
+                                    ]}
+                                    onPress={() => {
+                                        handleMusculoChange(item);
+                                        setAndroidMusculoModal(false);
+                                    }}
+                                >
+                                    <Text style={[
+                                        styles.androidPickerItemText,
+                                        selMusculo === item && styles.androidPickerItemTextActive
+                                    ]}>
+                                        {item === 'TOTAL' ? 'Todos' : item}
+                                    </Text>
+                                    {selMusculo === item && (
+                                        <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                                    )}
+                                </Pressable>
+                            )}
+                        />
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* ═══ ANDROID EXERCISE PICKER MODAL ═══ */}
+            <Modal
+                visible={androidEjercicioModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setAndroidEjercicioModal(false)}
+            >
+                <Pressable
+                    style={styles.kpiModalOverlay}
+                    onPress={() => setAndroidEjercicioModal(false)}
+                >
+                    <View style={styles.kpiModalContent}>
+                        <View style={styles.kpiModalHeader}>
+                            <Text style={styles.kpiModalTitle}>🏋️ Seleccionar Ejercicio</Text>
+                            <Pressable onPress={() => setAndroidEjercicioModal(false)}>
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </Pressable>
+                        </View>
+                        <FlatList
+                            data={['', ...listaEjercicios]}
+                            keyExtractor={(item, index) => item || `todos-${index}`}
+                            renderItem={({ item }) => (
+                                <Pressable
+                                    style={[
+                                        styles.androidPickerItem,
+                                        selEjercicio === item && styles.androidPickerItemActive
+                                    ]}
+                                    onPress={() => {
+                                        setSelEjercicio(item);
+                                        setAndroidEjercicioModal(false);
+                                    }}
+                                >
+                                    <Text style={[
+                                        styles.androidPickerItemText,
+                                        selEjercicio === item && styles.androidPickerItemTextActive
+                                    ]}>
+                                        {item || 'Todos'}
+                                    </Text>
+                                    {selEjercicio === item && (
+                                        <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
                                     )}
                                 </Pressable>
                             )}
@@ -2524,6 +2620,28 @@ const styles = StyleSheet.create({
     iosPickerText: {
         fontSize: 14,
         color: '#1e293b',
+    },
+
+    // Android Picker Modal Items
+    androidPickerItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    androidPickerItemActive: {
+        backgroundColor: '#eff6ff',
+    },
+    androidPickerItemText: {
+        fontSize: 15,
+        color: '#334155',
+    },
+    androidPickerItemTextActive: {
+        color: '#3b82f6',
+        fontWeight: '600',
     },
 
     // KPI Selector - Estilo de botón más visible
