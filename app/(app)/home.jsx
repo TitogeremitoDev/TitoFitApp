@@ -81,6 +81,9 @@ export default function HomeScreen() {
   // Estado para mensajes no leídos del chat
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
+  // Estado para feedbacks del entrenador sin leer
+  const [unreadFeedbackReports, setUnreadFeedbackReports] = useState(0);
+
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
@@ -153,28 +156,40 @@ export default function HomeScreen() {
     fetchTrainer();
   }, [user?.tipoUsuario, token]);
 
-  // Obtener mensajes no leídos del chat (con jitter para desincronizar usuarios)
+  // Obtener mensajes no leídos del chat y feedbacks (con jitter para desincronizar usuarios)
   useEffect(() => {
-    const fetchUnreadChat = async () => {
+    const fetchUnreadData = async () => {
       if (!token) return;
       try {
-        const response = await fetch(`${API_URL}/api/chat/total-unread`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await response.json();
-        if (data.success) {
-          setUnreadChatCount(data.totalUnread || 0);
+        // Fetch chat unread y feedback reports en paralelo
+        const [chatRes, feedbackRes] = await Promise.all([
+          fetch(`${API_URL}/api/chat/total-unread`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`${API_URL}/api/feedback-reports/unread-count`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }).catch(() => ({ json: () => ({ success: false }) }))
+        ]);
+
+        const chatData = await chatRes.json();
+        const feedbackData = await feedbackRes.json();
+
+        if (chatData.success) {
+          setUnreadChatCount(chatData.totalUnread || 0);
+        }
+        if (feedbackData.success) {
+          setUnreadFeedbackReports(feedbackData.count || 0);
         }
       } catch (error) {
-        console.error('[Home] Error fetching unread chat:', error);
+        console.error('[Home] Error fetching unread data:', error);
       }
     };
-    fetchUnreadChat();
+    fetchUnreadData();
 
     // Jitter: 30s base + 0-5s aleatorio para evitar picos de carga
     const baseInterval = 30000;
     const jitter = Math.floor(Math.random() * 5000);
-    const interval = setInterval(fetchUnreadChat, baseInterval + jitter);
+    const interval = setInterval(fetchUnreadData, baseInterval + jitter);
 
     return () => clearInterval(interval);
   }, [token]);
@@ -406,10 +421,24 @@ export default function HomeScreen() {
                 <ActionButton title="Rutina" icon="construct-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
               </Link>
             </View>
-            <View style={{ width: '48%' }}>
+            <View style={{ width: '48%', position: 'relative' }}>
               <Link href="/seguimiento" asChild>
-                <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+                <ActionButton
+                  title="Seguimiento"
+                  icon="analytics-outline"
+                  variant="secondary"
+                  compact={true}
+                  style={[
+                    { height: 50, justifyContent: 'center' },
+                    unreadFeedbackReports > 0 && styles.seguimientoBtnGolden
+                  ]}
+                />
               </Link>
+              {unreadFeedbackReports > 0 && (
+                <View style={styles.seguimientoBadge}>
+                  <Text style={styles.seguimientoBadgeText}>+{unreadFeedbackReports}</Text>
+                </View>
+              )}
             </View>
 
             {/* Fila 2 */}
@@ -435,9 +464,21 @@ export default function HomeScreen() {
               <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
             </Link>
             <View style={{ height: 10 }} />
-            <Link href="/seguimiento" asChild>
-              <ActionButton title="Seguimiento" icon="analytics-outline" variant="secondary" />
-            </Link>
+            <View style={{ position: 'relative', width: '100%', alignItems: 'center' }}>
+              <Link href="/seguimiento" asChild>
+                <ActionButton
+                  title="Seguimiento"
+                  icon="analytics-outline"
+                  variant="secondary"
+                  style={unreadFeedbackReports > 0 ? styles.seguimientoBtnGolden : undefined}
+                />
+              </Link>
+              {unreadFeedbackReports > 0 && (
+                <View style={styles.seguimientoBadgeLarge}>
+                  <Text style={styles.seguimientoBadgeText}>+{unreadFeedbackReports}</Text>
+                </View>
+              )}
+            </View>
             <View style={{ height: 10 }} />
             <Link href="/nutricion" asChild>
               <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
@@ -1077,6 +1118,51 @@ const styles = StyleSheet.create({
   chatFabBadgeText: {
     color: '#FFF',
     fontSize: 11,
+    fontWeight: '800',
+  },
+  // Estilos para badge dorado en botón Seguimiento
+  seguimientoBtnGolden: {
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  seguimientoBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFD700',
+    borderRadius: 12,
+    minWidth: 28,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    zIndex: 10,
+  },
+  seguimientoBadgeLarge: {
+    position: 'absolute',
+    top: -10,
+    right: -10,
+    backgroundColor: '#FFD700',
+    borderRadius: 14,
+    minWidth: 32,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    zIndex: 10,
+  },
+  seguimientoBadgeText: {
+    color: '#000',
+    fontSize: 12,
     fontWeight: '800',
   },
 });

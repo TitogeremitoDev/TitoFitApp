@@ -93,6 +93,126 @@ const ClientFeedbackCard = ({ client, onPress, lastFeedback }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RESPONSE CARD
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ResponseCard = ({ item }) => {
+    const [expanded, setExpanded] = useState(false);
+    const getHighlightText = (h) => typeof h === 'object' ? h.text : h;
+
+    return (
+        <TouchableOpacity
+            style={[styles.responseCard, expanded && styles.responseCardExpanded]}
+            onPress={() => setExpanded(!expanded)}
+            activeOpacity={0.7}
+        >
+            <View style={styles.responseHeader}>
+                <View style={styles.clientAvatar}>
+                    <Text style={styles.clientAvatarText}>
+                        {item.clientName?.charAt(0)?.toUpperCase() || '?'}
+                    </Text>
+                </View>
+                <View style={styles.responseHeaderInfo}>
+                    <Text style={styles.clientName}>{item.clientName}</Text>
+                    <Text style={styles.responseDate}>
+                        Respondido: {new Date(item.clientResponse?.respondedAt).toLocaleDateString('es-ES')}
+                    </Text>
+                </View>
+                <Ionicons
+                    name={expanded ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color="#94a3b8"
+                />
+            </View>
+
+            {/* Vista colapsada - solo resumen */}
+            {!expanded && (
+                <>
+                    <View style={styles.feedbackSummaryBox}>
+                        <Text style={styles.feedbackSummaryLabel}>Tu feedback:</Text>
+                        {item.highlights?.slice(0, 2).map((h, i) => (
+                            <Text key={i} style={styles.feedbackSummaryItem}>• {getHighlightText(h)}</Text>
+                        ))}
+                        {(item.highlights?.length > 2 || item.technicalNotes?.length > 0 || item.actionPlan?.length > 0) && (
+                            <Text style={styles.feedbackSummaryMore}>Toca para ver más...</Text>
+                        )}
+                    </View>
+                </>
+            )}
+
+            {/* Vista expandida - todo el feedback */}
+            {expanded && (
+                <>
+                    {/* Semáforo */}
+                    {item.trafficLight && (
+                        <View style={[
+                            styles.trafficLightBadge,
+                            {
+                                backgroundColor: item.trafficLight === 'green' ? '#dcfce7' :
+                                    item.trafficLight === 'yellow' ? '#fef9c3' : '#fee2e2'
+                            }
+                        ]}>
+                            <Text style={{
+                                color: item.trafficLight === 'green' ? '#16a34a' :
+                                    item.trafficLight === 'yellow' ? '#ca8a04' : '#dc2626'
+                            }}>
+                                {item.trafficLight === 'green' ? '🟢 Excelente' :
+                                    item.trafficLight === 'yellow' ? '🟡 A mejorar' : '🔴 Atención'}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Logros / Lo que has hecho bien */}
+                    {item.highlights?.length > 0 && (
+                        <View style={styles.feedbackSection}>
+                            <View style={[styles.feedbackSectionHeader, { borderLeftColor: '#22c55e' }]}>
+                                <Text style={styles.feedbackSectionTitle}>✨ Lo que has hecho bien</Text>
+                            </View>
+                            {item.highlights.map((h, i) => (
+                                <Text key={i} style={styles.feedbackSectionItem}>• {getHighlightText(h)}</Text>
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Análisis Técnico */}
+                    {item.technicalNotes?.length > 0 && (
+                        <View style={styles.feedbackSection}>
+                            <View style={[styles.feedbackSectionHeader, { borderLeftColor: '#3b82f6' }]}>
+                                <Text style={styles.feedbackSectionTitle}>📊 Análisis Técnico</Text>
+                            </View>
+                            {item.technicalNotes.map((n, i) => (
+                                <Text key={i} style={styles.feedbackSectionItem}>• {getHighlightText(n)}</Text>
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Plan de Acción */}
+                    {item.actionPlan?.length > 0 && (
+                        <View style={styles.feedbackSection}>
+                            <View style={[styles.feedbackSectionHeader, { borderLeftColor: '#f59e0b' }]}>
+                                <Text style={styles.feedbackSectionTitle}>🎯 Plan de Acción</Text>
+                            </View>
+                            {item.actionPlan.map((a, i) => (
+                                <Text key={i} style={styles.feedbackSectionItem}>• {getHighlightText(a)}</Text>
+                            ))}
+                        </View>
+                    )}
+                </>
+            )}
+
+            {/* Respuesta del cliente - siempre visible */}
+            <View style={styles.clientResponseBox}>
+                <View style={styles.clientResponseHeader}>
+                    <Ionicons name="chatbubble" size={16} color="#10b981" />
+                    <Text style={styles.clientResponseLabel}>Respuesta del cliente:</Text>
+                </View>
+                <Text style={styles.clientResponseText}>{item.clientResponse?.text}</Text>
+            </View>
+        </TouchableOpacity>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -113,6 +233,9 @@ export default function FeedbacksScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedClient, setSelectedClient] = useState(null);
     const [prefillData, setPrefillData] = useState(null);
+
+    // Estado para feedbacks con respuestas
+    const [respondedFeedbacks, setRespondedFeedbacks] = useState([]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD DATA
@@ -154,6 +277,19 @@ export default function FeedbacksScreen() {
             }
             if (summaryData.success) {
                 setFeedbackSummary(summaryData.summary || {});
+            }
+
+            // Cargar feedbacks con respuestas del cliente
+            try {
+                const respondedRes = await fetch(`${API_URL}/api/feedback-reports/with-responses`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const respondedData = await respondedRes.json();
+                if (respondedData.success) {
+                    setRespondedFeedbacks(respondedData.reports || []);
+                }
+            } catch (e) {
+                console.log('[Feedbacks] Error loading responses:', e);
             }
         } catch (error) {
             console.error('[Feedbacks] Error loading:', error);
@@ -235,7 +371,8 @@ export default function FeedbacksScreen() {
                 : 999;
             return days > 7;
         }).length,
-        drafts: clients.filter(c => feedbackSummary[c._id]?.hasDraft).length
+        drafts: clients.filter(c => feedbackSummary[c._id]?.hasDraft).length,
+        responses: respondedFeedbacks.length
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -312,7 +449,8 @@ export default function FeedbacksScreen() {
                 {[
                     { id: 'all', label: 'Todos', icon: 'people' },
                     { id: 'pending', label: 'Pendientes', icon: 'alert-circle' },
-                    { id: 'drafts', label: 'Borradores', icon: 'create' }
+                    { id: 'drafts', label: 'Borradores', icon: 'create' },
+                    { id: 'responses', label: 'Respuestas', icon: 'chatbubbles', badge: stats.responses }
                 ].map(tab => (
                     <TouchableOpacity
                         key={tab.id}
@@ -330,43 +468,73 @@ export default function FeedbacksScreen() {
                         ]}>
                             {tab.label}
                         </Text>
+                        {tab.badge > 0 && (
+                            <View style={styles.filterTabBadge}>
+                                <Text style={styles.filterTabBadgeText}>{tab.badge}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                 ))}
             </View>
 
-            {/* Clients List */}
-            <FlatList
-                data={filteredClients}
-                keyExtractor={item => item._id}
-                contentContainerStyle={styles.listContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        colors={['#8b5cf6']}
-                    />
-                }
-                renderItem={({ item }) => (
-                    <ClientFeedbackCard
-                        client={item}
-                        lastFeedback={feedbackSummary[item._id]?.lastFeedback}
-                        onPress={() => openFeedbackModal(item)}
-                    />
-                )}
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
-                        <Text style={styles.emptyTitle}>
-                            {activeFilter === 'pending' ? 'Todos al día' :
-                                activeFilter === 'drafts' ? 'Sin borradores' :
-                                    'Sin clientes'}
-                        </Text>
-                        <Text style={styles.emptySubtitle}>
-                            {activeFilter === 'pending' ? '¡Excelente trabajo!' : ''}
-                        </Text>
-                    </View>
-                }
-            />
+            {/* Responses List - cuando se selecciona pestaña Respuestas */}
+            {activeFilter === 'responses' ? (
+                <FlatList
+                    data={respondedFeedbacks}
+                    keyExtractor={item => item._id}
+                    contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={handleRefresh}
+                            colors={['#8b5cf6']}
+                        />
+                    }
+                    renderItem={({ item }) => <ResponseCard item={item} />}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="chatbubbles-outline" size={64} color="#cbd5e1" />
+                            <Text style={styles.emptyTitle}>Sin respuestas aún</Text>
+                            <Text style={styles.emptySubtitle}>Las respuestas de tus clientes aparecerán aquí</Text>
+                        </View>
+                    }
+                />
+            ) : (
+                /* Clients List */
+                <FlatList
+                    data={filteredClients}
+                    keyExtractor={item => item._id}
+                    contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={handleRefresh}
+                            colors={['#8b5cf6']}
+                        />
+                    }
+                    renderItem={({ item }) => (
+                        <ClientFeedbackCard
+                            client={item}
+                            lastFeedback={feedbackSummary[item._id]?.lastFeedback}
+                            onPress={() => openFeedbackModal(item)}
+                        />
+                    )}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
+                            <Text style={styles.emptyTitle}>
+                                {activeFilter === 'pending' ? 'Todos al día' :
+                                    activeFilter === 'drafts' ? 'Sin borradores' :
+                                        'Sin clientes'}
+                            </Text>
+                            <Text style={styles.emptySubtitle}>
+                                {activeFilter === 'pending' ? '¡Excelente trabajo!' : ''}
+                            </Text>
+                        </View>
+                    }
+                />
+            )
+            }
 
             {/* Feedback Report Modal */}
             <FeedbackReportModal
@@ -375,7 +543,7 @@ export default function FeedbacksScreen() {
                 client={selectedClient}
                 prefillData={prefillData}
             />
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }
 
@@ -603,5 +771,135 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#94a3b8',
         marginTop: 8
+    },
+
+    // Filter Tab Badge
+    filterTabBadge: {
+        backgroundColor: '#10b981',
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        marginLeft: 4
+    },
+    filterTabBadgeText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700'
+    },
+
+    // Response Card
+    responseCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+        borderLeftWidth: 4,
+        borderLeftColor: '#10b981'
+    },
+    responseHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12
+    },
+    responseHeaderInfo: {
+        flex: 1,
+        marginLeft: 12
+    },
+    responseDate: {
+        fontSize: 12,
+        color: '#94a3b8',
+        marginTop: 2
+    },
+
+    // Feedback Summary Box
+    feedbackSummaryBox: {
+        backgroundColor: '#f8fafc',
+        padding: 12,
+        borderRadius: 10,
+        marginBottom: 12
+    },
+    feedbackSummaryLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 6
+    },
+    feedbackSummaryItem: {
+        fontSize: 13,
+        color: '#475569',
+        marginLeft: 4,
+        marginTop: 2
+    },
+    feedbackSummaryMore: {
+        fontSize: 12,
+        color: '#94a3b8',
+        marginTop: 4,
+        fontStyle: 'italic'
+    },
+
+    // Client Response Box
+    clientResponseBox: {
+        backgroundColor: '#ecfdf5',
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#a7f3d0'
+    },
+    clientResponseHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6
+    },
+    clientResponseLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#059669'
+    },
+    clientResponseText: {
+        fontSize: 14,
+        color: '#065f46',
+        lineHeight: 20
+    },
+
+    // Expanded Card
+    responseCardExpanded: {
+        borderLeftColor: '#8b5cf6',
+        borderLeftWidth: 4
+    },
+    trafficLightBadge: {
+        alignSelf: 'flex-start',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        marginBottom: 12
+    },
+    feedbackSection: {
+        marginBottom: 12
+    },
+    feedbackSectionHeader: {
+        borderLeftWidth: 4,
+        paddingLeft: 10,
+        marginBottom: 6
+    },
+    feedbackSectionTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    feedbackSectionItem: {
+        fontSize: 13,
+        color: '#475569',
+        paddingLeft: 14,
+        marginTop: 4,
+        lineHeight: 18
     }
 });
