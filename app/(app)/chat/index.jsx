@@ -3,7 +3,7 @@
  * Lista de conversaciones con entrenador primero, amigos y grupos
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -14,8 +14,8 @@ import {
     TextInput,
     ActivityIndicator,
     Modal,
-    Alert,
-    Image
+    Animated,
+    Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,16 +24,110 @@ import { useChatTheme } from '../../../context/ChatThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOAST COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+const Toast = ({ visible, message, type = 'success', onHide }) => {
+    const translateY = useRef(new Animated.Value(-100)).current;
+    const opacity = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (visible) {
+            Animated.parallel([
+                Animated.spring(translateY, {
+                    toValue: 0,
+                    friction: 8,
+                    tension: 40,
+                    useNativeDriver: true
+                }),
+                Animated.timing(opacity, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: true
+                })
+            ]).start();
+
+            // Auto hide after 3 seconds
+            const timer = setTimeout(() => {
+                hideToast();
+            }, 3000);
+
+            return () => clearTimeout(timer);
+        }
+    }, [visible]);
+
+    const hideToast = () => {
+        Animated.parallel([
+            Animated.timing(translateY, {
+                toValue: -100,
+                duration: 200,
+                useNativeDriver: true
+            }),
+            Animated.timing(opacity, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: true
+            })
+        ]).start(() => onHide?.());
+    };
+
+    if (!visible) return null;
+
+    const colors = {
+        success: { bg: '#22c55e', icon: 'checkmark-circle' },
+        error: { bg: '#ef4444', icon: 'close-circle' },
+        warning: { bg: '#f59e0b', icon: 'warning' },
+        info: { bg: '#3b82f6', icon: 'information-circle' }
+    };
+
+    const config = colors[type] || colors.success;
+
+    return (
+        <Animated.View
+            style={[
+                styles.toastContainer,
+                {
+                    transform: [{ translateY }],
+                    opacity,
+                    backgroundColor: config.bg
+                }
+            ]}
+        >
+            <Ionicons name={config.icon} size={22} color="#fff" />
+            <Text style={styles.toastText}>{message}</Text>
+        </Animated.View>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ADD CONTACT MODAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme }) => {
+const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, showToast }) => {
+    const [activeTab, setActiveTab] = useState('code'); // 'code' | 'username'
     const [code, setCode] = useState('');
+    const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
     const [searchResult, setSearchResult] = useState(null);
+    const [usernameResults, setUsernameResults] = useState([]);
     const [error, setError] = useState('');
+
+    // Debounce para búsqueda por username
+    useEffect(() => {
+        if (activeTab !== 'username' || username.length < 2) {
+            setUsernameResults([]);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            searchByUsername();
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [username]);
 
     const searchByCode = async () => {
         if (!code || code.length < 4) {
@@ -63,7 +157,31 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme })
         }
     };
 
-    const addContact = async () => {
+    const searchByUsername = async () => {
+        if (!username || username.length < 2) return;
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const res = await fetch(`${API_URL}/api/contacts/search-username?q=${username}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setUsernameResults(data.users || []);
+            } else {
+                setUsernameResults([]);
+            }
+        } catch (err) {
+            setError('Error de conexión');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addContactByCode = async () => {
         setLoading(true);
         try {
             const res = await fetch(`${API_URL}/api/contacts/add`, {
@@ -78,9 +196,8 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme })
 
             if (data.success) {
                 onContactAdded(data.contact);
-                onClose();
-                setCode('');
-                setSearchResult(null);
+                handleClose();
+                showToast?.(`¡Genial! @${data.contact?.user?.username || 'usuario'} ha sido añadido a tus contactos`, 'success');
             } else {
                 setError(data.message || 'Error al añadir');
             }
@@ -91,77 +208,348 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme })
         }
     };
 
+    const addContactByUsername = async (targetUsername) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/contacts/add-by-username`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: targetUsername })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                if (data.contact.status === 'accepted') {
+                    onContactAdded(data.contact);
+                    handleClose();
+                    showToast?.(`¡Genial! @${targetUsername} ha sido añadido a tus contactos`, 'success');
+                } else {
+                    // Solicitud enviada (pending)
+                    showToast?.(`Solicitud enviada a @${targetUsername}. Esperando aceptación`, 'info');
+                    // Actualizar la lista para reflejar el cambio
+                    searchByUsername();
+                }
+            } else {
+                if (data.message?.includes('pendiente')) {
+                    showToast?.(`Ya existe una solicitud pendiente para @${targetUsername}`, 'warning');
+                } else if (data.message?.includes('bloqueado')) {
+                    showToast?.(`No puedes añadir a @${targetUsername}`, 'error');
+                } else {
+                    showToast?.(data.message || 'Error al añadir', 'error');
+                }
+            }
+        } catch (err) {
+            showToast?.('Error de conexión', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleClose = () => {
+        setCode('');
+        setUsername('');
+        setSearchResult(null);
+        setUsernameResults([]);
+        setError('');
+        setActiveTab('code');
+        onClose();
+    };
+
+    const renderStatusBadge = (user) => {
+        if (user.isContact) {
+            return (
+                <View style={styles.alreadyContactBadge}>
+                    <Text style={styles.alreadyContactText}>Amigo</Text>
+                </View>
+            );
+        }
+        if (user.contactStatus === 'pending_sent') {
+            return (
+                <View style={[styles.alreadyContactBadge, { backgroundColor: '#fef3c7' }]}>
+                    <Text style={[styles.alreadyContactText, { color: '#d97706' }]}>Pendiente</Text>
+                </View>
+            );
+        }
+        if (user.contactStatus === 'pending_received') {
+            return (
+                <View style={[styles.alreadyContactBadge, { backgroundColor: '#dbeafe' }]}>
+                    <Text style={[styles.alreadyContactText, { color: '#2563eb' }]}>Te envió solicitud</Text>
+                </View>
+            );
+        }
+        return (
+            <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => addContactByUsername(user.username)}
+                disabled={loading}
+            >
+                <Ionicons name="person-add" size={16} color="#fff" />
+            </TouchableOpacity>
+        );
+    };
+
     return (
         <Modal visible={visible} animationType="slide" transparent>
             <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>Añadir Amigo</Text>
-                        <TouchableOpacity onPress={onClose}>
+                        <TouchableOpacity onPress={handleClose}>
                             <Ionicons name="close" size={24} color="#64748b" />
                         </TouchableOpacity>
                     </View>
-                    <Text style={styles.modalSubtitle}>
-                        Introduce el código de referido de tu amigo.{"\n"}
-                        perfil/amigos
-                    </Text>
-                    <View style={styles.codeInputContainer}>
-                        <TextInput
-                            style={styles.codeInput}
-                            value={code}
-                            onChangeText={setCode}
-                            placeholder="TOTALGAIN8B783"
-                            placeholderTextColor="#3b82f6"
-                            autoCapitalize="characters"
-                            maxLength={20}
-                        />
+
+                    {/* Tabs */}
+                    <View style={styles.tabContainer}>
                         <TouchableOpacity
-                            style={styles.searchBtn}
-                            onPress={searchByCode}
-                            disabled={loading}
+                            style={[styles.tab, activeTab === 'code' && styles.tabActive]}
+                            onPress={() => setActiveTab('code')}
                         >
-                            {loading ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <Ionicons name="search" size={20} color="#fff" />
-                            )}
+                            <Ionicons
+                                name="qr-code"
+                                size={18}
+                                color={activeTab === 'code' ? '#8b5cf6' : '#94a3b8'}
+                            />
+                            <Text style={[styles.tabText, activeTab === 'code' && styles.tabTextActive]}>
+                                Por Código
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.tab, activeTab === 'username' && styles.tabActive]}
+                            onPress={() => setActiveTab('username')}
+                        >
+                            <Ionicons
+                                name="at"
+                                size={18}
+                                color={activeTab === 'username' ? '#8b5cf6' : '#94a3b8'}
+                            />
+                            <Text style={[styles.tabText, activeTab === 'username' && styles.tabTextActive]}>
+                                Por Usuario
+                            </Text>
                         </TouchableOpacity>
                     </View>
 
-                    {error ? (
-                        <Text style={styles.errorText}>{error}</Text>
-                    ) : null}
-
-                    {searchResult && (
-                        <View style={styles.searchResultCard}>
-                            <View style={styles.resultAvatar}>
-                                <Text style={styles.resultAvatarText}>
-                                    {searchResult.nombre?.charAt(0)?.toUpperCase() || '?'}
-                                </Text>
-                            </View>
-                            <View style={styles.resultInfo}>
-                                <Text style={styles.resultName}>{searchResult.nombre}</Text>
-                                <Text style={styles.resultUsername}>@{searchResult.username}</Text>
-                            </View>
-                            {searchResult.isContact ? (
-                                <View style={styles.alreadyContactBadge}>
-                                    <Text style={styles.alreadyContactText}>Ya es amigo</Text>
-                                </View>
-                            ) : (
+                    {/* Tab Content */}
+                    {activeTab === 'code' ? (
+                        <>
+                            <Text style={styles.modalSubtitle}>
+                                Introduce el código de referido de tu amigo
+                            </Text>
+                            <View style={styles.codeInputContainer}>
+                                <TextInput
+                                    style={styles.codeInput}
+                                    value={code}
+                                    onChangeText={setCode}
+                                    placeholder="TOTALGAIN8B783"
+                                    placeholderTextColor="#3b82f680"
+                                    autoCapitalize="characters"
+                                    maxLength={20}
+                                />
                                 <TouchableOpacity
-                                    style={styles.addBtn}
-                                    onPress={addContact}
+                                    style={styles.searchBtn}
+                                    onPress={searchByCode}
                                     disabled={loading}
                                 >
-                                    <Ionicons name="person-add" size={18} color="#fff" />
-                                    <Text style={styles.addBtnText}>Añadir</Text>
+                                    {loading ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Ionicons name="search" size={20} color="#fff" />
+                                    )}
                                 </TouchableOpacity>
+                            </View>
+
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                            {searchResult && (
+                                <View style={styles.searchResultCard}>
+                                    <View style={styles.resultAvatar}>
+                                        <Text style={styles.resultAvatarText}>
+                                            {searchResult.nombre?.charAt(0)?.toUpperCase() || '?'}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.resultInfo}>
+                                        <Text style={styles.resultName}>{searchResult.nombre}</Text>
+                                        <Text style={styles.resultUsername}>@{searchResult.username}</Text>
+                                    </View>
+                                    {searchResult.isContact ? (
+                                        <View style={styles.alreadyContactBadge}>
+                                            <Text style={styles.alreadyContactText}>Ya es amigo</Text>
+                                        </View>
+                                    ) : (
+                                        <TouchableOpacity
+                                            style={styles.addBtn}
+                                            onPress={addContactByCode}
+                                            disabled={loading}
+                                        >
+                                            <Ionicons name="person-add" size={18} color="#fff" />
+                                            <Text style={styles.addBtnText}>Añadir</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             )}
-                        </View>
+                        </>
+                    ) : (
+                        <>
+                            <Text style={styles.modalSubtitle}>
+                                Busca por nombre de usuario
+                            </Text>
+                            <View style={styles.codeInputContainer}>
+                                <TextInput
+                                    style={[styles.codeInput, { textAlign: 'left', letterSpacing: 0 }]}
+                                    value={username}
+                                    onChangeText={setUsername}
+                                    placeholder="@usuario"
+                                    placeholderTextColor="#3b82f680"
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                                {loading && (
+                                    <View style={[styles.searchBtn, { backgroundColor: 'transparent' }]}>
+                                        <ActivityIndicator size="small" color="#8b5cf6" />
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Username Results */}
+                            {usernameResults.length > 0 && (
+                                <View style={styles.usernameResultsContainer}>
+                                    {usernameResults.map((user) => (
+                                        <View key={user._id} style={styles.usernameResultItem}>
+                                            <View style={styles.resultAvatar}>
+                                                <Text style={styles.resultAvatarText}>
+                                                    {user.nombre?.charAt(0)?.toUpperCase() || '?'}
+                                                </Text>
+                                            </View>
+                                            <View style={styles.resultInfo}>
+                                                <Text style={styles.resultName}>{user.nombre}</Text>
+                                                <Text style={styles.resultUsername}>@{user.username}</Text>
+                                            </View>
+                                            {renderStatusBadge(user)}
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+
+                            {username.length >= 2 && usernameResults.length === 0 && !loading && (
+                                <Text style={styles.noResultsText}>No se encontraron usuarios</Text>
+                            )}
+                        </>
                     )}
                 </View>
             </View>
         </Modal>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PENDING REQUESTS SECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PendingRequestsSection = ({ token, chatTheme, onRequestHandled, showToast }) => {
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadPendingRequests();
+    }, []);
+
+    const loadPendingRequests = async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/contacts/pending`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setRequests(data.requests || []);
+            }
+        } catch (err) {
+            console.error('[PendingRequests] Error:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAccept = async (userId) => {
+        try {
+            const res = await fetch(`${API_URL}/api/contacts/${userId}/accept`, {
+                method: 'PUT',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setRequests(prev => prev.filter(r => r.user._id !== userId));
+                onRequestHandled?.();
+                showToast?.(`¡Ahora eres amigo de ${data.friend?.nombre}!`, 'success');
+            }
+        } catch (err) {
+            showToast?.('No se pudo aceptar la solicitud', 'error');
+        }
+    };
+
+    const handleReject = async (userId) => {
+        try {
+            const res = await fetch(`${API_URL}/api/contacts/${userId}/reject`, {
+                method: 'PUT',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setRequests(prev => prev.filter(r => r.user._id !== userId));
+                showToast?.('Solicitud rechazada', 'info');
+            }
+        } catch (err) {
+            showToast?.('No se pudo rechazar la solicitud', 'error');
+        }
+    };
+
+    if (loading || requests.length === 0) return null;
+
+    return (
+        <View style={[styles.pendingSection, { backgroundColor: chatTheme.cardBackground }]}>
+            <View style={styles.pendingSectionHeader}>
+                <Ionicons name="mail-unread" size={18} color={chatTheme.primary} />
+                <Text style={[styles.pendingSectionTitle, { color: chatTheme.text }]}>
+                    Solicitudes ({requests.length})
+                </Text>
+            </View>
+            {requests.map((request) => (
+                <View key={request._id} style={styles.pendingRequestItem}>
+                    <View style={[styles.pendingAvatar, { backgroundColor: chatTheme.primary }]}>
+                        <Text style={styles.pendingAvatarText}>
+                            {request.user?.nombre?.charAt(0)?.toUpperCase() || '?'}
+                        </Text>
+                    </View>
+                    <View style={styles.pendingInfo}>
+                        <Text style={[styles.pendingName, { color: chatTheme.text }]}>
+                            {request.user?.nombre}
+                        </Text>
+                        <Text style={[styles.pendingUsername, { color: chatTheme.textSecondary }]}>
+                            @{request.user?.username}
+                        </Text>
+                    </View>
+                    <View style={styles.pendingActions}>
+                        <TouchableOpacity
+                            style={[styles.pendingBtn, styles.acceptBtn]}
+                            onPress={() => handleAccept(request.user._id)}
+                        >
+                            <Ionicons name="checkmark" size={18} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.pendingBtn, styles.rejectBtn]}
+                            onPress={() => handleReject(request.user._id)}
+                        >
+                            <Ionicons name="close" size={18} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            ))}
+        </View>
     );
 };
 
@@ -178,6 +566,17 @@ export default function ChatHomeScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [addModalVisible, setAddModalVisible] = useState(false);
+
+    // Toast state
+    const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
+
+    const showToast = (message, type = 'success') => {
+        setToast({ visible: true, message, type });
+    };
+
+    const hideToast = () => {
+        setToast(prev => ({ ...prev, visible: false }));
+    };
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD CONVERSATIONS
@@ -376,6 +775,14 @@ export default function ChatHomeScreen() {
                 </TouchableOpacity>
             </LinearGradient>
 
+            {/* Pending Requests */}
+            <PendingRequestsSection
+                token={token}
+                chatTheme={chatTheme}
+                onRequestHandled={loadConversations}
+                showToast={showToast}
+            />
+
             {/* Conversations List */}
             <FlatList
                 data={conversations}
@@ -402,6 +809,15 @@ export default function ChatHomeScreen() {
                 token={token}
                 onContactAdded={handleContactAdded}
                 chatTheme={chatTheme}
+                showToast={showToast}
+            />
+
+            {/* Toast Notification */}
+            <Toast
+                visible={toast.visible}
+                message={toast.message}
+                type={toast.type}
+                onHide={hideToast}
             />
         </SafeAreaView>
     );
@@ -702,5 +1118,160 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#fff'
+    },
+
+    // Tabs
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 20
+    },
+    tab: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 10,
+        borderRadius: 10
+    },
+    tabActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2
+    },
+    tabText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#94a3b8'
+    },
+    tabTextActive: {
+        color: '#8b5cf6',
+        fontWeight: '600'
+    },
+
+    // Username Results
+    usernameResultsContainer: {
+        gap: 8
+    },
+    usernameResultItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        padding: 12,
+        borderRadius: 12,
+        gap: 12
+    },
+    noResultsText: {
+        textAlign: 'center',
+        color: '#94a3b8',
+        fontSize: 14,
+        marginTop: 8
+    },
+
+    // Pending Requests Section
+    pendingSection: {
+        marginHorizontal: 16,
+        marginTop: 12,
+        padding: 16,
+        borderRadius: 16,
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2
+    },
+    pendingSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12
+    },
+    pendingSectionTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b'
+    },
+    pendingRequestItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9'
+    },
+    pendingAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    pendingAvatarText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#fff'
+    },
+    pendingInfo: {
+        flex: 1,
+        marginLeft: 12
+    },
+    pendingName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b'
+    },
+    pendingUsername: {
+        fontSize: 12,
+        color: '#64748b'
+    },
+    pendingActions: {
+        flexDirection: 'row',
+        gap: 8
+    },
+    pendingBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    acceptBtn: {
+        backgroundColor: '#22c55e'
+    },
+    rejectBtn: {
+        backgroundColor: '#ef4444'
+    },
+
+    // Toast
+    toastContainer: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        right: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 18,
+        borderRadius: 12,
+        gap: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+        zIndex: 9999
+    },
+    toastText: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600'
     }
 });

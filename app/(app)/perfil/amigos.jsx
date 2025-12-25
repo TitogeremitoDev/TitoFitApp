@@ -35,6 +35,7 @@ export default function Amigos() {
     const { updateStats, checkAchievements } = useAchievements();
 
     const [referredUsers, setReferredUsers] = useState([]);
+    const [contacts, setContacts] = useState([]); // Contactos aceptados del chat
     const [referralStats, setReferralStats] = useState({
         total: 0,
         premiumDays: 0,
@@ -70,6 +71,7 @@ export default function Amigos() {
         // Refrescar usuario para obtener código de referido actualizado
         refreshUser();
         fetchMyReferrals();
+        fetchContacts();
     }, []);
 
     const fetchMyReferrals = async () => {
@@ -102,9 +104,26 @@ export default function Amigos() {
         }
     };
 
+    // Cargar contactos aceptados
+    const fetchContacts = async () => {
+        try {
+            const response = await fetch(`${API_URL}/api/contacts?status=accepted`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                setContacts(data.contacts || []);
+            }
+        } catch (error) {
+            console.error('[Amigos] Error fetching contacts:', error);
+        }
+    };
+
     const onRefresh = () => {
         setRefreshing(true);
         fetchMyReferrals();
+        fetchContacts();
     };
 
     const handleCopyCode = async () => {
@@ -123,6 +142,20 @@ export default function Amigos() {
                 });
             } catch (error) {
                 console.error('[Amigos] Error sharing:', error);
+            }
+        }
+    };
+
+    // Compartir perfil con deep link
+    const handleShareProfile = async () => {
+        if (user?.username) {
+            try {
+                const deepLink = `totalgains://add-friend?user=${user.username}`;
+                await Share.share({
+                    message: `¡Agrégame en TotalGains! Mi usuario es @${user.username}\n\n${deepLink}`,
+                });
+            } catch (error) {
+                console.error('[Amigos] Error sharing profile:', error);
             }
         }
     };
@@ -306,7 +339,68 @@ export default function Amigos() {
                         </Text>
                         <Ionicons name="chevron-forward" size={16} color="#FFD700" />
                     </TouchableOpacity>
+
+                    {/* Share Profile Button */}
+                    <TouchableOpacity
+                        style={[styles.shareProfileButton, {
+                            borderColor: theme.primary,
+                            backgroundColor: theme.primaryLight
+                        }]}
+                        onPress={handleShareProfile}
+                    >
+                        <Ionicons name="link" size={18} color={theme.primary} />
+                        <Text style={[styles.shareProfileButtonText, { color: theme.primary }]}>
+                            Compartir mi Perfil
+                        </Text>
+                        <Ionicons name="chevron-forward" size={16} color={theme.primary} />
+                    </TouchableOpacity>
                 </View>
+
+                {/* Mis Amigos Section - Contactos del Chat */}
+                {contacts.length > 0 && (
+                    <View style={[styles.contactsCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+                        <View style={styles.contactsHeader}>
+                            <Ionicons name="chatbubbles" size={20} color={theme.primary} />
+                            <Text style={[styles.contactsTitle, { color: theme.text }]}>
+                                Mis Amigos ({contacts.length})
+                            </Text>
+                        </View>
+                        <View style={styles.contactsList}>
+                            {contacts.slice(0, 5).map((contact, index) => (
+                                <View
+                                    key={contact._id || index}
+                                    style={[styles.contactItem, { borderBottomColor: theme.border }]}
+                                >
+                                    <View style={[styles.contactAvatar, { backgroundColor: theme.primaryLight }]}>
+                                        <Text style={[styles.contactAvatarText, { color: theme.primary }]}>
+                                            {(contact.user?.nombre || 'U').charAt(0).toUpperCase()}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.contactInfo}>
+                                        <Text style={[styles.contactName, { color: theme.text }]}>
+                                            {contact.user?.nombre || 'Usuario'}
+                                        </Text>
+                                        {contact.user?.username && (
+                                            <Text style={[styles.contactUsername, { color: theme.textSecondary }]}>
+                                                @{contact.user.username}
+                                            </Text>
+                                        )}
+                                    </View>
+                                    <View style={[styles.contactBadge, { backgroundColor: theme.successLight }]}>
+                                        <Text style={[styles.contactBadgeText, { color: theme.successText }]}>
+                                            Amigo
+                                        </Text>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                        {contacts.length > 5 && (
+                            <Text style={[styles.moreContactsText, { color: theme.textSecondary }]}>
+                                +{contacts.length - 5} amigos más
+                            </Text>
+                        )}
+                    </View>
+                )}
 
                 {/* Stats Section */}
                 <View style={styles.statsRow}>
@@ -818,5 +912,88 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontWeight: '700',
         fontSize: 15,
+    },
+
+    // Share Profile Button
+    shareProfileButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 18,
+        borderRadius: 10,
+        borderWidth: 1.5,
+    },
+    shareProfileButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        flex: 1,
+        textAlign: 'center',
+    },
+
+    // Contacts Card (Mis Amigos)
+    contactsCard: {
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    contactsHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 12,
+    },
+    contactsTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    contactsList: {
+        gap: 0,
+    },
+    contactItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+    },
+    contactAvatar: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    contactAvatarText: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    contactInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    contactName: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    contactUsername: {
+        fontSize: 12,
+        marginTop: 1,
+    },
+    contactBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    contactBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    moreContactsText: {
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 12,
     },
 });

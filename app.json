@@ -7,7 +7,7 @@
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/mi-logo-icono.png",
-    "scheme": "com.german92.titofitapp",
+    "scheme": "totalgains",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/wait.png",
@@ -44,6 +44,19 @@
             {
               "scheme": "com.german92.titofitapp",
               "host": "oauthredirect"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "totalgains",
+              "host": "add-friend"
             }
           ],
           "category": [

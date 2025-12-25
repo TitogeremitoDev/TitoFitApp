@@ -249,6 +249,10 @@ export default function ConversationScreen() {
                         // Actualizar si hay diferencia en cantidad o en el último mensaje
                         if (newCount !== currentCount || lastNewId !== lastCurrentId) {
                             console.log('[Chat] ✅ Actualizando de', currentCount, 'a', newCount);
+                            // Scroll al final cuando hay mensajes nuevos
+                            setTimeout(() => {
+                                flatListRef.current?.scrollToEnd({ animated: true });
+                            }, 100);
                             return uniqueMessages;
                         }
                         return currentMessages;
@@ -346,48 +350,52 @@ export default function ConversationScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Messages */}
-            {loading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={chatTheme.primary} />
-                </View>
-            ) : (
-                <FlatList
-                    ref={flatListRef}
-                    data={filteredMessages}
-                    keyExtractor={(item, idx) => item._id || idx.toString()}
-                    renderItem={({ item }) => (
-                        <MessageBubble
-                            message={item}
-                            isOwn={item.senderId?._id === user?._id || item.senderId === user?._id}
-                            isTrainerChat={isTrainer}
-                            showSender={isGroup}
-                            theme={chatTheme}
-                            isDark={isDark}
-                            fontSize={fontSizeValue}
-                        />
-                    )}
-                    contentContainerStyle={styles.messagesList}
-                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-                    ListEmptyComponent={
-                        <View style={styles.emptyMessages}>
-                            <Ionicons name="chatbubble-ellipses-outline" size={48} color={chatTheme.textTertiary} />
-                            <Text style={[styles.emptyText, { color: chatTheme.textSecondary }]}>
-                                {selectedCategory === 'all'
-                                    ? 'Inicia la conversación'
-                                    : `Sin mensajes de ${CATEGORY_TABS.find(t => t.key === selectedCategory)?.label || selectedCategory}`
-                                }
-                            </Text>
-                        </View>
-                    }
-                />
-            )}
-
-            {/* Input Area */}
+            {/* KeyboardAvoidingView envuelve Messages + Input para que todo suba con el teclado */}
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={0}
+                style={styles.keyboardAvoidingContainer}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
+                {/* Messages */}
+                {loading ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={chatTheme.primary} />
+                    </View>
+                ) : (
+                    <FlatList
+                        ref={flatListRef}
+                        data={filteredMessages}
+                        keyExtractor={(item, idx) => item._id || idx.toString()}
+                        renderItem={({ item }) => (
+                            <MessageBubble
+                                message={item}
+                                isOwn={item.senderId?._id === user?._id || item.senderId === user?._id}
+                                isTrainerChat={isTrainer}
+                                showSender={isGroup}
+                                theme={chatTheme}
+                                isDark={isDark}
+                                fontSize={fontSizeValue}
+                            />
+                        )}
+                        contentContainerStyle={styles.messagesList}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
+                        removeClippedSubviews={false}
+                        ListEmptyComponent={
+                            <View style={styles.emptyMessages}>
+                                <Ionicons name="chatbubble-ellipses-outline" size={48} color={chatTheme.textTertiary} />
+                                <Text style={[styles.emptyText, { color: chatTheme.textSecondary }]}>
+                                    {selectedCategory === 'all'
+                                        ? 'Inicia la conversación'
+                                        : `Sin mensajes de ${CATEGORY_TABS.find(t => t.key === selectedCategory)?.label || selectedCategory}`
+                                    }
+                                </Text>
+                            </View>
+                        }
+                    />
+                )}
+
+                {/* Input Area */}
                 {/* Category Selector (filters view + sets message type) */}
                 {isTrainer && (
                     <View style={[styles.typeSelector, { backgroundColor: chatTheme.cardBackground, borderTopColor: chatTheme.border }]}>
@@ -441,6 +449,11 @@ export default function ConversationScreen() {
                         placeholderTextColor={chatTheme.textTertiary}
                         multiline
                         maxLength={2000}
+                        blurOnSubmit={false}
+                        autoCorrect={true}
+                        autoCapitalize="sentences"
+                        returnKeyType="default"
+                        textAlignVertical="center"
                         onKeyPress={(e) => {
                             // Solo en web: enviar con Enter (sin Shift para permitir saltos de línea)
                             if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
@@ -474,6 +487,9 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc'
+    },
+    keyboardAvoidingContainer: {
+        flex: 1
     },
 
     // Header
