@@ -1901,6 +1901,7 @@ export default function SeguimientoScreen() {
                 onClose={handleFeedbackClose}
                 clientId={user?._id}
                 clientName={user?.nombre}
+                trainerId={user?.currentTrainerId}
                 isCoach={false}
             />
 

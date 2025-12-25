@@ -93,6 +93,10 @@ export default function PaymentScreen() {
     itemsSynced: 0,
   });
 
+  // 🎁 Estado para código promocional
+  const [promoCode, setPromoCode] = useState('');
+  const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
+
   // Debug logs (Safe to remove or comment out now)
   // useEffect(() => {
   //   console.log('[Payment] User:', user?._id, user?.tipoUsuario);
@@ -687,15 +691,128 @@ export default function PaymentScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* HEADER */}
+      {/* HEADER con título premium integrado */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/home')} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="#FFF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Suscripción Premium</Text>
-        <Pressable onPress={onRefresh} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={20} color="#FFF" />
-        </Pressable>
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/home')} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#FFF" />
+          </Pressable>
+          <Pressable onPress={onRefresh} style={styles.refreshButton}>
+            <Ionicons name="refresh" size={20} color="#FFF" />
+          </Pressable>
+        </View>
+
+        {/* 🏆 TÍTULO PREMIUM LLAMATIVO dentro del header */}
+        <LinearGradient
+          colors={['rgba(16, 185, 129, 0.15)', 'rgba(245, 158, 11, 0.15)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.premiumBanner}
+        >
+          <View style={styles.premiumBannerContent}>
+            <Ionicons name="diamond" size={32} color="#10B981" />
+            <Text style={styles.premiumBannerTitle}>SUSCRIPCIÓN PREMIUM</Text>
+            <Text style={styles.premiumBannerSubtitle}>Acceso ilimitado a todas las funciones</Text>
+          </View>
+        </LinearGradient>
+
+        {/* 🎁 INPUT CÓDIGO PROMOCIONAL dentro del header */}
+        <View style={styles.promoCodeSection}>
+          <View style={styles.promoCodeHeader}>
+            <Ionicons name="gift" size={20} color="#F59E0B" />
+            <Text style={styles.promoCodeTitle}>¿Tienes un código promocional?</Text>
+          </View>
+          <View style={styles.promoCodeInputRow}>
+            <TextInput
+              style={styles.promoCodeInput}
+              placeholder="Introduce tu código aquí"
+              placeholderTextColor="#64748B"
+              value={promoCode}
+              onChangeText={setPromoCode}
+              autoCapitalize="characters"
+              editable={!isRedeemingPromo}
+            />
+            <Pressable
+              style={[
+                styles.promoCodeButton,
+                (!promoCode.trim() || isRedeemingPromo) && styles.promoCodeButtonDisabled
+              ]}
+              disabled={!promoCode.trim() || isRedeemingPromo}
+              onPress={async () => {
+                if (!promoCode.trim()) return;
+                setIsRedeemingPromo(true);
+                const codeToRedeem = promoCode.trim().toUpperCase();
+                const token = await AsyncStorage.getItem('totalgains_token');
+
+                try {
+                  // Primero intentar como código de referido
+                  const referralResponse = await fetch(`${API_URL}/api/referrals/redeem`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ code: codeToRedeem })
+                  });
+                  const referralData = await referralResponse.json();
+
+                  if (referralData.success) {
+                    const previousType = user?.tipoUsuario;
+                    if (previousType === 'FREEUSER') {
+                      setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                      try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                      } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
+                      setSyncModal(prev => ({ ...prev, visible: false }));
+                    }
+                    if (refreshUser) await refreshUser();
+                    setPromoCode('');
+                    Alert.alert('¡Genial! 🎉', referralData.message || '¡Has conseguido 7 días de premium gratis!');
+                    return;
+                  }
+
+                  // Si no es código de referido, intentar como código promocional
+                  const promoResponse = await fetch(`${API_URL}/api/promo-codes/redeem`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ code: codeToRedeem })
+                  });
+                  const promoData = await promoResponse.json();
+
+                  if (promoData.success) {
+                    const previousType = user?.tipoUsuario;
+                    if (previousType === 'FREEUSER') {
+                      setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                      try {
+                        const syncResult = await syncLocalToCloud(token);
+                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                      } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
+                      setSyncModal(prev => ({ ...prev, visible: false }));
+                    }
+                    if (refreshUser) await refreshUser();
+                    setPromoCode('');
+                    Alert.alert('¡Felicidades! 🌟', promoData.message || '¡Código promocional canjeado con éxito!');
+                    return;
+                  }
+
+                  // Ninguno funcionó
+                  Alert.alert('Código no válido', promoData.message || referralData.message || 'Este código no existe o ya ha sido usado');
+                } catch (error) {
+                  console.error('[Payment] Promo error:', error);
+                  Alert.alert('Error', 'No se pudo canjear el código. Verifica tu conexión.');
+                } finally {
+                  setIsRedeemingPromo(false);
+                }
+              }}
+            >
+              {isRedeemingPromo ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Text style={styles.promoCodeButtonText}>Canjear</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
       </View>
 
       <ScrollView
@@ -795,10 +912,10 @@ export default function PaymentScreen() {
         <View style={styles.plansContainer}>
           {planes.filter(p => {
             if (userType === 'coach') {
-              // Para 100 e ilimitado, solo mostrar planes anuales (restricción Apple/Play Store)
-              const soloAnual = [100, 9999].includes(coachClientCount);
-              if (soloAnual) {
-                return p.isCoach && p.clientRange === coachClientCount && p.duracionMeses >= 12;
+              // Para 100 e ilimitado, solo mostrar planes MENSUALES (restricción Apple/Play Store)
+              const soloMensual = [100, 9999].includes(coachClientCount);
+              if (soloMensual) {
+                return p.isCoach && p.clientRange === coachClientCount && p.duracionMeses < 12;
               }
               return p.isCoach && p.clientRange === coachClientCount;
             } else {
@@ -1330,12 +1447,15 @@ export default function PaymentScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 45,
+    paddingBottom: 16
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 45,
-    paddingBottom: 15
+    marginBottom: 12,
   },
   backButton: {
     padding: 8,
@@ -1347,11 +1467,92 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12
   },
-  headerTitle: {
-    color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '600'
+
+  // 🏆 Premium Banner Styles (ahora dentro del header)
+  premiumBanner: {
+    marginTop: 0,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    overflow: 'hidden',
   },
+  premiumBannerContent: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  premiumBannerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    marginTop: 10,
+    letterSpacing: 2,
+    textShadowColor: 'rgba(16, 185, 129, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  premiumBannerSubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 6,
+  },
+
+  // 🎁 Promo Code Styles (ahora dentro del header)
+  promoCodeSection: {
+    marginTop: 0,
+    marginBottom: 0,
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    padding: 16,
+  },
+  promoCodeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  promoCodeTitle: {
+    color: '#F59E0B',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  promoCodeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  promoCodeInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  promoCodeButton: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  promoCodeButtonDisabled: {
+    backgroundColor: '#64748B',
+    opacity: 0.6,
+  },
+  promoCodeButtonText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
   scrollView: { flex: 1 },
   content: { padding: 20 },
 

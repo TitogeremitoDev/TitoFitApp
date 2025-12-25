@@ -175,9 +175,19 @@ export default function NutritionClientsScreen() {
                         <Text style={styles.statLabel}>Peso</Text>
                     </View>
                     <View style={styles.statItem}>
-                        <Ionicons name="person-outline" size={16} color="#64748b" />
+                        {(() => {
+                            const genero = info.genero?.toLowerCase();
+                            if (genero === 'hombre') {
+                                return <Ionicons name="male" size={16} color="#64748b" />;
+                            } else if (genero === 'mujer') {
+                                return <Ionicons name="female" size={16} color="#64748b" />;
+                            } else {
+                                return <Ionicons name="person-outline" size={16} color="#64748b" />;
+                            }
+                        })()}
                         <Text style={styles.statValue}>
-                            {info.genero === 'hombre' ? '♂' : info.genero === 'mujer' ? '♀' : '---'}
+                            {info.genero?.toLowerCase() === 'hombre' ? 'H' :
+                                info.genero?.toLowerCase() === 'mujer' ? 'M' : '---'}
                         </Text>
                         <Text style={styles.statLabel}>Género</Text>
                     </View>
@@ -194,24 +204,43 @@ export default function NutritionClientsScreen() {
 
                 {/* Objetivo row */}
                 <View style={styles.objetivoRow}>
-                    <View style={[
-                        styles.objetivoBadge,
-                        { backgroundColor: info.objetivos?.includes('volumen') ? '#3b82f620' : '#ef444420' }
-                    ]}>
-                        <Ionicons
-                            name={info.objetivos?.includes('volumen') ? 'trending-up' : 'trending-down'}
-                            size={14}
-                            color={info.objetivos?.includes('volumen') ? '#3b82f6' : '#ef4444'}
-                        />
-                        <Text style={[
-                            styles.objetivoText,
-                            { color: info.objetivos?.includes('volumen') ? '#3b82f6' : '#ef4444' }
-                        ]}>
-                            {info.objetivos?.includes('volumen') ? 'Volumen' :
-                                info.objetivos?.includes('definici') ? 'Definición' :
-                                    info.objetivos || 'Sin objetivo'}
-                        </Text>
-                    </View>
+                    {(() => {
+                        const objetivo = info.objetivos?.toLowerCase() || '';
+                        let color, bgColor, icon, label;
+
+                        if (objetivo.includes('volumen') || objetivo.includes('ganar') || objetivo.includes('musculo') || objetivo.includes('músculo')) {
+                            // Ganar músculo - Azul
+                            color = '#3b82f6';
+                            bgColor = '#3b82f620';
+                            icon = 'trending-up';
+                            label = 'Ganar músculo';
+                        } else if (objetivo.includes('mantener') || objetivo.includes('recomp')) {
+                            // Mantener / Recomposición - Naranja
+                            color = '#f59e0b';
+                            bgColor = '#f59e0b20';
+                            icon = 'swap-horizontal';
+                            label = 'Mantener';
+                        } else if (objetivo.includes('definici') || objetivo.includes('perder') || objetivo.includes('grasa')) {
+                            // Perder grasa - Rojo
+                            color = '#ef4444';
+                            bgColor = '#ef444420';
+                            icon = 'trending-down';
+                            label = 'Perder grasa';
+                        } else {
+                            // Sin objetivo - Gris
+                            color = '#94a3b8';
+                            bgColor = '#94a3b820';
+                            icon = 'help-circle-outline';
+                            label = info.objetivos || 'Sin objetivo';
+                        }
+
+                        return (
+                            <View style={[styles.objetivoBadge, { backgroundColor: bgColor }]}>
+                                <Ionicons name={icon} size={14} color={color} />
+                                <Text style={[styles.objetivoText, { color }]}>{label}</Text>
+                            </View>
+                        );
+                    })()}
 
                     <View style={[
                         styles.modeBadge,

@@ -54,12 +54,12 @@ export default function CoachHeader({
                 )}
                 {icon && (
                     <View style={[styles.iconContainer, { backgroundColor: getIconBackgroundColor(iconColor) }]}>
-                        <Ionicons name={icon} size={28} color={iconColor} />
+                        <Ionicons name={icon} size={24} color={iconColor} />
                     </View>
                 )}
                 <View style={styles.headerTextContainer}>
-                    <Text style={styles.headerTitle}>{title}</Text>
-                    {subtitle && <Text style={styles.headerSubtitle}>{subtitle}</Text>}
+                    <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+                    {subtitle && <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text>}
                 </View>
             </View>
 
@@ -82,8 +82,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#e2e8f0',
@@ -92,48 +92,57 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 2,
         elevation: 2,
+        minHeight: 56,
     },
     headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 8,
         flex: 1,
+        flexShrink: 1,
+        minWidth: 0,
     },
     backButton: {
         padding: 4,
+        flexShrink: 0,
     },
     iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
+        flexShrink: 0,
     },
     headerTextContainer: {
         flex: 1,
+        flexShrink: 1,
+        minWidth: 0,
     },
     headerTitle: {
-        fontSize: 24,
+        fontSize: 18,
         fontWeight: '700',
         color: '#1e293b',
     },
     headerSubtitle: {
-        fontSize: 14,
+        fontSize: 12,
         color: '#64748b',
-        marginTop: 2,
+        marginTop: 1,
     },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
+        flexShrink: 0,
     },
     badge: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 10,
     },
     badgeText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
     },
 });
+

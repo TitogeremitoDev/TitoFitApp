@@ -898,25 +898,25 @@ const styles = StyleSheet.create({
     headerButtons: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8
+        gap: 4,
     },
     iconButton: {
-        padding: 8,
+        padding: 6,
         backgroundColor: '#f1f5f9',
-        borderRadius: 8
+        borderRadius: 6,
     },
     createButton: {
         backgroundColor: '#3b82f6',
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#3b82f6',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 4,
-        elevation: 4
+        elevation: 4,
     },
     searchContainer: {
         flexDirection: 'row',

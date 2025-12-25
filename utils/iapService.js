@@ -184,6 +184,7 @@ export const getGoogleProductIdFromPlan = (plan) => {
 
 /**
  * Mapea un plan de MongoDB a un Product ID de Apple App Store
+ * NOTA: Usamos sufijo _v3 porque los IDs anteriores quedaron en estado "zombie" en App Store Connect
  */
 export const getAppleProductIdFromPlan = (plan) => {
     if (!plan) return null;
@@ -195,11 +196,11 @@ export const getAppleProductIdFromPlan = (plan) => {
     if (plan.isCoach) {
         const clientRange = plan.clientRange || 10;
         if (clientRange >= 9999 || clientRange > 100) {
-            return `coach_unlimited_${period}`;
+            return `coach_unlimited_${period}_v3`;
         }
-        return `coach_${clientRange}_${period}`;
+        return `coach_${clientRange}_${period}_v3`;
     }
-    return `premium_${period}`;
+    return `premium_${period}_v3`;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

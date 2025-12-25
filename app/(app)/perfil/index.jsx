@@ -466,7 +466,7 @@ export default function PerfilScreen() {
                                 <Ionicons name="gift" size={22} color={theme.primary} />
                                 <View style={styles.referralBannerText}>
                                     <Text style={[styles.referralBannerTitle, { color: theme.primary }]}>
-                                        Codigos Premium o Rereridos
+                                        Codigos Premium o Referidos
                                     </Text>
                                 </View>
                             </View>
@@ -499,7 +499,7 @@ export default function PerfilScreen() {
                                         }]}
                                         value={trainerCode}
                                         onChangeText={setTrainerCode}
-                                        placeholder="Código entrenador"
+                                        placeholder="Vincular Entrenador"
                                         placeholderTextColor={theme.textSecondary}
                                         autoCapitalize="characters"
                                         editable={!isLinkingTrainer}

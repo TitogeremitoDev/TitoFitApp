@@ -122,6 +122,46 @@ const RadioGroup = ({ options, value, onChange, label }) => {
     );
 };
 
+// Multi-select chip component for array fields
+const ChipMultiSelect = ({ options, value, onChange, label }) => {
+    const { theme } = useTheme();
+    const currentValue = Array.isArray(value) ? value : [];
+
+    const toggle = (opt) => {
+        const isSelected = currentValue.includes(opt);
+        const newValue = isSelected
+            ? currentValue.filter(i => i !== opt)
+            : [...currentValue, opt];
+        onChange(newValue);
+    };
+
+    return (
+        <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
+            <Text style={[styles.label, { color: theme.text }]}>{label} (puedes elegir varios)</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {options.map((opt) => (
+                    <TouchableOpacity
+                        key={opt}
+                        style={{
+                            paddingVertical: 10,
+                            paddingHorizontal: 16,
+                            borderRadius: 20,
+                            backgroundColor: currentValue.includes(opt) ? theme.primary + '20' : theme.background,
+                            borderWidth: 2,
+                            borderColor: currentValue.includes(opt) ? theme.primary : theme.border,
+                        }}
+                        onPress={() => toggle(opt)}
+                    >
+                        <Text style={{ color: currentValue.includes(opt) ? theme.primary : theme.text, fontSize: 14, fontWeight: '500' }}>
+                            {opt}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </View>
+    );
+};
+
 export default function InformacionPersonal() {
     const router = useRouter();
     const { theme } = useTheme();
@@ -140,9 +180,9 @@ export default function InformacionPersonal() {
             experiencia: 5,
             conocimientoTecnico: 3,
             tipoEntreno: 'hipertrofia',
-            lesiones: '',
-            ejerciciosFavoritos: '',
-            ejerciciosEvitados: '',
+            lesiones: [],
+            ejerciciosFavoritos: [],
+            ejerciciosEvitados: [],
             cardio: 'moderado',
             dieta: 'flexible',
             comidasDia: '4',
@@ -160,6 +200,14 @@ export default function InformacionPersonal() {
                 let val = info[key];
                 if (key === 'edad' || key === 'peso' || key === 'altura' || key === 'comidasDia') {
                     val = val ? String(val) : '';
+                }
+                // Handle backward compatibility for multi-select fields (old string values -> array)
+                if (key === 'lesiones' || key === 'ejerciciosFavoritos' || key === 'ejerciciosEvitados') {
+                    if (typeof val === 'string' && val) {
+                        val = [val]; // Convert old string to array
+                    } else if (!Array.isArray(val)) {
+                        val = [];
+                    }
                 }
                 setValue(key, val);
             });
@@ -466,58 +514,44 @@ export default function InformacionPersonal() {
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: theme.primary }]}>Salud y Limitaciones</Text>
 
-                    <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
-                        <Text style={[styles.label, { color: theme.text }]}>Lesiones o Molestias</Text>
-                        <Controller
-                            control={control}
-                            name="lesiones"
-                            render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.textArea, { color: theme.text, borderColor: theme.border }]}
-                                    placeholder="Describe cualquier lesión actual o pasada relevante..."
-                                    placeholderTextColor={theme.textSecondary}
-                                    multiline
-                                    numberOfLines={2}
-                                    value={value}
-                                    onChangeText={onChange}
-                                />
-                            )}
-                        />
-                    </View>
+                    <Controller
+                        control={control}
+                        name="lesiones"
+                        render={({ field: { onChange, value } }) => (
+                            <ChipMultiSelect
+                                label="Lesiones o Molestias"
+                                value={value}
+                                onChange={onChange}
+                                options={['Rodilla', 'Espalda baja', 'Hombro', 'Codo/Muñeca', 'Cuello', 'Cadera', 'Ninguna']}
+                            />
+                        )}
+                    />
 
-                    <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
-                        <Text style={[styles.label, { color: theme.text }]}>Ejercicios Favoritos</Text>
-                        <Controller
-                            control={control}
-                            name="ejerciciosFavoritos"
-                            render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-                                    placeholder="Ej: Sentadilla, Press Banca..."
-                                    placeholderTextColor={theme.textSecondary}
-                                    value={value}
-                                    onChangeText={onChange}
-                                />
-                            )}
-                        />
-                    </View>
+                    <Controller
+                        control={control}
+                        name="ejerciciosFavoritos"
+                        render={({ field: { onChange, value } }) => (
+                            <ChipMultiSelect
+                                label="Ejercicios Favoritos"
+                                value={value}
+                                onChange={onChange}
+                                options={['Multiarticulares', 'Máquinas', 'Peso libre', 'Funcional', 'Calistenia', 'Cardio']}
+                            />
+                        )}
+                    />
 
-                    <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
-                        <Text style={[styles.label, { color: theme.text }]}>Ejercicios a Evitar</Text>
-                        <Controller
-                            control={control}
-                            name="ejerciciosEvitados"
-                            render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-                                    placeholder="Ej: Correr, Saltos..."
-                                    placeholderTextColor={theme.textSecondary}
-                                    value={value}
-                                    onChangeText={onChange}
-                                />
-                            )}
-                        />
-                    </View>
+                    <Controller
+                        control={control}
+                        name="ejerciciosEvitados"
+                        render={({ field: { onChange, value } }) => (
+                            <ChipMultiSelect
+                                label="Ejercicios a Evitar"
+                                value={value}
+                                onChange={onChange}
+                                options={['Cardio', 'Piernas', 'Trabajo de core', 'Peso muerto', 'Sentadilla', 'Nada en especial']}
+                            />
+                        )}
+                    />
 
                     <Controller
                         control={control}

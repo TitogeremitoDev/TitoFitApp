@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   useWindowDimensions,
+  SafeAreaView,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -119,7 +120,7 @@ export default function HomeScreen() {
     fetchTrainer();
   }, [user?.tipoUsuario, token]);
 
-  // Obtener mensajes no leídos del chat
+  // Obtener mensajes no leídos del chat (con jitter para desincronizar usuarios)
   useEffect(() => {
     const fetchUnreadChat = async () => {
       if (!token) return;
@@ -136,8 +137,12 @@ export default function HomeScreen() {
       }
     };
     fetchUnreadChat();
-    // Refrescar cada 30 segundos
-    const interval = setInterval(fetchUnreadChat, 30000);
+
+    // Jitter: 30s base + 0-5s aleatorio para evitar picos de carga
+    const baseInterval = 30000;
+    const jitter = Math.floor(Math.random() * 5000);
+    const interval = setInterval(fetchUnreadChat, baseInterval + jitter);
+
     return () => clearInterval(interval);
   }, [token]);
 
@@ -300,27 +305,48 @@ export default function HomeScreen() {
 
   const { width, height } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
-  // "Pequeño" si es < 750px de alto (iPhone SE/8/Mini range)
-  const isSmallHeight = height < 750 && !isWeb;
+  // "Pequeño" si es < 700px de alto (iPhone SE/8/Mini y similares)
+  const isSmallHeight = height < 700 && !isWeb;
+  // "Muy pequeño" para pantallas extremadamente pequeñas
+  const isVerySmallHeight = height < 600 && !isWeb;
 
   // Calculamos márgenes dinámicos para evitar solapamiento con botones flotantes
-  const topMargin = isWeb ? 0 : (Platform.OS === 'ios' ? 120 : 100);
+  const topMargin = isWeb ? 0 : (Platform.OS === 'ios' ? 100 : 80);
+
 
   const renderContent = () => (
     <>
-      <View style={[styles.card, !isWeb && { width: '100%', maxWidth: 500, alignSelf: 'center', paddingVertical: isSmallHeight ? 16 : 24, marginTop: topMargin }]}>
+      <View style={[styles.card, !isWeb && {
+        width: '100%',
+        maxWidth: 500,
+        alignSelf: 'center',
+        paddingVertical: isVerySmallHeight ? 12 : (isSmallHeight ? 16 : 24),
+        marginTop: topMargin
+      }]}>
         {/* Logo: mostrar logo del entrenador si es cliente con trainer */}
         {currentTrainer?.profile?.logoUrl ? (
           <Image
             source={{ uri: currentTrainer.profile.logoUrl }}
             resizeMode="contain"
-            style={[styles.logo, styles.logoVIP, !isWeb && { width: width * 0.3, height: width * 0.3, maxHeight: isSmallHeight ? 90 : 140, maxWidth: isSmallHeight ? 90 : 140, marginBottom: isSmallHeight ? 8 : 12 }]}
+            style={[styles.logo, styles.logoVIP, !isWeb && {
+              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+            }]}
           />
         ) : (
           <Image
             source={require('../../assets/logo.png')}
             resizeMode="contain"
-            style={[styles.logo, isPremiumUser && styles.logoVIP, !isWeb && { width: width * 0.3, height: width * 0.3, maxHeight: isSmallHeight ? 90 : 140, maxWidth: isSmallHeight ? 90 : 140, marginBottom: isSmallHeight ? 8 : 12 }]}
+            style={[styles.logo, isPremiumUser && styles.logoVIP, !isWeb && {
+              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+            }]}
           />
         )}
         {/* Título: mostrar nombre del entrenador si es cliente con trainer */}
@@ -466,16 +492,34 @@ export default function HomeScreen() {
             <Text style={styles.promoText}>
               Rutinas ilimitadas • Videos HD • Sin límites
             </Text>
+            {/* Botón de código VIP */}
+            <Pressable
+              style={styles.promoVipButton}
+              onPress={() => {
+                setShowPromoTooltip(false);
+                router.push('/payment');
+              }}
+            >
+              <Ionicons name="star" size={14} color="#000" />
+              <Text style={styles.promoVipButtonText}>¿TIENES CÓDIGO VIP? ENTRA AQUÍ</Text>
+            </Pressable>
             <Text style={styles.promoSubtext}>
-              Toca aquí para cerrar o ¡dale al botón dorado!
+              Toca fuera para cerrar
             </Text>
           </View>
         </Pressable>
       )}
 
-      <View style={styles.contentContainer}>
-        {renderContent()}
-      </View>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        <SafeAreaView style={styles.contentContainer}>
+          {renderContent()}
+        </SafeAreaView>
+      </ScrollView>
 
       <Modal
         visible={showChangelog}
@@ -608,8 +652,19 @@ const CARD_BG = 'rgba(255,255,255,0.08)';
 const BORDER = 'rgba(255,255,255,0.18)';
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  contentContainer: { width: '86%', alignItems: 'center', bottom: -20 },
+  root: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 40 : 100,
+  },
+  contentContainer: {
+    width: '86%',
+    alignItems: 'center',
+    maxWidth: 500,
+  },
   blob: {
     position: 'absolute',
     width: Platform.OS === 'android' ? 220 : 280,
@@ -718,6 +773,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     lineHeight: 18,
+  },
+  promoVipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFD700',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  promoVipButtonText: {
+    color: '#000',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   promoSubtext: {
     color: '#9CA3AF',
@@ -935,7 +1007,7 @@ const styles = StyleSheet.create({
   // FAB de Chat
   chatFab: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 130,
+    bottom: Platform.OS === 'ios' ? 40 : Platform.OS === 'web' ? 30 : 130,
     right: 20,
     zIndex: 999,
     borderRadius: 30,

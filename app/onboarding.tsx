@@ -15,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Simple Slider Component
 const SimpleSlider = ({ value, onValueChange, min, max, labels }: any) => {
@@ -47,8 +48,14 @@ export default function Onboarding() {
     const router = useRouter();
     const { theme } = useTheme();
     const { refreshUser } = useAuth();
+    const insets = useSafeAreaInsets();
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
+
+    // Estado para el código de invitación universal
+    const [invitationCode, setInvitationCode] = useState('');
+    const [isRedeemingCode, setIsRedeemingCode] = useState(false);
+    const [codeRedeemed, setCodeRedeemed] = useState<{ type: string; message: string } | null>(null);
 
     const [formData, setFormData] = useState({
         edad: '',
@@ -63,12 +70,26 @@ export default function Onboarding() {
         cardio: '',
         dieta: '',
         comidasDia: 4,
-        ejerciciosFavoritos: '',
-        ejerciciosEvitados: '',
-        lesiones: '',
+        ejerciciosFavoritos: [] as string[],
+        ejerciciosEvitados: [] as string[],
+        lesiones: [] as string[],
         alergias: '',
         cocina: 'si',
     });
+
+    // Helper function to toggle items in array fields (multi-select)
+    const toggleArrayItem = (field: 'ejerciciosFavoritos' | 'ejerciciosEvitados' | 'lesiones', item: string) => {
+        setFormData(prev => {
+            const current = prev[field] || [];
+            const isSelected = current.includes(item);
+            return {
+                ...prev,
+                [field]: isSelected
+                    ? current.filter((i: string) => i !== item)
+                    : [...current, item]
+            };
+        });
+    };
 
     const totalSteps = 7;
 
@@ -134,6 +155,78 @@ export default function Onboarding() {
         }
     };
 
+    // Función para canjear el código de invitación universal
+    // Detecta automáticamente si es: entrenador, referido, o promocional
+    const handleRedeemInvitationCode = async () => {
+        if (!invitationCode.trim()) return;
+
+        setIsRedeemingCode(true);
+        const codeToRedeem = invitationCode.trim().toUpperCase();
+
+        try {
+            // 1. Primero intentar como código de entrenador (vinculación)
+            try {
+                const trainerResponse = await axios.post('/api/clients/select-trainer', {
+                    trainerCode: codeToRedeem
+                });
+                if (trainerResponse.data.success) {
+                    const trainerName = trainerResponse.data.trainer?.nombre || trainerResponse.data.trainer?.profile?.brandName || 'tu entrenador';
+                    setCodeRedeemed({
+                        type: 'trainer',
+                        message: `¡Vinculado con ${trainerName}! 🏋️`
+                    });
+                    await refreshUser();
+                    return;
+                }
+            } catch (e: any) {
+                // No es código de entrenador, continuar
+            }
+
+            // 2. Intentar como código de referido
+            try {
+                const referralResponse = await axios.post('/api/referrals/redeem', {
+                    code: codeToRedeem
+                });
+                if (referralResponse.data.success) {
+                    setCodeRedeemed({
+                        type: 'referral',
+                        message: referralResponse.data.message || '¡7 días de Premium gratis! 🎉'
+                    });
+                    await refreshUser();
+                    return;
+                }
+            } catch (e: any) {
+                // No es código de referido, continuar
+            }
+
+            // 3. Intentar como código promocional VIP
+            try {
+                const promoResponse = await axios.post('/api/promo-codes/redeem', {
+                    code: codeToRedeem
+                });
+                if (promoResponse.data.success) {
+                    setCodeRedeemed({
+                        type: 'promo',
+                        message: promoResponse.data.message || '¡Código VIP canjeado! 🌟'
+                    });
+                    await refreshUser();
+                    return;
+                }
+            } catch (e: any) {
+                // No es código promocional
+            }
+
+            // Ninguno funcionó
+            Alert.alert('Código no válido', 'Este código no existe o ya ha sido usado. Puedes continuar sin código.');
+
+        } catch (error) {
+            console.error('[Onboarding] Error redeeming code:', error);
+            Alert.alert('Error', 'No se pudo verificar el código. Puedes continuar sin él.');
+        } finally {
+            setIsRedeemingCode(false);
+        }
+    };
+
     // STEP 0: WELCOME
     if (currentStep === 0) {
         return (
@@ -167,6 +260,60 @@ export default function Onboarding() {
                                     Seguimiento más preciso de tu progreso
                                 </Text>
                             </View>
+                        </View>
+
+                        {/* Campo de código de invitación universal */}
+                        <View style={[styles.invitationSection, { backgroundColor: theme.cardBackground, borderColor: codeRedeemed ? theme.primary : theme.border }]}>
+                            <View style={styles.invitationHeader}>
+                                <Ionicons name="gift" size={20} color={codeRedeemed ? theme.primary : '#F59E0B'} />
+                                <Text style={[styles.invitationTitle, { color: codeRedeemed ? theme.primary : theme.text }]}>
+                                    {codeRedeemed ? '¡Código aplicado!' : '¿Tienes una invitación? (Opcional)'}
+                                </Text>
+                            </View>
+
+                            {codeRedeemed ? (
+                                <View style={[styles.codeRedeemedBadge, { backgroundColor: theme.primary + '20' }]}>
+                                    <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
+                                    <Text style={[styles.codeRedeemedText, { color: theme.primary }]}>
+                                        {codeRedeemed.message}
+                                    </Text>
+                                </View>
+                            ) : (
+                                <>
+                                    <View style={styles.invitationInputRow}>
+                                        <TextInput
+                                            style={[styles.invitationInput, {
+                                                color: theme.text,
+                                                borderColor: theme.border,
+                                                backgroundColor: theme.background
+                                            }]}
+                                            placeholder="Código de Entrenador, Amigo o VIP"
+                                            placeholderTextColor={theme.textSecondary}
+                                            value={invitationCode}
+                                            onChangeText={setInvitationCode}
+                                            autoCapitalize="characters"
+                                            editable={!isRedeemingCode}
+                                        />
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.invitationButton,
+                                                { backgroundColor: invitationCode.trim() ? '#F59E0B' : theme.border }
+                                            ]}
+                                            onPress={handleRedeemInvitationCode}
+                                            disabled={!invitationCode.trim() || isRedeemingCode}
+                                        >
+                                            {isRedeemingCode ? (
+                                                <ActivityIndicator size="small" color="#FFF" />
+                                            ) : (
+                                                <Ionicons name="checkmark" size={20} color="#FFF" />
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                    <Text style={[styles.invitationHint, { color: theme.textSecondary }]}>
+                                        Si tienes un entrenador o un código de descuento, pégalo aquí y nosotros nos encargamos del resto.
+                                    </Text>
+                                </>
+                            )}
                         </View>
 
                         <TouchableOpacity
@@ -207,7 +354,6 @@ export default function Onboarding() {
         const objetivos = [
             'Perder grasa',
             'Ganar músculo',
-            'Ponerme fit para verano',
             'Rendimiento deportivo',
             'Salud y bienestar',
         ];
@@ -309,7 +455,7 @@ export default function Onboarding() {
                     </View>
                 </ScrollView>
 
-                <View style={[styles.footer, { backgroundColor: theme.background }]}>
+                <View style={[styles.footer, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}>
                     <TouchableOpacity style={[styles.footerButton, { borderColor: theme.border }]} onPress={handleBack}>
                         <Ionicons name="arrow-back" size={20} color={theme.text} />
                         <Text style={[styles.footerButtonText, { color: theme.text }]}>Atrás</Text>
@@ -408,7 +554,7 @@ export default function Onboarding() {
                     </View>
                 </ScrollView>
 
-                <View style={[styles.footer, { backgroundColor: theme.background }]}>
+                <View style={[styles.footer, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}>
                     <TouchableOpacity style={[styles.footerButton, { borderColor: theme.border }]} onPress={handleBack}>
                         <Ionicons name="arrow-back" size={20} color={theme.text} />
                         <Text style={[styles.footerButtonText, { color: theme.text }]}>Atrás</Text>
@@ -539,7 +685,7 @@ export default function Onboarding() {
                     </View>
 
                     <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué ejercicios disfrutas más?</Text>
+                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué ejercicios disfrutas más? (puedes elegir varios)</Text>
                         <View style={styles.chipGrid}>
                             {ejerciciosFavOpts.map((opt) => (
                                 <TouchableOpacity
@@ -547,13 +693,13 @@ export default function Onboarding() {
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.ejerciciosFavoritos === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.ejerciciosFavoritos === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.ejerciciosFavoritos.includes(opt) ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.ejerciciosFavoritos.includes(opt) ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, ejerciciosFavoritos: opt })}
+                                    onPress={() => toggleArrayItem('ejerciciosFavoritos', opt)}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.ejerciciosFavoritos === opt ? theme.primary : theme.text }]}>
+                                    <Text style={[styles.chipText, { color: formData.ejerciciosFavoritos.includes(opt) ? theme.primary : theme.text }]}>
                                         {opt}
                                     </Text>
                                 </TouchableOpacity>
@@ -562,7 +708,7 @@ export default function Onboarding() {
                     </View>
 
                     <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué sueles evitar?</Text>
+                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué sueles evitar? (puedes elegir varios)</Text>
                         <View style={styles.chipGrid}>
                             {ejerciciosEvitOpts.map((opt) => (
                                 <TouchableOpacity
@@ -570,13 +716,13 @@ export default function Onboarding() {
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.ejerciciosEvitados === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.ejerciciosEvitados === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.ejerciciosEvitados.includes(opt) ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.ejerciciosEvitados.includes(opt) ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, ejerciciosEvitados: opt })}
+                                    onPress={() => toggleArrayItem('ejerciciosEvitados', opt)}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.ejerciciosEvitados === opt ? theme.primary : theme.text }]}>
+                                    <Text style={[styles.chipText, { color: formData.ejerciciosEvitados.includes(opt) ? theme.primary : theme.text }]}>
                                         {opt}
                                     </Text>
                                 </TouchableOpacity>
@@ -585,7 +731,7 @@ export default function Onboarding() {
                     </View>
                 </ScrollView>
 
-                <View style={[styles.footer, { backgroundColor: theme.background }]}>
+                <View style={[styles.footer, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}>
                     <TouchableOpacity style={[styles.footerButton, { borderColor: theme.border }]} onPress={handleBack}>
                         <Ionicons name="arrow-back" size={20} color={theme.text} />
                         <Text style={[styles.footerButtonText, { color: theme.text }]}>Atrás</Text>
@@ -621,7 +767,7 @@ export default function Onboarding() {
                     </Text>
 
                     <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Tienes alguna lesión o molestia habitual?</Text>
+                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Tienes alguna lesión o molestia habitual? (puedes elegir varios)</Text>
                         <View style={styles.chipGrid}>
                             {lesionesOpts.map((opt) => (
                                 <TouchableOpacity
@@ -629,13 +775,13 @@ export default function Onboarding() {
                                     style={[
                                         styles.chip,
                                         {
-                                            backgroundColor: formData.lesiones === opt ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.lesiones === opt ? theme.primary : theme.border,
+                                            backgroundColor: formData.lesiones.includes(opt) ? theme.primary + '20' : theme.cardBackground,
+                                            borderColor: formData.lesiones.includes(opt) ? theme.primary : theme.border,
                                         },
                                     ]}
-                                    onPress={() => setFormData({ ...formData, lesiones: opt })}
+                                    onPress={() => toggleArrayItem('lesiones', opt)}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.lesiones === opt ? theme.primary : theme.text }]}>
+                                    <Text style={[styles.chipText, { color: formData.lesiones.includes(opt) ? theme.primary : theme.text }]}>
                                         {opt}
                                     </Text>
                                 </TouchableOpacity>
@@ -681,7 +827,7 @@ export default function Onboarding() {
                     </View>
                 </ScrollView>
 
-                <View style={[styles.footer, { backgroundColor: theme.background }]}>
+                <View style={[styles.footer, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}>
                     <TouchableOpacity style={[styles.footerButton, { borderColor: theme.border }]} onPress={handleBack}>
                         <Ionicons name="arrow-back" size={20} color={theme.text} />
                         <Text style={[styles.footerButtonText, { color: theme.text }]}>Atrás</Text>
@@ -1025,5 +1171,64 @@ const styles = StyleSheet.create({
     footerButtonText: {
         fontSize: 16,
         fontWeight: '600',
+    },
+    // Estilos para el campo de código de invitación
+    invitationSection: {
+        width: '100%',
+        marginTop: 24,
+        marginBottom: 8,
+        padding: 16,
+        borderRadius: 14,
+        borderWidth: 2,
+    },
+    invitationHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    invitationTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    invitationInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    invitationInput: {
+        flex: 1,
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 15,
+        fontWeight: '600',
+        letterSpacing: 1,
+        borderWidth: 1,
+    },
+    invitationButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    invitationHint: {
+        fontSize: 12,
+        marginTop: 10,
+        lineHeight: 16,
+    },
+    codeRedeemedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+    },
+    codeRedeemedText: {
+        fontSize: 14,
+        fontWeight: '600',
+        flex: 1,
     },
 });

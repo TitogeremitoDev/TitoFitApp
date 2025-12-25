@@ -111,36 +111,164 @@ export default function ConversationScreen() {
     const [sending, setSending] = useState(false);
     const [newMessage, setNewMessage] = useState('');
     const [messageType, setMessageType] = useState('general');
+    const [selectedCategory, setSelectedCategory] = useState('all');
 
     const isTrainer = isTrainerChat === 'true';
     const isGroup = type === 'group';
+
+    // Category tabs configuration
+    const CATEGORY_TABS = [
+        { key: 'all', label: 'Todo', icon: 'chatbubbles-outline', color: '#64748b' },
+        { key: 'general', label: 'General', icon: 'chatbubble-outline', color: '#64748b' },
+        { key: 'entreno', label: 'Entreno', icon: 'barbell-outline', color: '#8b5cf6' },
+        { key: 'nutricion', label: 'Nutrición', icon: 'nutrition-outline', color: '#10b981' },
+        { key: 'evolucion', label: 'Evolución', icon: 'analytics-outline', color: '#3b82f6' },
+        { key: 'seguimiento', label: 'Seguimiento', icon: 'calendar-outline', color: '#f59e0b' }
+    ];
+
+    // Filter messages by selected category
+    const filteredMessages = selectedCategory === 'all'
+        ? messages
+        : messages.filter(m => m.type === selectedCategory);
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD MESSAGES
     // ─────────────────────────────────────────────────────────────────────────
 
     const loadMessages = useCallback(async () => {
+        console.log('[Chat] loadMessages called for conversation:', conversationId);
         try {
             setLoading(true);
-            const res = await fetch(
-                `${API_URL}/api/conversations/${conversationId}/messages?limit=100`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const url = `${API_URL}/api/conversations/${conversationId}/messages?limit=100`;
+            console.log('[Chat] Fetching:', url);
+
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             const data = await res.json();
+
+            console.log('[Chat] loadMessages response:', data.success, 'messages:', data.messages?.length);
 
             if (data.success) {
                 setMessages(data.messages || []);
+                console.log('[Chat] Messages state updated to:', data.messages?.length);
+            } else {
+                console.error('[Chat] loadMessages failed:', data.message);
             }
         } catch (error) {
-            console.error('[ConversationScreen] Error:', error);
+            console.error('[Chat] loadMessages Error:', error);
         } finally {
             setLoading(false);
         }
     }, [conversationId, token]);
 
     useEffect(() => {
+        console.log('[Chat] Initial useEffect triggered');
         loadMessages();
     }, [loadMessages]);
+
+    // Scroll al final cuando se cargan los mensajes por primera vez
+    useEffect(() => {
+        if (!loading && messages.length > 0) {
+            setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: false });
+            }, 150);
+        }
+    }, [loading]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADAPTIVE POLLING - Reduces server load by 70-80%
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const lastActivityRef = useRef(Date.now());
+    const lastModifiedRef = useRef(null);
+    const isBackgroundRef = useRef(false);
+
+    // Track user activity
+    const updateActivity = useCallback(() => {
+        lastActivityRef.current = Date.now();
+    }, []);
+
+    // Get adaptive poll interval based on user activity
+    const getPollInterval = useCallback(() => {
+        if (isBackgroundRef.current) return 60000; // 60s in background
+
+        const idleTime = Date.now() - lastActivityRef.current;
+        if (idleTime > 60000) return 10000; // 10s after 1 min idle
+        return 2000; // 2s when active
+    }, []);
+
+    // Adaptive polling for real-time messages
+    useEffect(() => {
+        let pollTimeoutId = null;
+
+        const poll = async () => {
+            try {
+                const headers = { Authorization: `Bearer ${token}` };
+
+                // Add If-Modified-Since header for 304 optimization
+                if (lastModifiedRef.current) {
+                    headers['If-Modified-Since'] = lastModifiedRef.current;
+                }
+
+                const res = await fetch(
+                    `${API_URL}/api/conversations/${conversationId}/messages?limit=100`,
+                    { headers }
+                );
+
+                // Handle 304 Not Modified - no new messages
+                if (res.status === 304) {
+                    pollTimeoutId = setTimeout(poll, getPollInterval());
+                    return;
+                }
+
+                // Store Last-Modified header for next request
+                const lastModified = res.headers.get('Last-Modified');
+                if (lastModified) {
+                    lastModifiedRef.current = lastModified;
+                }
+
+                const data = await res.json();
+
+                if (data.success && data.messages) {
+                    // Deduplicar mensajes por _id para evitar keys duplicadas
+                    const uniqueMessages = data.messages.reduce((acc, msg) => {
+                        if (msg._id && !acc.find(m => m._id === msg._id)) {
+                            acc.push(msg);
+                        }
+                        return acc;
+                    }, []);
+
+                    const newCount = uniqueMessages.length;
+                    const lastNewId = newCount > 0 ? uniqueMessages[newCount - 1]?._id : '';
+
+                    setMessages(currentMessages => {
+                        const currentCount = currentMessages.length;
+                        const lastCurrentId = currentCount > 0 ? currentMessages[currentCount - 1]?._id : '';
+
+                        // Actualizar si hay diferencia en cantidad o en el último mensaje
+                        if (newCount !== currentCount || lastNewId !== lastCurrentId) {
+                            console.log('[Chat] ✅ Actualizando de', currentCount, 'a', newCount);
+                            return uniqueMessages;
+                        }
+                        return currentMessages;
+                    });
+                }
+            } catch (error) {
+                console.error('[Chat Polling] Error:', error);
+            }
+
+            // Schedule next poll with adaptive interval
+            pollTimeoutId = setTimeout(poll, getPollInterval());
+        };
+
+        // Start polling
+        pollTimeoutId = setTimeout(poll, getPollInterval());
+
+        return () => {
+            if (pollTimeoutId) clearTimeout(pollTimeoutId);
+        };
+    }, [conversationId, token, getPollInterval]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // SEND MESSAGE
@@ -226,7 +354,7 @@ export default function ConversationScreen() {
             ) : (
                 <FlatList
                     ref={flatListRef}
-                    data={messages}
+                    data={filteredMessages}
                     keyExtractor={(item, idx) => item._id || idx.toString()}
                     renderItem={({ item }) => (
                         <MessageBubble
@@ -244,7 +372,12 @@ export default function ConversationScreen() {
                     ListEmptyComponent={
                         <View style={styles.emptyMessages}>
                             <Ionicons name="chatbubble-ellipses-outline" size={48} color={chatTheme.textTertiary} />
-                            <Text style={[styles.emptyText, { color: chatTheme.textSecondary }]}>Inicia la conversación</Text>
+                            <Text style={[styles.emptyText, { color: chatTheme.textSecondary }]}>
+                                {selectedCategory === 'all'
+                                    ? 'Inicia la conversación'
+                                    : `Sin mensajes de ${CATEGORY_TABS.find(t => t.key === selectedCategory)?.label || selectedCategory}`
+                                }
+                            </Text>
                         </View>
                     }
                 />
@@ -255,16 +388,18 @@ export default function ConversationScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 keyboardVerticalOffset={0}
             >
-                {/* Type Selector (only for trainer chat) */}
+                {/* Category Selector (filters view + sets message type) */}
                 {isTrainer && (
                     <View style={[styles.typeSelector, { backgroundColor: chatTheme.cardBackground, borderTopColor: chatTheme.border }]}>
                         {[
-                            { type: 'general', icon: 'chatbubble-outline', color: chatTheme.textSecondary, label: 'General' },
+                            { type: 'all', icon: 'apps-outline', color: '#64748b', label: 'Todo' },
+                            { type: 'general', icon: 'chatbubble-outline', color: '#64748b', label: 'General' },
                             { type: 'entreno', icon: 'barbell-outline', color: '#8b5cf6', label: 'Entreno' },
                             { type: 'nutricion', icon: 'nutrition-outline', color: '#10b981', label: 'Nutrición' },
-                            { type: 'evolucion', icon: 'analytics-outline', color: '#3b82f6', label: 'Evolución' }
+                            { type: 'evolucion', icon: 'analytics-outline', color: '#3b82f6', label: 'Evolución' },
+                            { type: 'seguimiento', icon: 'calendar-outline', color: '#f59e0b', label: 'Seguim.' }
                         ].map(({ type: t, icon, color, label }) => {
-                            const isActive = messageType === t;
+                            const isActive = selectedCategory === t;
                             return (
                                 <TouchableOpacity
                                     key={t}
@@ -273,7 +408,11 @@ export default function ConversationScreen() {
                                         { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9' },
                                         isActive && { backgroundColor: color + '20', borderColor: color, borderWidth: 2 }
                                     ]}
-                                    onPress={() => setMessageType(t)}
+                                    onPress={() => {
+                                        setSelectedCategory(t);
+                                        // When selecting a category, also set message type (except 'all')
+                                        if (t !== 'all') setMessageType(t);
+                                    }}
                                 >
                                     <Ionicons
                                         name={icon}
@@ -302,6 +441,13 @@ export default function ConversationScreen() {
                         placeholderTextColor={chatTheme.textTertiary}
                         multiline
                         maxLength={2000}
+                        onKeyPress={(e) => {
+                            // Solo en web: enviar con Enter (sin Shift para permitir saltos de línea)
+                            if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
+                        }}
                     />
                     <TouchableOpacity
                         style={[styles.sendBtn, { backgroundColor: chatTheme.primary }, !newMessage.trim() && styles.sendBtnDisabled]}

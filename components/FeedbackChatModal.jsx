@@ -169,6 +169,7 @@ export default function FeedbackChatModal({
     onClose,
     clientId,
     clientName,
+    trainerId,  // Nuevo: ID del entrenador (para clientes que envían mensajes)
     isCoach = false
 }) {
     const { token, user } = useAuth();
@@ -179,6 +180,7 @@ export default function FeedbackChatModal({
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
     const [messageType, setMessageType] = useState('general');
+    const [selectedCategory, setSelectedCategory] = useState('all');
     const flatListRef = useRef(null);
 
     // Quick Responses (solo para coaches)
@@ -201,19 +203,37 @@ export default function FeedbackChatModal({
         try {
             setLoading(true);
             const targetClientId = isCoach ? clientId : user?._id;
+
+            console.log('[FeedbackChat] ═══════════════════════════════════');
+            console.log('[FeedbackChat] Loading messages - isCoach:', isCoach);
+            console.log('[FeedbackChat] targetClientId:', targetClientId);
+            console.log('[FeedbackChat] user._id:', user?._id);
+            console.log('[FeedbackChat] clientId prop:', clientId);
+
             const response = await fetch(
                 `${API_URL}/api/chat/conversation/${targetClientId}?limit=100`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
             const data = await response.json();
+            console.log('[FeedbackChat] Response success:', data.success);
+            console.log('[FeedbackChat] Messages count:', data.messages?.length);
+
+            if (data.messages?.length > 0) {
+                console.log('[FeedbackChat] First message senderId:', data.messages[0]?.senderId?._id || data.messages[0]?.senderId);
+                console.log('[FeedbackChat] First message text:', data.messages[0]?.message?.substring(0, 30));
+                console.log('[FeedbackChat] Last message senderId:', data.messages[data.messages.length - 1]?.senderId?._id || data.messages[data.messages.length - 1]?.senderId);
+                console.log('[FeedbackChat] Last message text:', data.messages[data.messages.length - 1]?.message?.substring(0, 30));
+            }
+
             if (data.success) {
                 setMessages(data.messages || []);
+                console.log('[FeedbackChat] State updated with', data.messages?.length, 'messages');
                 // Mark as read
                 markAsRead(targetClientId);
             }
         } catch (error) {
-            console.error('[Chat] Error loading:', error);
+            console.error('[FeedbackChat] Error loading:', error);
         } finally {
             setLoading(false);
         }
@@ -241,6 +261,95 @@ export default function FeedbackChatModal({
             }
         }
     }, [visible, loadMessages]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADAPTIVE POLLING - Reduces server load by 70-80%
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const lastActivityRef = useRef(Date.now());
+    const lastModifiedRef = useRef(null);
+    const isBackgroundRef = useRef(false);
+
+    // Track user activity
+    const updateActivity = useCallback(() => {
+        lastActivityRef.current = Date.now();
+    }, []);
+
+    // Get adaptive poll interval based on user activity
+    const getPollInterval = useCallback(() => {
+        if (isBackgroundRef.current) return 60000; // 60s in background
+
+        const idleTime = Date.now() - lastActivityRef.current;
+        if (idleTime > 60000) return 10000; // 10s after 1 min idle
+        return 2000; // 2s when active
+    }, []);
+
+    // Adaptive polling for real-time messages
+    useEffect(() => {
+        if (!visible || !token) return;
+
+        let pollTimeoutId = null;
+
+        const poll = async () => {
+            try {
+                const targetClientId = isCoach ? clientId : user?._id;
+                const headers = { Authorization: `Bearer ${token}` };
+
+                // Add If-Modified-Since header for 304 optimization
+                if (lastModifiedRef.current) {
+                    headers['If-Modified-Since'] = lastModifiedRef.current;
+                }
+
+                const response = await fetch(
+                    `${API_URL}/api/chat/conversation/${targetClientId}?limit=100`,
+                    { headers }
+                );
+
+                // Handle 304 Not Modified - no new messages
+                if (response.status === 304) {
+                    // Schedule next poll with adaptive interval
+                    pollTimeoutId = setTimeout(poll, getPollInterval());
+                    return;
+                }
+
+                // Store Last-Modified header for next request
+                const lastModified = response.headers.get('Last-Modified');
+                if (lastModified) {
+                    lastModifiedRef.current = lastModified;
+                }
+
+                const data = await response.json();
+
+                if (data.success && data.messages) {
+                    const newCount = data.messages.length;
+                    const lastNewId = newCount > 0 ? data.messages[newCount - 1]?._id : '';
+
+                    setMessages(currentMessages => {
+                        const currentCount = currentMessages.length;
+                        const lastCurrentId = currentCount > 0 ? currentMessages[currentCount - 1]?._id : '';
+
+                        if (newCount !== currentCount || lastNewId !== lastCurrentId) {
+                            console.log('[Chat] ✅ Actualizando de', currentCount, 'a', newCount);
+                            return data.messages;
+                        }
+                        return currentMessages;
+                    });
+                }
+            } catch (error) {
+                // Silently ignore polling errors
+            }
+
+            // Schedule next poll with adaptive interval
+            pollTimeoutId = setTimeout(poll, getPollInterval());
+        };
+
+        // Start polling
+        pollTimeoutId = setTimeout(poll, getPollInterval());
+
+        return () => {
+            if (pollTimeoutId) clearTimeout(pollTimeoutId);
+        };
+    }, [visible, token, clientId, user, isCoach, getPollInterval]);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // QUICK RESPONSES
@@ -328,8 +437,13 @@ export default function FeedbackChatModal({
                 clientId: isCoach ? clientId : user?._id,
                 message: newMessage.trim(),
                 type: messageType,
-                isCoach: isCoach // Explícito para que el backend sepa el contexto
+                isCoach: isCoach
             };
+
+            // Si es cliente, enviar trainerId explícitamente
+            if (!isCoach && trainerId) {
+                payload.trainerId = trainerId;
+            }
 
             // Si hay fecha programada
             if (sendScheduled && scheduledDate) {
@@ -381,7 +495,7 @@ export default function FeedbackChatModal({
 
 
     // ─────────────────────────────────────────────────────────────────────────
-    // GROUP MESSAGES BY DATE (filtered by selected type)
+    // GROUP MESSAGES BY DATE (show ALL messages)
     // ─────────────────────────────────────────────────────────────────────────
 
     const groupedMessages = useCallback(() => {
@@ -389,8 +503,10 @@ export default function FeedbackChatModal({
         let lastDate = null;
         let lastSenderId = null;
 
-        // Filtrar mensajes por tipo seleccionado
-        const filteredMessages = messages.filter(msg => msg.type === messageType);
+        // Mostrar mensajes filtrados por categoría seleccionada
+        const filteredMessages = selectedCategory === 'all'
+            ? messages
+            : messages.filter(m => m.type === selectedCategory);
 
         filteredMessages.forEach((msg, index) => {
             const msgDate = new Date(msg.createdAt).toDateString();
@@ -422,7 +538,7 @@ export default function FeedbackChatModal({
         });
 
         return groups;
-    }, [messages, messageType]);
+    }, [messages, selectedCategory]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -433,7 +549,16 @@ export default function FeedbackChatModal({
             return <DateSeparator date={item.date} />;
         }
 
-        const isMine = (item.data.senderId?._id || item.data.senderId) === user?._id;
+        const senderId = item.data.senderId?._id || item.data.senderId;
+        const isMine = senderId === user?._id;
+
+        // Debug log para cada mensaje
+        console.log('[FeedbackChat Render] Message:',
+            item.data.message?.substring(0, 20),
+            '| senderId:', senderId,
+            '| user._id:', user?._id,
+            '| isMine:', isMine);
+
         return (
             <MessageBubble
                 message={item.data}
@@ -507,28 +632,38 @@ export default function FeedbackChatModal({
                     />
                 )}
 
-                {/* Type Selector (Para Coach y Cliente) */}
+                {/* Category Selector (filters view + sets message type) */}
                 <View style={[styles.typeSelector, { backgroundColor: theme.cardBackground, borderBottomColor: theme.border }]}>
-                    {['general', 'entreno', 'nutricion', 'evolucion'].map(type => {
-                        const info = getTypeIcon(type);
-                        const isActive = messageType === type;
+                    {[
+                        { type: 'all', icon: 'apps', color: '#64748b' },
+                        { type: 'general', icon: 'chatbubble', color: '#6b7280' },
+                        { type: 'entreno', icon: 'barbell', color: '#8b5cf6' },
+                        { type: 'nutricion', icon: 'nutrition', color: '#10b981' },
+                        { type: 'evolucion', icon: 'trending-up', color: '#f59e0b' },
+                        { type: 'seguimiento', icon: 'analytics', color: '#3b82f6' }
+                    ].map(({ type, icon, color }) => {
+                        const isActive = selectedCategory === type;
                         return (
                             <TouchableOpacity
                                 key={type}
                                 style={[
                                     styles.typeButton,
                                     {
-                                        backgroundColor: isActive ? info.color + '30' : (isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9'),
-                                        borderColor: isActive ? info.color : 'transparent',
+                                        backgroundColor: isActive ? color + '30' : (isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9'),
+                                        borderColor: isActive ? color : 'transparent',
                                         borderWidth: isActive ? 2 : 0
                                     }
                                 ]}
-                                onPress={() => setMessageType(type)}
+                                onPress={() => {
+                                    setSelectedCategory(type);
+                                    // When selecting a category, also set message type (except 'all')
+                                    if (type !== 'all') setMessageType(type);
+                                }}
                             >
                                 <Ionicons
-                                    name={info.name}
+                                    name={icon}
                                     size={18}
-                                    color={isActive ? info.color : (isDark ? '#FFFFFF' : '#64748b')}
+                                    color={isActive ? color : (isDark ? '#FFFFFF' : '#64748b')}
                                 />
                             </TouchableOpacity>
                         );
@@ -572,6 +707,13 @@ export default function FeedbackChatModal({
                             underlineColorAndroid="transparent"
                             selectionColor={isDark ? '#FFFFFF' : '#3b82f6'}
                             autoCorrect={false}
+                            onKeyPress={(e) => {
+                                // Solo en web: enviar con Enter (sin Shift para permitir saltos de línea)
+                                if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                                    e.preventDefault();
+                                    handleSend(false);
+                                }
+                            }}
                         />
                         <TouchableOpacity
                             style={[

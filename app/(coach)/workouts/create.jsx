@@ -12,7 +12,12 @@ import {
   Modal,
   Platform,
   ActionSheetIOS,
+  Image,
+  ScrollView,
+  Dimensions,
+  Pressable,
 } from 'react-native';
+import YoutubeIframe from 'react-native-youtube-iframe';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
@@ -368,6 +373,11 @@ export default function CreateRoutineScreen() {
   // 🆕 Estado para modal de confirmación al modificar CurrentRoutine
   const [showResetModal, setShowResetModal] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState(null);
+
+  // 🆕 Estados para vista previa de ejercicio
+  const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
+  const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false, title: '' });
+  const [imageModal, setImageModal] = useState({ visible: false, imageUrl: null, title: '' });
 
   /* ───────── Initial Load ───────── */
   useEffect(() => {
@@ -1147,6 +1157,84 @@ export default function CreateRoutineScreen() {
               </View>
             )}
 
+            {/* 🆕 Vista Previa del Ejercicio */}
+            {selectedExercise && (() => {
+              const exerciseObj = exercises.find(e => e._id === selectedExercise);
+              if (!exerciseObj) return null;
+
+              const hasImage = !!exerciseObj.imagen_ejercicio_ID?.trim();
+              const hasTips = Array.isArray(exerciseObj.instructions) && exerciseObj.instructions.length > 0;
+              const hasVideo = !!exerciseObj.videoId?.trim();
+
+              return (
+                <View style={styles.previewActions}>
+                  <TouchableOpacity
+                    style={[styles.previewBtn, !hasImage && styles.previewBtnDisabled]}
+                    onPress={() => {
+                      if (hasImage) {
+                        setImageModal({
+                          visible: true,
+                          imageUrl: exerciseObj.imagen_ejercicio_ID,
+                          title: exerciseObj.name
+                        });
+                      }
+                    }}
+                    disabled={!hasImage}
+                  >
+                    <Text style={[styles.previewBtnTxt, !hasImage && styles.previewBtnTxtDisabled]}>
+                      {hasImage ? '📸' : '📸̶'}
+                    </Text>
+                    <Text style={[styles.previewBtnTxt, !hasImage && styles.previewBtnTxtDisabled]}>
+                      Imagen
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.previewBtn, !hasTips && styles.previewBtnDisabled]}
+                    onPress={() => {
+                      if (hasTips) {
+                        setTechModal({
+                          visible: true,
+                          title: exerciseObj.name,
+                          tips: exerciseObj.instructions
+                        });
+                      }
+                    }}
+                    disabled={!hasTips}
+                  >
+                    <Text style={[styles.previewBtnTxt, !hasTips && styles.previewBtnTxtDisabled]}>
+                      {hasTips ? '📖' : '📖̶'}
+                    </Text>
+                    <Text style={[styles.previewBtnTxt, !hasTips && styles.previewBtnTxtDisabled]}>
+                      Técnica
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.previewBtn, !hasVideo && styles.previewBtnDisabled]}
+                    onPress={() => {
+                      if (hasVideo) {
+                        setVideoModal({
+                          visible: true,
+                          videoId: exerciseObj.videoId,
+                          playing: true,
+                          title: exerciseObj.name
+                        });
+                      }
+                    }}
+                    disabled={!hasVideo}
+                  >
+                    <Text style={[styles.previewBtnTxt, !hasVideo && styles.previewBtnTxtDisabled]}>
+                      {hasVideo ? '🎬' : '🎬̶'}
+                    </Text>
+                    <Text style={[styles.previewBtnTxt, !hasVideo && styles.previewBtnTxtDisabled]}>
+                      Video
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
             <TouchableOpacity
               style={[styles.confirmAddBtn, !selectedExercise && { backgroundColor: '#94a3b8' }]}
               onPress={addExerciseFromSelector}
@@ -1327,6 +1415,140 @@ export default function CreateRoutineScreen() {
             >
               <Text style={styles.modalCancelText}>Cancelar</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🆕 Modal Técnica Correcta */}
+      <Modal
+        visible={techModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTechModal(s => ({ ...s, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.previewModalCard}>
+            <Pressable
+              onPress={() => setTechModal(s => ({ ...s, visible: false }))}
+              style={styles.previewModalClose}
+            >
+              <Ionicons name="close-outline" size={24} color="#1e293b" />
+            </Pressable>
+
+            <Text style={styles.previewModalTitle}>📖 Técnica: {techModal.title}</Text>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {(techModal.tips || []).map((t, i) => (
+                <View key={i} style={styles.tipRow}>
+                  <Text style={styles.tipBullet}>•</Text>
+                  <Text style={styles.tipText}>{t}</Text>
+                </View>
+              ))}
+              {!techModal.tips?.length && (
+                <Text style={styles.tipText}>No hay detalles de técnica.</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🆕 Modal Video */}
+      <Modal
+        visible={videoModal.visible}
+        transparent
+        animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
+        onRequestClose={() => setVideoModal(s => ({ ...s, visible: false, playing: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.videoModalCard}>
+            <View style={styles.videoModalHeader}>
+              <Text style={styles.previewModalTitle} numberOfLines={2}>
+                🎬 {videoModal.title}
+              </Text>
+              <Pressable
+                onPress={() => setVideoModal(s => ({ ...s, visible: false, playing: false }))}
+                style={styles.previewModalClose}
+              >
+                <Ionicons name="close-outline" size={24} color="#1e293b" />
+              </Pressable>
+            </View>
+            {videoModal.videoId ? (() => {
+              const screenWidth = Dimensions.get('window').width;
+              const videoWidth = screenWidth < 600
+                ? screenWidth * 0.85
+                : Math.min(screenWidth * 0.5, 500);
+              const videoHeight = videoWidth * 9 / 16;
+
+              if (Platform.OS === 'web') {
+                return (
+                  <iframe
+                    width={videoWidth}
+                    height={videoHeight}
+                    src={`https://www.youtube.com/embed/${videoModal.videoId}?autoplay=1&rel=0`}
+                    title="YouTube video"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    style={{ borderRadius: 8 }}
+                  />
+                );
+              }
+
+              return (
+                <YoutubeIframe
+                  height={videoHeight}
+                  width={videoWidth}
+                  play={videoModal.playing}
+                  videoId={videoModal.videoId}
+                  onChangeState={(st) => {
+                    if (st === 'ended' || st === 'error') {
+                      setVideoModal(s => ({ ...s, playing: false, visible: false }));
+                    }
+                  }}
+                />
+              );
+            })() : (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <Ionicons name="videocam-off-outline" size={48} color="#94a3b8" />
+                <Text style={{ color: '#94a3b8', marginTop: 12, fontSize: 16, textAlign: 'center' }}>
+                  Vídeo no disponible
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🆕 Modal Imagen del Ejercicio */}
+      <Modal
+        visible={imageModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageModal({ visible: false, imageUrl: null, title: '' })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.imageModalCard}>
+            <View style={styles.videoModalHeader}>
+              <Text style={styles.previewModalTitle} numberOfLines={2}>
+                📸 {imageModal.title}
+              </Text>
+              <Pressable
+                onPress={() => setImageModal({ visible: false, imageUrl: null, title: '' })}
+                style={styles.previewModalClose}
+              >
+                <Ionicons name="close-outline" size={24} color="#1e293b" />
+              </Pressable>
+            </View>
+            {imageModal.imageUrl ? (
+              <Image
+                source={{ uri: imageModal.imageUrl }}
+                style={styles.exerciseImageFull}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={{ color: '#94a3b8', textAlign: 'center', padding: 20 }}>
+                Imagen no disponible
+              </Text>
+            )}
           </View>
         </View>
       </Modal>
@@ -1595,12 +1817,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0073ffff',
     overflow: 'hidden',
-    minHeight: 50,  // ✅ Altura mínima adecuada
-    justifyContent: 'center',  // ✅ Centrar contenido
+    minHeight: Platform.OS === 'android' ? 56 : 50,
+    justifyContent: 'center',
   },
   picker: {
-    height: 50,
+    height: Platform.OS === 'android' ? 56 : 50,
     width: '100%',
+    color: '#1e293b',
+    fontSize: 15,
+  },
+  pickerItemStyle: {
+    fontSize: 15,
+    color: '#1e293b',
+    paddingVertical: 8,
   },
   confirmAddBtn: {
     backgroundColor: '#10b981',
@@ -1813,5 +2042,131 @@ const styles = StyleSheet.create({
   cardBiserie: {
     borderColor: '#F59E0B',
     borderWidth: 2,
+  },
+  // 🆕 Estilos para Vista Previa del Ejercicio
+  previewContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  previewTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0369a1',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  previewImageContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    backgroundColor: '#e0f2fe',
+  },
+  previewActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 8,
+    marginBottom: 8,
+  },
+  previewBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  previewBtnDisabled: {
+    opacity: 0.6,
+    backgroundColor: '#f8fafc',
+  },
+  previewBtnTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  previewBtnTxtDisabled: {
+    color: '#94a3b8',
+    textDecorationLine: 'line-through',
+  },
+  // Estilos para modales de vista previa
+  previewModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  previewModalClose: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 10,
+    padding: 4,
+  },
+  previewModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: 16,
+    paddingRight: 30,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    paddingRight: 8,
+  },
+  tipBullet: {
+    color: '#3b82f6',
+    fontSize: 16,
+    marginRight: 8,
+    fontWeight: '700',
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  videoModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    width: '95%',
+    maxWidth: 550,
+    alignItems: 'center',
+  },
+  videoModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    width: '100%',
+    marginBottom: 12,
+  },
+  imageModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    width: '95%',
+    maxWidth: 500,
+    alignItems: 'center',
+  },
+  exerciseImageFull: {
+    width: '100%',
+    height: 350,
+    borderRadius: 8,
   },
 });

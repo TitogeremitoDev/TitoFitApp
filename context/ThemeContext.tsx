@@ -363,7 +363,10 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const systemColorScheme = useColorScheme();
-  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>('default_light');
+  // Usar el tema del sistema por defecto para evitar problemas de visibilidad
+  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(
+    systemColorScheme === 'dark' ? 'default_dark' : 'default_light'
+  );
 
   // Derivados
   const themeDef = THEMES_LIST.find(t => t.id === currentThemeId) || defaultLightDef;

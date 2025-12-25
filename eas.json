@@ -56,7 +56,7 @@
       "distribution": "store",
       "autoIncrement": true,
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       },
       "env": {
         "EXPO_PUBLIC_APP_ENV": "prod",
@@ -69,6 +69,11 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-play-api.json",
+        "track": "internal"
+      }
+    }
   }
 }

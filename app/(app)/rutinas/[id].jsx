@@ -1516,12 +1516,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0073ffff',
     overflow: 'hidden',
-    minHeight: 50,
+    minHeight: Platform.OS === 'android' ? 56 : 50,
     justifyContent: 'center',
   },
   picker: {
-    height: 50,
+    height: Platform.OS === 'android' ? 56 : 50,
     width: '100%',
+    color: '#1e293b',
+    fontSize: 15,
+  },
+  pickerItemStyle: {
+    fontSize: 15,
+    color: '#1e293b',
+    paddingVertical: 8,
   },
   // iOS ActionSheet button style
   iosPickerButton: {
