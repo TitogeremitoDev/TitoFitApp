@@ -131,6 +131,8 @@ export default function Onboarding() {
             };
 
             await axios.put('/users/info', { info_user });
+            // Refrescar usuario para obtener estado actualizado (incluyendo código canjeado)
+            console.log('[Onboarding] ✅ Finalizando, refrescando usuario...');
             await refreshUser();
             router.replace('/home');
         } catch (error) {
@@ -147,6 +149,13 @@ export default function Onboarding() {
             // Marcar como completado en el backend (con info_user vacío)
             // Así el usuario puede completar los datos después desde perfil
             await axios.put('/users/info', { info_user: {} });
+
+            // Si se canjeó un código, refrescar para que los cambios persistan
+            if (codeRedeemed) {
+                console.log('[Onboarding] ✅ Saltando con código canjeado, refrescando usuario...');
+                await refreshUser();
+            }
+
             router.replace('/home');
         } catch (error) {
             console.error('Error saltando onboarding:', error);
@@ -166,6 +175,7 @@ export default function Onboarding() {
         try {
             // 1. Primero intentar como código de entrenador (vinculación)
             try {
+                console.log('[Onboarding] 🎯 Intentando código de entrenador:', codeToRedeem);
                 const trainerResponse = await axios.post('/api/clients/select-trainer', {
                     trainerCode: codeToRedeem
                 });
@@ -175,7 +185,8 @@ export default function Onboarding() {
                         type: 'trainer',
                         message: `¡Vinculado con ${trainerName}! 🏋️`
                     });
-                    await refreshUser();
+                    const updatedUser = await refreshUser();
+                    console.log('[Onboarding] ✅ Usuario actualizado tras vincular entrenador:', updatedUser?.tipoUsuario);
                     return;
                 }
             } catch (e: any) {
@@ -184,6 +195,7 @@ export default function Onboarding() {
 
             // 2. Intentar como código de referido
             try {
+                console.log('[Onboarding] 🎯 Intentando código de referido:', codeToRedeem);
                 const referralResponse = await axios.post('/api/referrals/redeem', {
                     code: codeToRedeem
                 });
@@ -192,7 +204,8 @@ export default function Onboarding() {
                         type: 'referral',
                         message: referralResponse.data.message || '¡7 días de Premium gratis! 🎉'
                     });
-                    await refreshUser();
+                    const updatedUser = await refreshUser();
+                    console.log('[Onboarding] ✅ Usuario actualizado tras código referido:', updatedUser?.tipoUsuario);
                     return;
                 }
             } catch (e: any) {
@@ -201,6 +214,7 @@ export default function Onboarding() {
 
             // 3. Intentar como código promocional VIP
             try {
+                console.log('[Onboarding] 🎯 Intentando código promocional:', codeToRedeem);
                 const promoResponse = await axios.post('/api/promo-codes/redeem', {
                     code: codeToRedeem
                 });
@@ -209,7 +223,8 @@ export default function Onboarding() {
                         type: 'promo',
                         message: promoResponse.data.message || '¡Código VIP canjeado! 🌟'
                     });
-                    await refreshUser();
+                    const updatedUser = await refreshUser();
+                    console.log('[Onboarding] ✅ Usuario actualizado tras código promo:', updatedUser?.tipoUsuario);
                     return;
                 }
             } catch (e: any) {

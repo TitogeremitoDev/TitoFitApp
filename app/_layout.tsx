@@ -4,12 +4,13 @@ import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useRef } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { StripeProvider } from '../utils/stripeWrapper';
+import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
@@ -69,6 +70,59 @@ function RootLayoutNav() {
     ...Ionicons.font,
   });
 
+  // ====== IN-APP UPDATES (Android & iOS) ======
+  useEffect(() => {
+    // Solo ejecutar en plataformas nativas, no en web
+    if (Platform.OS === 'web') return;
+
+    const checkForUpdates = async () => {
+      try {
+        const inAppUpdates = new SpInAppUpdates(
+          __DEV__ // Mostrar logs solo en desarrollo
+        );
+
+        const result = await inAppUpdates.checkNeedsUpdate();
+
+        if (result.shouldUpdate) {
+          if (Platform.OS === 'android') {
+            // Android: Usar actualización inmediata (pantalla completa bloqueante)
+            await inAppUpdates.startUpdate({
+              updateType: IAUUpdateKind.IMMEDIATE,
+            });
+          } else if (Platform.OS === 'ios') {
+            // iOS: Mostrar alerta y abrir App Store
+            Alert.alert(
+              '¡Nueva versión disponible!',
+              'Hay una actualización disponible para TotalGains. Por favor, actualiza para disfrutar de las últimas mejoras.',
+              [
+                {
+                  text: 'Actualizar ahora',
+                  onPress: () => {
+                    // Abrir la App Store (reemplaza con tu App Store URL real)
+                    const appStoreUrl = 'https://apps.apple.com/app/totalgains/id6740066506';
+                    Linking.openURL(appStoreUrl);
+                  },
+                },
+                {
+                  text: 'Más tarde',
+                  style: 'cancel',
+                },
+              ],
+              { cancelable: false }
+            );
+          }
+        }
+      } catch (error) {
+        // Silenciar errores en producción (pueden ocurrir si la app no está en la tienda)
+        if (__DEV__) {
+          console.log('[InAppUpdates] Error checking for updates:', error);
+        }
+      }
+    };
+
+    checkForUpdates();
+  }, []);
+
   // Oculta el splash UNA SOLA VEZ cuando todo está listo
   useEffect(() => {
     const ready = !!navState?.key && !isLoading && fontsLoaded;
@@ -110,6 +164,11 @@ function RootLayoutNav() {
     // Usuario sin sesión → login
     if (!token && !inAuthGroup) {
       router.replace('/login');
+      return;
+    }
+
+    // Si ya está en onboarding, no redirigir (evita expulsarlo cuando refreshUser actualiza el estado)
+    if (inOnboarding) {
       return;
     }
 

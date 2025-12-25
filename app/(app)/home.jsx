@@ -1,6 +1,6 @@
 /* app/index.jsx - HOME SCREEN CON MODAL DE UPGRADE PARA FREE */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,27 +39,30 @@ const FRASES = [
   "Lucha cada puta repetición como si fuera la última."
 ];
 
-const APP_VERSION = Constants?.expoConfig?.version ?? '0.9.0';
+// DEBUG: Ver qué valor tiene Constants.expoConfig
+console.log('[Home] Constants.expoConfig?.version:', Constants?.expoConfig?.version);
 
-const CAMBIOS_131 = [
-  'Nuevo acceso con interfaz de inicio de sesión (versión visual inicial).',
-  'Cronómetro integrado en Entreno con persistencia durante la sesión.',
-  'Mejoras globales de UI/UX: tipografías, espaciados y consistencia visual.',
-  'Sección de Vídeos renovada: reproductor incrustado y catálogo por músculo.',
-  'Evolución del rendimiento: indicadores de tendencia por serie y exportación semanal a Excel.',
-  'Dos rutinas genéricas incorporadas y alineadas con la base de ejercicios (técnica y vídeo).',
-  'Acceso a espacio de promoción personal desde la aplicación.',
-  'Constructor de rutinas optimizado: crear, modificar, reordenar e importar CSV con validación y normalización.',
-  'Botones en Entreno: "Técnica correcta (TC)" y vídeo incrustado por ejercicio.',
-  'Memoria de sesión: vuelve automáticamente a la última semana y día utilizados.',
-  'Estado "OE (Otro Ejercicio)" con compatibilidad retroactiva para datos antiguos.',
+// Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
+const APP_VERSION = '1.0.1';
+
+const CAMBIOS_101 = [
+  '🔄 Actualizaciones automáticas: la app te avisará cuando haya una nueva versión (Android: obligatoria, iOS: sugerida).',
+  '📱 Pantalla Home responsiva: se adapta correctamente a todas las pantallas, incluyendo iPhones más pequeños.',
+  '⚡ Sincronización instantánea: tu estado (PREMIUM, CLIENTE, etc.) se actualiza inmediatamente tras canjear códigos.',
+  '💬 Chat optimizado: polling adaptativo que reduce carga del servidor y mejora la experiencia en tiempo real.',
+  '👥 Sistema de amigos mejorado: sincronización bidireccional entre contactos de chat y lista de amigos.',
+  '🎯 Onboarding con códigos: ahora puedes introducir códigos de entrenador, referido o VIP desde el inicio.',
+  '✅ Selección múltiple en cuestionario: algunas preguntas ahora permiten elegir varias opciones.',
+  '🗑️ Eliminar cuenta: nueva opción en Ajustes para eliminar tu cuenta y todos tus datos (cumplimiento Apple).',
+  '🔐 Lógica de suscripción corregida: expiraciones y degradaciones de rol funcionan correctamente.',
+  '🐛 Correcciones generales de estabilidad y rendimiento.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, token } = useAuth();
+  const { user, token, refreshUser } = useAuth();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -81,6 +85,35 @@ export default function HomeScreen() {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
   }, []);
+
+  // 🔄 Refrescar datos del usuario cuando home recibe foco
+  // Esto asegura que el tipoUsuario siempre esté actualizado
+  // Usamos un ref para evitar múltiples llamadas en el mismo ciclo de foco
+  const hasRefreshedThisFocus = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Evitar múltiples llamadas en el mismo ciclo de foco
+      if (hasRefreshedThisFocus.current) return;
+
+      if (token && refreshUser) {
+        hasRefreshedThisFocus.current = true;
+        console.log('[Home] 🎯 Pantalla en foco, refrescando usuario...');
+        refreshUser().then(freshUser => {
+          if (freshUser) {
+            console.log('[Home] ✅ Usuario refrescado, tipoUsuario:', freshUser.tipoUsuario);
+          }
+        }).catch(err => {
+          console.warn('[Home] Error refrescando usuario:', err);
+        });
+      }
+
+      // Cleanup: resetear el flag cuando se pierde el foco
+      return () => {
+        hasRefreshedThisFocus.current = false;
+      };
+    }, [token]) // Quitamos refreshUser de las dependencias - es estable
+  );
 
   // Mostrar tooltip promocional para FREEUSER (solo una vez por sesión)
   useEffect(() => {
@@ -219,6 +252,9 @@ export default function HomeScreen() {
   useEffect(() => {
     const checkRetentionModal = async () => {
       if (!subscriptionData) return;
+
+      // CLIENTE NO DEBE VER ESTE MODAL - su acceso depende del entrenador, no de su propia suscripción
+      if (user?.tipoUsuario === 'CLIENTE') return;
 
       const { daysRemaining, status, active, isCodeBased } = subscriptionData;
 
@@ -535,7 +571,7 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
             <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-              {CAMBIOS_131.map((line, i) => (
+              {CAMBIOS_101.map((line, i) => (
                 <View key={i} style={styles.changeRow}>
                   <Text style={styles.changeBullet}>•</Text>
                   <Text style={styles.changeText}>{line}</Text>

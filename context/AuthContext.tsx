@@ -279,48 +279,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async refreshUser() {
-        if (!token) return;
+        if (!token) {
+          console.warn('[Auth] No hay token, no se puede refrescar usuario');
+          return undefined;
+        }
         try {
-          // Asumimos que hay un endpoint /users/me o similar, o usamos el ID
-          // Si no existe, podemos usar login con token o similar.
-          // Generalmente se usa GET /users/me
-          // Voy a verificar si existe ese endpoint en el backend, pero por ahora lo implemento asumiendo que sí o lo creo.
-          // Mirando index.js del backend (step 16), no vi explícitamente /users/me para obtener datos del usuario, 
-          // pero vi /api/routines/me. 
-          // Voy a asumir que necesito crear o usar uno existente.
-          // Espera, el backend tiene:
-          // app.get('/api/users/check-username', ...)
-          // app.post('/api/users/signup', ...)
-          // app.post('/api/users/login', ...)
-          // app.post('/api/users/google-login', ...)
-          // app.post('/api/users/upgrade', ...)
-          // No veo un GET /api/users/me o GET /api/users/:id protegido para auto-consulta.
-          // PERO, puedo usar el endpoint de upgrade o crear uno nuevo en el backend.
-          // Lo más limpio es añadir GET /api/users/me en el backend.
-
-          // Como no puedo editar el backend "oficialmente" sin permiso (aunque el usuario dijo "tengo que subir de nuevo el backend?"),
-          // voy a añadir el endpoint en el backend PRIMERO.
-          // Pero el usuario dijo que NO quería subir el backend si no era necesario.
-          // Sin embargo, para refrescar el usuario necesito obtener sus datos actualizados.
-          // ¿Hay alguna otra forma?
-          // Podría llamar a /api/users/login con token? No.
-
-          // Voy a añadir `refreshUser` aquí pero necesito que el backend lo soporte.
-          // Voy a comprobar si puedo añadir el endpoint al backend rápidamente.
-          // Si no, tendré que hackearlo un poco, quizás llamando a algo que devuelva el usuario.
-
-          // Miremos el backend index.js de nuevo.
-          // ...
-          // No hay endpoint de "get my profile".
-          // Voy a añadirlo al backend. Es un cambio pequeño y necesario.
-
+          console.log('[Auth] 🔄 Refrescando datos del usuario...');
           const { data } = await axios.get<User>('/users/me');
-          // Persistimos solo el usuario, mantenemos el token
-          const s = await persistSession({ ...data, token });
-          setUser(s.user);
-          return s.user;
+          console.log('[Auth] 📦 Datos recibidos del servidor:', {
+            tipoUsuario: data.tipoUsuario,
+            subscriptionExpiry: data.subscriptionExpiry,
+            referralCode: data.referralCode
+          });
+
+          // Crear un objeto completamente nuevo para forzar re-render
+          const freshUser: User = {
+            _id: data._id,
+            nombre: data.nombre,
+            email: data.email,
+            username: data.username,
+            tipoUsuario: data.tipoUsuario,
+            onboardingCompleted: data.onboardingCompleted,
+            info_user: data.info_user ? { ...data.info_user } : undefined,
+            trainerProfile: data.trainerProfile ? { ...data.trainerProfile } : undefined,
+            currentTrainerId: data.currentTrainerId,
+            referralCode: data.referralCode,
+            subscriptionExpiry: data.subscriptionExpiry,
+            referralPremiumDays: data.referralPremiumDays,
+            referredUsersCount: data.referredUsersCount,
+            af: data.af,
+          };
+
+          // Persistir y actualizar estado
+          await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
+
+          // IMPORTANTE: Crear nuevo objeto con spread para forzar re-render
+          setUser({ ...freshUser });
+
+          console.log('[Auth] ✅ Usuario actualizado en contexto:', freshUser.tipoUsuario);
+          return freshUser;
         } catch (error) {
-          console.error('[Auth] Error refrescando usuario:', error);
+          console.error('[Auth] ❌ Error refrescando usuario:', error);
           throw error;
         }
       },

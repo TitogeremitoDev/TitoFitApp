@@ -1,7 +1,7 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "0.9.0",
+  "version": "1.0.1",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
@@ -71,6 +71,7 @@
     "react-native-web-webview": "^1.0.2",
     "react-native-webview": "13.15.0",
     "react-native-youtube-iframe": "^2.4.1",
+    "sp-react-native-in-app-updates": "^1.5.0",
     "xlsx": "^0.18.5",
     "yup": "^1.6.1"
   },

@@ -74,6 +74,11 @@ export default function Amigos() {
         fetchContacts();
     }, []);
 
+    // 🔄 Detectar cambios en tipoUsuario para depuración
+    useEffect(() => {
+        console.log('[Amigos] 👀 tipoUsuario cambió a:', user?.tipoUsuario);
+    }, [user?.tipoUsuario]);
+
     const fetchMyReferrals = async () => {
         try {
             setIsLoading(true);
@@ -194,20 +199,24 @@ export default function Amigos() {
             const referralData = await referralResponse.json();
 
             if (referralData.success) {
-                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                 const previousType = user?.tipoUsuario;
-                if (previousType === 'FREEUSER') {
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) {
-                        console.warn('[Amigos] Error sincronizando:', syncErr);
-                    }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
+                console.log('[Amigos] 🎯 Código referido canjeado. Tipo anterior:', previousType);
+
+                // Mostrar modal de sincronización
+                setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                try {
+                    const syncResult = await syncLocalToCloud(token);
+                    setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (syncErr) {
+                    console.warn('[Amigos] Error sincronizando:', syncErr);
                 }
-                await refreshUser();
+                setSyncModal(prev => ({ ...prev, visible: false }));
+
+                const updatedUser = await refreshUser();
+                console.log('[Amigos] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                 setShowRedeemModal(false);
                 setRedeemCode('');
                 Alert.alert('¡Genial! 🎉', referralData.message || '¡Has conseguido 7 días de premium gratis!');
@@ -230,20 +239,24 @@ export default function Amigos() {
             const promoData = await promoResponse.json();
 
             if (promoData.success) {
-                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan  
+                // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                 const previousType = user?.tipoUsuario;
-                if (previousType === 'FREEUSER') {
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) {
-                        console.warn('[Amigos] Error sincronizando:', syncErr);
-                    }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
+                console.log('[Amigos] 🎯 Código promo canjeado. Tipo anterior:', previousType);
+
+                // Mostrar modal de sincronización
+                setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                try {
+                    const syncResult = await syncLocalToCloud(token);
+                    setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (syncErr) {
+                    console.warn('[Amigos] Error sincronizando:', syncErr);
                 }
-                await refreshUser();
+                setSyncModal(prev => ({ ...prev, visible: false }));
+
+                const updatedUser = await refreshUser();
+                console.log('[Amigos] ✅ Usuario actualizado tras promo. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                 setShowRedeemModal(false);
                 setRedeemCode('');
                 Alert.alert('¡Felicidades! 🌟', promoData.message || '¡Código promocional canjeado con éxito!');

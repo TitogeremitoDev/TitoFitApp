@@ -2,8 +2,8 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.0.0",
-    "runtimeVersion": "1.0.0",
+    "version": "1.0.1",
+    "runtimeVersion": "1.0.1",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/mi-logo-icono.png",
@@ -101,7 +101,7 @@
       [
         "expo-updates",
         {
-          "runtimeVersion": "1.0.0"
+          "runtimeVersion": "1.0.1"
         }
       ],
       "expo-iap"

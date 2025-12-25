@@ -13,13 +13,13 @@ import {
     TextInput,
     ScrollView,
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ConfirmModal from './ConfirmModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -152,6 +152,13 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
     const [technicalNotes, setTechnicalNotes] = useState([]);
     const [actionPlan, setActionPlan] = useState([]);
 
+    // Modal states for confirmations (cross-platform)
+    const [showValidationModal, setShowValidationModal] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [modalMessage, setModalMessage] = useState({ title: '', message: '' });
+    const [shouldCloseOnSuccess, setShouldCloseOnSuccess] = useState(false);
+
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD CLIENT DATA (Snapshot)
     // ─────────────────────────────────────────────────────────────────────────
@@ -183,22 +190,33 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
 
             // Check for prefill data from FAB
             if (prefillData) {
+                console.log('[FeedbackModal] Recibiendo prefillData:', JSON.stringify(prefillData));
+
                 // Pre-fill from FAB data
                 setTrafficLight(prefillData.trafficLight || 'green');
+
+                // Logros (antes highlights)
+                const logrosData = prefillData.highlights || [];
+                console.log('[FeedbackModal] Logros recibidos:', logrosData);
                 setHighlights(
-                    (prefillData.highlights || []).map((text, i) => ({
+                    logrosData.map((text, i) => ({
                         text: typeof text === 'string' ? text : text.text,
                         id: `prefill-h-${i}`
                     }))
                 );
+
+                // Análisis Técnico
+                const analysisData = prefillData.analysis || '';
+                console.log('[FeedbackModal] Análisis recibido:', analysisData);
                 setTechnicalNotes(
-                    (prefillData.analysis ? [prefillData.analysis] : []).map((text, i) => ({
-                        text: typeof text === 'string' ? text : text.text,
-                        id: `prefill-n-${i}`
-                    }))
+                    analysisData ? [{ text: analysisData, id: 'prefill-n-0' }] : []
                 );
+
+                // Plan de Acción
+                const actionData = prefillData.actionItems || [];
+                console.log('[FeedbackModal] Plan de acción recibido:', actionData);
                 setActionPlan(
-                    (prefillData.actionItems || []).map((text, i) => ({
+                    actionData.map((text, i) => ({
                         text: typeof text === 'string' ? text : text.text,
                         id: `prefill-a-${i}`
                     }))
@@ -220,7 +238,11 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
 
     const handleSave = async (send = false) => {
         if (highlights.length === 0 && technicalNotes.length === 0) {
-            Alert.alert('⚠️', 'Añade al menos un highlight o nota técnica');
+            setModalMessage({
+                title: '⚠️ Campos requeridos',
+                message: 'Añade al menos un logro o nota técnica'
+            });
+            setShowValidationModal(true);
             return;
         }
 
@@ -248,17 +270,26 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
 
             const data = await res.json();
             if (data.success) {
-                Alert.alert(
-                    send ? '✅ Enviado' : '💾 Guardado',
-                    send ? 'El feedback ha sido enviado al cliente' : 'Borrador guardado',
-                    [{ text: 'OK', onPress: onClose }]
-                );
+                setModalMessage({
+                    title: send ? '✅ Enviado' : '💾 Guardado',
+                    message: send ? 'El feedback ha sido enviado al cliente' : 'Borrador guardado correctamente'
+                });
+                setShouldCloseOnSuccess(true);
+                setShowSuccessModal(true);
             } else {
-                Alert.alert('Error', data.message || 'No se pudo guardar');
+                setModalMessage({
+                    title: 'Error',
+                    message: data.message || 'No se pudo guardar'
+                });
+                setShowErrorModal(true);
             }
         } catch (error) {
             console.error('[FeedbackModal] Save error:', error);
-            Alert.alert('Error', 'Error de conexión');
+            setModalMessage({
+                title: 'Error',
+                message: 'Error de conexión. Inténtalo de nuevo.'
+            });
+            setShowErrorModal(true);
         } finally {
             setSaving(false);
         }
@@ -341,10 +372,10 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                             onChange={setTrafficLight}
                         />
 
-                        {/* Highlights */}
+                        {/* Logros */}
                         <SectionHeader
                             emoji="✨"
-                            title="Highlights"
+                            title="Logros"
                             color="#10b981"
                             count={highlights.length}
                         />
@@ -352,7 +383,7 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                         <ItemInput
                             items={highlights}
                             setItems={setHighlights}
-                            placeholder="Añadir highlight..."
+                            placeholder="Añadir logro..."
                             color="#10b981"
                         />
 
@@ -423,6 +454,49 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Modal de validación */}
+            <ConfirmModal
+                visible={showValidationModal}
+                onClose={() => setShowValidationModal(false)}
+                onConfirm={() => { }}
+                title={modalMessage.title}
+                message={modalMessage.message}
+                confirmText="Entendido"
+                cancelText=""
+                icon="alert-circle-outline"
+            />
+
+            {/* Modal de éxito */}
+            <ConfirmModal
+                visible={showSuccessModal}
+                onClose={() => {
+                    setShowSuccessModal(false);
+                    if (shouldCloseOnSuccess) {
+                        setShouldCloseOnSuccess(false);
+                        onClose();
+                    }
+                }}
+                onConfirm={() => { }}
+                title={modalMessage.title}
+                message={modalMessage.message}
+                confirmText="OK"
+                cancelText=""
+                icon="checkmark-circle-outline"
+            />
+
+            {/* Modal de error */}
+            <ConfirmModal
+                visible={showErrorModal}
+                onClose={() => setShowErrorModal(false)}
+                onConfirm={() => { }}
+                title={modalMessage.title}
+                message={modalMessage.message}
+                confirmText="Entendido"
+                cancelText=""
+                confirmStyle="destructive"
+                icon="close-circle-outline"
+            />
         </Modal>
     );
 }

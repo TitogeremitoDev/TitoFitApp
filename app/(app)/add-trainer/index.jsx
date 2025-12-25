@@ -80,11 +80,14 @@ export default function AddTrainerScreen() {
             const data = await response.json();
 
             if (data.success) {
+                console.log('[AddTrainer] 🎯 Entrenador vinculado exitosamente');
+
                 // Refrescar datos del usuario para actualizar tipoUsuario
                 try {
-                    await refreshUser();
+                    const updatedUser = await refreshUser();
+                    console.log('[AddTrainer] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
                 } catch (refreshError) {
-                    console.error('[AddTrainer] Error refreshing user:', refreshError);
+                    console.error('[AddTrainer] ❌ Error refreshing user:', refreshError);
                 }
 
                 Alert.alert(

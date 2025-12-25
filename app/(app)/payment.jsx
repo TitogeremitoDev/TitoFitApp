@@ -209,21 +209,23 @@ export default function PaymentScreen() {
           const data = await response.json();
 
           if (data.success) {
-            // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+            // 🔄 SIEMPRE sincronizar datos al confirmar pago
             const previousType = user?.tipoUsuario;
-            if (previousType === 'FREEUSER') {
-              setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-              try {
-                const syncResult = await syncLocalToCloud(token);
-                setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                // Esperar a que el modal se cierre
-                await new Promise(resolve => setTimeout(resolve, 2000));
-              } catch (syncErr) {
-                console.warn('[Payment] Error sincronizando datos:', syncErr);
-              }
-              setSyncModal(prev => ({ ...prev, visible: false }));
+            console.log('[Payment] 🎯 Pago Stripe verificado. Tipo anterior:', previousType);
+
+            setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+            try {
+              const syncResult = await syncLocalToCloud(token);
+              setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (syncErr) {
+              console.warn('[Payment] Error sincronizando datos:', syncErr);
             }
-            if (refreshUser) await refreshUser();
+            setSyncModal(prev => ({ ...prev, visible: false }));
+
+            const updatedUser = refreshUser ? await refreshUser() : null;
+            console.log('[Payment] ✅ Usuario actualizado tras Stripe. Nuevo tipo:', updatedUser?.tipoUsuario);
+
             Alert.alert(
               '¡Bienvenido al Team! 🚀',
               'Tu suscripción ha sido activada correctamente.',
@@ -300,20 +302,23 @@ export default function PaymentScreen() {
 
 
           if (confirmData.success) {
-            // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+            // 🔄 SIEMPRE sincronizar datos al confirmar pago PayPal
             const previousType = user?.tipoUsuario;
-            if (previousType === 'FREEUSER') {
-              setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-              try {
-                const syncResult = await syncLocalToCloud(token);
-                setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                await new Promise(resolve => setTimeout(resolve, 2000));
-              } catch (syncErr) {
-                console.warn('[Payment] Error sincronizando datos:', syncErr);
-              }
-              setSyncModal(prev => ({ ...prev, visible: false }));
+            console.log('[Payment] 🎯 Pago PayPal verificado. Tipo anterior:', previousType);
+
+            setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+            try {
+              const syncResult = await syncLocalToCloud(token);
+              setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (syncErr) {
+              console.warn('[Payment] Error sincronizando datos:', syncErr);
             }
-            if (refreshUser) await refreshUser();
+            setSyncModal(prev => ({ ...prev, visible: false }));
+
+            const updatedUser = refreshUser ? await refreshUser() : null;
+            console.log('[Payment] ✅ Usuario actualizado tras PayPal. Nuevo tipo:', updatedUser?.tipoUsuario);
+
             Alert.alert(
               '¡Bienvenido al Team! 🚀',
               'Tu suscripción PayPal ha sido activada correctamente.',
@@ -754,17 +759,22 @@ export default function PaymentScreen() {
                   const referralData = await referralResponse.json();
 
                   if (referralData.success) {
+                    // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                     const previousType = user?.tipoUsuario;
-                    if (previousType === 'FREEUSER') {
-                      setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                      try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                      } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
-                      setSyncModal(prev => ({ ...prev, visible: false }));
-                    }
-                    if (refreshUser) await refreshUser();
+                    console.log('[Payment] 🎯 Código referido canjeado. Tipo anterior:', previousType);
+
+                    // Mostrar modal de sincronización
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                      const syncResult = await syncLocalToCloud(token);
+                      setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+
+                    const updatedUser = refreshUser ? await refreshUser() : null;
+                    console.log('[Payment] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                     setPromoCode('');
                     Alert.alert('¡Genial! 🎉', referralData.message || '¡Has conseguido 7 días de premium gratis!');
                     return;
@@ -779,17 +789,22 @@ export default function PaymentScreen() {
                   const promoData = await promoResponse.json();
 
                   if (promoData.success) {
+                    // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                     const previousType = user?.tipoUsuario;
-                    if (previousType === 'FREEUSER') {
-                      setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                      try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                      } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
-                      setSyncModal(prev => ({ ...prev, visible: false }));
-                    }
-                    if (refreshUser) await refreshUser();
+                    console.log('[Payment] 🎯 Código promo canjeado. Tipo anterior:', previousType);
+
+                    // Mostrar modal de sincronización
+                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                    try {
+                      const syncResult = await syncLocalToCloud(token);
+                      setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
+                    setSyncModal(prev => ({ ...prev, visible: false }));
+
+                    const updatedUser = refreshUser ? await refreshUser() : null;
+                    console.log('[Payment] ✅ Usuario actualizado tras promo. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                     setPromoCode('');
                     Alert.alert('¡Felicidades! 🌟', promoData.message || '¡Código promocional canjeado con éxito!');
                     return;

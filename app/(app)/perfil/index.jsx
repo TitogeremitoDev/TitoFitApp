@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert, Share, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,6 +94,38 @@ export default function PerfilScreen() {
         fetchCurrentTrainer();
     }, []);
 
+    // 🔄 Refrescar datos del usuario cuando la pantalla recibe foco
+    // Esto asegura que el badge siempre muestre el tipoUsuario más reciente
+    // Usamos un ref para evitar múltiples llamadas en el mismo ciclo de foco
+    const hasRefreshedThisFocus = useRef(false);
+
+    useFocusEffect(
+        useCallback(() => {
+            // Evitar múltiples llamadas en el mismo ciclo de foco
+            if (hasRefreshedThisFocus.current) return;
+
+            hasRefreshedThisFocus.current = true;
+            console.log('[Perfil] 🎯 Pantalla en foco, refrescando usuario...');
+            refreshUser().then(freshUser => {
+                if (freshUser) {
+                    console.log('[Perfil] ✅ Usuario refrescado, tipoUsuario:', freshUser.tipoUsuario);
+                }
+            }).catch(err => {
+                console.warn('[Perfil] Error refrescando usuario:', err);
+            });
+
+            // Cleanup: resetear el flag cuando se pierde el foco
+            return () => {
+                hasRefreshedThisFocus.current = false;
+            };
+        }, [token]) // Quitamos refreshUser - es estable y causa re-renders
+    );
+
+    // 🔄 Detectar cambios en tipoUsuario para depuración y actualización de UI
+    useEffect(() => {
+        console.log('[Perfil] 👀 tipoUsuario cambió a:', user?.tipoUsuario);
+    }, [user?.tipoUsuario]);
+
     const loadSavedAvatar = async () => {
         try {
             const savedAvatarId = await AsyncStorage.getItem('user_avatar');
@@ -157,23 +190,25 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
-                // 🔄 FREE → CLIENTE: Subir datos locales antes de cambiar de plan
+                // 🔄 SIEMPRE sincronizar datos locales al vincular entrenador
                 const previousType = user?.tipoUsuario;
-                if (previousType === 'FREEUSER') {
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) {
-                        console.warn('[Perfil] Error sincronizando:', syncErr);
-                    }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
+                console.log('[Perfil] 🎯 Entrenador vinculado. Tipo anterior:', previousType);
+
+                // Mostrar modal de sincronización
+                setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                try {
+                    const syncResult = await syncLocalToCloud(token);
+                    setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (syncErr) {
+                    console.warn('[Perfil] Error sincronizando:', syncErr);
                 }
+                setSyncModal(prev => ({ ...prev, visible: false }));
 
                 // Refrescar datos del usuario para actualizar tipoUsuario
                 try {
-                    await refreshUser();
+                    const updatedUser = await refreshUser();
+                    console.log('[Perfil] ✅ Usuario actualizado tras vincular. Nuevo tipo:', updatedUser?.tipoUsuario);
                 } catch (refreshError) {
                     console.error('[Perfil] Error refreshing user:', refreshError);
                 }
@@ -219,22 +254,25 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
-                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                 const previousType = user?.tipoUsuario;
-                if (previousType === 'FREEUSER') {
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) {
-                        console.warn('[Perfil] Error sincronizando:', syncErr);
-                    }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
+                console.log('[Perfil] 🎯 Código canjeado exitosamente. Tipo anterior:', previousType);
+
+                // Mostrar modal de sincronización
+                setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                try {
+                    const syncResult = await syncLocalToCloud(token);
+                    setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (syncErr) {
+                    console.warn('[Perfil] Error sincronizando:', syncErr);
                 }
+                setSyncModal(prev => ({ ...prev, visible: false }));
 
                 // Refresh user data to get updated tipoUsuario
-                await refreshUser();
+                const updatedUser = await refreshUser();
+                console.log('[Perfil] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                 setShowPremiumCodeModal(false);
                 setPremiumCode('');
                 // Show success modal instead of Alert
@@ -293,21 +331,24 @@ export default function PerfilScreen() {
             const data = await response.json();
 
             if (data.success) {
-                // 🔄 FREE → PREMIUM: Subir datos locales antes de cambiar de plan
+                // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
                 const previousType = user?.tipoUsuario;
-                if (previousType === 'FREEUSER') {
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                        const syncResult = await syncLocalToCloud(token);
-                        setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) {
-                        console.warn('[Perfil] Error sincronizando:', syncErr);
-                    }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
-                }
+                console.log('[Perfil] 🎯 Código referido canjeado. Tipo anterior:', previousType);
 
-                await refreshUser();
+                // Mostrar modal de sincronización
+                setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
+                try {
+                    const syncResult = await syncLocalToCloud(token);
+                    setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (syncErr) {
+                    console.warn('[Perfil] Error sincronizando:', syncErr);
+                }
+                setSyncModal(prev => ({ ...prev, visible: false }));
+
+                const updatedUser = await refreshUser();
+                console.log('[Perfil] ✅ Usuario actualizado tras referido. Nuevo tipo:', updatedUser?.tipoUsuario);
+
                 setShowReferralModal(false);
                 setReferralCodeInput('');
                 setReferralSuccessMessage(data.message);
@@ -415,7 +456,8 @@ export default function PerfilScreen() {
 
 
                         {/* Subscription Expiry Info - Only show if subscription is expired or urgent (cancelled) */}
-                        {user?.subscriptionExpiry && user?.tipoUsuario !== 'FREEUSER' && (() => {
+                        {/* CLIENTE no debe ver este banner - su acceso depende del entrenador */}
+                        {user?.subscriptionExpiry && user?.tipoUsuario !== 'FREEUSER' && user?.tipoUsuario !== 'CLIENTE' && (() => {
                             const expiryDate = new Date(user.subscriptionExpiry);
                             const now = new Date();
                             const diffTime = expiryDate.getTime() - now.getTime();

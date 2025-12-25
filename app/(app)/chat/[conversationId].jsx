@@ -167,14 +167,8 @@ export default function ConversationScreen() {
         loadMessages();
     }, [loadMessages]);
 
-    // Scroll al final cuando se cargan los mensajes por primera vez
-    useEffect(() => {
-        if (!loading && messages.length > 0) {
-            setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: false });
-            }, 150);
-        }
-    }, [loading]);
+    // Con inverted=true, el scroll al último mensaje es automático
+    // No se necesita scrollToEnd manual
 
     // ─────────────────────────────────────────────────────────────────────────
     // ADAPTIVE POLLING - Reduces server load by 70-80%
@@ -249,10 +243,7 @@ export default function ConversationScreen() {
                         // Actualizar si hay diferencia en cantidad o en el último mensaje
                         if (newCount !== currentCount || lastNewId !== lastCurrentId) {
                             console.log('[Chat] ✅ Actualizando de', currentCount, 'a', newCount);
-                            // Scroll al final cuando hay mensajes nuevos
-                            setTimeout(() => {
-                                flatListRef.current?.scrollToEnd({ animated: true });
-                            }, 100);
+                            // Con inverted=true, nuevos mensajes aparecen automáticamente
                             return uniqueMessages;
                         }
                         return currentMessages;
@@ -303,10 +294,7 @@ export default function ConversationScreen() {
                 setMessages(prev => [...prev, data.message]);
                 setNewMessage('');
                 setMessageType('general');
-
-                setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({ animated: true });
-                }, 100);
+                // Con inverted=true, el nuevo mensaje aparece automáticamente arriba
             }
         } catch (error) {
             console.error('[ConversationScreen] Error sending:', error);
@@ -364,8 +352,9 @@ export default function ConversationScreen() {
                 ) : (
                     <FlatList
                         ref={flatListRef}
-                        data={filteredMessages}
-                        keyExtractor={(item, idx) => item._id || idx.toString()}
+                        data={[...filteredMessages].reverse()}
+                        inverted={true}
+                        keyExtractor={(item, idx) => item._id || `msg-${idx}-${Date.now()}`}
                         renderItem={({ item }) => (
                             <MessageBubble
                                 message={item}

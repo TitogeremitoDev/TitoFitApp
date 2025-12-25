@@ -158,7 +158,7 @@ export default function SettingsScreen() {
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>TotalGain Coach Panel</Text>
-                    <Text style={styles.footerVersion}>v1.0.0</Text>
+                    <Text style={styles.footerVersion}>v1.0.1</Text>
                 </View>
             </ScrollView>
         </SafeAreaView>

@@ -10,23 +10,24 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
+    Pressable,
     TextInput,
     Animated,
     PanResponder,
     Dimensions,
     ScrollView,
     Platform,
-    Alert
+    useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ConfirmModal from '../components/ConfirmModal';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Valores por defecto iniciales (se actualizan dinámicamente)
+const { width: INITIAL_WIDTH, height: INITIAL_HEIGHT } = Dimensions.get('window');
 const BUBBLE_SIZE = 56;
-const EXPANDED_WIDTH = Math.min(340, SCREEN_WIDTH - 32);
-const EXPANDED_HEIGHT = Math.min(480, SCREEN_HEIGHT - 200);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTEXT
@@ -39,6 +40,8 @@ export const useFeedbackBubble = () => {
     if (!context) {
         return {
             setActiveClient: () => { },
+            showBubble: () => { },
+            hideBubble: () => { },
             activeClient: null,
             isVisible: false
         };
@@ -53,15 +56,26 @@ export const useFeedbackBubble = () => {
 export function FeedbackBubbleProvider({ children }) {
     const router = useRouter();
 
+    // Dimensiones dinámicas de la pantalla
+    const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+    const EXPANDED_WIDTH = Math.min(340, SCREEN_WIDTH - 32);
+    const EXPANDED_HEIGHT = Math.min(480, SCREEN_HEIGHT - 200);
+
     // State
     const [activeClient, setActiveClientState] = useState(null);
     const [isVisible, setIsVisible] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
 
+    // Modal states for confirmations (cross-platform)
+    const [showClearModal, setShowClearModal] = useState(false);
+    const [showEmptyModal, setShowEmptyModal] = useState(false);
+
     // Feedback form state
     const [highlights, setHighlights] = useState([]);
     const [newHighlight, setNewHighlight] = useState('');
     const [analysis, setAnalysis] = useState('');
+    const [analysisNotes, setAnalysisNotes] = useState([]);
+    const [newAnalysis, setNewAnalysis] = useState('');
     const [actionItems, setActionItems] = useState([]);
     const [newAction, setNewAction] = useState('');
     const [trafficLight, setTrafficLight] = useState('green');
@@ -69,7 +83,7 @@ export function FeedbackBubbleProvider({ children }) {
     // Refs for pan responder
     const isExpandedRef = useRef(false);
     const isDragging = useRef(false);
-    const lastPosition = useRef({ x: SCREEN_WIDTH - BUBBLE_SIZE - 16, y: SCREEN_HEIGHT * 0.5 });
+    const lastPosition = useRef({ x: INITIAL_WIDTH - BUBBLE_SIZE - 16, y: INITIAL_HEIGHT * 0.5 });
     const positionY = useRef(new Animated.Value(lastPosition.current.y)).current;
     const positionX = useRef(new Animated.Value(lastPosition.current.x)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -128,7 +142,12 @@ export function FeedbackBubbleProvider({ children }) {
             if (stored) {
                 const data = JSON.parse(stored);
                 setHighlights(data.highlights || []);
-                setAnalysis(data.analysis || '');
+                // Migrar análisis antiguo a nuevo formato
+                if (data.analysis && typeof data.analysis === 'string') {
+                    setAnalysisNotes([{ id: Date.now(), text: data.analysis }]);
+                } else {
+                    setAnalysisNotes(data.analysisNotes || []);
+                }
                 setActionItems(data.actionItems || []);
                 setTrafficLight(data.trafficLight || 'green');
             } else {
@@ -144,7 +163,7 @@ export function FeedbackBubbleProvider({ children }) {
         try {
             await AsyncStorage.setItem(storageKey, JSON.stringify({
                 highlights,
-                analysis,
+                analysisNotes,
                 actionItems,
                 trafficLight
             }));
@@ -153,21 +172,32 @@ export function FeedbackBubbleProvider({ children }) {
         }
     };
 
-    const clearForm = () => {
+    const clearForm = async () => {
         setHighlights([]);
-        setAnalysis('');
+        setAnalysisNotes([]);
+        setNewAnalysis('');
         setActionItems([]);
         setNewHighlight('');
         setNewAction('');
         setTrafficLight('green');
+
+        // También eliminar el borrador de AsyncStorage
+        if (storageKey) {
+            try {
+                await AsyncStorage.removeItem(storageKey);
+                console.log('[FeedbackBubble] Borrador eliminado de storage');
+            } catch (e) {
+                console.log('[FeedbackBubble] Error al eliminar borrador:', e);
+            }
+        }
     };
 
     // Auto-save on changes
     useEffect(() => {
-        if (storageKey && (highlights.length > 0 || analysis || actionItems.length > 0)) {
+        if (storageKey && (highlights.length > 0 || analysisNotes.length > 0 || actionItems.length > 0)) {
             saveDraft();
         }
-    }, [highlights, analysis, actionItems, trafficLight]);
+    }, [highlights, analysisNotes, actionItems, trafficLight]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // CONTEXT METHODS
@@ -184,6 +214,17 @@ export function FeedbackBubbleProvider({ children }) {
         }
     }, []);
 
+    // Show bubble without a specific client (for browsing mode)
+    const showBubble = useCallback(() => {
+        setIsVisible(true);
+    }, []);
+
+    // Hide bubble
+    const hideBubble = useCallback(() => {
+        setIsVisible(false);
+        setIsExpanded(false);
+    }, []);
+
     // ─────────────────────────────────────────────────────────────────────────
     // FORM HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
@@ -198,6 +239,16 @@ export function FeedbackBubbleProvider({ children }) {
         setHighlights(highlights.filter(h => h.id !== id));
     };
 
+    const addAnalysis = () => {
+        if (!newAnalysis.trim()) return;
+        setAnalysisNotes([...analysisNotes, { id: Date.now(), text: newAnalysis.trim() }]);
+        setNewAnalysis('');
+    };
+
+    const removeAnalysis = (id) => {
+        setAnalysisNotes(analysisNotes.filter(a => a.id !== id));
+    };
+
     const addAction = () => {
         if (!newAction.trim()) return;
         setActionItems([...actionItems, { id: Date.now(), text: newAction.trim() }]);
@@ -209,10 +260,20 @@ export function FeedbackBubbleProvider({ children }) {
     };
 
     const handleSendFeedback = () => {
-        if (highlights.length === 0 && !analysis && actionItems.length === 0) {
-            Alert.alert('Vacío', 'Añade al menos un highlight, análisis o acción');
+        if (highlights.length === 0 && analysisNotes.length === 0 && actionItems.length === 0) {
+            setShowEmptyModal(true);
             return;
         }
+
+        // Combinar notas de análisis en un string para el informe
+        const analysisText = analysisNotes.map(a => a.text).join('\n');
+
+        console.log('[FeedbackBubble] Enviando datos:', {
+            highlights: highlights.map(h => h.text),
+            analysis: analysisText,
+            actionItems: actionItems.map(a => a.text),
+            trafficLight
+        });
 
         // Navigate to full feedbacks screen with prefill
         router.push({
@@ -221,7 +282,7 @@ export function FeedbackBubbleProvider({ children }) {
                 clientId: activeClient?.id,
                 prefillData: JSON.stringify({
                     highlights: highlights.map(h => h.text),
-                    analysis,
+                    analysis: analysisText,
                     actionItems: actionItems.map(a => a.text),
                     trafficLight
                 })
@@ -236,6 +297,7 @@ export function FeedbackBubbleProvider({ children }) {
     // ─────────────────────────────────────────────────────────────────────────
 
     const startPosition = useRef({ x: 0, y: 0 });
+    const lastDragTime = useRef(0);
 
     const panResponder = useRef(
         PanResponder.create({
@@ -273,6 +335,10 @@ export function FeedbackBubbleProvider({ children }) {
                 positionY.setValue(newY);
             },
             onPanResponderRelease: (_, gs) => {
+                // Mark drag end time before resetting flag
+                if (isDragging.current) {
+                    lastDragTime.current = Date.now();
+                }
                 isDragging.current = false;
 
                 const currentWidth = isExpandedRef.current ? EXPANDED_WIDTH : BUBBLE_SIZE;
@@ -325,7 +391,7 @@ export function FeedbackBubbleProvider({ children }) {
     // ─────────────────────────────────────────────────────────────────────────
 
     useEffect(() => {
-        const hasContent = highlights.length > 0 || analysis || actionItems.length > 0;
+        const hasContent = highlights.length > 0 || analysisNotes.length > 0 || actionItems.length > 0;
         if (hasContent && !isExpanded && isVisible) {
             const anim = Animated.loop(
                 Animated.sequence([
@@ -338,19 +404,20 @@ export function FeedbackBubbleProvider({ children }) {
         } else {
             pulseAnim.setValue(1);
         }
-    }, [highlights.length, analysis, actionItems.length, isExpanded, isVisible]);
+    }, [highlights.length, analysisNotes.length, actionItems.length, isExpanded, isVisible]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
 
-    const contentCount = highlights.length + actionItems.length + (analysis ? 1 : 0);
+    const contentCount = highlights.length + analysisNotes.length + actionItems.length;
     const trafficColors = { green: '#22c55e', yellow: '#eab308', red: '#ef4444' };
 
     return (
-        <FeedbackBubbleContext.Provider value={{ setActiveClient, activeClient, isVisible }}>
+        <FeedbackBubbleContext.Provider value={{ setActiveClient, showBubble, hideBubble, activeClient, isVisible }}>
             {children}
 
+            {/* FAB con cliente activo - Formulario completo */}
             {isVisible && activeClient && (
                 <Animated.View
                     style={[
@@ -368,10 +435,15 @@ export function FeedbackBubbleProvider({ children }) {
                 >
                     {/* MINIMIZED */}
                     {!isExpanded ? (
-                        <TouchableOpacity
+                        <Pressable
                             style={styles.bubble}
-                            onPress={() => setIsExpanded(true)}
-                            activeOpacity={0.9}
+                            onPress={() => {
+                                // Only expand if we haven't been dragging recently (within 200ms)
+                                const timeSinceDrag = Date.now() - (lastDragTime.current || 0);
+                                if (!isDragging.current && timeSinceDrag > 200) {
+                                    setIsExpanded(true);
+                                }
+                            }}
                         >
                             <LinearGradient
                                 colors={['#8b5cf6', '#7c3aed']}
@@ -384,7 +456,7 @@ export function FeedbackBubbleProvider({ children }) {
                                     </View>
                                 )}
                             </LinearGradient>
-                        </TouchableOpacity>
+                        </Pressable>
                     ) : (
                         /* EXPANDED */
                         <View style={styles.expanded}>
@@ -428,9 +500,9 @@ export function FeedbackBubbleProvider({ children }) {
                                     </View>
                                 </View>
 
-                                {/* Highlights */}
+                                {/* Logros */}
                                 <View style={styles.section}>
-                                    <Text style={styles.sectionLabel}>✨ Highlights</Text>
+                                    <Text style={styles.sectionLabel}>✨ Logros</Text>
                                     {highlights.map(h => (
                                         <View key={h.id} style={styles.chip}>
                                             <Text style={styles.chipText}>{h.text}</Text>
@@ -444,7 +516,7 @@ export function FeedbackBubbleProvider({ children }) {
                                             style={styles.input}
                                             value={newHighlight}
                                             onChangeText={setNewHighlight}
-                                            placeholder="Añadir highlight..."
+                                            placeholder="Añadir logro..."
                                             placeholderTextColor="#64748b"
                                             onSubmitEditing={addHighlight}
                                         />
@@ -454,18 +526,30 @@ export function FeedbackBubbleProvider({ children }) {
                                     </View>
                                 </View>
 
-                                {/* Analysis */}
+                                {/* Analysis - Ahora consistente con los demás usando botón + */}
                                 <View style={styles.section}>
                                     <Text style={styles.sectionLabel}>🔍 Análisis</Text>
-                                    <TextInput
-                                        style={[styles.input, styles.textArea]}
-                                        value={analysis}
-                                        onChangeText={setAnalysis}
-                                        placeholder="Notas técnicas..."
-                                        placeholderTextColor="#64748b"
-                                        multiline
-                                        numberOfLines={3}
-                                    />
+                                    {analysisNotes.map(a => (
+                                        <View key={a.id} style={styles.chip}>
+                                            <Text style={styles.chipText}>{a.text}</Text>
+                                            <TouchableOpacity onPress={() => removeAnalysis(a.id)}>
+                                                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                    <View style={styles.inputRow}>
+                                        <TextInput
+                                            style={styles.input}
+                                            value={newAnalysis}
+                                            onChangeText={setNewAnalysis}
+                                            placeholder="Añadir nota técnica..."
+                                            placeholderTextColor="#64748b"
+                                            onSubmitEditing={addAnalysis}
+                                        />
+                                        <TouchableOpacity style={styles.addBtn} onPress={addAnalysis}>
+                                            <Ionicons name="add" size={18} color="#fff" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
 
                                 {/* Actions */}
@@ -499,12 +583,7 @@ export function FeedbackBubbleProvider({ children }) {
                             <View style={styles.footer}>
                                 <TouchableOpacity
                                     style={styles.clearBtn}
-                                    onPress={() => {
-                                        Alert.alert('¿Limpiar?', 'Se borrará el borrador', [
-                                            { text: 'Cancelar', style: 'cancel' },
-                                            { text: 'Limpiar', style: 'destructive', onPress: clearForm }
-                                        ]);
-                                    }}
+                                    onPress={() => setShowClearModal(true)}
                                 >
                                     <Ionicons name="trash-outline" size={18} color="#ef4444" />
                                 </TouchableOpacity>
@@ -516,6 +595,30 @@ export function FeedbackBubbleProvider({ children }) {
                     )}
                 </Animated.View>
             )}
+
+            {/* Modal de confirmación para limpiar */}
+            <ConfirmModal
+                visible={showClearModal}
+                onClose={() => setShowClearModal(false)}
+                onConfirm={clearForm}
+                title="¿Limpiar borrador?"
+                message="Se eliminarán todos los logros, análisis y acciones."
+                confirmText="Limpiar"
+                confirmStyle="destructive"
+                icon="trash-outline"
+            />
+
+            {/* Modal de formulario vacío */}
+            <ConfirmModal
+                visible={showEmptyModal}
+                onClose={() => setShowEmptyModal(false)}
+                onConfirm={() => { }}
+                title="Formulario vacío"
+                message="Añade al menos un logro, análisis o acción antes de generar el informe."
+                confirmText="Entendido"
+                cancelText=""
+                icon="information-circle-outline"
+            />
         </FeedbackBubbleContext.Provider>
     );
 }

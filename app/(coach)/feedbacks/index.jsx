@@ -178,10 +178,11 @@ export default function FeedbacksScreen() {
 
     const openFeedbackModal = (client) => {
         setSelectedClient(client);
-        setPrefillData(null); // No prefill when opening manually
-        setModalVisible(true);
-        // Set active client for FAB
+        setPrefillData(null);
+        // Activar también el bubble para tomar notas si lo desea
         setActiveClient(client._id, client.nombre);
+        // Abrir directamente el modal de feedback
+        setModalVisible(true);
     };
 
     const closeFeedbackModal = () => {
