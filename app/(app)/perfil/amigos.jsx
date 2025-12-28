@@ -61,6 +61,11 @@ export default function Amigos() {
     // Estado para modal de error de código
     const [codeErrorModal, setCodeErrorModal] = useState({ visible: false, message: '' });
 
+    // Estado para modal de eliminar amigo
+    const [showDeleteFriendModal, setShowDeleteFriendModal] = useState(false);
+    const [friendToDelete, setFriendToDelete] = useState(null);
+    const [deletingFriend, setDeletingFriend] = useState(false);
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     const gradientColors = isDark
@@ -175,7 +180,36 @@ export default function Amigos() {
         });
     };
 
+    // Función para eliminar un amigo
+    const handleDeleteFriend = async () => {
+        if (!friendToDelete) return;
+
+        setDeletingFriend(true);
+        try {
+            const response = await fetch(`${API_URL}/api/contacts/${friendToDelete.user?._id || friendToDelete._id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                setShowDeleteFriendModal(false);
+                setFriendToDelete(null);
+                Alert.alert('✅ Amigo eliminado', 'Has eliminado a este contacto de tu lista de amigos.');
+                fetchContacts(); // Refrescar lista
+            } else {
+                Alert.alert('Error', data.message || 'No se pudo eliminar el amigo.');
+            }
+        } catch (error) {
+            console.error('[Amigos] Error eliminando amigo:', error);
+            Alert.alert('Error', 'No se pudo eliminar el amigo. Inténtalo de nuevo.');
+        } finally {
+            setDeletingFriend(false);
+        }
+    };
+
     // Función unificada: intenta canjear como referido, si falla intenta como código promocional
+
     const handleRedeemCode = async () => {
         if (!redeemCode.trim()) {
             setCodeErrorModal({ visible: true, message: 'Por favor ingresa un código' });
@@ -399,13 +433,18 @@ export default function Amigos() {
                                             </Text>
                                         )}
                                     </View>
-                                    <View style={[styles.contactBadge, { backgroundColor: theme.successLight }]}>
-                                        <Text style={[styles.contactBadgeText, { color: theme.successText }]}>
-                                            Amigo
-                                        </Text>
-                                    </View>
+                                    <TouchableOpacity
+                                        style={[styles.deleteContactBtn, { backgroundColor: theme.dangerLight || 'rgba(239, 68, 68, 0.1)' }]}
+                                        onPress={() => {
+                                            setFriendToDelete(contact);
+                                            setShowDeleteFriendModal(true);
+                                        }}
+                                    >
+                                        <Ionicons name="trash-outline" size={18} color={theme.danger || '#EF4444'} />
+                                    </TouchableOpacity>
                                 </View>
                             ))}
+
                         </View>
                         {contacts.length > 5 && (
                             <Text style={[styles.moreContactsText, { color: theme.textSecondary }]}>
@@ -587,7 +626,46 @@ export default function Amigos() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Modal Confirmar Eliminar Amigo */}
+            <Modal visible={showDeleteFriendModal} transparent animationType="fade" onRequestClose={() => setShowDeleteFriendModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.errorModalCard, { backgroundColor: theme.backgroundSecondary }]}>
+                        <View style={styles.errorIconContainer}>
+                            <Ionicons name="person-remove" size={60} color={theme.danger || '#EF4444'} />
+                        </View>
+                        <Text style={[styles.errorModalTitle, { color: theme.text }]}>¿Eliminar amigo?</Text>
+                        <Text style={[styles.errorModalMessage, { color: theme.textSecondary }]}>
+                            ¿Estás seguro de que quieres eliminar a {friendToDelete?.user?.nombre || 'este amigo'} de tu lista?
+                        </Text>
+                        <View style={styles.modalButtonsRow}>
+                            <TouchableOpacity
+                                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                                onPress={() => {
+                                    setShowDeleteFriendModal(false);
+                                    setFriendToDelete(null);
+                                }}
+                                disabled={deletingFriend}
+                            >
+                                <Text style={{ color: theme.text }}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalSubmitBtn, { backgroundColor: theme.danger || '#EF4444', opacity: deletingFriend ? 0.6 : 1 }]}
+                                onPress={handleDeleteFriend}
+                                disabled={deletingFriend}
+                            >
+                                {deletingFriend ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Text style={styles.modalSubmitText}>Eliminar</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
+
     );
 }
 
@@ -1009,4 +1087,15 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 12,
     },
+    // Estilos para eliminar amigo
+    deleteContactBtn: {
+        padding: 8,
+        borderRadius: 8,
+    },
+    modalButtonsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 20,
+    },
 });
+

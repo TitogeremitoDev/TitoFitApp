@@ -67,7 +67,7 @@ const TIER_LABELS = {
 export default function AjustesScreen() {
   const router = useRouter();
   const { theme, themeMode, currentThemeId, setThemeId } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser, token } = useAuth();
   const { serverPoints } = useAchievements();
 
   const [subscriptionData, setSubscriptionData] = useState(null);
@@ -112,6 +112,10 @@ export default function AjustesScreen() {
   // Estados para eliminar cuenta (Apple Guideline 5.1.1(v))
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Estados para desvincular entrenador
+  const [showLeaveTrainerModal, setShowLeaveTrainerModal] = useState(false);
+  const [leavingTrainer, setLeavingTrainer] = useState(false);
 
 
   // Determinar si el usuario es premium/cliente/entrenador/admin
@@ -700,7 +704,47 @@ export default function AjustesScreen() {
     }
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DESVINCULAR ENTRENADOR
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleLeaveTrainer = async () => {
+    setLeavingTrainer(true);
+    try {
+      const authToken = await AsyncStorage.getItem('totalgains_token');
+      const response = await fetch(`${API_URL}/api/users/leave-trainer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setShowLeaveTrainerModal(false);
+
+        // Refrescar usuario para obtener el nuevo estado
+        await refreshUser();
+
+        Alert.alert(
+          '✅ Desvinculado',
+          'Ya no eres cliente de este entrenador. Ahora eres usuario gratuito.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', data.message || 'No se pudo desvincular del entrenador.');
+      }
+    } catch (error) {
+      console.error('[Ajustes] Error desvinculando entrenador:', error);
+      Alert.alert('Error', 'No se pudo desvincular del entrenador. Inténtalo de nuevo.');
+    } finally {
+      setLeavingTrainer(false);
+    }
+  };
+
   // Cargar suscripción al montar
+
   useEffect(() => {
     if (user) {
       loadSubscriptionStatus();
@@ -1275,6 +1319,54 @@ export default function AjustesScreen() {
           </View>
 
           <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
+            {/* Entrenador Actual - Solo si tiene entrenador */}
+            {user?.currentTrainerId && (
+              <>
+                <View style={styles.trainerInfoContainer}>
+                  <View style={styles.settingItemLeft}>
+                    <View style={[styles.iconCircle, { backgroundColor: theme.primaryLight || 'rgba(59, 130, 246, 0.15)' }]}>
+                      <Ionicons name="person-circle-outline" size={20} color={theme.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.settingItemTitle, { color: theme.text }]}>
+                        Entrenado por
+                      </Text>
+                      <Text style={[styles.settingItemSubtitle, { color: theme.primary, fontWeight: '600' }]}>
+                        {user?.trainerName || 'Tu Entrenador'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.leaveTrainerButton, {
+                    backgroundColor: theme.warningLight || '#FEF3C7',
+                    borderColor: theme.warningBorder || '#FCD34D'
+                  }]}
+                  onPress={() => setShowLeaveTrainerModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.deleteAccountButtonContent}>
+                    <View style={[styles.iconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                      <Ionicons name="exit-outline" size={20} color={theme.warning || '#F59E0B'} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.deleteAccountTitle, { color: theme.warning || '#F59E0B' }]}>
+                        Dejar Entrenador
+                      </Text>
+                      <Text style={[styles.deleteAccountSubtitle, { color: theme.textSecondary }]}>
+                        Desvincularte y pasar a usuario gratuito
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={theme.warning || '#F59E0B'} />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={{ height: 12 }} />
+              </>
+            )}
+
+
             <TouchableOpacity
               style={[styles.deleteAccountButton, {
                 backgroundColor: theme.dangerLight || '#FEE2E2',
@@ -1645,7 +1737,72 @@ export default function AjustesScreen() {
         </View>
       </Modal>
 
+      {/* ═══════════════════════════════════════════════════════════════════════
+          MODAL DESVINCULAR ENTRENADOR
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={showLeaveTrainerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLeaveTrainerModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <View style={styles.cancelModalIconContainer}>
+              <Ionicons name="exit-outline" size={48} color={theme.warning || '#F59E0B'} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              ¿Dejar a tu entrenador?
+            </Text>
+
+            <Text style={[styles.modalDescription, { color: theme.textSecondary, textAlign: 'center' }]}>
+              ¿Estás seguro de que deseas desvincularte de tu entrenador?{'\n\n'}
+              <Text style={{ fontWeight: '700', color: theme.warning || '#F59E0B' }}>
+                ⚠️ Perderás tu estado de CLIENTE
+              </Text>
+              {'\n\n'}
+              Al confirmar:{'\n'}
+              • Pasarás a ser usuario GRATUITO{'\n'}
+              • Ya no verás las rutinas asignadas{'\n'}
+              • Perderás acceso al chat con tu entrenador
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: theme.border }]}
+                onPress={() => setShowLeaveTrainerModal(false)}
+                disabled={leavingTrainer}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonPrimary,
+                  { backgroundColor: theme.warning || '#F59E0B' },
+                ]}
+                onPress={handleLeaveTrainer}
+                disabled={leavingTrainer}
+              >
+                {leavingTrainer ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                    Confirmar
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* 🔄 Modal de sincronización de datos */}
+
       <SyncProgressModal
         visible={syncModal.visible}
         direction={syncModal.direction}
@@ -2173,5 +2330,15 @@ const styles = StyleSheet.create({
   deleteAccountSubtitle: {
     fontSize: 13,
     marginTop: 2,
+  },
+  // Estilos para desvincular entrenador
+  trainerInfoContainer: {
+    padding: 12,
+    marginBottom: 8,
+  },
+  leaveTrainerButton: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
   },
 });

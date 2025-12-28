@@ -23,7 +23,6 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [clientCode, setClientCode] = useState('');
   const [secure, setSecure] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -66,7 +65,7 @@ export default function RegisterScreen() {
     }
     setIsSubmitting(true);
     try {
-      await register(nombre.trim(), email.trim().toLowerCase(), username.trim(), password, clientCode.trim());
+      await register(nombre.trim(), email.trim().toLowerCase(), username.trim(), password);
       // ✅ Registro exitoso - redirigir al onboarding para completar perfil
       router.replace('/onboarding');
     } catch (e) {
@@ -174,23 +173,6 @@ export default function RegisterScreen() {
             </View>
             <Text style={[styles.hint, { color: hintColor(passOk) }]}>
               {password.length === 0 ? 'Introduce tu contraseña' : passOk ? 'Contraseña válida' : 'Mínimo 8 caracteres'}
-            </Text>
-
-            {/* Código de invitación/promocional (opcional) */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="gift-outline" size={18} color="#9CA3AF" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Código promocional o de invitación"
-                placeholderTextColor="#6B7280"
-                autoCapitalize="characters"
-                value={clientCode}
-                onChangeText={setClientCode}
-                editable={!isSubmitting}
-              />
-            </View>
-            <Text style={[styles.hint, { color: '#6B7280' }]}>
-              Código de entrenador, referido o promocional
             </Text>
 
             {/* Botón registro */}

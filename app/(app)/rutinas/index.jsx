@@ -25,6 +25,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { syncRoutinesFromServer } from '../../../src/lib/syncRoutines';
 import { predefinedRoutines } from '../../../src/data/predefinedRoutines';
 import { premiumRoutines } from '../../../src/data/premiumRoutines';
+import AIImportModal from '../../(coach)/workouts/AIImportModal';
 
 const EXTRAS = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales'];
 
@@ -80,7 +81,7 @@ const normalizeCSV = (parsedData) => {
 const ListHeaderComponent = React.memo(function ListHeaderComponent({
   theme,
   onAddRoutine,
-  onPickDocument,
+  onImportIA,
   onSync,
   tipoUsuario,
   canSync,
@@ -104,12 +105,11 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
           <Text style={styles.buttonText}>Nueva Rutina Manual</Text>
         </TouchableOpacity>
 
-        {tipoUsuario !== PLAN.FREEUSER && (
-          <TouchableOpacity style={[styles.button, { backgroundColor: theme.primary }]} onPress={onPickDocument}>
-            <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Importar (CSV)</Text>
-          </TouchableOpacity>
-        )}
+        {/* Botón IA PRO - disponible para todos */}
+        <TouchableOpacity style={[styles.button, { backgroundColor: '#8b5cf6' }]} onPress={onImportIA}>
+          <Ionicons name="sparkles" size={18} color="#fff" />
+          <Text style={styles.buttonText}>IA PRO</Text>
+        </TouchableOpacity>
 
         {canSync && (
           <TouchableOpacity
@@ -221,6 +221,9 @@ export default function RutinasScreen() {
   const [routineToMove, setRoutineToMove] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [routineToDelete, setRoutineToDelete] = useState(null);
+
+  // AI Import Modal state
+  const [aiModalVisible, setAiModalVisible] = useState(false);
 
   const { user, token } = useAuth();
   const tipoUsuario = user?.tipoUsuario;
@@ -763,7 +766,7 @@ export default function RutinasScreen() {
           <ListHeaderComponent
             theme={theme}
             onAddRoutine={handleAddRoutine}
-            onPickDocument={handlePickDocument}
+            onImportIA={() => setAiModalVisible(true)}
             onSync={onSync}
             tipoUsuario={tipoUsuario}
             canSync={canSync}
@@ -1020,6 +1023,15 @@ export default function RutinasScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* AI Import Modal */}
+      <AIImportModal
+        visible={aiModalVisible}
+        onClose={() => {
+          setAiModalVisible(false);
+          loadRutinasAndActiveId(); // Refresh after import
+        }}
+      />
 
     </SafeAreaView>
   );

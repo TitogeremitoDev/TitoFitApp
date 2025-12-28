@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 
 import ActionButton from '../../../components/ActionButton';
+import CoachHelpButton from '../../../components/CoachHelpButton';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAchievements } from '../../../context/AchievementsContext';
@@ -600,6 +601,9 @@ export default function PerfilScreen() {
                     </View>
 
                     <View style={[styles.divider, { marginVertical: 20 }]} />
+
+                    {/* Coach Help Button - Only shows if user has a trainer */}
+                    <CoachHelpButton style={{ marginBottom: 16 }} />
 
                     {/* Logout Button - Full Width */}
                     <TouchableOpacity

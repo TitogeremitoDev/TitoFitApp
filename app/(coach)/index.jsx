@@ -158,6 +158,7 @@ export default function TrainerDashboard() {
         { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
         { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
         { icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6' },
+        { icon: 'help-circle', name: 'Centro de Ayuda', route: '/(coach)/faq-manager', color: '#06b6d4' },
         { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
         { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899', webOnly: true },
         { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6', webOnly: true },

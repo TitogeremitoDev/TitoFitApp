@@ -176,7 +176,7 @@ export default function Onboarding() {
             // 1. Primero intentar como código de entrenador (vinculación)
             try {
                 console.log('[Onboarding] 🎯 Intentando código de entrenador:', codeToRedeem);
-                const trainerResponse = await axios.post('/api/clients/select-trainer', {
+                const trainerResponse = await axios.post('/clients/select-trainer', {
                     trainerCode: codeToRedeem
                 });
                 if (trainerResponse.data.success) {
@@ -196,7 +196,7 @@ export default function Onboarding() {
             // 2. Intentar como código de referido
             try {
                 console.log('[Onboarding] 🎯 Intentando código de referido:', codeToRedeem);
-                const referralResponse = await axios.post('/api/referrals/redeem', {
+                const referralResponse = await axios.post('/referrals/redeem', {
                     code: codeToRedeem
                 });
                 if (referralResponse.data.success) {
@@ -215,7 +215,7 @@ export default function Onboarding() {
             // 3. Intentar como código promocional VIP
             try {
                 console.log('[Onboarding] 🎯 Intentando código promocional:', codeToRedeem);
-                const promoResponse = await axios.post('/api/promo-codes/redeem', {
+                const promoResponse = await axios.post('/promo-codes/redeem', {
                     code: codeToRedeem
                 });
                 if (promoResponse.data.success) {

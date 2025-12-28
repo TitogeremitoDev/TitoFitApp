@@ -43,19 +43,15 @@ const FRASES = [
 console.log('[Home] Constants.expoConfig?.version:', Constants?.expoConfig?.version);
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.3';
 
-const CAMBIOS_101 = [
-  '🔄 Actualizaciones automáticas: la app te avisará cuando haya una nueva versión (Android: obligatoria, iOS: sugerida).',
-  '📱 Pantalla Home responsiva: se adapta correctamente a todas las pantallas, incluyendo iPhones más pequeños.',
-  '⚡ Sincronización instantánea: tu estado (PREMIUM, CLIENTE, etc.) se actualiza inmediatamente tras canjear códigos.',
-  '💬 Chat optimizado: polling adaptativo que reduce carga del servidor y mejora la experiencia en tiempo real.',
-  '👥 Sistema de amigos mejorado: sincronización bidireccional entre contactos de chat y lista de amigos.',
-  '🎯 Onboarding con códigos: ahora puedes introducir códigos de entrenador, referido o VIP desde el inicio.',
-  '✅ Selección múltiple en cuestionario: algunas preguntas ahora permiten elegir varias opciones.',
-  '🗑️ Eliminar cuenta: nueva opción en Ajustes para eliminar tu cuenta y todos tus datos (cumplimiento Apple).',
-  '🔐 Lógica de suscripción corregida: expiraciones y degradaciones de rol funcionan correctamente.',
-  '🐛 Correcciones generales de estabilidad y rendimiento.',
+const CAMBIOS_103 = [
+  '🤖 Cambio de visualización del modal de IA: interfaz mejorada y más intuitiva.',
+  '🔄 Mejora de refresh al importar rutina: las rutinas importadas ahora se muestran inmediatamente.',
+  '🏆 Arreglos menores en los logros: correcciones de precisión y estabilidad.',
+  '🔒 Mejora de seguridad para el entrenador: los datos del cliente se eliminan correctamente al desvincularse.',
+  '💳 Mejora en el sistema de suscripción: idempotencia en webhooks y manejo de grace period.',
+  '📝 Nuevo sistema de visualización de notas en progreso de entrenador: ve los comentarios de tus clientes fácilmente.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -136,10 +132,14 @@ export default function HomeScreen() {
     showPromo();
   }, [user?.tipoUsuario]);
 
-  // Obtener datos del entrenador si el usuario es CLIENTE
+  // Obtener datos del entrenador si el usuario es CLIENTE o ENTRENADOR con currentTrainerId
   useEffect(() => {
     const fetchTrainer = async () => {
-      if (user?.tipoUsuario === 'CLIENTE' && token) {
+      // Buscar entrenador si es CLIENTE, o si es ENTRENADOR con otro entrenador asignado
+      const shouldFetchTrainer = user?.tipoUsuario === 'CLIENTE' ||
+        (user?.tipoUsuario === 'ENTRENADOR' && user?.currentTrainerId);
+
+      if (shouldFetchTrainer && token) {
         try {
           const response = await fetch(`${API_URL}/api/clients/my-trainer`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -154,7 +154,7 @@ export default function HomeScreen() {
       }
     };
     fetchTrainer();
-  }, [user?.tipoUsuario, token]);
+  }, [user?.tipoUsuario, user?.currentTrainerId, token]);
 
   // Obtener mensajes no leídos del chat y feedbacks (con jitter para desincronizar usuarios)
   useEffect(() => {
@@ -374,10 +374,27 @@ export default function HomeScreen() {
         paddingVertical: isVerySmallHeight ? 12 : (isSmallHeight ? 16 : 24),
         marginTop: topMargin
       }]}>
-        {/* Logo: mostrar logo del entrenador si es cliente con trainer */}
+        {/* Logo: mostrar logo según la jerarquía:
+            1. Si tiene entrenador asignado → logo del entrenador
+            2. Si es ENTRENADOR sin entrenador propio → su propio logo de trainerProfile
+            3. Fallback → logo de TotalGains
+        */}
         {currentTrainer?.profile?.logoUrl ? (
           <Image
             source={{ uri: currentTrainer.profile.logoUrl }}
+            resizeMode="contain"
+            style={[styles.logo, styles.logoVIP, !isWeb && {
+              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+            }]}
+          />
+        ) : user?.trainerProfile?.logoUrl && !user?.currentTrainerId ? (
+          // Entrenador sin otro entrenador: mostrar su propio logo
+          <Image
+            source={{ uri: user.trainerProfile.logoUrl }}
             resizeMode="contain"
             style={[styles.logo, styles.logoVIP, !isWeb && {
               width: isVerySmallHeight ? width * 0.22 : width * 0.28,
@@ -400,9 +417,14 @@ export default function HomeScreen() {
             }]}
           />
         )}
-        {/* Título: mostrar nombre del entrenador si es cliente con trainer */}
+        {/* Título: mostrar nombre según la jerarquía:
+            1. Si tiene entrenador asignado → nombre del entrenador
+            2. Si es ENTRENADOR sin entrenador propio → su brandName
+            3. Fallback → TotalGains
+        */}
         <Text style={[styles.title, isSmallHeight && { fontSize: 20 }]}>
-          {currentTrainer?.profile?.brandName || currentTrainer?.nombre || 'TotalGains'}
+          {currentTrainer?.profile?.brandName || currentTrainer?.nombre ||
+            (user?.trainerProfile?.brandName && !user?.currentTrainerId ? user.trainerProfile.brandName : 'TotalGains')}
         </Text>
         <Text style={[styles.subtitle, isSmallHeight && { marginBottom: 12 }]}>Tu progreso, bien medido.</Text>
 
@@ -612,7 +634,7 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
             <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-              {CAMBIOS_101.map((line, i) => (
+              {CAMBIOS_103.map((line, i) => (
                 <View key={i} style={styles.changeRow}>
                   <Text style={styles.changeBullet}>•</Text>
                   <Text style={styles.changeText}>{line}</Text>

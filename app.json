@@ -2,11 +2,11 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "runtimeVersion": "1.0.1",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/mi-logo-icono.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "totalgains",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -22,6 +22,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.german92.titofitapp",
       "usesAppleSignIn": true,
+      "icon": "./assets/images/icon-ios.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "TotalGains necesita acceso a la cámara para que puedas tomar fotos de tu progreso físico o actualizar tu foto de perfil.",
@@ -31,8 +32,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/mi-logo-icono-foreground.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
+        "backgroundColor": "#040811"
       },
       "package": "com.german92.titofitapp",
       "softwareKeyboardLayoutMode": "resize",

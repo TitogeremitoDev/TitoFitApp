@@ -453,6 +453,10 @@ export default function ClientProgressDetail() {
         custom: '#3b82f6', // 🔵
     };
 
+    // Palabras clave de dolor/alerta para destacar comentarios críticos
+    const PAIN_KEYWORDS = ['dolor', 'molestia', 'pinchazo', 'lesión', 'daño', 'mal', 'pincha', 'duele', 'molesta', 'lesion'];
+    const hasPainKeyword = (text) => text && PAIN_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+
     const getRepStatus = (actual, min, max) => {
         if (!actual) return 'none';
         if (min && actual < min) return 'below';  // 🔴
@@ -751,6 +755,125 @@ export default function ClientProgressDetail() {
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // 💬 DATOS AGRUPADOS POR COMENTARIOS (SOLO SETS CON NOTAS)
+    // Ordena de más reciente a más antigua, agrupa por semana
+    // ═══════════════════════════════════════════════════════════════════════════
+    const comentariosPorRutina = useMemo(() => {
+        if (!sessions || sessions.length === 0) return { current: null, old: [] };
+
+        // Agrupar sesiones por routineId
+        const rutinasMap = new Map();
+
+        sessions.forEach((session) => {
+            const routineId = session.routineId || session.routineNameSnapshot || 'unknown';
+            const routineName = session.routineNameSnapshot || 'Rutina';
+
+            if (!rutinasMap.has(routineId)) {
+                rutinasMap.set(routineId, {
+                    routineId,
+                    routineName,
+                    lastDate: new Date(session.date),
+                    sessionsData: [],
+                });
+            }
+
+            const rutina = rutinasMap.get(routineId);
+            const sessionDate = new Date(session.date);
+            if (sessionDate > rutina.lastDate) rutina.lastDate = sessionDate;
+            rutina.sessionsData.push(session);
+        });
+
+        // Ordenar rutinas por fecha más reciente
+        const rutinasArray = Array.from(rutinasMap.values())
+            .sort((a, b) => b.lastDate - a.lastDate);
+
+        // Procesar cada rutina extrayendo solo comentarios
+        const procesarRutina = (rutina) => {
+            // Ordenar sesiones de MÁS RECIENTE a MÁS ANTIGUA
+            const sesionesOrdenadas = [...rutina.sessionsData].sort((a, b) =>
+                new Date(b.date) - new Date(a.date)
+            );
+
+            // Agrupar por semana (week)
+            const semanasMap = new Map();
+
+            sesionesOrdenadas.forEach((session) => {
+                const week = session.week ?? 1;
+                const dayIdx = session.dayIndex ?? 0;
+                const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
+                const sessionDate = new Date(session.date);
+
+                // Extraer solo ejercicios con comentarios
+                const ejerciciosConComentarios = [];
+                (session.exercises || []).forEach((ex) => {
+                    const setsConNota = (ex.sets || []).filter(s => s.notes?.value && s.notes?.note);
+                    if (setsConNota.length > 0) {
+                        ejerciciosConComentarios.push({
+                            exerciseName: ex.exerciseName,
+                            muscleGroup: ex.muscleGroup || 'SIN GRUPO',
+                            sets: setsConNota.map((s, idx) => ({
+                                setNumber: s.setNumber || idx + 1,
+                                weight: s.weight,
+                                reps: s.actualReps,
+                                noteValue: s.notes.value,
+                                noteText: s.notes.note,
+                                hasPain: hasPainKeyword(s.notes.note),
+                            })),
+                        });
+                    }
+                });
+
+                if (ejerciciosConComentarios.length > 0) {
+                    if (!semanasMap.has(week)) {
+                        semanasMap.set(week, { week, dias: [] });
+                    }
+                    semanasMap.get(week).dias.push({
+                        dayIndex: dayIdx,
+                        dayLabel,
+                        date: sessionDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        dateSort: sessionDate,
+                        exercises: ejerciciosConComentarios,
+                    });
+                }
+            });
+
+            // Ordenar semanas descendente (más reciente primero)
+            const semanas = Array.from(semanasMap.values())
+                .sort((a, b) => b.week - a.week)
+                .map(sem => ({
+                    ...sem,
+                    dias: sem.dias.sort((a, b) => b.dateSort - a.dateSort), // Más reciente primero dentro de semana
+                }));
+
+            const totalComentarios = semanas.reduce((acc, sem) =>
+                acc + sem.dias.reduce((acc2, d) =>
+                    acc2 + d.exercises.reduce((acc3, ex) => acc3 + ex.sets.length, 0)
+                    , 0)
+                , 0);
+
+            return {
+                routineId: rutina.routineId,
+                routineName: rutina.routineName,
+                lastDate: rutina.lastDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+                semanas,
+                totalComentarios,
+            };
+        };
+
+        const current = rutinasArray.length > 0 ? procesarRutina(rutinasArray[0]) : null;
+        const old = rutinasArray.slice(1).map(procesarRutina).filter(r => r.totalComentarios > 0);
+
+        return { current, old };
+    }, [sessions]);
+
+    // Estado para semanas expandidas en comentarios (primera semana expandida por defecto)
+    const [expandedWeeks, setExpandedWeeks] = useState({ 'current-1': true });
+    const toggleWeek = (routineKey, week) => {
+        const key = `${routineKey}-${week}`;
+        setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
     if (isLoading) {
@@ -811,6 +934,15 @@ export default function ClientProgressDetail() {
                         <Ionicons name="grid" size={18} color={viewMode === 'table' ? '#fff' : '#64748b'} />
                         <Text style={[styles.viewModeText, viewMode === 'table' && styles.viewModeTextActive]}>
                             Tabla
+                        </Text>
+                    </Pressable>
+                    <Pressable
+                        style={[styles.viewModeBtn, viewMode === 'comments' && styles.viewModeBtnActive]}
+                        onPress={() => setViewMode('comments')}
+                    >
+                        <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#64748b'} />
+                        <Text style={[styles.viewModeText, viewMode === 'comments' && styles.viewModeTextActive]}>
+                            Comentarios
                         </Text>
                     </Pressable>
                 </View>
@@ -1468,6 +1600,178 @@ export default function ClientProgressDetail() {
                                                                 </View>
                                                             );
                                                         })}
+                                                    </View>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                            </>
+                        )}
+                    </View>
+                )}
+
+                {/* ════════════════════════════════════════════════════════════════
+                    💬 VISTA COMENTARIOS - FEEDBACK VISUAL DEL CLIENTE
+                   ════════════════════════════════════════════════════════════════ */}
+                {viewMode === 'comments' && (
+                    <View style={styles.commentsContainer}>
+                        {/* Sin comentarios */}
+                        {(!comentariosPorRutina.current || comentariosPorRutina.current.totalComentarios === 0) && comentariosPorRutina.old.length === 0 ? (
+                            <View style={styles.noDataContainer}>
+                                <Ionicons name="chatbubble-ellipses-outline" size={48} color="#cbd5e1" />
+                                <Text style={styles.noDataText}>Sin comentarios registrados</Text>
+                                <Text style={styles.noDataSubtext}>Los comentarios del cliente aparecerán aquí</Text>
+                            </View>
+                        ) : (
+                            <>
+                                {/* RUTINA ACTUAL */}
+                                {comentariosPorRutina.current && comentariosPorRutina.current.totalComentarios > 0 && (
+                                    <View style={styles.commentsRoutineSection}>
+                                        <View style={styles.commentsRoutineHeader}>
+                                            <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
+                                            <View style={styles.commentsBadge}>
+                                                <Text style={styles.commentsBadgeText}>{comentariosPorRutina.current.totalComentarios}</Text>
+                                            </View>
+                                        </View>
+                                        <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
+
+                                        {comentariosPorRutina.current.semanas.map((semana) => (
+                                            <View key={semana.week} style={styles.commentsWeekGroup}>
+                                                <Pressable
+                                                    onPress={() => toggleWeek('current', semana.week)}
+                                                    style={styles.commentsWeekHeaderPressable}
+                                                >
+                                                    <View style={styles.commentsWeekBadge}>
+                                                        <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
+                                                    </View>
+                                                    <View style={styles.commentsWeekRight}>
+                                                        <Text style={styles.commentsWeekCount}>
+                                                            {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
+                                                        </Text>
+                                                        <Ionicons
+                                                            name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                                            size={18}
+                                                            color="#64748b"
+                                                        />
+                                                    </View>
+                                                </Pressable>
+
+                                                {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
+                                                    <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                                                        <Text style={styles.commentsDayHeader}>
+                                                            {dia.dayLabel} • {dia.date}
+                                                        </Text>
+
+                                                        {dia.exercises.map((exercise, exIdx) => (
+                                                            <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
+                                                                <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
+                                                                    <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
+                                                                    {' '}{exercise.exerciseName}
+                                                                </Text>
+
+                                                                {exercise.sets.map((set, setIdx) => (
+                                                                    <View
+                                                                        key={setIdx}
+                                                                        style={[
+                                                                            styles.commentCardCompact,
+                                                                            set.hasPain && styles.commentCardWarning
+                                                                        ]}
+                                                                    >
+                                                                        <View style={styles.commentCardCompactRow}>
+                                                                            <View style={[
+                                                                                styles.commentSemaphoreCompact,
+                                                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                            ]} />
+                                                                            <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                                                            <Text style={styles.commentDataCompact}>
+                                                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                            </Text>
+                                                                            {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+                                                                        </View>
+                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        ))}
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+
+                                {/* RUTINAS ANTIGUAS CON COMENTARIOS */}
+                                {comentariosPorRutina.old.length > 0 && (
+                                    <View style={styles.commentsOldSection}>
+                                        <Text style={styles.commentsOldLabel}>📦 Rutinas Anteriores</Text>
+                                        {comentariosPorRutina.old.map((rutina) => (
+                                            <View key={rutina.routineId} style={styles.commentsOldRoutine}>
+                                                <Pressable
+                                                    onPress={() => toggleRoutine(rutina.routineId)}
+                                                    style={styles.commentsOldRoutineHeader}
+                                                >
+                                                    <View style={styles.commentsOldRoutineInfo}>
+                                                        <Text style={styles.commentsOldRoutineName}>{rutina.routineName}</Text>
+                                                        <Text style={styles.commentsOldRoutineDate}>Última: {rutina.lastDate}</Text>
+                                                    </View>
+                                                    <View style={styles.commentsOldRoutineRight}>
+                                                        <View style={styles.commentsBadgeSmall}>
+                                                            <Text style={styles.commentsBadgeSmallText}>{rutina.totalComentarios}</Text>
+                                                        </View>
+                                                        <Ionicons
+                                                            name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'}
+                                                            size={18}
+                                                            color="#64748b"
+                                                        />
+                                                    </View>
+                                                </Pressable>
+
+                                                {expandedRoutines[rutina.routineId] && (
+                                                    <View style={styles.commentsOldRoutineContent}>
+                                                        {rutina.semanas.map((semana) => (
+                                                            <View key={semana.week} style={styles.commentsWeekGroupSmall}>
+                                                                <Text style={styles.commentsWeekLabelSmall}>Semana {semana.week}</Text>
+                                                                {semana.dias.map((dia, dIdx) => (
+                                                                    <View key={`${dia.dayIndex}-${dIdx}`}>
+                                                                        <Text style={styles.commentsDayHeaderSmall}>
+                                                                            {dia.dayLabel} • {dia.date}
+                                                                        </Text>
+                                                                        {dia.exercises.map((exercise, exIdx) => (
+                                                                            <View key={exIdx} style={styles.commentsExerciseBlockSmall}>
+                                                                                <Text style={styles.commentsExerciseNameSmall}>
+                                                                                    {exercise.muscleGroup} - {exercise.exerciseName}
+                                                                                </Text>
+                                                                                {exercise.sets.map((set, setIdx) => (
+                                                                                    <View
+                                                                                        key={setIdx}
+                                                                                        style={[
+                                                                                            styles.commentCardSmall,
+                                                                                            set.hasPain && styles.commentCardWarning
+                                                                                        ]}
+                                                                                    >
+                                                                                        <View style={styles.commentCardSmallLeft}>
+                                                                                            <Text style={styles.commentSetLabelSmall}>S{set.setNumber}</Text>
+                                                                                            <Text style={styles.commentDataSmall}>
+                                                                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                                            </Text>
+                                                                                            {set.hasPain && <Text>⚠️</Text>}
+                                                                                            <View style={[
+                                                                                                styles.commentSemaphoreSmall,
+                                                                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                                            ]} />
+                                                                                        </View>
+                                                                                        <Text style={styles.commentTextSmall} numberOfLines={2}>
+                                                                                            "{set.noteText}"
+                                                                                        </Text>
+                                                                                    </View>
+                                                                                ))}
+                                                                            </View>
+                                                                        ))}
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        ))}
                                                     </View>
                                                 )}
                                             </View>
@@ -2827,6 +3131,359 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#64748b',
         marginTop: 8,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 💬 COMENTARIOS VIEW STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+    commentsContainer: {
+        marginBottom: 16,
+    },
+    commentsRoutineSection: {
+        marginBottom: 20,
+    },
+    commentsRoutineHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    commentsRoutineLabel: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    commentsBadge: {
+        backgroundColor: '#3b82f6',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    commentsBadgeText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    commentsRoutineName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#3b82f6',
+        marginBottom: 16,
+    },
+    commentsWeekGroup: {
+        marginBottom: 20,
+    },
+    commentsWeekHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    commentsWeekHeaderPressable: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 10,
+    },
+    commentsWeekRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    commentsWeekCount: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    commentsWeekBadge: {
+        backgroundColor: '#6366f1',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    commentsWeekBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    commentsDaySection: {
+        marginBottom: 12,
+        paddingLeft: 10,
+        borderLeftWidth: 2,
+        borderLeftColor: '#e2e8f0',
+    },
+    commentsDayHeader: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 8,
+    },
+    commentsExerciseBlock: {
+        marginBottom: 12,
+    },
+    commentsExerciseHeader: {
+        marginBottom: 8,
+    },
+    commentsExerciseMuscle: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#3b82f6',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    commentsExerciseName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+        marginTop: 2,
+    },
+    // Compact exercise styles
+    commentsExerciseBlockCompact: {
+        marginBottom: 8,
+    },
+    commentsExerciseLineCompact: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#1e293b',
+        marginBottom: 6,
+    },
+    commentsExerciseMuscleInline: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#3b82f6',
+        textTransform: 'uppercase',
+    },
+    commentCardCompact: {
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        padding: 10,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    commentCardCompactRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4,
+    },
+    commentSemaphoreCompact: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+    },
+    commentSetLabelCompact: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    commentDataCompact: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    commentPainIconCompact: {
+        fontSize: 12,
+    },
+    commentTextCompact: {
+        fontSize: 12,
+        color: '#374151',
+        fontStyle: 'italic',
+        lineHeight: 16,
+    },
+    commentCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#000',
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    commentCardWarning: {
+        borderColor: '#fecaca',
+        borderWidth: 2,
+        backgroundColor: '#fef2f2',
+    },
+    commentCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    commentSetInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    commentSetLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    commentDataBadge: {
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    commentDataText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    commentIndicators: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    commentPainBadge: {
+        width: 24,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    commentPainIcon: {
+        fontSize: 16,
+    },
+    commentSemaphore: {
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    commentText: {
+        fontSize: 14,
+        color: '#374151',
+        lineHeight: 20,
+        fontStyle: 'italic',
+    },
+
+    // Old Routines (collapsed style)
+    commentsOldSection: {
+        marginTop: 16,
+    },
+    commentsOldLabel: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#64748b',
+        marginBottom: 12,
+    },
+    commentsOldRoutine: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        marginBottom: 10,
+        overflow: 'hidden',
+    },
+    commentsOldRoutineHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 14,
+    },
+    commentsOldRoutineInfo: {
+        flex: 1,
+    },
+    commentsOldRoutineName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#374151',
+    },
+    commentsOldRoutineDate: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    commentsOldRoutineRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    commentsBadgeSmall: {
+        backgroundColor: '#94a3b8',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    commentsBadgeSmallText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    commentsOldRoutineContent: {
+        padding: 14,
+        paddingTop: 0,
+    },
+    commentsWeekGroupSmall: {
+        marginBottom: 12,
+    },
+    commentsWeekLabelSmall: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#6366f1',
+        marginBottom: 8,
+    },
+    commentsDayHeaderSmall: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 6,
+    },
+    commentsExerciseBlockSmall: {
+        marginBottom: 8,
+    },
+    commentsExerciseNameSmall: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: 4,
+    },
+    commentCardSmall: {
+        flexDirection: 'column',
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        padding: 10,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    commentCardSmallLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 6,
+    },
+    commentSetLabelSmall: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    commentDataSmall: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    commentSemaphoreSmall: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+    },
+    commentTextSmall: {
+        fontSize: 12,
+        color: '#374151',
+        fontStyle: 'italic',
+    },
+    noDataSubtext: {
+        fontSize: 13,
+        color: '#94a3b8',
+        marginTop: 4,
     },
 });
 

@@ -118,7 +118,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 1000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 1000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 1000,
     },
     {
         id: 'tonelada_cinco',
@@ -130,7 +130,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 5000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 5000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 5000,
     },
     {
         id: 'tonelada_diez',
@@ -142,7 +142,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 10000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 10000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 10000,
     },
     {
         id: 'despegue',
@@ -279,6 +279,7 @@ const ACHIEVEMENTS_RAW = [
         emoji: '🌙',
         category: 'constancia',
         unlockCondition: (stats) => {
+            if (!stats.justCompletedWorkout) return false;
             const hour = stats.workoutHour;
             return hour >= 22 || hour < 5;
         },
@@ -291,7 +292,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Entreno completado antes de las 7:00.',
         emoji: '🌅',
         category: 'constancia',
-        unlockCondition: (stats) => stats.workoutHour >= 5 && stats.workoutHour < 7,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.workoutHour >= 5 && stats.workoutHour < 7,
     },
     {
         id: 'doble_sesion',
@@ -301,7 +302,7 @@ const ACHIEVEMENTS_RAW = [
         description: '2 entrenos en el mismo día.',
         emoji: '♻️',
         category: 'constancia',
-        unlockCondition: (stats) => stats.workoutsToday >= 2,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.workoutsToday >= 2,
     },
     {
         id: 'never_skip_monday',
@@ -371,7 +372,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Entreno < 25 min con alto volumen.',
         emoji: '⏱️',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.workoutDurationMinutes < 25 && stats.sessionVolumeKg >= 2000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.workoutDurationMinutes < 25 && stats.sessionVolumeKg >= 2000,
     },
     {
         id: 'maraton_hierros',
@@ -381,7 +382,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Entreno de 90+ minutos.',
         emoji: '🐢',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.workoutDurationMinutes >= 90,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.workoutDurationMinutes >= 90,
     },
     {
         id: 'full_body_destroyer',
@@ -391,7 +392,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Entreno con 3+ grupos musculares grandes.',
         emoji: '💀',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.muscleGroupsWorked >= 3,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.muscleGroupsWorked >= 3,
     },
     {
         id: 'core_killer',
@@ -401,7 +402,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Varios ejercicios de core en una sesión.',
         emoji: '🔥',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.coreExercisesCount >= 3,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.coreExercisesCount >= 3,
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -479,7 +480,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Completas un entreno duro aun marcando fatiga alta.',
         emoji: '😈',
         category: 'mentalidad',
-        unlockCondition: (stats) => stats.completedDespiteFatigue,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.completedDespiteFatigue,
     },
     {
         id: 'mala_gana_mode',
@@ -489,7 +490,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Día de baja motivación pero entreno completado.',
         emoji: '😤',
         category: 'mentalidad',
-        unlockCondition: (stats) => stats.completedDespiteLowMotivation,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.completedDespiteLowMotivation,
     },
     {
         id: 'storm_session',
@@ -499,7 +500,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Día muy estresante, entreno completado.',
         emoji: '⛈️',
         category: 'mentalidad',
-        unlockCondition: (stats) => stats.completedDespiteStress,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.completedDespiteStress,
     },
     {
         id: 'no_mobile',
@@ -509,7 +510,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Entreno marcado como "sin distracciones".',
         emoji: '📵',
         category: 'mentalidad',
-        unlockCondition: (stats) => stats.noDistractionsWorkout,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.noDistractionsWorkout,
     },
     {
         id: 'focus_mode',
@@ -717,7 +718,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Una semana con ≥ 50.000 pasos totales.',
         emoji: '🗓️',
         category: 'pasos',
-        unlockCondition: (stats) => stats.weeklySteps >= 50000,
+        // Simplificado: 5 días con >10k pasos (aprox 50k semanal)
+        unlockCondition: (stats) => stats.daysOver10kSteps >= 5,
     },
     {
         id: 'steps_70k_week',
@@ -727,7 +729,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Una semana con ≥ 70.000 pasos.',
         emoji: '🔧',
         category: 'pasos',
-        unlockCondition: (stats) => stats.weeklySteps >= 70000,
+        // Simplificado: 7+ días acumulados con >10k pasos
+        unlockCondition: (stats) => stats.daysOver10kSteps >= 7,
     },
     {
         id: 'steps_100k_week',
@@ -737,7 +740,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Una semana con ≥ 100.000 pasos.',
         emoji: '🏃',
         category: 'pasos',
-        unlockCondition: (stats) => stats.weeklySteps >= 100000,
+        // Simplificado: 10+ días con >10k pasos
+        unlockCondition: (stats) => stats.daysOver10kSteps >= 10,
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -909,7 +913,8 @@ const ACHIEVEMENTS_RAW = [
         category: 'sueno',
         targetValue: 30,
         progressKey: 'daysWithGoodSleepAvg',
-        unlockCondition: (stats) => stats.daysWithGoodSleepAvg >= 30,
+        // Simplificado: usa sleepDays7h que se incrementa en check-in daily
+        unlockCondition: (stats) => stats.sleepDays7h >= 30,
     },
     {
         id: 'sleep_90days_consistent',
@@ -921,7 +926,8 @@ const ACHIEVEMENTS_RAW = [
         category: 'sueno',
         targetValue: 90,
         progressKey: 'daysWithGoodSleepAvg',
-        unlockCondition: (stats) => stats.daysWithGoodSleepAvg >= 90,
+        // Simplificado: usa sleepDays7h para logro de 90 días
+        unlockCondition: (stats) => stats.sleepDays7h >= 90,
     },
     {
         id: 'sleep_zombie',
@@ -931,7 +937,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Duermes < 5 h, pero aún así rellenas el seguimiento.',
         emoji: '🧟',
         category: 'sueno',
-        unlockCondition: (stats) => stats.sleepHours < 5 && stats.checkinCompleted,
+        // Simplificado: sleepHours < 5 en check-in actual y tiene al menos 1 check-in
+        unlockCondition: (stats) => stats.sleepHours > 0 && stats.sleepHours < 5 && stats.totalCheckins >= 1,
     },
     {
         id: 'sleep_log_7_days_row',
@@ -943,7 +950,8 @@ const ACHIEVEMENTS_RAW = [
         category: 'sueno',
         targetValue: 7,
         progressKey: 'sleepLogStreak',
-        unlockCondition: (stats) => stats.sleepLogStreak >= 7,
+        // Simplificado: usa sleepStreak7h que ya existe en Progress
+        unlockCondition: (stats) => stats.sleepStreak7h >= 7 || stats.sleepStreak8h >= 7,
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -957,7 +965,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Marcas tu estado emocional como "Mal" 3 días seguidos y aún así rellenas todo.',
         emoji: '🪨',
         category: 'animo',
-        unlockCondition: (stats) => stats.badMoodStreak >= 3 && stats.checkinStreak >= 3,
+        // Simplificado: 3+ días con ánimo bajo pero sigue rellenando
+        unlockCondition: (stats) => stats.moodScore <= 2 && stats.checkinStreak >= 3,
     },
     {
         id: 'mood_comeback',
@@ -967,7 +976,8 @@ const ACHIEVEMENTS_RAW = [
         description: 'Tras 3+ días seguidos marcando "Mal", encadenas 3 días seguidos marcando estado emocional "Bien/Genial".',
         emoji: '🔃',
         category: 'animo',
-        unlockCondition: (stats) => stats.moodComeback,
+        // Simplificado: después de tener ánimo bajo, ahora tiene ánimo alto (greatMoodDays > 0)
+        unlockCondition: (stats) => stats.greatMoodDays >= 3 && stats.goodMoodDays >= 5,
     },
     {
         id: 'mood_7days_good',
@@ -979,7 +989,8 @@ const ACHIEVEMENTS_RAW = [
         category: 'animo',
         targetValue: 7,
         progressKey: 'goodMoodStreak',
-        unlockCondition: (stats) => stats.goodMoodStreak >= 7,
+        // Simplificado: usa moodStreak4Plus que se actualiza en check-in daily
+        unlockCondition: (stats) => stats.moodStreak4Plus >= 7,
     },
     {
         id: 'mood_30days_positive',
@@ -991,7 +1002,8 @@ const ACHIEVEMENTS_RAW = [
         category: 'animo',
         targetValue: 30,
         progressKey: 'daysWithPositiveMoodAvg',
-        unlockCondition: (stats) => stats.daysWithPositiveMoodAvg >= 30,
+        // Simplificado: 30 días con ánimo bueno acumulado
+        unlockCondition: (stats) => stats.goodMoodDays >= 30,
     },
     {
         id: 'motivation_low_but_tracked',
@@ -1410,7 +1422,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 3000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 3000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 3000,
     },
     {
         id: 'session_5k_volume',
@@ -1422,7 +1434,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 5000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 5000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 5000,
     },
     {
         id: 'session_8k_volume',
@@ -1434,7 +1446,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 8000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 8000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 8000,
     },
     {
         id: 'session_10k_volume',
@@ -1446,7 +1458,7 @@ const ACHIEVEMENTS_RAW = [
         category: 'volumen',
         targetValue: 10000,
         progressKey: 'sessionVolumeKg',
-        unlockCondition: (stats) => stats.sessionVolumeKg >= 10000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.sessionVolumeKg >= 10000,
     },
     {
         id: 'session_leg_focus',
@@ -1456,7 +1468,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión donde la mayoría de volumen es de ejercicios de pierna.',
         emoji: '🦵',
         category: 'volumen',
-        unlockCondition: (stats) => stats.legVolumeRatio >= 0.5,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.legVolumeRatio >= 0.5,
     },
     {
         id: 'session_push_focus',
@@ -1466,7 +1478,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión donde el volumen de empuje es mayoritario.',
         emoji: '🫸',
         category: 'volumen',
-        unlockCondition: (stats) => stats.pushVolumeRatio >= 0.5,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.pushVolumeRatio >= 0.5,
     },
     {
         id: 'session_pull_focus',
@@ -1476,7 +1488,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión con mayoría de volumen de espalda/bíceps.',
         emoji: '🪝',
         category: 'volumen',
-        unlockCondition: (stats) => stats.pullVolumeRatio >= 0.5,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.pullVolumeRatio >= 0.5,
     },
     {
         id: 'session_fullbody',
@@ -1486,7 +1498,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión con mínimo 4 grupos musculares distintos y volumen ≥ 5.000 kg.',
         emoji: '💥',
         category: 'volumen',
-        unlockCondition: (stats) => stats.muscleGroupsWorked >= 4 && stats.sessionVolumeKg >= 5000,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.muscleGroupsWorked >= 4 && stats.sessionVolumeKg >= 5000,
     },
     {
         id: 'session_long_70min',
@@ -1496,7 +1508,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión de ≥ 70 minutos efectiva.',
         emoji: '⏱️',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.workoutDurationMinutes >= 70,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.workoutDurationMinutes >= 70,
     },
     {
         id: 'session_density_boost',
@@ -1506,7 +1518,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión con volumen / minuto por encima de tu media.',
         emoji: '🌑',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.volumePerMinuteAboveAvg,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.volumePerMinuteAboveAvg,
     },
     {
         id: 'session_no_skip_last_set',
@@ -1516,7 +1528,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Día en el que no cancelas ninguna de las series planificadas.',
         emoji: '🩸',
         category: 'mentalidad',
-        unlockCondition: (stats) => stats.noSkippedSets,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.noSkippedSets,
     },
     {
         id: 'session_technique_day',
@@ -1526,7 +1538,7 @@ const ACHIEVEMENTS_RAW = [
         description: 'Sesión con peso moderado pero muchas series.',
         emoji: '🧠',
         category: 'intensidad',
-        unlockCondition: (stats) => stats.techniqueSession,
+        unlockCondition: (stats) => stats.justCompletedWorkout && stats.techniqueSession,
     },
 
     // ─────────────────────────────────────────────────────────────────────────

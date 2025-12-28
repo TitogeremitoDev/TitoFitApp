@@ -7,6 +7,9 @@
  * y la cola de toasts para mostrar logros recién desbloqueados.
  */
 
+// Declaración de __DEV__ (variable global de React Native)
+declare const __DEV__: boolean;
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -40,7 +43,7 @@ const DEFAULT_STATS = {
     // ═══════════════════════════════════════════════════════════════════════
     sessionVolumeKg: 0,
     sessionReps: 0,
-    muscleGroups: [],
+    muscleGroups: [] as string[],
     muscleGroupsWorked: 0,
     coreExercisesCount: 0,
     workoutHour: 0,
@@ -60,13 +63,13 @@ const DEFAULT_STATS = {
     daysSinceLastWorkout: 0,
     consecutiveMondays: 0,
     consecutiveFridays: 0,
-    lastWorkoutDate: null,
+    lastWorkoutDate: null as string | null,
 
     // Check-in streaks
     checkinStreak: 0,
     weeklyCheckinStreak: 0,
-    lastCheckinDate: null,
-    lastWeeklyCheckinDate: null,
+    lastCheckinDate: null as string | null,
+    lastWeeklyCheckinDate: null as string | null,
 
     // ═══════════════════════════════════════════════════════════════════════
     // SEGUIMIENTO DIARIO
@@ -182,13 +185,24 @@ const DEFAULT_STATS = {
 // CONTEXT
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Tipos para el contexto
+type Achievement = {
+    id: string;
+    name: string;
+    points?: number;
+    unlockCondition: (stats: UserStats) => boolean;
+    [key: string]: any;
+};
+
+type UserStats = typeof DEFAULT_STATS;
+
 const AchievementsContext = createContext<any>(null);
 
-export const AchievementsProvider = ({ children }) => {
-    const [unlockedIds, setUnlockedIds] = useState(new Set());
-    const [userStats, setUserStats] = useState(DEFAULT_STATS);
-    const [toastQueue, setToastQueue] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+export const AchievementsProvider = ({ children }: { children: React.ReactNode }) => {
+    const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+    const [userStats, setUserStats] = useState<UserStats>(DEFAULT_STATS);
+    const [toastQueue, setToastQueue] = useState<Achievement[]>([]);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
     const [serverPoints, setServerPoints] = useState<number | null>(null); // Puntos del servidor (para usuarios premium)
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +246,7 @@ export const AchievementsProvider = ({ children }) => {
         isPremiumRef.current = value;
     }, []);
 
-    const saveUnlockedAchievements = useCallback(async (newUnlockedSet) => {
+    const saveUnlockedAchievements = useCallback(async (newUnlockedSet: Set<string>) => {
         try {
             const unlockedArray = Array.from(newUnlockedSet);
             // Siempre guardar en local
@@ -251,7 +265,7 @@ export const AchievementsProvider = ({ children }) => {
         }
     }, []);
 
-    const saveUserStats = useCallback(async (newStats) => {
+    const saveUserStats = useCallback(async (newStats: Partial<UserStats>) => {
         try {
             // Siempre guardar en local
             await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify(newStats));
@@ -383,7 +397,7 @@ export const AchievementsProvider = ({ children }) => {
     // ─────────────────────────────────────────────────────────────────────────
     // ACTUALIZAR ESTADÍSTICAS
     // ─────────────────────────────────────────────────────────────────────────
-    const updateStats = useCallback((partialStats) => {
+    const updateStats = useCallback((partialStats: Partial<UserStats>) => {
         setUserStats(prev => {
             const newStats = { ...prev, ...partialStats };
             saveUserStats(newStats);
@@ -394,16 +408,17 @@ export const AchievementsProvider = ({ children }) => {
     // ─────────────────────────────────────────────────────────────────────────
     // VERIFICAR Y DESBLOQUEAR LOGROS
     // ─────────────────────────────────────────────────────────────────────────
-    const checkAchievements = useCallback((workoutSummary = {}) => {
-        // Combinar stats guardadas con las del workout actual
+    const checkAchievements = useCallback((workoutSummary: Partial<UserStats> = {}, context: 'workout' | 'checkin' | 'weekly' = 'workout') => {
+        // Combinar stats guardadas con las del evento actual
+        // justCompletedWorkout será true SOLO si el contexto es 'workout'
         const combinedStats = {
             ...userStats,
             ...workoutSummary,
-            justCompletedWorkout: true,
+            justCompletedWorkout: context === 'workout',
         };
 
-        const newlyUnlocked = [];
-        const currentUnlocked = new Set(unlockedIds);
+        const newlyUnlocked: Achievement[] = [];
+        const currentUnlocked = new Set<string>(unlockedIds);
 
         // Revisar cada logro
         ACHIEVEMENTS.forEach(achievement => {
@@ -456,7 +471,7 @@ export const AchievementsProvider = ({ children }) => {
     // ─────────────────────────────────────────────────────────────────────────
     // PROCESAR WORKOUT COMPLETADO
     // ─────────────────────────────────────────────────────────────────────────
-    const processWorkoutCompletion = useCallback((workoutData) => {
+    const processWorkoutCompletion = useCallback((workoutData: any) => {
         const now = new Date();
         const hour = now.getHours();
         const today = now.toDateString();
@@ -475,13 +490,13 @@ export const AchievementsProvider = ({ children }) => {
         let daysSinceLastWorkout = 0;
         if (userStats.lastWorkoutDate) {
             const lastDate = new Date(userStats.lastWorkoutDate);
-            daysSinceLastWorkout = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+            daysSinceLastWorkout = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
         }
 
         // Extraer grupos musculares
-        const muscleGroups = workoutData.muscleGroups || [];
-        const uniqueMuscleGroups = [...new Set(muscleGroups.map(m => m?.toUpperCase()))];
-        const coreExercisesCount = muscleGroups.filter(m =>
+        const muscleGroups: string[] = workoutData.muscleGroups || [];
+        const uniqueMuscleGroups: string[] = [...new Set(muscleGroups.map((m: string) => m?.toUpperCase()))];
+        const coreExercisesCount = muscleGroups.filter((m: string) =>
             ['CORE', 'ABS', 'ABDOMEN', 'ABDOMINAL', 'OBLICUO'].some(c =>
                 m?.toUpperCase().includes(c)
             )
@@ -523,14 +538,14 @@ export const AchievementsProvider = ({ children }) => {
         // Actualizar estadísticas
         updateStats(workoutStats);
 
-        // Verificar logros
-        return checkAchievements(workoutStats);
+        // Verificar logros (contexto explícito: workout)
+        return checkAchievements(workoutStats, 'workout');
     }, [userStats, updateStats, checkAchievements]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // PROCESAR CHECK-IN DIARIO
     // ─────────────────────────────────────────────────────────────────────────
-    const processDailyCheckin = useCallback((checkinData) => {
+    const processDailyCheckin = useCallback((checkinData: any) => {
         const now = new Date();
         const today = now.toISOString().split('T')[0];
 
@@ -603,13 +618,13 @@ export const AchievementsProvider = ({ children }) => {
         updateStats(newStats);
 
         // Verificar logros
-        return checkAchievements(newStats);
+        return checkAchievements(newStats, 'checkin');
     }, [userStats, updateStats, checkAchievements]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // PROCESAR CHECK-IN SEMANAL
     // ─────────────────────────────────────────────────────────────────────────
-    const processWeeklyCheckin = useCallback((weeklyData) => {
+    const processWeeklyCheckin = useCallback((weeklyData: any) => {
         const now = new Date();
         const weekKey = now.toISOString().split('T')[0];
 
@@ -684,7 +699,7 @@ export const AchievementsProvider = ({ children }) => {
         updateStats(newStats);
 
         // Verificar logros
-        return checkAchievements(newStats);
+        return checkAchievements(newStats, 'weekly');
     }, [userStats, updateStats, checkAchievements]);
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -709,7 +724,7 @@ export const AchievementsProvider = ({ children }) => {
         [unlockedIds]
     );
 
-    const isAchievementUnlocked = useCallback((achievementId) =>
+    const isAchievementUnlocked = useCallback((achievementId: string) =>
         unlockedIds.has(achievementId),
         [unlockedIds]
     );
@@ -727,7 +742,7 @@ export const AchievementsProvider = ({ children }) => {
     // ─────────────────────────────────────────────────────────────────────────
     // DEBUG: Desbloquear manualmente (solo desarrollo)
     // ─────────────────────────────────────────────────────────────────────────
-    const debugUnlockAchievement = useCallback((achievementId) => {
+    const debugUnlockAchievement = useCallback((achievementId: string) => {
         if (__DEV__) {
             const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
             if (achievement && !unlockedIds.has(achievementId)) {

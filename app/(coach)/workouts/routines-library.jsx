@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import AssignRoutineModal from './assign-modal';
+import AIImportModal from './AIImportModal';
 import CoachHeader from '../components/CoachHeader';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -91,6 +92,9 @@ export default function RoutinesLibraryScreen() {
     const [routineToMove, setRoutineToMove] = useState(null);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [routineToDelete, setRoutineToDelete] = useState(null);
+
+    // AI Import Modal state
+    const [aiModalVisible, setAiModalVisible] = useState(false);
 
     // Client management states
     const [expandedRoutines, setExpandedRoutines] = useState({});
@@ -282,7 +286,7 @@ export default function RoutinesLibraryScreen() {
     };
 
     const handleImportIA = () => {
-        Alert.alert('Próximamente', 'La importación por IA estará disponible en futuras actualizaciones. 🤖✨');
+        setAiModalVisible(true);
     };
 
     const openAssignModal = (routine) => {
@@ -672,14 +676,10 @@ export default function RoutinesLibraryScreen() {
                         <TouchableOpacity onPress={() => setFolderModalVisible(true)} style={styles.iconButton}>
                             <Ionicons name="folder-outline" size={20} color="#334155" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={handleImportCSV} style={styles.iconButton}>
-                            <Ionicons name="document-text-outline" size={20} color="#334155" />
+                        <TouchableOpacity onPress={handleImportIA} style={[styles.iconButton, { backgroundColor: '#8b5cf620', flexDirection: 'row', gap: 4 }]}>
+                            <Ionicons name="sparkles" size={18} color="#8b5cf6" />
+                            <Text style={{ color: '#8b5cf6', fontWeight: '600', fontSize: 13 }}>IA</Text>
                         </TouchableOpacity>
-                        {Platform.OS === 'web' && (
-                            <TouchableOpacity onPress={handleImportIA} style={styles.iconButton}>
-                                <Ionicons name="sparkles-outline" size={20} color="#334155" />
-                            </TouchableOpacity>
-                        )}
                         <TouchableOpacity
                             onPress={() => router.push('/(coach)/workouts/create')}
                             style={styles.createButton}
@@ -888,6 +888,12 @@ export default function RoutinesLibraryScreen() {
                 visible={assignModalVisible}
                 onClose={() => setAssignModalVisible(false)}
                 routine={selectedRoutine}
+            />
+
+            <AIImportModal
+                visible={aiModalVisible}
+                onClose={() => setAiModalVisible(false)}
+                onRoutineSaved={fetchRoutines}
             />
         </SafeAreaView>
     );

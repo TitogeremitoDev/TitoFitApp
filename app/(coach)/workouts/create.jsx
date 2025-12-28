@@ -732,11 +732,10 @@ export default function CreateRoutineScreen() {
 
     setOpenSet(prev => new Set(prev).add(newId));
 
-    // Reset
+    // Reset selector state (keep exercises list for other cards)
     setAddingToDay(null);
     setSelectedMuscle('');
     setSelectedExercise('');
-    setExercises([]);
   }, [addingToDay, selectedMuscle, selectedExercise, exercises]);
 
   const deleteExercise = useCallback((diaKey, ejercicioId) => {
@@ -1089,6 +1088,7 @@ export default function CreateRoutineScreen() {
                         if (buttonIndex > 0) {
                           const selected = muscles[buttonIndex - 1];
                           setSelectedMuscle(selected);
+                          setSelectedExercise(''); // Clear previous exercise selection
                           fetchExercisesForMuscle(selected);
                         }
                       }
@@ -1106,6 +1106,7 @@ export default function CreateRoutineScreen() {
                     selectedValue={selectedMuscle}
                     onValueChange={(val) => {
                       setSelectedMuscle(val);
+                      setSelectedExercise(''); // Clear previous exercise selection
                       fetchExercisesForMuscle(val);
                     }}
                     style={styles.picker}
@@ -1126,12 +1127,13 @@ export default function CreateRoutineScreen() {
                   <TouchableOpacity
                     style={styles.iosPickerButton}
                     onPress={() => {
-                      const options = ['Cancelar', ...exercises.map(e => e.name)];
+                      const filteredExercises = exercises.filter(e => e.muscle === selectedMuscle);
+                      const options = ['Cancelar', ...filteredExercises.map(e => e.name)];
                       ActionSheetIOS.showActionSheetWithOptions(
                         { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
                         (buttonIndex) => {
                           if (buttonIndex > 0) {
-                            setSelectedExercise(exercises[buttonIndex - 1]._id);
+                            setSelectedExercise(filteredExercises[buttonIndex - 1]._id);
                           }
                         }
                       );
@@ -1150,7 +1152,7 @@ export default function CreateRoutineScreen() {
                       style={styles.picker}
                     >
                       <Picker.Item label="Seleccionar..." value="" />
-                      {exercises.map(e => <Picker.Item key={e._id} label={e.name} value={e._id} />)}
+                      {exercises.filter(e => e.muscle === selectedMuscle).map(e => <Picker.Item key={e._id} label={e.name} value={e._id} />)}
                     </Picker>
                   </View>
                 )}
@@ -1252,7 +1254,6 @@ export default function CreateRoutineScreen() {
               setAddingToDay(null);
               setSelectedMuscle('');
               setSelectedExercise('');
-              setExercises([]);
             } else {
               setAddingToDay(dayNum);
             }

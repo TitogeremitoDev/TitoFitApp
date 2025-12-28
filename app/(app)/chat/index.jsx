@@ -106,14 +106,72 @@ const Toast = ({ visible, message, type = 'success', onHide }) => {
 // ADD CONTACT MODAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, showToast }) => {
-    const [activeTab, setActiveTab] = useState('code'); // 'code' | 'username'
+const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, showToast, friendsVersion }) => {
+    const [activeTab, setActiveTab] = useState('friends'); // 'friends' | 'code' | 'username'
     const [code, setCode] = useState('');
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
     const [searchResult, setSearchResult] = useState(null);
     const [usernameResults, setUsernameResults] = useState([]);
     const [error, setError] = useState('');
+
+    // 🎯 Nuevos estados para mostrar amigos existentes
+    const [myContacts, setMyContacts] = useState([]);
+    const [loadingContacts, setLoadingContacts] = useState(false);
+
+    // Cargar contactos existentes cuando se abre el modal o cambia friendsVersion
+    useEffect(() => {
+        if (visible) {
+            loadMyContacts();
+        }
+    }, [visible, friendsVersion]);
+
+    // Función para cargar contactos existentes
+    const loadMyContacts = async () => {
+        setLoadingContacts(true);
+        try {
+            const res = await fetch(`${API_URL}/api/contacts?status=accepted`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setMyContacts(data.contacts || []);
+            }
+        } catch (err) {
+            console.error('[AddContactModal] Error loading contacts:', err);
+        } finally {
+            setLoadingContacts(false);
+        }
+    };
+
+    // Iniciar chat con un contacto existente
+    const startChatWithContact = async (contactId) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/conversations/direct`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ contactId })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                onContactAdded({ user: { _id: contactId } });
+                handleClose();
+                showToast?.('¡Chat iniciado!', 'success');
+            } else {
+                showToast?.(data.message || 'Error al iniciar chat', 'error');
+            }
+        } catch (err) {
+            showToast?.('Error de conexión', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Debounce para búsqueda por username
     useEffect(() => {
@@ -296,14 +354,27 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, s
             <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                     <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Añadir Amigo</Text>
+                        <Text style={styles.modalTitle}>Nuevo Chat</Text>
                         <TouchableOpacity onPress={handleClose}>
                             <Ionicons name="close" size={24} color="#64748b" />
                         </TouchableOpacity>
                     </View>
 
-                    {/* Tabs */}
+                    {/* Tabs - 3 opciones */}
                     <View style={styles.tabContainer}>
+                        <TouchableOpacity
+                            style={[styles.tab, activeTab === 'friends' && styles.tabActive]}
+                            onPress={() => setActiveTab('friends')}
+                        >
+                            <Ionicons
+                                name="people"
+                                size={18}
+                                color={activeTab === 'friends' ? '#8b5cf6' : '#94a3b8'}
+                            />
+                            <Text style={[styles.tabText, activeTab === 'friends' && styles.tabTextActive]}>
+                                Mis Amigos
+                            </Text>
+                        </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'code' && styles.tabActive]}
                             onPress={() => setActiveTab('code')}
@@ -327,13 +398,64 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, s
                                 color={activeTab === 'username' ? '#8b5cf6' : '#94a3b8'}
                             />
                             <Text style={[styles.tabText, activeTab === 'username' && styles.tabTextActive]}>
-                                Por Usuario
+                                Buscar
                             </Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Tab Content */}
-                    {activeTab === 'code' ? (
+                    {activeTab === 'friends' ? (
+                        <>
+                            <Text style={styles.modalSubtitle}>
+                                Tus amigos disponibles para chatear
+                            </Text>
+                            {loadingContacts ? (
+                                <View style={{ padding: 20, alignItems: 'center' }}>
+                                    <ActivityIndicator size="large" color="#8b5cf6" />
+                                </View>
+                            ) : myContacts.length === 0 ? (
+                                <View style={{ padding: 20, alignItems: 'center' }}>
+                                    <Ionicons name="people-outline" size={48} color="#94a3b8" />
+                                    <Text style={[styles.noResultsText, { marginTop: 12 }]}>
+                                        No tienes amigos aún
+                                    </Text>
+                                    <Text style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+                                        Añade amigos por código o username
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View style={styles.usernameResultsContainer}>
+                                    {myContacts.map((contact) => (
+                                        <TouchableOpacity
+                                            key={contact._id}
+                                            style={styles.usernameResultItem}
+                                            onPress={() => startChatWithContact(contact.user?._id)}
+                                            disabled={loading}
+                                        >
+                                            <View style={styles.resultAvatar}>
+                                                <Text style={styles.resultAvatarText}>
+                                                    {contact.user?.nombre?.charAt(0)?.toUpperCase() || '?'}
+                                                </Text>
+                                            </View>
+                                            <View style={styles.resultInfo}>
+                                                <Text style={styles.resultName}>{contact.user?.nombre || 'Usuario'}</Text>
+                                                {contact.user?.username && (
+                                                    <Text style={styles.resultUsername}>@{contact.user.username}</Text>
+                                                )}
+                                            </View>
+                                            <TouchableOpacity
+                                                style={styles.addBtn}
+                                                onPress={() => startChatWithContact(contact.user?._id)}
+                                                disabled={loading}
+                                            >
+                                                <Ionicons name="chatbubble" size={16} color="#fff" />
+                                            </TouchableOpacity>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                        </>
+                    ) : activeTab === 'code' ? (
                         <>
                             <Text style={styles.modalSubtitle}>
                                 Introduce el código de referido de tu amigo
@@ -448,7 +570,7 @@ const AddContactModal = ({ visible, onClose, token, onContactAdded, chatTheme, s
 // PENDING REQUESTS SECTION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const PendingRequestsSection = ({ token, chatTheme, onRequestHandled, showToast }) => {
+const PendingRequestsSection = ({ token, chatTheme, onRequestHandled, onFriendsUpdated, showToast }) => {
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -484,6 +606,7 @@ const PendingRequestsSection = ({ token, chatTheme, onRequestHandled, showToast 
             if (data.success) {
                 setRequests(prev => prev.filter(r => r.user._id !== userId));
                 onRequestHandled?.();
+                onFriendsUpdated?.(); // Notificar que hay un nuevo amigo disponible
                 showToast?.(`¡Ahora eres amigo de ${data.friend?.nombre}!`, 'success');
             }
         } catch (err) {
@@ -566,6 +689,12 @@ export default function ChatHomeScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [addModalVisible, setAddModalVisible] = useState(false);
+
+    // 🔄 Contador para forzar la recarga de amigos sin bucles infinitos
+    const [friendsVersion, setFriendsVersion] = useState(0);
+    const incrementFriendsVersion = useCallback(() => {
+        setFriendsVersion(v => v + 1);
+    }, []);
 
     // Toast state
     const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
@@ -780,6 +909,7 @@ export default function ChatHomeScreen() {
                 token={token}
                 chatTheme={chatTheme}
                 onRequestHandled={loadConversations}
+                onFriendsUpdated={incrementFriendsVersion}
                 showToast={showToast}
             />
 
@@ -810,6 +940,7 @@ export default function ChatHomeScreen() {
                 onContactAdded={handleContactAdded}
                 chatTheme={chatTheme}
                 showToast={showToast}
+                friendsVersion={friendsVersion}
             />
 
             {/* Toast Notification */}
