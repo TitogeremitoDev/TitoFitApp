@@ -15,7 +15,8 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
-    Keyboard
+    Keyboard,
+    Linking
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +37,7 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
             nutricion: '#10b981',
             evolucion: '#3b82f6',
             seguimiento: '#f59e0b',
+            video_feedback_response: '#4361ee',
             general: theme?.textSecondary || '#64748b'
         };
         return colors[type] || colors.general;
@@ -49,6 +51,23 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
     const textOther = theme?.bubbleOtherText || theme?.text || '#1e293b';
     const timeOwn = 'rgba(255,255,255,0.7)';
     const timeOther = theme?.textSecondary || '#94a3b8';
+
+    // Detectar si es respuesta a video feedback
+    const isVideoResponse = message.type === 'video_feedback_response';
+
+    // Extraer YouTube link del mensaje si existe
+    const extractYouTubeLink = (text) => {
+        if (!text) return null;
+        const match = text.match(/(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)[^\s]+)/);
+        return match ? match[1] : null;
+    };
+
+    const youtubeLink = extractYouTubeLink(message.message);
+
+    // Limpiar mensaje de YouTube link para mostrarlo separado
+    const cleanMessage = youtubeLink
+        ? message.message.replace(/📺.*$/s, '').trim()
+        : message.message;
 
     return (
         <View style={[
@@ -64,8 +83,20 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 </Text>
             )}
 
-            {/* Type badge for trainer chat */}
-            {isTrainerChat && message.type !== 'general' && (
+            {/* 📹 Video Feedback Response - Special Card */}
+            {isVideoResponse && !isOwn && (
+                <View style={styles.videoResponseCard}>
+                    <View style={styles.videoResponseHeader}>
+                        <Ionicons name="videocam" size={18} color="#4361ee" />
+                        <Text style={styles.videoResponseTitle}>
+                            Respuesta a tu video
+                        </Text>
+                    </View>
+                </View>
+            )}
+
+            {/* Type badge for trainer chat (not for video_feedback_response) */}
+            {isTrainerChat && message.type !== 'general' && !isVideoResponse && (
                 <View style={[styles.typeBadge, { backgroundColor: getTypeColor(message.type) + '20' }]}>
                     <Text style={[styles.typeBadgeText, { color: getTypeColor(message.type) }]}>
                         {message.type.charAt(0).toUpperCase() + message.type.slice(1)}
@@ -77,8 +108,22 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 styles.messageText,
                 { color: isOwn ? textOwn : textOther, fontSize: fontSize || 15 }
             ]}>
-                {message.message}
+                {cleanMessage}
             </Text>
+
+            {/* YouTube Link - Rendered as tappable card */}
+            {youtubeLink && (
+                <TouchableOpacity
+                    style={styles.youtubeCard}
+                    onPress={() => Linking.openURL(youtubeLink)}
+                >
+                    <Ionicons name="logo-youtube" size={20} color="#ef4444" />
+                    <Text style={styles.youtubeCardText} numberOfLines={1}>
+                        Ver video de ejemplo
+                    </Text>
+                    <Ionicons name="open-outline" size={16} color="#64748b" />
+                </TouchableOpacity>
+            )}
 
             <Text style={[
                 styles.messageTime,
@@ -670,5 +715,42 @@ const styles = StyleSheet.create({
     },
     sendBtnDisabled: {
         backgroundColor: '#cbd5e1'
+    },
+
+    // Video Feedback Response Card
+    videoResponseCard: {
+        backgroundColor: '#4361ee10',
+        padding: 10,
+        borderRadius: 10,
+        marginBottom: 8,
+        borderLeftWidth: 3,
+        borderLeftColor: '#4361ee'
+    },
+    videoResponseHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    videoResponseTitle: {
+        color: '#4361ee',
+        fontSize: 13,
+        fontWeight: '600'
+    },
+
+    // YouTube Link Card
+    youtubeCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#f1f5f9',
+        padding: 10,
+        borderRadius: 10,
+        marginTop: 8
+    },
+    youtubeCardText: {
+        flex: 1,
+        color: '#1e293b',
+        fontSize: 13,
+        fontWeight: '500'
     }
 });

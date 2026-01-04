@@ -2,7 +2,7 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "runtimeVersion": "1.0.1",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
@@ -20,12 +20,21 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "isTabletOnly": false,
+      "requireFullScreen": false,
       "bundleIdentifier": "com.german92.titofitapp",
       "usesAppleSignIn": true,
       "icon": "./assets/images/icon-ios.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "TotalGains necesita acceso a la cámara para que puedas tomar fotos de tu progreso físico o actualizar tu foto de perfil.",
+        "LSApplicationQueriesSchemes": [
+          "instagram",
+          "instagram-stories",
+          "snssdk1128",
+          "snssdk1233"
+        ],
+        "NSCameraUsageDescription": "TotalGains necesita acceso a la cámara para grabar videos de tu técnica de entrenamiento, tomar fotos de tu progreso físico y actualizar tu foto de perfil.",
+        "NSMicrophoneUsageDescription": "TotalGains necesita acceso al micrófono para grabar notas de voz y audio en tus videos de técnica para enviar a tu entrenador.",
         "NSPhotoLibraryUsageDescription": "TotalGains necesita acceso a tu galería de fotos para que puedas subir imágenes de tu progreso o cambiar tu foto de perfil.",
         "NSPhotoLibraryAddUsageDescription": "TotalGains necesita permiso para guardar fotos de tu progreso en tu galería."
       }
@@ -37,6 +46,10 @@
       },
       "package": "com.german92.titofitapp",
       "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -95,7 +108,17 @@
             "extraMavenRepos": [
               "https://maven.google.com"
             ],
-            "flipper": false
+            "flipper": false,
+            "gradleChildProcessJVMArgs": [
+              "-Xmx4g",
+              "-XX:MaxMetaspaceSize=1g"
+            ],
+            "packagingOptions": {
+              "pickFirst": [
+                "lib/**/libc++_shared.so",
+                "lib/**/libfbjni.so"
+              ]
+            }
           }
         }
       ],
@@ -105,7 +128,15 @@
           "runtimeVersion": "1.0.1"
         }
       ],
-      "expo-iap"
+      "expo-iap",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "TotalGains necesita acceso a la cámara para grabar videos de tu técnica.",
+          "enableMicrophonePermission": true,
+          "microphonePermissionText": "TotalGains necesita acceso al micrófono para grabar audio en tus videos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

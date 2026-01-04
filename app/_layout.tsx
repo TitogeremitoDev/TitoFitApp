@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { FeedbackDraftProvider } from '../context/FeedbackDraftContext';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 
@@ -267,14 +268,16 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <StripeProvider
-          publishableKey={publishableKey}
-          merchantIdentifier="merchant.com.totalgains" // Opcional, para Apple Pay
-        >
-          <ThemedRootView>
-            <RootLayoutNav />
-          </ThemedRootView>
-        </StripeProvider>
+        <FeedbackDraftProvider>
+          <StripeProvider
+            publishableKey={publishableKey}
+            merchantIdentifier="merchant.com.totalgains"
+          >
+            <ThemedRootView>
+              <RootLayoutNav />
+            </ThemedRootView>
+          </StripeProvider>
+        </FeedbackDraftProvider>
       </ThemeProvider>
     </AuthProvider>
   );

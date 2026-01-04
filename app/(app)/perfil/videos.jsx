@@ -13,13 +13,13 @@ import {
     StyleSheet,
     ScrollView,
     Pressable,
-    Dimensions,
     ActivityIndicator,
     LayoutAnimation,
     Platform,
     UIManager,
     Modal,
     TextInput,
+    useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,11 +33,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-// --- CÁLCULOS DE TAMAÑO ---
-const screenWidth = Dimensions.get('window').width;
-const screenHeight = Dimensions.get('window').height;
-const modalWidth = screenWidth * 0.95;
 
 // Mapeo de iconos por músculo
 const MUSCLE_ICONS = {
@@ -59,6 +54,11 @@ export default function VideosScreen() {
     const router = useRouter();
     const { user, token } = useAuth();
     const { theme, isDark } = useTheme();
+
+    // Dynamic dimensions for responsive modal
+    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+    const modalWidth = Math.min(screenWidth * 0.95, 600); // maxWidth 600 for web
+
     const [openMuscle, setOpenMuscle] = useState(null);
     const [selectedVideo, setSelectedVideo] = useState(null);
     const [playing, setPlaying] = useState(false);
@@ -414,7 +414,7 @@ export default function VideosScreen() {
             >
                 <BlurView intensity={30} style={StyleSheet.absoluteFill}>
                     <Pressable style={styles.modalOverlay} onPress={closeModal}>
-                        <Pressable style={[styles.modalContent, { height: videoHeight, backgroundColor: '#000' }]}>
+                        <Pressable style={[styles.modalContent, { width: modalWidth, height: videoHeight, backgroundColor: '#000' }]}>
                             {selectedVideo && (
                                 <YoutubeIframe
                                     height={videoHeight}
@@ -667,7 +667,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalContent: {
-        width: modalWidth,
         borderRadius: 24,
         overflow: 'hidden',
         position: 'relative',

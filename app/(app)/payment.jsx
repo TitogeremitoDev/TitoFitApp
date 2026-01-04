@@ -1347,48 +1347,219 @@ export default function PaymentScreen() {
                   await IAPService.endConnection();
                 }
               } else if (paymentMethod === 'applepay') {
-                // Apple In-App Purchase usando expo-iap
+                // ═══════════════════════════════════════════════════════════════
+                // APPLE IN-APP PURCHASE - StoreKit 2 con expo-iap
+                // ═══════════════════════════════════════════════════════════════
                 setLoading(true);
                 try {
+                  // 1. Conectar con App Store
+                  console.log('[ApplePay] Iniciando conexión con App Store...');
                   const connected = await IAPService.initConnection();
-                  if (!connected) throw new Error('No se pudo conectar con App Store');
-
-                  const appleProductId = getAppleProductIdFromPlan(selectedPlan);
-                  console.log('[ApplePay] Product ID:', appleProductId);
-                  if (!appleProductId) throw new Error('Este plan no tiene un Product ID de Apple configurado');
-
-                  const subscriptions = await IAPService.getSubscriptions([appleProductId]);
-                  console.log('[ApplePay] Suscripciones:', subscriptions);
-                  if (!subscriptions || subscriptions.length === 0) {
-                    throw new Error(`Producto "${appleProductId}" no disponible en App Store.`);
+                  if (!connected) {
+                    Alert.alert(
+                      'Conexión no disponible',
+                      'No se pudo conectar con App Store. Por favor verifica tu conexión a internet e inténtalo de nuevo.',
+                      [{ text: 'Entendido' }]
+                    );
+                    setLoading(false);
+                    return;
                   }
 
-                  console.log('[ApplePay] Iniciando compra...');
+                  // 2. Obtener Product ID de Apple
+                  const appleProductId = getAppleProductIdFromPlan(selectedPlan);
+                  console.log('[ApplePay] Product ID:', appleProductId);
+                  if (!appleProductId) {
+                    Alert.alert(
+                      'Plan no disponible',
+                      'Este plan no está disponible para compra en App Store en este momento.',
+                      [{ text: 'Entendido' }]
+                    );
+                    setLoading(false);
+                    return;
+                  }
+
+                  // 3. Verificar que el producto existe en App Store
+                  const subscriptions = await IAPService.getSubscriptions([appleProductId]);
+                  console.log('[ApplePay] Suscripciones disponibles:', subscriptions?.length || 0);
+                  if (!subscriptions || subscriptions.length === 0) {
+                    Alert.alert(
+                      'Suscripción en proceso',
+                      'Las suscripciones están siendo procesadas por App Store. Por favor intenta de nuevo en unos minutos.\n\nSi el problema persiste, contacta con soporte.',
+                      [{ text: 'Entendido' }]
+                    );
+                    setLoading(false);
+                    await IAPService.endConnection();
+                    return;
+                  }
+
+                  // 4. Iniciar compra
+                  console.log('[ApplePay] Iniciando flujo de compra...');
                   const purchase = await IAPService.purchaseSubscription(appleProductId);
-                  console.log('[ApplePay] Compra completada:', purchase);
+
+                  // 5. Logging detallado del objeto purchase para debug
+                  console.log('[ApplePay] ═══════════════════════════════════════');
+                  console.log('[ApplePay] Compra completada. Objeto purchase:');
+                  console.log('[ApplePay] - transactionId:', purchase?.transactionId);
+                  console.log('[ApplePay] - productId:', purchase?.productId);
+                  console.log('[ApplePay] - jwsRepresentationIos:', purchase?.jwsRepresentationIos ? 'PRESENTE (' + purchase.jwsRepresentationIos.length + ' chars)' : 'UNDEFINED');
+                  console.log('[ApplePay] - transactionReceipt:', purchase?.transactionReceipt ? 'PRESENTE (' + purchase.transactionReceipt.length + ' chars)' : 'UNDEFINED');
+                  console.log('[ApplePay] ═══════════════════════════════════════');
+
+                  // 6. Validar datos de compra - StoreKit 2 usa jwsRepresentationIos
+                  const jwsToken = purchase?.jwsRepresentationIos;
+                  const legacyReceipt = purchase?.transactionReceipt;
+                  const transactionId = purchase?.transactionId;
+
+                  if (!jwsToken && !legacyReceipt) {
+                    console.error('[ApplePay] ERROR: No hay ni jwsRepresentationIos ni transactionReceipt');
+                    Alert.alert(
+                      'Error en la compra',
+                      'No se pudo obtener la confirmación de la compra. Si se realizó un cobro, contacta con soporte para verificar tu suscripción.',
+                      [{ text: 'Entendido' }]
+                    );
+                    setLoading(false);
+                    await IAPService.endConnection();
+                    return;
+                  }
+
+                  // 7. Enviar al backend con campos SEPARADOS y claros
+                  console.log('[ApplePay] Enviando a backend para verificación...');
+                  const verifyPayload = {
+                    // StoreKit 2 (preferente)
+                    jwsToken: jwsToken || null,
+                    // Legacy (fallback)
+                    receiptData: legacyReceipt || null,
+                    // Metadatos
+                    transactionId: transactionId || null,
+                    productId: appleProductId,
+                    planId: selectedPlan.id
+                  };
+                  console.log('[ApplePay] Payload:', JSON.stringify({
+                    hasJwsToken: !!verifyPayload.jwsToken,
+                    hasReceiptData: !!verifyPayload.receiptData,
+                    transactionId: verifyPayload.transactionId,
+                    productId: verifyPayload.productId,
+                    planId: verifyPayload.planId
+                  }));
 
                   const verifyResponse = await fetch(`${API_URL}/api/payments/apple/verify-purchase`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
-                    body: JSON.stringify({ receiptData: purchase.transactionReceipt, productId: appleProductId, planId: selectedPlan.id })
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${userToken}`
+                    },
+                    body: JSON.stringify(verifyPayload)
                   });
-                  const verifyData = await verifyResponse.json();
-                  console.log('[ApplePay] Verificación:', verifyData);
 
+                  const verifyData = await verifyResponse.json();
+                  console.log('[ApplePay] Respuesta backend:', verifyResponse.status, verifyData);
+
+                  // 8. Procesar respuesta
                   if (verifyData.success) {
                     await IAPService.finishTransaction(purchase);
                     if (refreshUser) await refreshUser();
-                    Alert.alert('¡Bienvenido al Team! 🚀', `Suscripción ${selectedPlan.nombre} activada.`,
-                      [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]);
+                    Alert.alert(
+                      '¡Bienvenido al Team! 🚀',
+                      `Suscripción ${selectedPlan.nombre} activada.`,
+                      [{ text: 'Empezar a Entrenar', onPress: () => router.replace('/home') }]
+                    );
                   } else {
-                    throw new Error(verifyData.message || 'Error verificando la compra');
+                    console.error('[ApplePay] Backend rechazó verificación:', verifyData.message || verifyData.error);
+                    Alert.alert(
+                      'Verificación pendiente',
+                      'Tu compra está siendo procesada. Si no ves tu suscripción activa en unos minutos, contacta con soporte.',
+                      [{ text: 'Entendido' }]
+                    );
                   }
                 } catch (error) {
-                  console.error('[ApplePay] Error:', error);
-                  if (error.code === 'E_USER_CANCELLED' || error.message?.includes('cancelled')) {
-                    Alert.alert('Compra cancelada', 'Has cancelado la compra.');
+                  console.error('[ApplePay] Error completo:', error);
+                  console.error('[ApplePay] Error code:', error.code);
+                  console.error('[ApplePay] Error message:', error.message);
+
+                  // ═══════════════════════════════════════════════════════════════
+                  // Manejo EXHAUSTIVO de estados - Evitar modal rojo genérico
+                  // ═══════════════════════════════════════════════════════════════
+
+                  const errorCode = error.code || '';
+                  const errorMsg = (error.message || '').toLowerCase();
+
+                  // 1. CANCELACIÓN - No es error, es acción del usuario
+                  if (errorCode === 'E_USER_CANCELLED' || errorMsg.includes('cancel')) {
+                    console.log('[ApplePay] Usuario canceló la compra (comportamiento normal)');
+                    Alert.alert('Compra cancelada', 'Has cancelado la compra. Puedes intentarlo cuando quieras.');
+
+                    // 2. PRODUCTO NO DISPONIBLE (IAP en revisión, región, etc.)
+                  } else if (errorCode === 'E_ITEM_UNAVAILABLE' || errorMsg.includes('unavailable') || errorMsg.includes('not found')) {
+                    Alert.alert(
+                      'Suscripción no disponible',
+                      'Este producto no está disponible en tu región o está siendo procesado. Intenta más tarde.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 3. ERROR DE RED
+                  } else if (errorCode === 'E_NETWORK_ERROR' || errorMsg.includes('network') || errorMsg.includes('internet') || errorMsg.includes('connection')) {
+                    Alert.alert(
+                      'Sin conexión',
+                      'Verifica tu conexión a internet e inténtalo de nuevo.',
+                      [{ text: 'Reintentar' }]
+                    );
+
+                    // 4. YA TIENE LA SUSCRIPCIÓN
+                  } else if (errorCode === 'E_ALREADY_OWNED' || errorMsg.includes('already') || errorMsg.includes('owned')) {
+                    Alert.alert(
+                      'Ya tienes esta suscripción',
+                      'Si no la ves activa, usa "Restaurar compras" en Ajustes o contacta soporte.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 5. PAGO DIFERIDO (Ask to Buy / Control Parental)
+                  } else if (errorCode === 'E_DEFERRED_PAYMENT' || errorCode === 'E_DEFERRED' || errorMsg.includes('deferred') || errorMsg.includes('pending')) {
+                    Alert.alert(
+                      'Aprobación pendiente',
+                      'Tu compra requiere aprobación. Recibirás una notificación cuando se complete.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 6. USUARIO NO LOGUEADO EN APPLE ID
+                  } else if (errorCode === 'E_NOT_LOGGED_IN' || errorCode === 'E_SERVICE_ERROR' || errorMsg.includes('sign in') || errorMsg.includes('log in') || errorMsg.includes('apple id')) {
+                    Alert.alert(
+                      'Inicia sesión en App Store',
+                      'Para realizar compras, inicia sesión con tu Apple ID en Ajustes > App Store.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 7. COMPRAS NO PERMITIDAS (Restricciones del dispositivo)
+                  } else if (errorCode === 'E_BILLING_UNAVAILABLE' || errorMsg.includes('not allowed') || errorMsg.includes('restricted') || errorMsg.includes('disabled')) {
+                    Alert.alert(
+                      'Compras no permitidas',
+                      'Las compras dentro de la app están desactivadas en este dispositivo. Revisa Ajustes > Tiempo de uso > Restricciones.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 8. STOREFRONT / REGIÓN DIFERENTE
+                  } else if (errorCode === 'E_STOREFRONT_MISMATCH' || errorMsg.includes('storefront') || errorMsg.includes('country') || errorMsg.includes('region')) {
+                    Alert.alert(
+                      'Región no compatible',
+                      'Tu cuenta de App Store está en una región donde este producto no está disponible.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 9. SUSCRIPCIÓN EXPIRADA O INVÁLIDA
+                  } else if (errorMsg.includes('expired') || errorMsg.includes('invalid') || errorMsg.includes('receipt')) {
+                    Alert.alert(
+                      'Error de verificación',
+                      'Hubo un problema verificando tu compra. Si se realizó el cobro, contacta soporte.',
+                      [{ text: 'Entendido' }]
+                    );
+
+                    // 10. FALLBACK GENÉRICO (último recurso)
                   } else {
-                    Alert.alert('Error', error.message || 'Error al procesar el pago');
+                    console.warn('[ApplePay] Error no manejado específicamente:', errorCode, errorMsg);
+                    Alert.alert(
+                      'No se pudo completar',
+                      'Hubo un problema con la compra. Por favor intenta de nuevo.',
+                      [{ text: 'Reintentar' }]
+                    );
                   }
                 } finally {
                   setLoading(false);
@@ -1439,6 +1610,11 @@ export default function PaymentScreen() {
           <Pressable onPress={() => Linking.openURL('https://totalgains.es/terms')}>
             <Text style={styles.legalLink}>Consulta nuestros Términos y Condiciones aquí</Text>
           </Pressable>
+          {Platform.OS === 'ios' && (
+            <Pressable onPress={() => Linking.openURL('https://totalgains.es/terms')}>
+              <Text style={styles.legalLink}>Terminos y condiciones de apple</Text>
+            </Pressable>
+          )}
           <Pressable onPress={() => Linking.openURL('https://totalgains.es/privacy')}>
             <Text style={styles.legalLink}>Consulta nuestra Política de Privacidad aquí</Text>
           </Pressable>

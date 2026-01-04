@@ -15,7 +15,8 @@ import {
     Alert,
     ActivityIndicator,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -60,7 +61,26 @@ const SectionCard = ({ emoji, title, items, color }) => {
                 {items.map((item, index) => (
                     <View key={index} style={styles.itemRow}>
                         <View style={[styles.itemDot, { backgroundColor: color }]} />
-                        <Text style={styles.itemText}>{item.text}</Text>
+                        <View style={styles.itemContent}>
+                            {/* Mostrar nombre del ejercicio si existe */}
+                            {item.exerciseName && (
+                                <View style={styles.exerciseBadge}>
+                                    <Ionicons name="barbell" size={12} color="#3b82f6" />
+                                    <Text style={styles.exerciseName}>{item.exerciseName}</Text>
+                                </View>
+                            )}
+                            <Text style={styles.itemText}>{item.text}</Text>
+                            {/* Link al video original del atleta */}
+                            {item.sourceMediaUrl && (
+                                <TouchableOpacity
+                                    style={styles.videoLink}
+                                    onPress={() => Linking.openURL(item.sourceMediaUrl)}
+                                >
+                                    <Ionicons name="play-circle" size={16} color="#8b5cf6" />
+                                    <Text style={styles.videoLinkText}>Ver mi video</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </View>
                 ))}
             </View>
@@ -468,6 +488,42 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#334155',
         lineHeight: 20
+    },
+    itemContent: {
+        flex: 1
+    },
+    exerciseBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#dbeafe',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+        marginBottom: 6
+    },
+    exerciseName: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#1d4ed8',
+        textTransform: 'uppercase'
+    },
+    videoLink: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        backgroundColor: '#f3e8ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        alignSelf: 'flex-start'
+    },
+    videoLinkText: {
+        fontSize: 12,
+        color: '#8b5cf6',
+        fontWeight: '600'
     },
 
     // Response Card (existing response)

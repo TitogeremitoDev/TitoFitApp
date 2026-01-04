@@ -554,7 +554,8 @@ export default function FeedbacksScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8fafc'
+        backgroundColor: '#f8fafc',
+        minHeight: '100%'
     },
     loadingContainer: {
         flex: 1,
@@ -641,6 +642,7 @@ const styles = StyleSheet.create({
     // Filter Tabs
     filterTabs: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
         paddingHorizontal: 16,
         gap: 8,
         marginBottom: 8

@@ -22,6 +22,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+import { RPE_COLORS, RPE_LABELS } from '../../../src/utils/calculateKPIs';
 
 export default function ProgressDashboard() {
     const router = useRouter();
@@ -105,6 +106,8 @@ export default function ProgressDashboard() {
         ultimaSesion: null,
         volumenSemanaActual: 0,
         volumenSemanaAnterior: 0,
+        ultimoRPE: null,
+        ultimoRPENote: null,
     });
 
     const calcularProgreso = (sessions) => {
@@ -144,6 +147,12 @@ export default function ProgressDashboard() {
             ? Math.floor((ahora - ultimaSesion) / (1000 * 60 * 60 * 24))
             : null;
 
+        // Obtener último RPE de la sesión más reciente
+        const sessionsSorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const ultimaSession = sessionsSorted[0];
+        const ultimoRPE = ultimaSession?.sessionRPE || null;
+        const ultimoRPENote = ultimaSession?.sessionNote || null;
+
         return {
             tendencia: Math.round(tendencia),
             diasSinEntrenar,
@@ -151,6 +160,8 @@ export default function ProgressDashboard() {
             ultimaSesion,
             volumenSemanaActual,
             volumenSemanaAnterior,
+            ultimoRPE,
+            ultimoRPENote,
         };
     };
 
@@ -210,6 +221,30 @@ export default function ProgressDashboard() {
                             {tendenciaInfo.text}
                         </Text>
                     </View>
+
+                    {/* 🆕 RPE Battery Ring */}
+                    {progress.ultimoRPE && (
+                        <View style={styles.rpeBatteryContainer}>
+                            <View style={[
+                                styles.rpeBatteryRing,
+                                {
+                                    borderColor: RPE_COLORS[progress.ultimoRPE] || '#CBD5E1',
+                                    borderWidth: progress.ultimoRPE >= 4 ? 4 : 2,
+                                }
+                            ]}>
+                                <View style={[
+                                    styles.rpeBatteryFill,
+                                    {
+                                        backgroundColor: RPE_COLORS[progress.ultimoRPE] || '#CBD5E1',
+                                        height: `${(progress.ultimoRPE / 5) * 100}%`,
+                                    }
+                                ]} />
+                            </View>
+                            {progress.ultimoRPENote && (
+                                <View style={styles.rpeBatteryNoteDot} />
+                            )}
+                        </View>
+                    )}
                 </View>
 
                 {/* Stats */}
@@ -476,5 +511,37 @@ const styles = StyleSheet.create({
         marginTop: 8,
         textAlign: 'center',
         paddingHorizontal: 32,
+    },
+
+    // 🆕 RPE Battery Ring Styles
+    rpeBatteryContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 10,
+        position: 'relative',
+    },
+    rpeBatteryRing: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#f1f5f9',
+        overflow: 'hidden',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+    },
+    rpeBatteryFill: {
+        width: '100%',
+        borderRadius: 0,
+    },
+    rpeBatteryNoteDot: {
+        position: 'absolute',
+        top: -2,
+        right: -2,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#3b82f6',
     },
 });

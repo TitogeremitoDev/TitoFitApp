@@ -46,10 +46,14 @@ import * as XLSX from 'xlsx';
 import YoutubeIframe from 'react-native-youtube-iframe';
 import Stopwatch from '../../components/Stopwatch';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAchievements } from '../../context/AchievementsContext';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
+import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
+import { useVideoFeedback } from '../../src/hooks/useVideoFeedback';
 
 
 const { width } = Dimensions.get('window');
@@ -401,28 +405,114 @@ const NOTE_VALUES = [
   { key: 'custom', label: 'Nota', color: '#3b82f6', emoji: '🔵' },
 ];
 
-function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, onSave, theme }) {
+function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, initialAudioUri, onSave, theme }) {
   const [value, setValue] = useState(initialValue || 'normal');
   const [noteText, setNoteText] = useState(initialNote || '');
+  const [audioUri, setAudioUri] = useState(initialAudioUri || null);
+  // expo-audio hooks
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const audioPlayer = useAudioPlayer(audioUri);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     if (visible) {
       setValue(initialValue || 'normal');
       setNoteText(initialNote || '');
+      setAudioUri(initialAudioUri || null);
+      setIsRecording(false);
+      setRecordingTime(0);
     }
-  }, [visible, initialValue, initialNote]);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (sound) sound.unloadAsync();
+    };
+  }, [visible, initialValue, initialNote, initialAudioUri]);
+
+  // Iniciar grabación (expo-audio)
+  const startRecording = async () => {
+    try {
+      const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (!status.granted) {
+        Alert.alert('Permiso denegado', 'Necesitamos acceso al micrófono');
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordingTime(t => t + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('[NotesModal] Error starting recording:', err);
+    }
+  };
+
+  // Parar grabación
+  const stopRecording = async () => {
+    if (!audioRecorder.isRecording) return;
+    try {
+      clearInterval(timerRef.current);
+      setIsRecording(false);
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      setAudioUri(uri);
+    } catch (err) {
+      console.error('[NotesModal] Error stopping recording:', err);
+    }
+  };
+
+  // Reproducir audio (expo-audio)
+  const playAudio = async () => {
+    if (!audioUri || !audioPlayer) return;
+    try {
+      setIsPlaying(true);
+      audioPlayer.seekTo(0);
+      audioPlayer.play();
+    } catch (err) {
+      console.error('[NotesModal] Error playing audio:', err);
+    }
+  };
+
+  // Track when audio finishes
+  useEffect(() => {
+    if (audioPlayer && !audioPlayer.playing && isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [audioPlayer?.playing, isPlaying]);
+
+  // Eliminar audio
+  const deleteAudio = async () => {
+    setAudioUri(null);
+    setIsPlaying(false);
+  };
 
   const handleSave = () => {
-    onSave(serieKey, value, noteText);
+    onSave(serieKey, value, noteText, audioUri);
     onClose();
   };
 
   const handleDelete = () => {
-    onSave(serieKey, null, null);
+    onSave(serieKey, null, null, null);
     onClose();
   };
 
-  // Detectar si es modo noche
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   const isDarkMode = theme.background === '#0d0d0d';
 
   return (
@@ -462,24 +552,74 @@ function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, onS
             ))}
           </View>
 
-          {/* Input de texto */}
-          <TextInput
-            style={[notesModalStyles.input, {
-              backgroundColor: theme.inputBackground,
-              borderColor: theme.inputBorder,
-              color: theme.inputText
-            }]}
-            placeholder="Escribe tu nota aquí..."
-            placeholderTextColor={theme.placeholder}
-            value={noteText}
-            onChangeText={setNoteText}
-            multiline
-            maxLength={500}
-          />
+          {/* Input de texto + Mic (estilo WhatsApp) */}
+          <View style={notesModalStyles.inputRow}>
+            <TextInput
+              style={[notesModalStyles.input, {
+                backgroundColor: theme.inputBackground,
+                borderColor: theme.inputBorder,
+                color: theme.inputText,
+                flex: 1,
+              }]}
+              placeholder="Escribe tu nota aquí..."
+              placeholderTextColor={theme.placeholder}
+              value={noteText}
+              onChangeText={setNoteText}
+              multiline
+              maxLength={500}
+            />
+            {!audioUri && !isRecording && (
+              <TouchableOpacity
+                onPress={startRecording}
+                style={[notesModalStyles.micBtnInline, { backgroundColor: theme.primary || '#4361ee' }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="mic" size={20} color="#fff" />
+              </TouchableOpacity>
+            )}
+            {isRecording && (
+              <TouchableOpacity
+                onPress={stopRecording}
+                style={[notesModalStyles.micBtnInline, { backgroundColor: '#ef4444' }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="stop" size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Indicador de grabación */}
+          {isRecording && (
+            <View style={notesModalStyles.recordingRow}>
+              <View style={notesModalStyles.recordingDot} />
+              <Text style={[notesModalStyles.recordingTime, { color: '#ef4444' }]}>
+                Grabando {formatTime(recordingTime)}
+              </Text>
+            </View>
+          )}
+
+          {/* Audio grabado */}
+          {audioUri && !isRecording && (
+            <View style={notesModalStyles.audioRow}>
+              <TouchableOpacity
+                onPress={playAudio}
+                style={[notesModalStyles.playBtn, { borderColor: theme.border }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={isPlaying ? 'pause' : 'play'} size={16} color={theme.primary || '#4361ee'} />
+              </TouchableOpacity>
+              <Text style={[notesModalStyles.audioLabel, { color: theme.textSecondary, flex: 1 }]}>
+                🎤 Nota de voz
+              </Text>
+              <TouchableOpacity onPress={deleteAudio} hitSlop={8}>
+                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Botones */}
           <View style={notesModalStyles.actions}>
-            {(initialValue || initialNote) && (
+            {(initialValue || initialNote || initialAudioUri) && (
               <TouchableOpacity
                 onPress={handleDelete}
                 style={[notesModalStyles.deleteBtn, { borderColor: theme.border }]}
@@ -584,6 +724,56 @@ const notesModalStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  // Estilos WhatsApp
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  micBtnInline: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  recordingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  recordingTime: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  audioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(67, 97, 238, 0.1)',
+  },
+  playBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  audioLabel: {
+    fontSize: 13,
+  },
 });
 
 /* ───────── 🚪 Estilos del Modal de Salida ───────── */
@@ -672,18 +862,275 @@ const exitModalStyles = StyleSheet.create({
   },
 });
 
+/* ───────── 🎯 RPE Bars Component ───────── */
+const RPE_LABELS = {
+  1: 'Energía Baja 🪫',
+  2: 'Cansado',
+  3: 'Buen entreno 💪',
+  4: 'Gran sesión 🔥',
+  5: '¡Modo Bestia! 🔥'
+};
+
+const RPE_COLORS = {
+  1: '#bfdbfe', // Blue-200 (muy pálido)
+  2: '#93c5fd', // Blue-300
+  3: '#3b82f6', // Blue-500 (corporativo)
+  4: '#2563eb', // Blue-600
+  5: '#1d4ed8'  // Blue-700 (neón)
+};
+
+const RPE_HEIGHTS = [16, 24, 32, 40, 48];
+
+function RPEBars({ value, onChange, theme }) {
+  const [dragging, setDragging] = useState(false);
+  const barsRef = useRef(null);
+  const barPositions = useRef([]);
+
+  const handleBarPress = useCallback((index) => {
+    const newValue = index + 1;
+    if (newValue !== value) {
+      if (Platform.OS !== 'web') {
+        Haptics.selectionAsync();
+      }
+      onChange(newValue);
+    }
+  }, [value, onChange]);
+
+  const handleTouchMove = useCallback((event) => {
+    if (!dragging) return;
+
+    const touchX = event.nativeEvent.pageX;
+
+    // Determinar qué barra está más cerca
+    for (let i = 0; i < barPositions.current.length; i++) {
+      const pos = barPositions.current[i];
+      if (pos && touchX >= pos.left && touchX <= pos.right) {
+        const newValue = i + 1;
+        if (newValue !== value) {
+          if (Platform.OS !== 'web') {
+            Haptics.selectionAsync();
+          }
+          onChange(newValue);
+        }
+        break;
+      }
+    }
+  }, [dragging, value, onChange]);
+
+  const measureBars = useCallback(() => {
+    // Esta función se llamará al layout para medir posiciones
+  }, []);
+
+  return (
+    <View style={rpeStyles.container}>
+      <Text style={[rpeStyles.label, { color: theme.textSecondary }]}>
+        ¿Cómo ha ido la energía hoy?
+      </Text>
+
+      {/* Texto dinámico */}
+      <Text style={[rpeStyles.dynamicLabel, {
+        color: value ? RPE_COLORS[value] : theme.textSecondary,
+        textShadowColor: value === 5 ? '#1d4ed8' : 'transparent',
+        textShadowRadius: value === 5 ? 10 : 0,
+      }]}>
+        {value ? RPE_LABELS[value] : 'Selecciona tu energía'}
+      </Text>
+
+      {/* Barras */}
+      <View
+        ref={barsRef}
+        style={rpeStyles.barsContainer}
+        onTouchStart={() => setDragging(true)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => setDragging(false)}
+      >
+        {[1, 2, 3, 4, 5].map((level, index) => {
+          const isActive = value && level <= value;
+          const barColor = isActive ? RPE_COLORS[level] : '#d1d5db';
+          const height = RPE_HEIGHTS[index];
+
+          return (
+            <TouchableOpacity
+              key={level}
+              onPress={() => handleBarPress(index)}
+              onLayout={(event) => {
+                const layout = event.nativeEvent.layout;
+                barPositions.current[index] = {
+                  left: layout.x,
+                  right: layout.x + layout.width,
+                };
+              }}
+              style={[rpeStyles.barTouchable]}
+              activeOpacity={0.7}
+            >
+              <View
+                style={[
+                  rpeStyles.bar,
+                  {
+                    height,
+                    backgroundColor: barColor,
+                    shadowColor: isActive && level >= 4 ? RPE_COLORS[level] : 'transparent',
+                    shadowOpacity: isActive && level >= 4 ? 0.6 : 0,
+                    shadowRadius: isActive && level >= 4 ? 8 : 0,
+                    elevation: isActive && level >= 4 ? 4 : 0,
+                  }
+                ]}
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Subtítulo motivacional */}
+      <Text style={[rpeStyles.subtitle, { color: theme.textSecondary }]}>
+        Ayúdame a ajustar tu próxima sesión
+      </Text>
+    </View>
+  );
+}
+
+function RPENoteInput({ value, onChange, expanded, onExpandToggle, autoExpand, theme, scrollRef }) {
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (autoExpand && !expanded) {
+      onExpandToggle(true);
+    }
+  }, [autoExpand]);
+
+  const placeholderText = autoExpand
+    ? '¿Todo bien? Cuéntame...'
+    : '¿Alguna molestia o récord hoy?';
+
+  // Calcular altura dinámica según contenido
+  const lineCount = value ? (value.match(/\n/g) || []).length + 1 : 1;
+  const dynamicHeight = Math.max(36, Math.min(lineCount * 20 + 16, 100));
+
+  return (
+    <View style={rpeStyles.noteContainer}>
+      <TouchableOpacity
+        onPress={() => {
+          onExpandToggle(true);
+          setTimeout(() => inputRef.current?.focus(), 100);
+        }}
+        style={[
+          rpeStyles.noteInputWrapper,
+          {
+            borderColor: isFocused ? theme.primary : theme.border,
+            backgroundColor: theme.inputBackground,
+          }
+        ]}
+        activeOpacity={expanded ? 1 : 0.7}
+      >
+        {expanded ? (
+          <TextInput
+            ref={inputRef}
+            style={[rpeStyles.noteInput, { color: theme.inputText, height: dynamicHeight }]}
+            placeholder={placeholderText}
+            placeholderTextColor={theme.placeholder}
+            value={value}
+            onChangeText={onChange}
+            onFocus={() => {
+              setIsFocused(true);
+              // Scroll to make input visible
+              setTimeout(() => scrollRef?.current?.scrollToEnd?.({ animated: true }), 200);
+            }}
+            onBlur={() => setIsFocused(false)}
+            multiline
+            textAlignVertical="top"
+            scrollEnabled={false}
+          />
+        ) : (
+          <Text style={[rpeStyles.notePlaceholder, { color: theme.placeholder }]}>
+            {placeholderText}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const rpeStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    paddingVertical: Platform.select({ web: 12, default: 8 }),
+    paddingHorizontal: Platform.select({ web: 16, default: 12 }),
+  },
+  label: {
+    fontSize: Platform.select({ web: 15, default: 13 }),
+    fontWeight: '600',
+    marginBottom: Platform.select({ web: 6, default: 4 }),
+  },
+  dynamicLabel: {
+    fontSize: Platform.select({ web: 18, default: 16 }),
+    fontWeight: '700',
+    marginBottom: Platform.select({ web: 12, default: 10 }),
+    textAlign: 'center',
+  },
+  barsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: Platform.select({ web: 14, default: 10 }),
+    height: Platform.select({ web: 60, default: 52 }),
+    paddingHorizontal: Platform.select({ web: 12, default: 8 }),
+  },
+  barTouchable: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: Platform.select({ web: 10, default: 8 }),
+    paddingVertical: Platform.select({ web: 6, default: 4 }),
+  },
+  bar: {
+    width: Platform.select({ web: 28, default: 24 }),
+    borderRadius: Platform.select({ web: 8, default: 6 }),
+  },
+  subtitle: {
+    fontSize: 11,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  noteContainer: {
+    width: '100%',
+    marginTop: 8,
+    paddingHorizontal: 12,
+  },
+  noteInputWrapper: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  noteInput: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  notePlaceholder: {
+    fontSize: 14,
+  },
+});
+
 /* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
-function StatsModal({ visible, onClose, stats }) {
+function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
   const { theme } = useTheme();
   // We use layoutReady to know when the specific view dimensions are set
   const [layoutReady, setLayoutReady] = useState(false);
   const [modalHeight, setModalHeight] = useState(0);
+
+  // 🆕 RPE State
+  const [rpe, setRpe] = useState(null);
+  const [note, setNote] = useState('');
+  const [noteExpanded, setNoteExpanded] = useState(false);
 
   // Reset state when visibility changes
   useEffect(() => {
     if (!visible) {
       setLayoutReady(false);
       setModalHeight(0);
+      setRpe(null);
+      setNote('');
+      setNoteExpanded(false);
     }
   }, [visible]);
 
@@ -764,101 +1211,103 @@ function StatsModal({ visible, onClose, stats }) {
               bounces={true}
               removeClippedSubviews={false}
             >
-              {/* 🏆 Encabezado con trofeo */}
-              <View style={styles.statsHeader}>
-                <View style={styles.trophyContainer}>
-                  <Ionicons name="trophy" size={64} color="#fbbf24" />
+              {/* 🏆 Encabezado compacto (trofeo a la izquierda) */}
+              <View style={styles.statsHeaderCompact}>
+                <Ionicons name="trophy" size={40} color="#fbbf24" />
+                <View style={styles.statsHeaderText}>
+                  <Text style={[styles.statsTitleCompact, { color: theme.text }]}>
+                    ¡Enhorabuena!
+                  </Text>
+                  <Text style={[styles.statsSubtitleCompact, { color: theme.primary }]}>
+                    Has superado tus metas
+                  </Text>
                 </View>
-                <Text style={[styles.statsTitle, { color: theme.text }]}>
-                  ¡Enhorabuena!
-                </Text>
-                <Text style={[styles.statsSubtitle, { color: theme.primary }]}>
-                  Has superado tus metas
-                </Text>
               </View>
 
-              {/* 📊 Estadísticas comparativas */}
-              <View style={styles.statsSection}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                  {previous ? '📊 Comparación con Semana Anterior' : '📊 Estadísticas de Hoy'}
-                </Text>
-                {/* Volumen Total */}
-                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                  <View style={styles.statHeader}>
-                    <Ionicons name="cube" size={24} color="#8b5cf6" />
-                    <Text style={[styles.statTitle, { color: theme.text }]}>Volumen Total</Text>
-                  </View>
-                  <View style={styles.statRow}>
-                    <Text style={[styles.statValue, { color: theme.primary }]}>
-                      {formatNumber(current.volume)} kg
-                    </Text>
-                    {previous && (
-                      <View style={styles.statDiff}>
-                        <Ionicons
-                          name={getDiffIcon(current.volume - previous.volume)}
-                          size={20}
-                          color={getDiffColor(current.volume - previous.volume)}
-                        />
-                        <Text style={[styles.statDiffText, { color: getDiffColor(current.volume - previous.volume) }]}>
-                          {formatDiff(current.volume - previous.volume)}
-                          {formatPercent(current.volume - previous.volume, previous.volume)}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  {previous && (
-                    <Text style={[styles.statPrevious, { color: theme.textSecondary }]}>
-                      Anterior: {formatNumber(previous.volume)} kg
-                    </Text>
-                  )}
-                </View>
-                {/* 1RM Estimado */}
-                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                  <View style={styles.statHeader}>
-                    <Ionicons name="flash" size={24} color="#f59e0b" />
-                    <Text style={[styles.statTitle, { color: theme.text }]}>1RM Estimado</Text>
-                  </View>
-                  <View style={styles.statRow}>
+              {/* 🎯 Sección de RPE Feedback (comprimida) */}
+              <View style={[styles.rpeFeedbackSection, { borderColor: theme.border }]}>
+                <RPEBars
+                  value={rpe}
+                  onChange={setRpe}
+                  theme={theme}
+                />
+                <RPENoteInput
+                  value={note}
+                  onChange={setNote}
+                  expanded={noteExpanded}
+                  onExpandToggle={setNoteExpanded}
+                  autoExpand={rpe && rpe <= 2}
+                  theme={theme}
+                />
+              </View>
 
+              {/* 📊 Estadísticas comparativas - LAYOUT COMPACTO */}
+              <View style={styles.statsSection}>
+                <Text style={[styles.sectionTitleCompact, { color: theme.text }]}>
+                  {previous ? '📊 Comparación Semanal' : '📊 Hoy'}
+                </Text>
+
+                {/* Fila horizontal: 1RM + Carga Media */}
+                <View style={styles.statsRowHorizontal}>
+                  {/* 1RM Estimado */}
+                  <View style={[styles.statCardCompact, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                    <View style={styles.statHeaderCompact}>
+                      <Ionicons name="flash" size={18} color="#f59e0b" />
+                      <Text style={[styles.statTitleCompact, { color: theme.text }]}>1RM</Text>
+                    </View>
                     {previous && (
-                      <View style={styles.statDiff}>
+                      <View style={styles.statDiffCompact}>
                         <Ionicons
                           name={getDiffIcon(current.oneRM - previous.oneRM)}
-                          size={20}
+                          size={16}
                           color={getDiffColor(current.oneRM - previous.oneRM)}
                         />
-                        <Text style={[styles.statDiffText, { color: getDiffColor(current.oneRM - previous.oneRM) }]}>
-                          {formatDiff(current.oneRM - previous.oneRM)}
-                          {formatPercent(current.oneRM - previous.oneRM, previous.oneRM)}
+                        <Text style={[styles.statDiffTextCompact, { color: getDiffColor(current.oneRM - previous.oneRM) }]}>
+                          {formatDiff(current.oneRM - previous.oneRM)} ({formatPercent(current.oneRM - previous.oneRM, previous.oneRM).replace(' ', '')})
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Carga Media */}
+                  <View style={[styles.statCardCompact, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                    <View style={styles.statHeaderCompact}>
+                      <Ionicons name="analytics" size={18} color="#06b6d4" />
+                      <Text style={[styles.statTitleCompact, { color: theme.text }]}>Carga</Text>
+                    </View>
+                    {previous && (
+                      <View style={styles.statDiffCompact}>
+                        <Ionicons
+                          name={getDiffIcon(current.avgLoad - previous.avgLoad)}
+                          size={16}
+                          color={getDiffColor(current.avgLoad - previous.avgLoad)}
+                        />
+                        <Text style={[styles.statDiffTextCompact, { color: getDiffColor(current.avgLoad - previous.avgLoad) }]}>
+                          {formatDiff(current.avgLoad - previous.avgLoad)} ({formatPercent(current.avgLoad - previous.avgLoad, previous.avgLoad).replace(' ', '')})
                         </Text>
                       </View>
                     )}
                   </View>
                 </View>
 
-
-
-                {/* Carga Media */}
-                <View style={[styles.statCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
-                  <View style={styles.statHeader}>
-                    <Ionicons name="analytics" size={24} color="#06b6d4" />
-                    <Text style={[styles.statTitle, { color: theme.text }]}>Carga Media</Text>
+                {/* Volumen Total - fila completa debajo */}
+                <View style={[styles.statCardCompact, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder, marginTop: 8 }]}>
+                  <View style={styles.statHeaderCompact}>
+                    <Ionicons name="cube" size={18} color="#8b5cf6" />
+                    <Text style={[styles.statTitleCompact, { color: theme.text }]}>Volumen: {formatNumber(current.volume)} kg</Text>
                   </View>
-                  <View style={styles.statRow}>
-                    {previous && (
-                      <View style={styles.statDiff}>
-                        <Ionicons
-                          name={getDiffIcon(current.avgLoad - previous.avgLoad)}
-                          size={20}
-                          color={getDiffColor(current.avgLoad - previous.avgLoad)}
-                        />
-                        <Text style={[styles.statDiffText, { color: getDiffColor(current.avgLoad - previous.avgLoad) }]}>
-                          {formatDiff(current.avgLoad - previous.avgLoad)}
-                          {formatPercent(current.avgLoad - previous.avgLoad, previous.avgLoad)}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                  {previous && (
+                    <View style={styles.statDiffCompact}>
+                      <Ionicons
+                        name={getDiffIcon(current.volume - previous.volume)}
+                        size={16}
+                        color={getDiffColor(current.volume - previous.volume)}
+                      />
+                      <Text style={[styles.statDiffTextCompact, { color: getDiffColor(current.volume - previous.volume) }]}>
+                        {formatDiff(current.volume - previous.volume)} vs anterior
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -888,7 +1337,13 @@ function StatsModal({ visible, onClose, stats }) {
               {/* Botón de cerrar */}
               <TouchableOpacity
                 style={[styles.closeButton, { backgroundColor: theme.primary }]}
-                onPress={onClose}
+                onPress={() => {
+                  // 🆕 Si hay RPE o nota, enviar feedback antes de cerrar
+                  if ((rpe || note.trim()) && onRPESubmit && workoutId) {
+                    onRPESubmit(workoutId, rpe, note.trim());
+                  }
+                  onClose();
+                }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.closeButtonText}>¡Genial! 🎉</Text>
@@ -907,9 +1362,10 @@ const TOTAL_TUTORIAL_SLIDES = 5;
 
 function TutorialModal({ visible, onComplete }) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [currentSlide, setCurrentSlide] = useState(0);
   const scrollViewRef = useRef(null);
-  const { width: screenWidth } = Dimensions.get('window');
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
   // Estados para el tutorial interactivo
   const [tutorialReps, setTutorialReps] = useState('');
@@ -1261,6 +1717,14 @@ function TutorialModal({ visible, onComplete }) {
                 El sistema está listo. El camino está marcado. Lo único que falta es tu voluntad.
               </Text>
 
+              {/* Nota de recordatorio */}
+              <View style={[tutorialStyles.reminderNote, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '30' }]}>
+                <Ionicons name="information-circle" size={18} color={theme.primary} />
+                <Text style={[tutorialStyles.reminderText, { color: theme.primary }]}>
+                  Puedes volver a ver este tutorial desde Ajustes → Tutoriales
+                </Text>
+              </View>
+
               <TouchableOpacity
                 style={[tutorialStyles.finalButton, { backgroundColor: theme.success }]}
                 onPress={onComplete}
@@ -1274,7 +1738,7 @@ function TutorialModal({ visible, onComplete }) {
         </ScrollView>
 
         {/* Profesor Coach (fijo abajo) */}
-        <View style={[tutorialStyles.coachContainer, { backgroundColor: theme.background }]}>
+        <View style={[tutorialStyles.coachContainer, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
           <View style={tutorialStyles.coachContent}>
             <View style={tutorialStyles.coachAvatarContainer}>
               <View style={[tutorialStyles.coachAvatarGlow, { backgroundColor: theme.primary + '20' }]} />
@@ -1380,8 +1844,8 @@ const tutorialStyles = StyleSheet.create({
   },
   slideContent: {
     flex: 1,
-    padding: 24,
-    paddingBottom: 180,
+    padding: 20,
+    paddingBottom: 140,
   },
   logoContainer: {
     alignItems: 'center',
@@ -1717,48 +2181,62 @@ const tutorialStyles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
+  reminderNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  reminderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
   coachContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   coachContent: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 10,
   },
   coachAvatarContainer: {
     position: 'relative',
-    width: 64,
-    height: 64,
+    width: 52,
+    height: 52,
   },
   coachAvatarGlow: {
     position: 'absolute',
     inset: 0,
-    borderRadius: 32,
+    borderRadius: 26,
     opacity: 0.3,
   },
   coachAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: '#334155',
   },
   coachBubble: {
     flex: 1,
-    padding: 12,
-    borderRadius: 16,
+    padding: 10,
+    borderRadius: 14,
     borderTopLeftRadius: 4,
     borderWidth: 1,
   },
   coachText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '600',
   },
   navigation: {
@@ -1777,11 +2255,8 @@ const tutorialStyles = StyleSheet.create({
     opacity: 0.3,
   },
   navCounter: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '800',
-    textTransform: 'uppercase',
-    marginBottom: 24,
-    opacity: 0.5,
   },
   ghostToday: {
     marginTop: 8,
@@ -2006,19 +2481,25 @@ export default function Entreno() {
   const [showTutorial, setShowTutorial] = useState(false);
 
   // 🔥 NUEVO: Modal de estadísticas
-  const [statsModal, setStatsModal] = useState({ visible: false, stats: null });
+  const [statsModal, setStatsModal] = useState({ visible: false, stats: null, workoutId: null });
 
   // Modal de Upgrade para FREEUSER
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // 📝 Sistema de Notas por Serie
-  const [notes, setNotes] = useState({}); // { serieKey: { value: 'high'|'low'|'normal'|'custom', note: 'texto' } }
+  const [notes, setNotes] = useState({}); // { serieKey: { value, note, audioUri, mediaUri, mediaType } }
   const [notesModal, setNotesModal] = useState({
     visible: false,
     serieKey: null,
-    value: 'normal',
-    note: ''
+    exerciseId: null,
+    exerciseName: null,
+    value: 'low', // Default: Ok (🟢)
+    note: '',
+    audioUri: null,
+    mediaUri: null,
+    mediaType: null,
   });
+
 
   // 🚪 Modal de confirmación de salida (cambios sin guardar)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -2031,6 +2512,9 @@ export default function Entreno() {
   const [exercises, setExercises] = useState([]);
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
   const { token } = useAuth();
+
+  // 📹 Hook para subida de media feedback a R2
+  const { uploadVideoFeedback, uploadPhotoFeedback, uploading: mediaUploading } = useVideoFeedback(API_URL, token);
   // 🆕 Índice dinámico de ejercicios
   const exercisesIndex = useMemo(() => {
     return buildExerciseIndex(exercises);
@@ -2129,10 +2613,16 @@ export default function Entreno() {
 
             if (!localEx) return;
 
-            // 🆕 Marcar el ejercicio como completado si el workout está completado
-            if (workout.status === 'completed') {
-              const ejerKey = `${workoutWeek}|${workoutDayIdx}|${localEx.id}`;
-              cloudProg[ejerKey] = 'C';
+            // 🆕 Leer el estado guardado del ejercicio, no asumir 'C'
+            const ejerKey = `${workoutWeek}|${workoutDayIdx}|${localEx.id}`;
+            // El servidor guarda el estado en ex.status (C, NC, OE)
+            if (ex.status && ['C', 'NC', 'OE'].includes(ex.status)) {
+              cloudProg[ejerKey] = ex.status;
+            } else if (workout.status === 'completed') {
+              // Fallback: si no hay status guardado pero el workout está completado,
+              // verificar si hay datos en las series para decidir
+              const hasData = ex.sets?.some(s => s.actualReps > 0 || s.weight > 0);
+              cloudProg[ejerKey] = hasData ? 'C' : 'NC';
             }
 
             ex.sets?.forEach((set, setIdx) => {
@@ -2434,7 +2924,60 @@ export default function Entreno() {
   useFocusEffect(
     useCallback(() => {
       hydrate();
-    }, [hydrate])
+
+      // Detectar si hay un video pendiente guardado desde preview
+      const checkPendingVideo = async () => {
+        try {
+          const pendingData = await AsyncStorage.getItem('pending_video_feedback');
+          if (pendingData) {
+            const data = JSON.parse(pendingData);
+            // Limpiar el pending
+            await AsyncStorage.removeItem('pending_video_feedback');
+
+            // Abrir el modal con el video ya cargado
+            const existingNote = notes[data.serieKey] || {};
+            setNotesModal({
+              visible: true,
+              serieKey: data.serieKey,
+              exerciseId: data.exerciseId,
+              exerciseName: data.exerciseName,
+              value: existingNote.value || 'low',
+              note: existingNote.note || '',
+              audioUri: existingNote.audioUri || null,
+              mediaUri: data.videoPath,
+              mediaType: 'video',
+              trimStart: data.trimStart,
+              trimEnd: data.trimEnd,
+            });
+            return;
+          }
+
+          // Detectar si hay una foto pendiente
+          const pendingPhoto = await AsyncStorage.getItem('pending_photo_feedback');
+          if (pendingPhoto) {
+            const data = JSON.parse(pendingPhoto);
+            await AsyncStorage.removeItem('pending_photo_feedback');
+
+            const existingNote = notes[data.serieKey] || {};
+            setNotesModal({
+              visible: true,
+              serieKey: data.serieKey,
+              exerciseId: data.exerciseId,
+              exerciseName: data.exerciseName,
+              value: existingNote.value || 'low',
+              note: existingNote.note || '',
+              audioUri: existingNote.audioUri || null,
+              mediaUri: data.photoUri,
+              mediaType: 'photo',
+            });
+          }
+        } catch (err) {
+          console.error('[Entreno] Error checking pending media:', err);
+        }
+      };
+      checkPendingVideo();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hydrate]) // 🔧 FIX: Removed 'notes' to prevent infinite loop (hydrate updates notes)
   );
 
   // Re-clamp cuando cambie el nº de días y persistir la posición (ya hidratados)
@@ -2722,14 +3265,19 @@ export default function Entreno() {
             logEntriesToAdd.push(...seriesData);
           }
         } else {
-          // Sin estado: marcar como NC y dejar campos vacíos
+          // Sin estado explícito (C/NC/OE) - determinar automáticamente
           ejerciciosSinEstado++;
 
-          // 🆕 Marcar el ejercicio como NC (No Completado) en lugar de copiar datos anteriores
-          nextProg[ejerKey] = 'NC';
+          // 🆕 Verificar si el usuario rellenó algún dato en las series
+          const seriesDelEjercicio = ejercicio.series || [];
+          const tieneData = seriesDelEjercicio.some((_, idx) => {
+            const serieKey = `${ejerKey}|${idx}`;
+            const datosSerie = nextProg[serieKey] || {};
+            return (Number(datosSerie.reps) > 0 || Number(datosSerie.peso) > 0);
+          });
 
-          // Los campos de series se dejan vacíos - no copiar datos del día anterior
-          // Esto permite que el usuario vea claramente qué ejercicios no completó
+          // Si rellenó datos → Completado (C), si no → No Completado (NC)
+          nextProg[ejerKey] = tieneData ? 'C' : 'NC';
         }
 
         ejerciciosProcesados++;
@@ -2738,6 +3286,7 @@ export default function Entreno() {
       // 🔥 GUARDAR EN LA BASE DE DATOS A TRAVÉS DE LA API
       // 🏆 Flag para saber si el workout ya existía (para no contar logros duplicados)
       let wasUpdated = false;
+      let savedWorkoutId = null; // 🆕 Para pasar al modal de RPE
 
       try {
         // Construir los ejercicios para la API con el esquema del modelo Workout
@@ -2773,11 +3322,14 @@ export default function Entreno() {
 
             return set;
           });
+          // 🆕 Incluir el estado del ejercicio (C, NC, OE)
+          const exerciseStatus = nextProg[ejerKey] || 'NC';
           return {
             exerciseId: null,
             exerciseName: ejercicio.nombre,
             muscleGroup: ejercicio.musculo,
             orderIndex: orderIndex,
+            status: exerciseStatus, // 🆕 Estado guardado por ejercicio
             sets: sets
           };
         });
@@ -2855,7 +3407,9 @@ export default function Entreno() {
           if (response.ok) {
             const result = await response.json();
             wasUpdated = result.updated === true;
-            console.log(wasUpdated ? '✅ Workout actualizado:' : '✅ Workout creado:', result.workout?._id);
+            // 🆕 Capturar workoutId para el modal RPE
+            savedWorkoutId = result.workout?._id || null;
+            console.log(wasUpdated ? '✅ Workout actualizado:' : '✅ Workout creado:', savedWorkoutId);
           } else {
             const errorData = await response.json();
             console.error('❌ Error al guardar en la API:', errorData);
@@ -2950,6 +3504,7 @@ export default function Entreno() {
 
       setStatsModal({
         visible: true,
+        workoutId: savedWorkoutId,
         stats: {
           current: currentStats,
           previous: previousStats,
@@ -3493,29 +4048,72 @@ export default function Entreno() {
                               {EXTRA_ABBR[serie?.extra] || ''}
                             </Text>
 
-                            {/* 📝 Botón de Notas */}
-                            <TouchableOpacity
-                              onPress={() => {
-                                const existingNote = notes[serieKey];
-                                setNotesModal({
-                                  visible: true,
-                                  serieKey,
-                                  value: existingNote?.value || 'normal',
-                                  note: existingNote?.note || '',
-                                });
-                              }}
-                              style={styles.noteBtn}
-                              activeOpacity={0.7}
-                            >
-                              {notes[serieKey] ? (
-                                <View style={[
-                                  styles.noteDot,
-                                  { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
-                                ]} />
-                              ) : (
-                                <Ionicons name="chatbubble" size={14} color={theme.background === '#0d0d0d' ? '#1a1a1a' : '#ffffff'} />
-                              )}
-                            </TouchableOpacity>
+                            {/* 📝 Botón de Feedback Unificado (reemplaza video + notas separados) */}
+                            <View style={styles.actionBtns}>
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  const existingNote = notes[serieKey];
+                                  let pendingMediaUri = existingNote?.mediaUri || null;
+                                  let pendingMediaType = existingNote?.mediaType || null;
+
+                                  // 📸 Leer pending photo/video de AsyncStorage si existe
+                                  try {
+                                    // Check for pending photo
+                                    const pendingPhotoJson = await AsyncStorage.getItem('pending_photo_feedback');
+                                    if (pendingPhotoJson) {
+                                      const pendingPhoto = JSON.parse(pendingPhotoJson);
+                                      // Solo usar si es para esta serie
+                                      if (pendingPhoto.serieKey === serieKey) {
+                                        pendingMediaUri = pendingPhoto.photoUri;
+                                        pendingMediaType = 'photo';
+                                        console.log('[Entreno] 📸 Pending photo encontrada:', pendingMediaUri);
+                                      }
+                                      // Limpiar después de leer
+                                      await AsyncStorage.removeItem('pending_photo_feedback');
+                                    }
+
+                                    // Check for pending video
+                                    const pendingVideoJson = await AsyncStorage.getItem('pending_video_feedback');
+                                    if (pendingVideoJson) {
+                                      const pendingVideo = JSON.parse(pendingVideoJson);
+                                      // Solo usar si es para esta serie
+                                      if (pendingVideo.serieKey === serieKey) {
+                                        pendingMediaUri = pendingVideo.videoPath; // preview.jsx guarda videoPath
+                                        pendingMediaType = 'video';
+                                        console.log('[Entreno] 📹 Pending video encontrado:', pendingMediaUri);
+                                      }
+                                      // Limpiar después de leer
+                                      await AsyncStorage.removeItem('pending_video_feedback');
+                                    }
+                                  } catch (err) {
+                                    console.error('[Entreno] Error leyendo pending media:', err);
+                                  }
+
+                                  setNotesModal({
+                                    visible: true,
+                                    serieKey,
+                                    exerciseId: item.id,
+                                    exerciseName: item.nombre,
+                                    value: existingNote?.value || 'low',
+                                    note: existingNote?.note || '',
+                                    audioUri: existingNote?.audioUri || null,
+                                    mediaUri: pendingMediaUri,
+                                    mediaType: pendingMediaType,
+                                  });
+                                }}
+                                style={styles.actionBtn}
+                                activeOpacity={0.7}
+                              >
+                                {notes[serieKey] ? (
+                                  <View style={[
+                                    styles.noteDot,
+                                    { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
+                                  ]} />
+                                ) : (
+                                  <Ionicons name="chatbubble-ellipses" size={15} color="#10b981" />
+                                )}
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         );
                       })}
@@ -3555,54 +4153,152 @@ export default function Entreno() {
       </View >
 
       {/* 🔥 Modal de Estadísticas ÉPICO */}
-      < StatsModal
+      <StatsModal
         visible={statsModal.visible}
-        onClose={() => setStatsModal({ visible: false, stats: null })}
+        onClose={() => {
+          setStatsModal({ visible: false, stats: null, workoutId: null });
+          // 🏠 Navegar al Home al finalizar el entrenamiento
+          navigation.navigate('home');
+        }}
         stats={statsModal.stats}
+        workoutId={statsModal.workoutId}
+        onRPESubmit={async (workoutId, sessionRPE, sessionNote) => {
+          // 🆕 PATCH para actualizar solo RPE/nota sin tocar el workout
+          if (!workoutId || !API_URL || !token) return;
+          try {
+            const res = await fetch(`${API_URL}/api/workouts/${workoutId}/feedback`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ sessionRPE, sessionNote })
+            });
+            if (res.ok) {
+              console.log('✅ Feedback RPE guardado');
+            } else {
+              console.error('❌ Error guardando feedback RPE');
+            }
+          } catch (e) {
+            console.error('❌ Error en PATCH feedback:', e);
+          }
+        }}
       />
 
-      {/* 📝 Modal de Notas por Serie */}
-      <NotesModal
+      {/* 📝 Modal Unificado de Feedback */}
+      <UnifiedFeedbackModal
         visible={notesModal.visible}
         onClose={() => setNotesModal(s => ({ ...s, visible: false }))}
         serieKey={notesModal.serieKey}
+        exerciseId={notesModal.exerciseId}
+        exerciseName={notesModal.exerciseName}
         initialValue={notesModal.value}
         initialNote={notesModal.note}
+        initialAudioUri={notesModal.audioUri}
+        initialMediaUri={notesModal.mediaUri}
+        initialMediaType={notesModal.mediaType}
         theme={theme}
-        onSave={async (serieKey, value, noteText) => {
+        onSave={async (serieKey, value, noteText, audioUri, mediaUri, mediaType, trimStart, trimEnd) => {
           if (!serieKey) return;
 
-          if (value === null && noteText === null) {
-            // Delete note
+          if (value === null && noteText === null && audioUri === null && mediaUri === null) {
+            // Delete feedback
             setNotes(prev => {
               const copy = { ...prev };
               delete copy[serieKey];
               return copy;
             });
           } else {
-            // Save note
+            // Save feedback immediately (local first)
             setNotes(prev => ({
               ...prev,
-              [serieKey]: { value, note: noteText }
+              [serieKey]: {
+                value,
+                note: noteText,
+                audioUri,
+                mediaUri,
+                mediaType,
+                trimStart,
+                trimEnd,
+                uploadStatus: mediaUri ? 'pending' : null
+              }
             }));
           }
 
-          // Persist based on user plan
+          // 📹 Subir media a R2 en background si existe
+          if (mediaUri && token && API_URL) {
+            console.log('[Entreno] 📤 Iniciando subida de media a R2:', mediaType);
+
+            try {
+              let uploadResult;
+
+              if (mediaType === 'video') {
+                uploadResult = await uploadVideoFeedback({
+                  videoUri: mediaUri,
+                  exerciseId: notesModal.exerciseId,
+                  exerciseName: notesModal.exerciseName,
+                  serieKey,
+                  athleteNote: noteText,
+                  duration: 0, // Will be calculated on backend
+                  thumbnailUri: null,
+                  trimStart,
+                  trimEnd
+                });
+              } else if (mediaType === 'photo') {
+                uploadResult = await uploadPhotoFeedback({
+                  photoUri: mediaUri,
+                  exerciseId: notesModal.exerciseId,
+                  exerciseName: notesModal.exerciseName,
+                  serieKey,
+                  athleteNote: noteText
+                });
+              }
+
+              if (uploadResult?.success) {
+                console.log('[Entreno] ✅ Media subida exitosamente a R2');
+                // Actualizar el estado con la URL de R2
+                setNotes(prev => ({
+                  ...prev,
+                  [serieKey]: {
+                    ...prev[serieKey],
+                    uploadStatus: 'completed',
+                    r2FeedbackId: uploadResult.feedback?.feedbackId || uploadResult.feedback?._id
+                  }
+                }));
+              } else {
+                console.error('[Entreno] ❌ Error subiendo media:', uploadResult?.error);
+                setNotes(prev => ({
+                  ...prev,
+                  [serieKey]: {
+                    ...prev[serieKey],
+                    uploadStatus: 'failed',
+                    uploadError: uploadResult?.error
+                  }
+                }));
+              }
+            } catch (uploadErr) {
+              console.error('[Entreno] ❌ Error en subida a R2:', uploadErr);
+              setNotes(prev => ({
+                ...prev,
+                [serieKey]: {
+                  ...prev[serieKey],
+                  uploadStatus: 'failed',
+                  uploadError: uploadErr.message
+                }
+              }));
+            }
+          }
+
+          // Persist locally
           const notesKey = `workout_notes_${activeId}`;
           try {
             const updatedNotes = value === null
               ? (() => { const copy = { ...notes }; delete copy[serieKey]; return copy; })()
-              : { ...notes, [serieKey]: { value, note: noteText } };
+              : { ...notes, [serieKey]: { value, note: noteText, audioUri, mediaUri, mediaType } };
 
-            if (userData?.plan === 'FREEUSER' || !userData?.plan) {
-              // Save locally
-              await AsyncStorage.setItem(notesKey, JSON.stringify(updatedNotes));
-            } else {
-              // For premium users, notes will be synced with workout data on saveAllDayData
-              await AsyncStorage.setItem(notesKey, JSON.stringify(updatedNotes));
-            }
+            await AsyncStorage.setItem(notesKey, JSON.stringify(updatedNotes));
           } catch (e) {
-            console.error('Error saving note:', e);
+            console.error('Error saving feedback:', e);
           }
         }}
       />
@@ -3868,6 +4564,7 @@ export default function Entreno() {
         </View>
       </Modal>
 
+
       {/* 🎓 Tutorial Modal (Primera Vez) */}
       <TutorialModal
         visible={showTutorial}
@@ -4047,6 +4744,21 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 8,
   },
+  // Grupo combinado de acciones (cámara + notas)
+  actionBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
+    gap: 2,
+    backgroundColor: 'rgba(67, 97, 238, 0.1)',
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  actionBtn: {
+    padding: 5,
+    borderRadius: 6,
+  },
   noteDot: {
     width: 12,
     height: 12,
@@ -4094,12 +4806,13 @@ const styles = StyleSheet.create({
 
   },
   statsModalCard: {
-    width: '95%',
-    height: '95%',
-    maxWidth: 500,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    width: Platform.select({ web: '90%', default: '95%' }),
+    minHeight: Platform.select({ web: '80%', default: '80%' }),
+    maxHeight: Platform.select({ web: '85%', default: '92%' }),
+    maxWidth: Platform.select({ web: 480, default: 500 }),
+    borderRadius: Platform.select({ web: 20, default: 24 }),
+    paddingHorizontal: Platform.select({ web: 20, default: 16 }),
+    paddingVertical: Platform.select({ web: 16, default: 12 }),
     borderWidth: 2,
     shadowColor: '#000',
     shadowOpacity: 0.5,
@@ -4122,24 +4835,31 @@ const styles = StyleSheet.create({
   },
   statsHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
   },
-  trophyContainer: {
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 100,
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+  statsHeaderCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Platform.select({ web: 16, default: 12 }),
+    marginBottom: Platform.select({ web: 12, default: 8 }),
+    paddingHorizontal: Platform.select({ web: 12, default: 8 }),
   },
-  statsTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    marginBottom: 8,
-    textAlign: 'center',
+  statsHeaderText: {
+    flex: 1,
   },
-  statsSubtitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
+  statsTitleCompact: {
+    fontSize: Platform.select({ web: 26, default: 22 }),
+    fontWeight: '800',
+  },
+  statsSubtitleCompact: {
+    fontSize: Platform.select({ web: 16, default: 14 }),
+    fontWeight: '600',
+  },
+  rpeFeedbackSection: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    marginBottom: 12,
+    paddingVertical: 4,
   },
   motivationalSection: {
     alignItems: 'center',
@@ -4149,13 +4869,48 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   statsSection: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 16,
     textAlign: 'center',
+  },
+  sectionTitleCompact: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  statsRowHorizontal: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statCardCompact: {
+    flex: 1,
+    padding: Platform.select({ web: 14, default: 10 }),
+    borderRadius: Platform.select({ web: 16, default: 12 }),
+    borderWidth: 1,
+  },
+  statHeaderCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  statTitleCompact: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  statDiffCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statDiffTextCompact: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   statCard: {
     padding: 16,

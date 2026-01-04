@@ -29,6 +29,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Picker } from '@react-native-picker/picker'
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
+import MediaFeedbackResponseModal from '../../../src/components/coach/MediaFeedbackResponseModal';
 
 // KPI Utilities
 import {
@@ -43,6 +44,9 @@ import {
     calcHeavySetsByWeek,
     calcMuscleBalance,
     calcPRCountByWeek,
+    calcSessionRPEByDay,
+    RPE_COLORS,
+    RPE_LABELS,
 } from '../../../src/utils/calculateKPIs';
 
 const screenWidth = Dimensions.get('window').width;
@@ -101,10 +105,16 @@ export default function ClientProgressDetail() {
     const [androidEjercicioModal, setAndroidEjercicioModal] = useState(false);
 
     // 📊 Vista: gráfica o tabla detallada
-    const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table'
+    const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table' | 'comments' | 'multimedia'
 
     // 📝 Modal de notas del cliente
     const [noteModal, setNoteModal] = useState({ visible: false, note: null });
+
+    // 📹 Video Feedback (Multimedia)
+    const [videoFeedbacks, setVideoFeedbacks] = useState([]);
+    const [videoModalVisible, setVideoModalVisible] = useState(false);
+    const [selectedFeedback, setSelectedFeedback] = useState(null);
+    const [loadingVideos, setLoadingVideos] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -135,7 +145,112 @@ export default function ClientProgressDetail() {
 
     useEffect(() => {
         cargarSesiones();
+        cargarVideoFeedbacks();
     }, [cargarSesiones]);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CARGAR VIDEO FEEDBACKS DEL CLIENTE
+    // ═══════════════════════════════════════════════════════════════════════════
+    const cargarVideoFeedbacks = useCallback(async () => {
+        try {
+            setLoadingVideos(true);
+            const response = await fetch(
+                `${API_URL}/api/video-feedback/inbox?athleteId=${clientId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const data = await response.json();
+            // El backend devuelve { feedbacks, total, pendingCount, page, pages }
+            if (data.feedbacks) {
+                setVideoFeedbacks(data.feedbacks);
+                console.log('[ClientProgress] Video feedbacks cargados:', data.feedbacks.length);
+            }
+        } catch (error) {
+            console.error('[ClientProgress] Error loading video feedbacks:', error);
+        } finally {
+            setLoadingVideos(false);
+        }
+    }, [clientId, token, API_URL]);
+
+    const handleVideoResponseSent = (feedbackId) => {
+        // Actualizar el feedback como respondido
+        setVideoFeedbacks(prev => prev.map(f =>
+            f._id === feedbackId
+                ? { ...f, status: 'responded', viewedByCoach: true }
+                : f
+        ));
+        setVideoModalVisible(false);
+    };
+
+    // Marcar feedback como visto cuando el coach lo abre
+    const markFeedbackAsViewed = async (feedbackId) => {
+        if (!feedbackId || !token || !API_URL) return;
+
+        try {
+            const response = await fetch(`${API_URL}/api/video-feedback/${feedbackId}/view`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                // Actualizar estado local
+                setVideoFeedbacks(prev => prev.map(f =>
+                    f._id === feedbackId
+                        ? { ...f, viewedByCoach: true }
+                        : f
+                ));
+                console.log('[ClientProgress] ✅ Feedback marcado como visto:', feedbackId);
+            }
+        } catch (error) {
+            console.error('[ClientProgress] Error marcando como visto:', error);
+        }
+    };
+
+    // Marcar todas las notas de texto de una semana como vistas
+    const markWeekNotesAsViewed = async (weekDays) => {
+        if (!weekDays || !token || !API_URL) return;
+
+        // Obtener IDs únicos de sesiones de esta semana
+        const sessionIds = [...new Set(weekDays.map(d => d.sessionId).filter(Boolean))];
+
+        // Marcar cada sesión como vista
+        for (const sessionId of sessionIds) {
+            try {
+                await fetch(`${API_URL}/api/workouts/${sessionId}/mark-notes-viewed`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.error('[ClientProgress] Error marcando notas como vistas:', error);
+            }
+        }
+
+        if (sessionIds.length > 0) {
+            console.log(`[ClientProgress] ✅ ${sessionIds.length} sesiones marcadas como vistas`);
+
+            // Actualizar estado local de sessions para reflejar el cambio
+            setSessions(prev => prev.map(s => {
+                if (sessionIds.includes(s._id)) {
+                    return {
+                        ...s,
+                        exercises: s.exercises?.map(ex => ({
+                            ...ex,
+                            sets: ex.sets?.map(set => ({
+                                ...set,
+                                notes: set.notes ? { ...set.notes, viewedByCoach: true } : set.notes
+                            }))
+                        }))
+                    };
+                }
+                return s;
+            }));
+        }
+    };
 
     // ═════════════════════════════════════════════════════════════════════════
     // EXTRAER LISTA DE MÚSCULOS Y EJERCICIOS
@@ -406,6 +521,13 @@ export default function ClientProgressDetail() {
         };
     }, [filteredSessions]);
 
+    // 🆕 KPI: Sensación (Session RPE)
+    const sessionRPEData = useMemo(() => {
+        const data = calcSessionRPEByDay(filteredSessions);
+        if (data.data.length === 0) return null;
+        return data;
+    }, [filteredSessions]);
+
     // Obtener info del KPI seleccionado
     const currentKpi = useMemo(() => {
         return KPI_OPTIONS.find(k => k.id === selectedKpi) || KPI_OPTIONS[0];
@@ -451,11 +573,34 @@ export default function ClientProgressDetail() {
         normal: '#f97316', // 🟠
         low: '#22c55e',    // 🟢
         custom: '#3b82f6', // 🔵
+        media: '#8b5cf6',  // 🟣 Purple for media-only feedback
     };
 
     // Palabras clave de dolor/alerta para destacar comentarios críticos
     const PAIN_KEYWORDS = ['dolor', 'molestia', 'pinchazo', 'lesión', 'daño', 'mal', 'pincha', 'duele', 'molesta', 'lesion'];
     const hasPainKeyword = (text) => text && PAIN_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+
+    // Helper para encontrar video asociado a un set específico
+    // El video guarda serieKey con formato "week|day|exId|setIdx" donde setIdx es 0-based
+    const findVideoForSet = (exerciseName, setNumber) => {
+        return videoFeedbacks.find(fb => {
+            // Match por nombre de ejercicio
+            const nameMatch = fb.exerciseName?.toLowerCase() === exerciseName?.toLowerCase();
+            if (!nameMatch) return false;
+
+            // Extraer setIdx del serieKey (último segmento, 0-based)
+            // Formato: "week|day|exerciseId|setIdx" o "ejerKey|setIdx"
+            if (fb.serieKey) {
+                const parts = fb.serieKey.split('|');
+                const setIdx = parseInt(parts[parts.length - 1], 10);
+                // setNumber es 1-based, setIdx es 0-based
+                return setIdx + 1 === setNumber;
+            }
+
+            // Fallback: comparar setNumber directo si existe
+            return fb.setNumber === setNumber;
+        });
+    };
 
     const getRepStatus = (actual, min, max) => {
         if (!actual) return 'none';
@@ -758,6 +903,21 @@ export default function ClientProgressDetail() {
     // 💬 DATOS AGRUPADOS POR COMENTARIOS (SOLO SETS CON NOTAS)
     // Ordena de más reciente a más antigua, agrupa por semana
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // Helper para detectar si un set tiene videoFeedback asociado
+    const hasVideoFeedbackForSet = (exerciseName, setNumber) => {
+        return videoFeedbacks.some(fb => {
+            const nameMatch = fb.exerciseName?.toLowerCase() === exerciseName?.toLowerCase();
+            if (!nameMatch) return false;
+            if (fb.serieKey) {
+                const parts = fb.serieKey.split('|');
+                const setIdx = parseInt(parts[parts.length - 1], 10);
+                return setIdx + 1 === setNumber;
+            }
+            return fb.setNumber === setNumber;
+        });
+    };
+
     const comentariosPorRutina = useMemo(() => {
         if (!sessions || sessions.length === 0) return { current: null, old: [] };
 
@@ -803,36 +963,53 @@ export default function ClientProgressDetail() {
                 const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
                 const sessionDate = new Date(session.date);
 
-                // Extraer solo ejercicios con comentarios
+                // Extraer ejercicios con comentarios O CON MEDIA (video/foto/audio)
                 const ejerciciosConComentarios = [];
                 (session.exercises || []).forEach((ex) => {
-                    const setsConNota = (ex.sets || []).filter(s => s.notes?.value && s.notes?.note);
-                    if (setsConNota.length > 0) {
+                    // Incluir sets que tienen nota de texto O que tienen media feedback
+                    const setsConFeedback = (ex.sets || []).filter((s, idx) => {
+                        const hasTextNote = s.notes?.value && s.notes?.note;
+                        const setNum = s.setNumber || idx + 1;
+                        const hasMedia = hasVideoFeedbackForSet(ex.exerciseName, setNum);
+                        return hasTextNote || hasMedia;
+                    });
+                    if (setsConFeedback.length > 0) {
                         ejerciciosConComentarios.push({
                             exerciseName: ex.exerciseName,
                             muscleGroup: ex.muscleGroup || 'SIN GRUPO',
-                            sets: setsConNota.map((s, idx) => ({
-                                setNumber: s.setNumber || idx + 1,
-                                weight: s.weight,
-                                reps: s.actualReps,
-                                noteValue: s.notes.value,
-                                noteText: s.notes.note,
-                                hasPain: hasPainKeyword(s.notes.note),
-                            })),
+                            sets: setsConFeedback.map((s, idx) => {
+                                const setNum = s.setNumber || idx + 1;
+                                const hasTextNote = s.notes?.value && s.notes?.note;
+                                return {
+                                    setNumber: setNum,
+                                    weight: s.weight,
+                                    reps: s.actualReps,
+                                    noteValue: hasTextNote ? s.notes.value : 'media',
+                                    noteText: hasTextNote ? s.notes.note : null,
+                                    hasPain: hasTextNote ? hasPainKeyword(s.notes.note) : false,
+                                    hasMediaOnly: !hasTextNote,
+                                };
+                            }),
                         });
                     }
                 });
 
-                if (ejerciciosConComentarios.length > 0) {
+                if (ejerciciosConComentarios.length > 0 || session.sessionRPE) {
                     if (!semanasMap.has(week)) {
                         semanasMap.set(week, { week, dias: [] });
                     }
                     semanasMap.get(week).dias.push({
+                        sessionId: session._id, // 🆕 Para marcar notas como vistas
                         dayIndex: dayIdx,
                         dayLabel,
                         date: sessionDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
                         dateSort: sessionDate,
                         exercises: ejerciciosConComentarios,
+                        // 🆕 RPE de la sesión
+                        sessionRPE: session.sessionRPE || null,
+                        sessionNote: session.sessionNote || null,
+                        rpeColor: RPE_COLORS[session.sessionRPE] || null,
+                        rpeLabel: RPE_LABELS[session.sessionRPE] || null,
                     });
                 }
             });
@@ -864,12 +1041,59 @@ export default function ClientProgressDetail() {
         const old = rutinasArray.slice(1).map(procesarRutina).filter(r => r.totalComentarios > 0);
 
         return { current, old };
+    }, [sessions, videoFeedbacks]);
+
+    // 🆕 Sesiones con RPE y notas para vista de comentarios (prioritario)
+    const sessionRPEComments = useMemo(() => {
+        if (!sessions || sessions.length === 0) return [];
+
+        return sessions
+            .filter(s => s.sessionRPE && s.sessionRPE >= 1 && s.sessionRPE <= 5)
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .slice(0, 20) // Últimas 20 sesiones con RPE
+            .map(s => ({
+                id: s._id,
+                date: new Date(s.date).toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric'
+                }),
+                dayLabel: s.dayLabel || 'Sesión',
+                routineName: s.routineNameSnapshot || 'Rutina',
+                rpe: s.sessionRPE,
+                note: s.sessionNote || null,
+                color: RPE_COLORS[s.sessionRPE] || '#CBD5E1',
+                label: RPE_LABELS[s.sessionRPE] || '',
+            }));
+    }, [sessions]);
+
+    // Contar notas de texto no vistas (para el badge de pendientes)
+    const unviewedTextNotesCount = useMemo(() => {
+        let count = 0;
+        sessions.forEach(session => {
+            session.exercises?.forEach(ex => {
+                ex.sets?.forEach(set => {
+                    // Contar si tiene nota de texto y no está marcada como vista
+                    if (set.notes?.note && !set.notes.viewedByCoach) {
+                        count++;
+                    }
+                });
+            });
+        });
+        return count;
     }, [sessions]);
 
     // Estado para semanas expandidas en comentarios (primera semana expandida por defecto)
     const [expandedWeeks, setExpandedWeeks] = useState({ 'current-1': true });
-    const toggleWeek = (routineKey, week) => {
+    const toggleWeek = (routineKey, week, weekDays) => {
         const key = `${routineKey}-${week}`;
+        const isCurrentlyExpanded = expandedWeeks[key];
+
+        // Si vamos a expandir (no está expandido actualmente), marcar notas como vistas
+        if (!isCurrentlyExpanded && weekDays) {
+            markWeekNotesAsViewed(weekDays);
+        }
+
         setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
@@ -942,8 +1166,18 @@ export default function ClientProgressDetail() {
                     >
                         <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#64748b'} />
                         <Text style={[styles.viewModeText, viewMode === 'comments' && styles.viewModeTextActive]}>
-                            Comentarios
+                            Notas/Media
                         </Text>
+                        {/* Contador de pendientes: media + notas de texto no vistas */}
+                        {(() => {
+                            const unviewedMedia = videoFeedbacks.filter(f => !f.viewedByCoach && !f.coachResponse?.respondedAt).length;
+                            const totalPending = unviewedMedia + unviewedTextNotesCount;
+                            return totalPending > 0 ? (
+                                <View style={styles.videoBadge}>
+                                    <Text style={styles.videoBadgeText}>{totalPending}</Text>
+                                </View>
+                            ) : null;
+                        })()}
                     </Pressable>
                 </View>
 
@@ -1249,6 +1483,76 @@ export default function ClientProgressDetail() {
                                 </>
                             )}
 
+                            {/* 🆕 KPI: Sensación (Session RPE) */}
+                            {selectedKpi === 'sessionRPE' && sessionRPEData && (
+                                <>
+                                    <View style={styles.chartHeader}>
+                                        <Text style={styles.sectionTitle}>Sensación 🔵</Text>
+                                        <View style={styles.chartSummary}>
+                                            <Text style={[styles.chartSummaryValue, { color: '#3b82f6' }]}>
+                                                {sessionRPEData.average}/5
+                                            </Text>
+                                            <Text style={styles.chartSummaryLabel}>promedio</Text>
+                                        </View>
+                                    </View>
+
+                                    {/* Streak indicator */}
+                                    {sessionRPEData.maxStreak >= 3 && (
+                                        <View style={styles.rpeStreakBadge}>
+                                            <Text style={styles.rpeStreakText}>
+                                                🔥 {sessionRPEData.maxStreak} días en Modo Bestia
+                                            </Text>
+                                        </View>
+                                    )}
+
+                                    {/* Custom RPE Bar Chart */}
+                                    <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalScroll}>
+                                        <View style={styles.rpeBarContainer}>
+                                            {sessionRPEData.data.map((item, index) => (
+                                                <View key={index} style={styles.rpeBarWrapper}>
+                                                    <View
+                                                        style={[
+                                                            styles.rpeBar,
+                                                            {
+                                                                height: (item.value / 5) * 100,
+                                                                backgroundColor: item.color,
+                                                                shadowColor: item.value >= 4 ? item.color : 'transparent',
+                                                                shadowOpacity: item.value >= 4 ? 0.6 : 0,
+                                                                shadowRadius: item.value >= 4 ? 8 : 0,
+                                                                elevation: item.value >= 4 ? 4 : 0,
+                                                            }
+                                                        ]}
+                                                    />
+                                                    {item.hasNote && (
+                                                        <View style={styles.rpeNoteDot} />
+                                                    )}
+                                                    <Text style={styles.rpeBarLabel}>{item.label}</Text>
+                                                    <Text style={[styles.rpeBarValue, { color: item.color }]}>
+                                                        {item.value}
+                                                    </Text>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </ScrollView>
+
+                                    {/* Stats summary */}
+                                    <View style={styles.rpeSummaryRow}>
+                                        <View style={styles.rpeSummaryItem}>
+                                            <Text style={styles.rpeSummaryLabel}>Sesiones</Text>
+                                            <Text style={styles.rpeSummaryValue}>{sessionRPEData.totalSessions}</Text>
+                                        </View>
+                                        <View style={styles.rpeSummaryItem}>
+                                            <Text style={styles.rpeSummaryLabel}>Modo Bestia</Text>
+                                            <Text style={[styles.rpeSummaryValue, { color: RPE_COLORS[5] }]}>
+                                                {sessionRPEData.modoBestaCount}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
+                                </>
+                            )}
+
                             {/* KPI: PRs */}
                             {selectedKpi === 'prCount' && prCountData && (
                                 <>
@@ -1284,6 +1588,7 @@ export default function ClientProgressDetail() {
                                 (selectedKpi === 'compliance' && !complianceWeeklyData) ||
                                 (selectedKpi === 'heavySets' && !heavySetsData) ||
                                 (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+                                (selectedKpi === 'sessionRPE' && !sessionRPEData) ||
                                 (selectedKpi === 'prCount' && !prCountData)) && (
                                     <View style={styles.noDataContainer}>
                                         <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
@@ -1616,8 +1921,8 @@ export default function ClientProgressDetail() {
                    ════════════════════════════════════════════════════════════════ */}
                 {viewMode === 'comments' && (
                     <View style={styles.commentsContainer}>
-                        {/* Sin comentarios */}
-                        {(!comentariosPorRutina.current || comentariosPorRutina.current.totalComentarios === 0) && comentariosPorRutina.old.length === 0 ? (
+                        {/* Sin comentarios ni RPE */}
+                        {(!comentariosPorRutina.current || comentariosPorRutina.current.semanas?.length === 0) && comentariosPorRutina.old.length === 0 ? (
                             <View style={styles.noDataContainer}>
                                 <Ionicons name="chatbubble-ellipses-outline" size={48} color="#cbd5e1" />
                                 <Text style={styles.noDataText}>Sin comentarios registrados</Text>
@@ -1626,7 +1931,7 @@ export default function ClientProgressDetail() {
                         ) : (
                             <>
                                 {/* RUTINA ACTUAL */}
-                                {comentariosPorRutina.current && comentariosPorRutina.current.totalComentarios > 0 && (
+                                {comentariosPorRutina.current && comentariosPorRutina.current.semanas?.length > 0 && (
                                     <View style={styles.commentsRoutineSection}>
                                         <View style={styles.commentsRoutineHeader}>
                                             <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
@@ -1636,68 +1941,152 @@ export default function ClientProgressDetail() {
                                         </View>
                                         <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
 
-                                        {comentariosPorRutina.current.semanas.map((semana) => (
-                                            <View key={semana.week} style={styles.commentsWeekGroup}>
-                                                <Pressable
-                                                    onPress={() => toggleWeek('current', semana.week)}
-                                                    style={styles.commentsWeekHeaderPressable}
-                                                >
-                                                    <View style={styles.commentsWeekBadge}>
-                                                        <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
-                                                    </View>
-                                                    <View style={styles.commentsWeekRight}>
-                                                        <Text style={styles.commentsWeekCount}>
-                                                            {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
-                                                        </Text>
-                                                        <Ionicons
-                                                            name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
-                                                            size={18}
-                                                            color="#64748b"
-                                                        />
-                                                    </View>
-                                                </Pressable>
+                                        {comentariosPorRutina.current.semanas.map((semana) => {
+                                            // Calcular RPE promedio de la semana
+                                            const diasConRPE = semana.dias.filter(d => d.sessionRPE);
+                                            const avgRPE = diasConRPE.length > 0
+                                                ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
+                                                : null;
+                                            const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
+                                            const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
 
-                                                {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
-                                                    <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
-                                                        <Text style={styles.commentsDayHeader}>
-                                                            {dia.dayLabel} • {dia.date}
-                                                        </Text>
+                                            return (
+                                                <View key={semana.week} style={styles.commentsWeekGroup}>
+                                                    <Pressable
+                                                        onPress={() => toggleWeek('current', semana.week, semana.dias)}
+                                                        style={styles.commentsWeekHeaderPressable}
+                                                    >
+                                                        <View style={styles.commentsWeekBadge}>
+                                                            <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
+                                                        </View>
+                                                        <View style={styles.commentsWeekRight}>
+                                                            {/* 🆕 RPE promedio de la semana */}
+                                                            {avgRPE && (
+                                                                <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
+                                                                    <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
+                                                                        {avgRPE} {avgLabel}
+                                                                    </Text>
+                                                                </View>
+                                                            )}
+                                                            <Text style={styles.commentsWeekCount}>
+                                                                {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
+                                                            </Text>
+                                                            <Ionicons
+                                                                name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                                                size={18}
+                                                                color="#64748b"
+                                                            />
+                                                        </View>
+                                                    </Pressable>
 
-                                                        {dia.exercises.map((exercise, exIdx) => (
-                                                            <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
-                                                                <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
-                                                                    <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
-                                                                    {' '}{exercise.exerciseName}
+                                                    {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
+                                                        <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                                                            <View style={styles.commentsDayHeaderRow}>
+                                                                <Text style={styles.commentsDayHeader}>
+                                                                    {dia.dayLabel} • {dia.date}
                                                                 </Text>
-
-                                                                {exercise.sets.map((set, setIdx) => (
-                                                                    <View
-                                                                        key={setIdx}
-                                                                        style={[
-                                                                            styles.commentCardCompact,
-                                                                            set.hasPain && styles.commentCardWarning
-                                                                        ]}
-                                                                    >
-                                                                        <View style={styles.commentCardCompactRow}>
-                                                                            <View style={[
-                                                                                styles.commentSemaphoreCompact,
-                                                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
-                                                                            ]} />
-                                                                            <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
-                                                                            <Text style={styles.commentDataCompact}>
-                                                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
-                                                                            </Text>
-                                                                            {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
-                                                                        </View>
-                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                                                {dia.sessionRPE && (
+                                                                    <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                                                        <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
+                                                                            {dia.sessionRPE}/5 {dia.rpeLabel}
+                                                                        </Text>
                                                                     </View>
-                                                                ))}
+                                                                )}
                                                             </View>
-                                                        ))}
-                                                    </View>
-                                                ))}
-                                            </View>
-                                        ))}
+
+                                                            {/* Session note if exists */}
+                                                            {dia.sessionNote && (
+                                                                <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
+                                                                    <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
+                                                                </View>
+                                                            )}
+
+                                                            {dia.exercises.map((exercise, exIdx) => (
+                                                                <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
+                                                                    <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
+                                                                        <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
+                                                                        {' '}{exercise.exerciseName}
+                                                                    </Text>
+
+                                                                    {exercise.sets.map((set, setIdx) => {
+                                                                        const setVideo = findVideoForSet(exercise.exerciseName, set.setNumber);
+                                                                        return (
+                                                                            <View
+                                                                                key={setIdx}
+                                                                                style={[
+                                                                                    styles.commentCardCompact,
+                                                                                    set.hasPain && styles.commentCardWarning,
+                                                                                    setVideo && styles.commentCardWithVideo
+                                                                                ]}
+                                                                            >
+                                                                                <View style={styles.commentCardCompactRow}>
+                                                                                    <View style={[
+                                                                                        styles.commentSemaphoreCompact,
+                                                                                        { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                                    ]} />
+                                                                                    <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                                                                    <Text style={styles.commentDataCompact}>
+                                                                                        {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                                    </Text>
+                                                                                    {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+
+                                                                                    {/* Video inline si existe */}
+                                                                                    {setVideo && (() => {
+                                                                                        // Pendiente = no visto Y no respondido
+                                                                                        const isPending = !setVideo.viewedByCoach && !setVideo.coachResponse?.respondedAt;
+                                                                                        return (
+                                                                                            <Pressable
+                                                                                                style={[
+                                                                                                    styles.inlineVideoBtn,
+                                                                                                    isPending && styles.inlineVideoBtnPending
+                                                                                                ]}
+                                                                                                onPress={() => {
+                                                                                                    setSelectedFeedback(setVideo);
+                                                                                                    setVideoModalVisible(true);
+                                                                                                    // Marcar como visto al abrir
+                                                                                                    markFeedbackAsViewed(setVideo._id);
+                                                                                                }}
+                                                                                            >
+                                                                                                <Ionicons
+                                                                                                    name={
+                                                                                                        setVideo.mediaType === 'audio' ? 'mic' :
+                                                                                                            setVideo.mediaType === 'photo' ? 'image' :
+                                                                                                                'videocam'
+                                                                                                    }
+                                                                                                    size={14}
+                                                                                                    color={isPending ? '#fff' : '#4361ee'}
+                                                                                                />
+                                                                                                {isPending && (
+                                                                                                    <View style={styles.inlineVideoPendingDot} />
+                                                                                                )}
+                                                                                            </Pressable>
+                                                                                        );
+                                                                                    })()}
+                                                                                </View>
+                                                                                {/* Mostrar texto de nota o indicador de media */}
+                                                                                {set.noteText ? (
+                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                                                                ) : setVideo?.athleteNote ? (
+                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                        📹 "{setVideo.athleteNote}"
+                                                                                    </Text>
+                                                                                ) : set.hasMediaOnly ? (
+                                                                                    <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
+                                                                                        {setVideo?.mediaType === 'audio' ? '🎤 Audio enviado' :
+                                                                                            setVideo?.mediaType === 'photo' ? '📷 Foto enviada' :
+                                                                                                '📹 Video enviado'}
+                                                                                    </Text>
+                                                                                ) : null}
+                                                                            </View>
+                                                                        );
+                                                                    })}
+                                                                </View>
+                                                            ))}
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                            );
+                                        })}
                                     </View>
                                 )}
 
@@ -1734,9 +2123,18 @@ export default function ClientProgressDetail() {
                                                                 <Text style={styles.commentsWeekLabelSmall}>Semana {semana.week}</Text>
                                                                 {semana.dias.map((dia, dIdx) => (
                                                                     <View key={`${dia.dayIndex}-${dIdx}`}>
-                                                                        <Text style={styles.commentsDayHeaderSmall}>
-                                                                            {dia.dayLabel} • {dia.date}
-                                                                        </Text>
+                                                                        <View style={styles.commentsDayHeaderRow}>
+                                                                            <Text style={styles.commentsDayHeaderSmall}>
+                                                                                {dia.dayLabel} • {dia.date}
+                                                                            </Text>
+                                                                            {dia.sessionRPE && (
+                                                                                <View style={[styles.commentsDayRpeBadgeSmall, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                                                                    <Text style={[styles.commentsDayRpeTextSmall, { color: dia.rpeColor }]}>
+                                                                                        {dia.sessionRPE}/5
+                                                                                    </Text>
+                                                                                </View>
+                                                                            )}
+                                                                        </View>
                                                                         {dia.exercises.map((exercise, exIdx) => (
                                                                             <View key={exIdx} style={styles.commentsExerciseBlockSmall}>
                                                                                 <Text style={styles.commentsExerciseNameSmall}>
@@ -1955,6 +2353,17 @@ export default function ClientProgressDetail() {
                     </View>
                 </View>
             </Modal>
+
+            {/* 📹 Modal de Respuesta a Media Feedback */}
+            <MediaFeedbackResponseModal
+                visible={videoModalVisible}
+                onClose={() => {
+                    setVideoModalVisible(false);
+                    setSelectedFeedback(null);
+                }}
+                feedback={selectedFeedback}
+                onResponseSent={handleVideoResponseSent}
+            />
         </SafeAreaView>
     );
 }
@@ -3133,11 +3542,197 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
 
+    // 🆕 RPE Bar Chart Styles (Blue Energy)
+    rpeStreakBadge: {
+        backgroundColor: '#dbeafe',
+        borderWidth: 1,
+        borderColor: '#3b82f6',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        alignSelf: 'center',
+        marginBottom: 12,
+    },
+    rpeStreakText: {
+        color: '#2563eb',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    rpeBarContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        height: 160,
+        gap: 10,
+    },
+    rpeBarWrapper: {
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        width: 40,
+    },
+    rpeBar: {
+        width: 28,
+        borderRadius: 6,
+        minHeight: 20,
+    },
+    rpeNoteDot: {
+        position: 'absolute',
+        top: -4,
+        right: 2,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#3b82f6',
+    },
+    rpeBarLabel: {
+        fontSize: 9,
+        color: '#64748b',
+        marginTop: 6,
+    },
+    rpeBarValue: {
+        fontSize: 12,
+        fontWeight: '700',
+        marginTop: 2,
+    },
+    rpeSummaryRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 32,
+        marginTop: 12,
+        paddingVertical: 12,
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+    },
+    rpeSummaryItem: {
+        alignItems: 'center',
+    },
+    rpeSummaryLabel: {
+        fontSize: 11,
+        color: '#64748b',
+        marginBottom: 4,
+    },
+    rpeSummaryValue: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+
+    // 🆕 RPE MOOD CARDS (Comments Priority Section)
+    rpeCommentsSection: {
+        marginBottom: 24,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    rpeCommentsSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+        gap: 8,
+    },
+    rpeCommentsSectionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    rpeCommentsBadge: {
+        backgroundColor: '#3b82f6',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    rpeCommentsBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    rpeMoodCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 10,
+        flexDirection: 'row',
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+        elevation: 1,
+    },
+    rpeMoodCardBestia: {
+        backgroundColor: '#eff6ff', // Light blue tint
+        borderWidth: 1,
+        borderColor: '#3b82f6',
+        shadowColor: '#3b82f6',
+        shadowOpacity: 0.2,
+        elevation: 3,
+    },
+    rpeMoodCardNe: {
+        opacity: 0.7,
+        backgroundColor: '#f8fafc',
+    },
+    rpeMoodCardBorder: {
+        width: 5,
+    },
+    rpeMoodCardContent: {
+        flex: 1,
+        padding: 12,
+    },
+    rpeMoodCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
+    rpeMoodCardLeft: {
+        flex: 1,
+    },
+    rpeMoodCardLevel: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    rpeMoodCardDate: {
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    rpeMoodCardRing: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 3,
+        backgroundColor: '#f1f5f9',
+        overflow: 'hidden',
+        justifyContent: 'flex-end',
+    },
+    rpeMoodCardRingFill: {
+        width: '100%',
+    },
+    rpeMoodCardRoutine: {
+        fontSize: 12,
+        color: '#64748b',
+        marginBottom: 4,
+    },
+    rpeMoodCardNote: {
+        fontSize: 13,
+        color: '#475569',
+        fontStyle: 'italic',
+        marginTop: 6,
+        paddingTop: 6,
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+    },
+
     // ═══════════════════════════════════════════════════════════════════════════
     // 💬 COMENTARIOS VIEW STYLES
     // ═══════════════════════════════════════════════════════════════════════════
     commentsContainer: {
         marginBottom: 16,
+        maxWidth: 600,
+        alignSelf: 'center',
+        width: '100%',
     },
     commentsRoutineSection: {
         marginBottom: 20,
@@ -3197,6 +3792,17 @@ const styles = StyleSheet.create({
         color: '#64748b',
         fontWeight: '500',
     },
+    // 🆕 RPE Badge in Week Header
+    commentsWeekRpeBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        borderWidth: 1,
+    },
+    commentsWeekRpeText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
     commentsWeekBadge: {
         backgroundColor: '#6366f1',
         paddingHorizontal: 10,
@@ -3219,6 +3825,49 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#64748b',
         marginBottom: 8,
+    },
+    // 🆕 RPE in Day Header
+    commentsDayHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+        gap: 8,
+    },
+    commentsDayRpeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        borderWidth: 1,
+    },
+    commentsDayRpeText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    commentsDayRpeBadgeSmall: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    commentsDayRpeTextSmall: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    commentsDaySessionNote: {
+        backgroundColor: '#f0f9ff',
+        borderLeftWidth: 3,
+        borderRadius: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 10,
+    },
+    commentsDaySessionNoteText: {
+        fontSize: 12,
+        color: '#475569',
+        fontStyle: 'italic',
     },
     commentsExerciseBlock: {
         marginBottom: 12,
@@ -3483,6 +4132,117 @@ const styles = StyleSheet.create({
     noDataSubtext: {
         fontSize: 13,
         color: '#94a3b8',
+        marginTop: 4,
+    },
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VIDEO FEEDBACK STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+    videoBadge: {
+        backgroundColor: '#ef4444',
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 6,
+    },
+    videoBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    // === INLINE VIDEO BUTTON ===
+    commentCardWithVideo: {
+        borderLeftWidth: 3,
+        borderLeftColor: '#4361ee',
+    },
+    inlineVideoBtn: {
+        marginLeft: 'auto',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#4361ee',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    inlineVideoBtnPending: {
+        backgroundColor: '#4361ee',
+        borderColor: '#4361ee',
+    },
+    inlineVideoPendingDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#fbbf24',
+    },
+    inlineVideoNote: {
+        fontSize: 11,
+        color: '#4361ee',
+        marginTop: 4,
+        fontStyle: 'italic',
+    },
+    videoGrid: {
+        gap: 12,
+        paddingVertical: 8,
+    },
+    videoCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        gap: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    videoCardResponded: {
+        backgroundColor: '#f0fdf4',
+        borderColor: '#10b98130',
+    },
+    videoThumb: {
+        width: 50,
+        height: 50,
+        borderRadius: 10,
+        backgroundColor: '#4361ee15',
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative',
+    },
+    pendingBadge: {
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#ef4444',
+        borderWidth: 2,
+        borderColor: '#fff',
+    },
+    videoCardInfo: {
+        flex: 1,
+    },
+    videoExerciseName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    videoMeta: {
+        fontSize: 13,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    videoNote: {
+        fontSize: 12,
+        color: '#94a3b8',
+        fontStyle: 'italic',
         marginTop: 4,
     },
 });

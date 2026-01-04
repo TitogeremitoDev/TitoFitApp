@@ -43,15 +43,14 @@ const FRASES = [
 console.log('[Home] Constants.expoConfig?.version:', Constants?.expoConfig?.version);
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 
-const CAMBIOS_103 = [
-  '🤖 Cambio de visualización del modal de IA: interfaz mejorada y más intuitiva.',
-  '🔄 Mejora de refresh al importar rutina: las rutinas importadas ahora se muestran inmediatamente.',
-  '🏆 Arreglos menores en los logros: correcciones de precisión y estabilidad.',
-  '🔒 Mejora de seguridad para el entrenador: los datos del cliente se eliminan correctamente al desvincularse.',
-  '💳 Mejora en el sistema de suscripción: idempotencia en webhooks y manejo de grace period.',
-  '📝 Nuevo sistema de visualización de notas en progreso de entrenador: ve los comentarios de tus clientes fácilmente.',
+const CAMBIOS_104 = [
+  '❓ Sistema FAQs: genérico para usuarios, personalizado para entrenadores.',
+  '🔍 Mejora de creación de rutinas: nuevo buscador de ejercicios integrado.',
+  '⚡ Optimizador de base de datos de ejercicios: búsquedas más rápidas y eficientes.',
+  '🐛 Arreglos de bugs visuales: mejoras de interfaz y estabilidad.',
+  '💪 Sistema de reconocimiento de sensaciones de entreno: califica cómo te sentiste en cada sesión.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -362,17 +361,17 @@ export default function HomeScreen() {
   const isVerySmallHeight = height < 600 && !isWeb;
 
   // Calculamos márgenes dinámicos para evitar solapamiento con botones flotantes
-  const topMargin = isWeb ? 0 : (Platform.OS === 'ios' ? 100 : 80);
+  // Aumentados para dar más espacio a los botones de Cambiar Modo y Subir de Nivel
+  const topMargin = isWeb ? 100 : (Platform.OS === 'ios' ? 120 : 105);
 
 
   const renderContent = () => (
     <>
-      <View style={[styles.card, !isWeb && {
+      <View style={[styles.card, { marginTop: topMargin }, !isWeb && {
         width: '100%',
         maxWidth: 500,
         alignSelf: 'center',
         paddingVertical: isVerySmallHeight ? 12 : (isSmallHeight ? 16 : 24),
-        marginTop: topMargin
       }]}>
         {/* Logo: mostrar logo según la jerarquía:
             1. Si tiene entrenador asignado → logo del entrenador
@@ -542,36 +541,49 @@ export default function HomeScreen() {
       <View style={[styles.blob, styles.blobTop]} />
       <View style={[styles.blob, styles.blobBottom]} />
 
-      {/* Botón Mode Select para Admin/Entrenador */}
+      {/* Botón Mode Select para Admin/Entrenador - Solo emoji de flechas */}
       {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
         <Link href="/mode-select" asChild>
-          <Pressable style={styles.modeSelectorButton}>
+          <Pressable style={styles.modeSelectorButtonCompact}>
             <LinearGradient
               colors={['#3B82F6', '#2563EB']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.modeSelectorGradient}
+              style={styles.modeSelectorGradientCompact}
             >
-              <Ionicons name="swap-horizontal-outline" size={20} color="#FFF" />
-              <Text style={styles.modeSelectorButtonText}>Cambiar Modo</Text>
+              <Text style={styles.modeSelectorEmoji}>🔄</Text>
             </LinearGradient>
           </Pressable>
         </Link>
       )}
 
+      {/* Botón de FAQs - A la izquierda de Subir de Nivel */}
+      {showPaymentButton && (
+        <Link href="/coach-help" asChild>
+          <Pressable style={styles.faqButton}>
+            <LinearGradient
+              colors={['#6B7280', '#4B5563']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.faqGradient}
+            >
+              <Text style={styles.faqEmoji}>❓</Text>
+            </LinearGradient>
+          </Pressable>
+        </Link>
+      )}
+
+      {/* Botón Payment - Solo corona */}
       {showPaymentButton && (
         <Link href="/payment" asChild>
-          <Pressable style={styles.paymentButton}>
-            {/* Corona inclinada FUERA del botón */}
-            <Text style={styles.crownOutside}>👑</Text>
+          <Pressable style={styles.paymentButtonCompact}>
             <LinearGradient
               colors={['#FFD700', '#FFA500', '#FF8C00']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.paymentGradient}
+              style={styles.paymentGradientCompact}
             >
-              <Text style={styles.paymentButtonText}>Subir de Nivel</Text>
-              <Ionicons name="chevron-forward" size={16} color="#000" />
+              <Text style={styles.paymentEmoji}>👑</Text>
             </LinearGradient>
           </Pressable>
         </Link>
@@ -634,7 +646,7 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
             <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-              {CAMBIOS_103.map((line, i) => (
+              {CAMBIOS_104.map((line, i) => (
                 <View key={i} style={styles.changeRow}>
                   <Text style={styles.changeBullet}>•</Text>
                   <Text style={styles.changeText}>{line}</Text>
@@ -751,16 +763,32 @@ const CARD_BG = 'rgba(255,255,255,0.08)';
 const BORDER = 'rgba(255,255,255,0.18)';
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  scrollView: { flex: 1 },
+  root: {
+    flex: 1,
+    ...(Platform.OS === 'web' && {
+      minHeight: '100vh',
+      minWidth: '100vw',
+      overflow: 'hidden',
+    }),
+  },
+  scrollView: {
+    flex: 1,
+    ...(Platform.OS === 'web' && {
+      width: '100%',
+    }),
+  },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 100,
+    paddingBottom: Platform.OS === 'ios' ? 40 : (Platform.OS === 'web' ? 40 : 100),
+    ...(Platform.OS === 'web' && {
+      minHeight: '100vh',
+      width: '100%',
+    }),
   },
   contentContainer: {
-    width: '86%',
+    width: Platform.OS === 'web' ? '92%' : '86%',
     alignItems: 'center',
     maxWidth: 500,
   },
@@ -927,6 +955,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  // Estilos compactos para botones superiores
+  paymentButtonCompact: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    right: 20,
+    zIndex: 999,
+    borderRadius: 18,
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  paymentGradientCompact: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paymentEmoji: {
+    fontSize: 22,
+  },
+  modeSelectorButtonCompact: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    left: 20,
+    zIndex: 999,
+    borderRadius: 18,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+  },
+  modeSelectorGradientCompact: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modeSelectorEmoji: {
+    fontSize: 22,
+  },
+  faqButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    right: 72,
+    zIndex: 999,
+    borderRadius: 18,
+    shadowColor: '#6B7280',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#6B7280',
+  },
+  faqGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  faqEmoji: {
+    fontSize: 22,
   },
   card: {
     width: '100%',

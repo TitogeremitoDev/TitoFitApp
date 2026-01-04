@@ -139,7 +139,7 @@ const MoodSelector = ({ value, onChange }) => {
 
     return (
         <View style={styles.moodContainer}>
-            <Text style={styles.inputLabel}>Ánimo</Text>
+            <Text style={styles.inputLabel}>¿Cómo te has levantado hoy?</Text>
             <View style={styles.moodRow}>
                 {moods.map((mood) => (
                     <TouchableOpacity
@@ -474,11 +474,8 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     const [minimalData, setMinimalData] = useState({
         peso: '',
+        sueno: '',
         animo: 3,
-        kcalConsumed: '',
-        proteinConsumed: '',
-        carbsConsumed: '',
-        fatConsumed: '',
     });
     const [minimalDataSaved, setMinimalDataSaved] = useState(false);
     const [minimalDataLoading, setMinimalDataLoading] = useState(true);
@@ -535,15 +532,12 @@ export default function SeguimientoScreen() {
     // ESTADOS CHECK-IN DIARIO
     // ─────────────────────────────────────────────────────────────────────────
     const [diario, setDiario] = useState({
-        peso: '',
-        sueno: '',
-        animo: 3,
         energia: 3,
         hambre: 3,
         pasos: '',
         haIdoBien: '',
         nota: '',
-        // Macros (pre-rellenados desde datos mínimos)
+        // Macros (movidos desde datos mínimos)
         kcalConsumed: '',
         proteinConsumed: '',
         carbsConsumed: '',
@@ -724,16 +718,10 @@ export default function SeguimientoScreen() {
             setDiarioOriginal(null);
             setMinimalData({
                 peso: '',
-                animo: 3,
-                kcalConsumed: '',
-                proteinConsumed: '',
-                carbsConsumed: '',
-                fatConsumed: '',
-            });
-            setDiario({
-                peso: '',
                 sueno: '',
                 animo: 3,
+            });
+            setDiario({
                 energia: 3,
                 hambre: 3,
                 pasos: '',
@@ -802,32 +790,36 @@ export default function SeguimientoScreen() {
 
                 // 2. Cargar datos del día seleccionado
                 if (user?.tipoUsuario === 'FREEUSER') {
-                    // Cargar desde AsyncStorage
+                    // Cargar desde AsyncStorage - datos mínimos
                     const storageKey = `minimal_data_${targetDate}`;
                     const saved = await AsyncStorage.getItem(storageKey);
                     if (saved) {
                         const parsed = JSON.parse(saved);
-                        setMinimalData(parsed);
+                        setMinimalData({
+                            peso: parsed.peso || '',
+                            sueno: parsed.sueno || '',
+                            animo: parsed.animo || 3,
+                        });
                         setMinimalDataSaved(true);
                         setDiarioExistente(true);
                         setDiarioOriginal(parsed);
-                        // Pre-rellenar diario
-                        setDiario(prev => ({
-                            ...prev,
-                            peso: parsed.peso || '',
-                            animo: parsed.animo || 3,
-                            kcalConsumed: parsed.kcalConsumed || '',
-                            proteinConsumed: parsed.proteinConsumed || '',
-                            carbsConsumed: parsed.carbsConsumed || '',
-                            fatConsumed: parsed.fatConsumed || '',
-                        }));
                     }
                     // También cargar datos del diario completo si existen
                     const diarioKey = `daily_monitoring_${targetDate}`;
                     const savedDiario = await AsyncStorage.getItem(diarioKey);
                     if (savedDiario) {
                         const parsedDiario = JSON.parse(savedDiario);
-                        setDiario(prev => ({ ...prev, ...parsedDiario }));
+                        setDiario({
+                            energia: parsedDiario.energia || 3,
+                            hambre: parsedDiario.hambre || 3,
+                            pasos: parsedDiario.pasos || '',
+                            haIdoBien: parsedDiario.haIdoBien || '',
+                            nota: parsedDiario.nota || '',
+                            kcalConsumed: parsedDiario.kcalConsumed || '',
+                            proteinConsumed: parsedDiario.proteinConsumed || '',
+                            carbsConsumed: parsedDiario.carbsConsumed || '',
+                            fatConsumed: parsedDiario.fatConsumed || '',
+                        });
                         setDiarioExistente(true);
                         setDiarioOriginal(parsedDiario);
                     }
@@ -837,22 +829,17 @@ export default function SeguimientoScreen() {
                         const res = await axios.get(`/monitoring/daily?startDate=${targetDate}&endDate=${targetDate}`);
                         if (res.data?.data?.length > 0) {
                             const dayData = res.data.data[0];
+                            // Datos mínimos: peso, sueño, ánimo
                             setMinimalData({
                                 peso: dayData.peso?.toString() || '',
+                                sueno: dayData.sueno?.toString() || '',
                                 animo: dayData.animo || 3,
-                                kcalConsumed: dayData.kcalConsumed?.toString() || '',
-                                proteinConsumed: dayData.proteinConsumed?.toString() || '',
-                                carbsConsumed: dayData.carbsConsumed?.toString() || '',
-                                fatConsumed: dayData.fatConsumed?.toString() || '',
                             });
                             setMinimalDataSaved(true);
                             setDiarioExistente(true);
                             setDiarioOriginal(dayData);
-                            // Pre-rellenar diario
-                            const diarioData = {
-                                peso: dayData.peso?.toString() || '',
-                                animo: dayData.animo || 3,
-                                sueno: dayData.sueno?.toString() || '',
+                            // Datos del diario: energía, hambre, pasos, haIdoBien, nota y macros
+                            setDiario({
                                 energia: dayData.energia || 3,
                                 hambre: dayData.hambre || 3,
                                 pasos: dayData.pasos?.toString() || '',
@@ -862,8 +849,7 @@ export default function SeguimientoScreen() {
                                 proteinConsumed: dayData.proteinConsumed?.toString() || '',
                                 carbsConsumed: dayData.carbsConsumed?.toString() || '',
                                 fatConsumed: dayData.fatConsumed?.toString() || '',
-                            };
-                            setDiario(prev => ({ ...prev, ...diarioData }));
+                            });
                         }
                     } catch (e) {
                         console.log('[Seguimiento] Error cargando datos del día:', e.message);
@@ -937,7 +923,6 @@ export default function SeguimientoScreen() {
                                 }
                             });
                         }
-                        console.log('[Calendar] Cloud - Días cargados:', dailySet.size);
                     } catch (e) {
                         console.log('[Calendar] Error cargando datos diarios:', e.message);
                     }
@@ -954,7 +939,6 @@ export default function SeguimientoScreen() {
                                 }
                             });
                         }
-                        console.log('[Calendar] Cloud - Semanas cargadas:', weeklySet.size);
                     } catch (e) {
                         console.log('[Calendar] Error cargando datos semanales:', e.message);
                     }
@@ -1110,21 +1094,17 @@ export default function SeguimientoScreen() {
                 }
             }
 
-            // Pre-rellenar el check-in diario
-            setDiario(prev => ({
-                ...prev,
-                peso: minimalData.peso,
-                animo: minimalData.animo,
-                kcalConsumed: minimalData.kcalConsumed,
-                proteinConsumed: minimalData.proteinConsumed,
-                carbsConsumed: minimalData.carbsConsumed,
-                fatConsumed: minimalData.fatConsumed,
-            }));
+            // Pre-rellenar el check-in diario con datos mínimos
+            // Nota: Los macros ahora se guardan directamente en el diario, no en minimalData
 
+            const wasNew = !diarioExistente; // Guardar antes de marcar como existente
             setMinimalDataSaved(true);
             setDiarioExistente(true);
-            // Refrescar calendario para mostrar el día guardado
-            setCalendarRefreshTrigger(prev => prev + 1);
+
+            // Refrescar calendario solo si es un día nuevo
+            if (wasNew) {
+                setCalendarRefreshTrigger(prev => prev + 1);
+            }
 
             // 🎬 Activar animación de feedback
             triggerSaveAnimation();
@@ -1137,11 +1117,7 @@ export default function SeguimientoScreen() {
         }
     };
 
-    // Valores iniciales para resetear
     const initialDiario = {
-        peso: '',
-        sueno: '',
-        animo: 3,
         energia: 3,
         hambre: 3,
         pasos: '',
@@ -1186,8 +1162,16 @@ export default function SeguimientoScreen() {
             // Usar selectedDate en lugar de hoy
             const targetDate = selectedDate;
 
-            // 📌 Para FREEUSER: hacer merge con datos existentes
-            let dataToSave = { ...diario, date: targetDate };
+            // 📌 Combinar datos mínimos (peso, sueño, ánimo) con datos del diario
+            let dataToSave = {
+                // Datos de minimalData
+                peso: minimalData.peso,
+                sueno: minimalData.sueno,
+                animo: minimalData.animo,
+                // Datos del diario
+                ...diario,
+                date: targetDate
+            };
 
             if (user?.tipoUsuario === 'FREEUSER') {
                 // Cargar datos existentes y hacer merge
@@ -1213,11 +1197,6 @@ export default function SeguimientoScreen() {
                 if (!days.includes(targetDate)) {
                     days.push(targetDate);
                     await AsyncStorage.setItem(daysKey, JSON.stringify(days));
-                }
-
-                // 📌 Sincronizar peso al perfil local del usuario (solo si es hoy)
-                if (isToday && diario.peso && parseFloat(diario.peso) > 0) {
-                    await AsyncStorage.setItem('USER_PESO', String(diario.peso));
                 }
             } else {
                 // Guardar en la nube (backend sincroniza peso automáticamente)
@@ -1253,8 +1232,13 @@ export default function SeguimientoScreen() {
                 Alert.alert('✅ Guardado', diarioExistente ? `Check-in diario actualizado${dateLabel}` : `Check-in diario guardado${dateLabel}`);
             }
 
-            // Refrescar calendario
-            setCalendarRefreshTrigger(prev => prev + 1);
+            // 🎯 UX: Cerrar el acordeón para dar feedback visual de que se guardó
+            setDiarioExpanded(false);
+
+            // Refrescar calendario solo si es un día nuevo (para mostrar el dot)
+            if (!diarioExistente) {
+                setCalendarRefreshTrigger(prev => prev + 1);
+            }
 
             // 📌 NO resetear - marcar como existente y actualizar original
             setDiarioExistente(true);
@@ -1489,40 +1473,27 @@ export default function SeguimientoScreen() {
                                 </View>
                             </View>
 
-                            {/* Macros Consumidos - Diseño condensado */}
-                            <Text style={styles.macrosSectionTitle}>🍽️ Macros Consumidos (opcional)</Text>
-
-                            {/* Kcal prominente arriba */}
-                            <KcalBigInput
-                                value={minimalData.kcalConsumed}
-                                target={nutritionTargets.kcal}
-                                onChangeText={(v) => updateMinimalData('kcalConsumed', v)}
-                            />
-
-                            {/* Macros en fila compacta */}
-                            <View style={styles.compactMacrosRow}>
-                                <CompactMacroInput
-                                    emoji="🥩"
-                                    label="Prot"
-                                    value={minimalData.proteinConsumed}
-                                    target={nutritionTargets.protein}
-                                    onChangeText={(v) => updateMinimalData('proteinConsumed', v)}
-                                />
-                                <CompactMacroInput
-                                    emoji="🍚"
-                                    label="Carbs"
-                                    value={minimalData.carbsConsumed}
-                                    target={nutritionTargets.carbs}
-                                    onChangeText={(v) => updateMinimalData('carbsConsumed', v)}
-                                />
-                                <CompactMacroInput
-                                    emoji="🥑"
-                                    label="Grasas"
-                                    value={minimalData.fatConsumed}
-                                    target={nutritionTargets.fat}
-                                    onChangeText={(v) => updateMinimalData('fatConsumed', v)}
-                                />
+                            {/* Horas de sueño */}
+                            <View style={styles.minimalInputRow}>
+                                <Text style={styles.minimalInputLabel}>😴 Horas de sueño</Text>
+                                <View style={styles.minimalInputWrapper}>
+                                    <TextInput
+                                        style={styles.minimalNumberInput}
+                                        value={minimalData.sueno}
+                                        onChangeText={(v) => updateMinimalData('sueno', v)}
+                                        placeholder="7.5"
+                                        placeholderTextColor="#6B7280"
+                                        keyboardType="numeric"
+                                    />
+                                    <Text style={styles.minimalInputSuffix}>h</Text>
+                                </View>
                             </View>
+
+                            {/* Ánimo / Cómo te has levantado */}
+                            <MoodSelector
+                                value={minimalData.animo}
+                                onChange={(v) => updateMinimalData('animo', v)}
+                            />
 
                             {/* Botón Guardar */}
                             <TouchableOpacity
@@ -1555,29 +1526,8 @@ export default function SeguimientoScreen() {
                     onToggle={() => setDiarioExpanded(!diarioExpanded)}
                     color="#10B981"
                 >
-                    <NumberInput
-                        label="Peso Hoy"
-                        value={diario.peso}
-                        onChangeText={(v) => updateDiario('peso', v)}
-                        placeholder="75.5"
-                        suffix="kg"
-                    />
-
-                    <NumberInput
-                        label="Horas de sueño"
-                        value={diario.sueno}
-                        onChangeText={(v) => updateDiario('sueno', v)}
-                        placeholder="7.5"
-                        suffix="h"
-                    />
-
-                    <MoodSelector
-                        value={diario.animo}
-                        onChange={(v) => updateDiario('animo', v)}
-                    />
-
                     <ScaleSelector
-                        label="Energía"
+                        label="Energía en tu día"
                         value={diario.energia}
                         onChange={(v) => updateDiario('energia', v)}
                         max={5}
@@ -1611,6 +1561,39 @@ export default function SeguimientoScreen() {
                         onChangeText={(v) => updateDiario('nota', v)}
                         placeholder="Algo que quieras recordar..."
                     />
+
+                    {/* Macros Consumidos - Añadidos al check-in diario */}
+                    <Text style={styles.macrosSectionTitle}>🍽️ Macros Consumidos (opcional)</Text>
+
+                    <KcalBigInput
+                        value={diario.kcalConsumed}
+                        target={nutritionTargets.kcal}
+                        onChangeText={(v) => updateDiario('kcalConsumed', v)}
+                    />
+
+                    <View style={styles.compactMacrosRow}>
+                        <CompactMacroInput
+                            emoji="🥩"
+                            label="Prot"
+                            value={diario.proteinConsumed}
+                            target={nutritionTargets.protein}
+                            onChangeText={(v) => updateDiario('proteinConsumed', v)}
+                        />
+                        <CompactMacroInput
+                            emoji="🍚"
+                            label="Carbs"
+                            value={diario.carbsConsumed}
+                            target={nutritionTargets.carbs}
+                            onChangeText={(v) => updateDiario('carbsConsumed', v)}
+                        />
+                        <CompactMacroInput
+                            emoji="🥑"
+                            label="Grasas"
+                            value={diario.fatConsumed}
+                            target={nutritionTargets.fat}
+                            onChangeText={(v) => updateDiario('fatConsumed', v)}
+                        />
+                    </View>
 
                     <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarDiario}>
                         <Ionicons name="save-outline" size={20} color="#FFF" />

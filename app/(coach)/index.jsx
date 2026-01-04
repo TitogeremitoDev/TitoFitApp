@@ -1,4 +1,4 @@
-// app/(coach)/index.jsx - Trainer Dashboard Principal
+// app/(coach)/index.jsx - Trainer Dashboard Principal - Sistema de Cajas Temáticas v2
 import React, { useState, useEffect } from 'react';
 import {
     View,
@@ -13,7 +13,9 @@ import {
     Platform,
     Modal,
     FlatList,
-    TextInput
+    TextInput,
+    useWindowDimensions,
+    Animated
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,9 +25,211 @@ import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../compone
 import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
 
+// Configuración de las cajas temáticas
+const THEMED_BOXES = [
+    {
+        id: 'athletes',
+        title: 'Gestión de Atletas',
+        icon: 'people',
+        accentColor: '#3b82f6',
+        headerBg: 'rgba(59, 130, 246, 0.1)',
+        borderColor: '#3b82f6',
+        items: [
+            { icon: 'people', name: 'Clientes', route: '/(coach)/clients_coach', color: '#10b981', badgeKey: 'clients' },
+            //{ icon: 'calendar', name: 'Calendario', route: '/(coach)/calendar', color: '#6366f1', webOnly: true },
+            //{ icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6', badgeKey: 'messages' },
+            { icon: 'stats-chart', name: 'Progreso', route: '/(coach)/progress', color: '#ef4444', badgeKey: 'progress' },
+            { icon: 'resize-outline', name: 'Seguimiento', route: '/(coach)/seguimiento_coach', color: '#0ea5e9' }
+        ]
+    },
+    {
+        id: 'studio',
+        title: 'Coach Studio',
+        icon: 'fitness',
+        accentColor: '#10b981',
+        headerBg: 'rgba(16, 185, 129, 0.08)',
+        borderColor: '#10b981',
+        items: [
+            { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
+            { icon: 'nutrition', name: 'Nutrición', route: '/(coach)/nutrition', color: '#22c55e' },
+            //{ icon: 'trophy', name: 'Objetivos', route: '/(coach)/goals', color: '#eab308', webOnly: true },
+            //{ icon: 'analytics', name: 'Análisis Técnico', route: '/(coach)/analysis', color: '#f97316', webOnly: true }
+        ]
+    },
+    {
+        id: 'library',
+        title: 'Biblioteca & Recursos',
+        icon: 'library',
+        accentColor: '#8b5cf6',
+        headerBg: 'rgba(139, 92, 246, 0.08)',
+        borderColor: '#8b5cf6',
+        items: [
+            { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
+            { icon: 'videocam', name: 'Videos Propios', route: '/(coach)/video-library', color: '#8b5cf6' },
+            //{ icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899', webOnly: true },
+            { icon: 'flash', name: 'Respuestas Rápidas', route: '/(coach)/snippet-manager', color: '#f59e0b' },
+            { icon: 'help-circle', name: 'Centro de Ayuda', route: '/(coach)/faq-manager', color: '#06b6d4' }
+        ]
+    },
+    {
+        id: 'admin',
+        title: 'Administración',
+        icon: 'settings',
+        accentColor: '#64748b',
+        headerBg: 'rgba(100, 116, 139, 0.08)',
+        borderColor: '#94a3b8',
+        items: [
+            //{ icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6', webOnly: true },
+            { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
+            //{ icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7', webOnly: true },
+            { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
+
+        ]
+    }
+];
+
+// Componente de Caja Colapsable
+const ThemedBox = ({ box, isExpanded, onToggle, badges, router, isMobile, desktopWidth }) => {
+    const [animation] = useState(new Animated.Value(isExpanded ? 1 : 0));
+
+    useEffect(() => {
+        Animated.timing(animation, {
+            toValue: isExpanded ? 1 : 0,
+            duration: 250,
+            useNativeDriver: false
+        }).start();
+    }, [isExpanded]);
+
+    // Filtrar items según plataforma
+    const visibleItems = box.items.filter(item => !item.webOnly || Platform.OS === 'web');
+
+    // Calcular badge total de la caja
+    const totalBadge = visibleItems.reduce((sum, item) => {
+        if (item.badgeKey && badges[item.badgeKey]) {
+            return sum + badges[item.badgeKey];
+        }
+        return sum;
+    }, 0);
+
+    const contentHeight = animation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, visibleItems.length * 62 + 12] // 62px por item + padding
+    });
+
+    return (
+        <View style={[
+            styles.themedBox,
+            { borderColor: box.borderColor },
+            isMobile ? styles.themedBoxMobile : styles.themedBoxDesktop
+        ]}>
+            {/* Header de la caja - Siempre visible y clickable solo en móvil */}
+            <TouchableOpacity
+                style={[styles.boxHeader, { backgroundColor: box.headerBg }]}
+                onPress={onToggle}
+                activeOpacity={isMobile ? 0.7 : 1}
+                disabled={!isMobile}
+            >
+                <View style={styles.boxHeaderLeft}>
+                    <View style={[styles.boxIconContainer, { backgroundColor: box.accentColor }]}>
+                        <Ionicons name={box.icon} size={20} color="#fff" />
+                    </View>
+                    <Text style={[styles.boxTitle, { color: box.accentColor }]}>{box.title}</Text>
+                </View>
+                <View style={styles.boxHeaderRight}>
+                    {totalBadge > 0 && (
+                        <View style={styles.boxBadge}>
+                            <Text style={styles.boxBadgeText}>{totalBadge > 99 ? '99+' : totalBadge}</Text>
+                        </View>
+                    )}
+                    {isMobile && (
+                        <Ionicons
+                            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                            size={22}
+                            color={box.accentColor}
+                        />
+                    )}
+                </View>
+            </TouchableOpacity>
+
+            {/* Contenido colapsable */}
+            <Animated.View style={[
+                styles.boxContent,
+                isMobile && { height: contentHeight, overflow: 'hidden' },
+                !isMobile && { height: 'auto' }
+            ]}>
+                <View style={styles.boxItemsGrid}>
+                    {visibleItems.map((item, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            style={styles.boxItem}
+                            onPress={() => router.push(item.route)}
+                            activeOpacity={0.7}
+                        >
+                            <LinearGradient
+                                colors={[item.color, `${item.color}dd`]}
+                                style={styles.boxItemIcon}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                            >
+                                <Ionicons name={item.icon} size={22} color="#fff" />
+                            </LinearGradient>
+                            <Text style={styles.boxItemName}>{item.name}</Text>
+                            {item.badgeKey && badges[item.badgeKey] > 0 && (
+                                <View style={styles.itemBadge}>
+                                    <Text style={styles.itemBadgeText}>
+                                        {badges[item.badgeKey] > 99 ? '99+' : badges[item.badgeKey]}
+                                    </Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </Animated.View>
+        </View>
+    );
+};
+
+// Componente FAB (Floating Action Button)
+const FAB = ({ onNewAthlete, onNewRoutine }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <View style={styles.fabContainer}>
+            {isOpen && (
+                <View style={styles.fabActions}>
+                    <TouchableOpacity
+                        style={[styles.fabAction, { backgroundColor: '#10b981' }]}
+                        onPress={() => { setIsOpen(false); onNewAthlete(); }}
+                    >
+                        <Ionicons name="person-add" size={20} color="#fff" />
+                        <Text style={styles.fabActionText}>Nuevo Atleta</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.fabAction, { backgroundColor: '#f59e0b' }]}
+                        onPress={() => { setIsOpen(false); onNewRoutine(); }}
+                    >
+                        <Ionicons name="barbell" size={20} color="#fff" />
+                        <Text style={styles.fabActionText}>Nueva Rutina</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+            <TouchableOpacity
+                style={[styles.fabButton, isOpen && styles.fabButtonOpen]}
+                onPress={() => setIsOpen(!isOpen)}
+                activeOpacity={0.8}
+            >
+                <Ionicons name={isOpen ? 'close' : 'add'} size={28} color="#fff" />
+            </TouchableOpacity>
+        </View>
+    );
+};
+
 export default function TrainerDashboard() {
     const { token, user } = useAuth();
     const router = useRouter();
+    const { width } = useWindowDimensions();
+    const isMobile = width <= 768;
+
     const [loading, setLoading] = useState(true);
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [currentClients, setCurrentClients] = useState(0);
@@ -37,9 +241,21 @@ export default function TrainerDashboard() {
     const [chatModalVisible, setChatModalVisible] = useState(false);
     const [selectedClient, setSelectedClient] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'replied'
+    const [activeFilter, setActiveFilter] = useState('all');
     const [loadingClients, setLoadingClients] = useState(false);
     const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
+
+    // Estado de acordeón: en móvil solo la primera abierta, en PC todas abiertas
+    const [expandedBoxes, setExpandedBoxes] = useState(
+        isMobile ? { athletes: true } : { athletes: true, studio: true, library: true, admin: true }
+    );
+
+    // Badges para notificaciones
+    const [badges, setBadges] = useState({
+        messages: 0,
+        progress: 0,
+        clients: 0
+    });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -47,6 +263,13 @@ export default function TrainerDashboard() {
         loadTrainerData();
         checkOnboarding();
     }, []);
+
+    // Actualizar estado de acordeón cuando cambia el tamaño de pantalla
+    useEffect(() => {
+        if (!isMobile) {
+            setExpandedBoxes({ athletes: true, studio: true, library: true, admin: true });
+        }
+    }, [isMobile]);
 
     const checkOnboarding = async () => {
         const completed = await hasCompletedCoachOnboarding();
@@ -80,12 +303,26 @@ export default function TrainerDashboard() {
             setTrainerProfile(profileData.profile || {});
             setCurrentClients(clientsData.count || 0);
             setUnreadMessages(unreadData.totalUnread || 0);
+
+            // Actualizar badges
+            setBadges(prev => ({
+                ...prev,
+                messages: unreadData.totalUnread || 0
+            }));
         } catch (error) {
             console.error('Error loading trainer data:', error);
             Alert.alert('Error', 'No se pudieron cargar los datos del entrenador');
         } finally {
             setLoading(false);
         }
+    };
+
+    const toggleBox = (boxId) => {
+        if (!isMobile) return; // En PC siempre expandido
+        setExpandedBoxes(prev => ({
+            ...prev,
+            [boxId]: !prev[boxId]
+        }));
     };
 
     const openMessagesModal = async () => {
@@ -117,11 +354,11 @@ export default function TrainerDashboard() {
     const closeClientChat = () => {
         setChatModalVisible(false);
         setSelectedClient(null);
-        // Refresh unread count
         fetch(`${API_URL}/api/chat/total-unread`, {
             headers: { Authorization: `Bearer ${token}` }
         }).then(res => res.json()).then(data => {
             setUnreadMessages(data.totalUnread || 0);
+            setBadges(prev => ({ ...prev, messages: data.totalUnread || 0 }));
         }).catch(() => { });
     };
 
@@ -129,45 +366,26 @@ export default function TrainerDashboard() {
         const code = trainerProfile?.trainerCode;
 
         if (!code || code === 'NO-CONFIGURADO') {
-            window.alert('⚠️ No tienes un código configurado aún.\n\nVe a "Perfil Profesional" para generar tu código único.');
+            if (Platform.OS === 'web') {
+                window.alert('⚠️ No tienes un código configurado aún.\n\nVe a "Perfil Profesional" para generar tu código único.');
+            } else {
+                Alert.alert('Sin código', 'Ve a "Perfil Profesional" para generar tu código único.');
+            }
             return;
         }
 
-        // Copiar al portapapeles
-        if (navigator.clipboard && navigator.clipboard.writeText) {
+        if (Platform.OS === 'web' && navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(code)
                 .then(() => {
                     window.alert(`✅ Código copiado!\n\n${code}\n\nComparte este código con tus clientes para que se vinculen contigo.`);
                 })
                 .catch(() => {
-                    // Fallback para navegadores antiguos
                     window.alert(`Tu código de entrenador:\n\n${code}\n\n(Cópialo manualmente)`);
                 });
         } else {
-            // Fallback si no hay clipboard API
-            window.alert(`Tu código de entrenador:\n\n${code}\n\n(Cópialo manualmente)`);
+            Alert.alert('Tu código', code, [{ text: 'OK' }]);
         }
     };
-
-    const dashboardSections = [
-        { icon: 'person', name: 'Perfil Profesional', route: '/(coach)/profile', color: '#3b82f6' },
-        { icon: 'people', name: 'Clientes', route: '/(coach)/clients_coach', color: '#10b981' },
-        { icon: 'stats-chart', name: 'Progreso', route: '/(coach)/progress', color: '#ef4444' },
-        { icon: 'resize-outline', name: 'Seguimiento', route: '/(coach)/seguimiento_coach', color: '#0ea5e9' },
-        { icon: 'nutrition', name: 'Nutrición', route: '/(coach)/nutrition', color: '#22c55e' },
-        { icon: 'barbell', name: 'Rutinas', route: '/(coach)/workouts', color: '#f59e0b' },
-        { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
-        { icon: 'chatbubbles', name: 'Comunicación', route: '/(coach)/communication', color: '#8b5cf6' },
-        { icon: 'help-circle', name: 'Centro de Ayuda', route: '/(coach)/faq-manager', color: '#06b6d4' },
-        { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
-        { icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899', webOnly: true },
-        { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6', webOnly: true },
-        { icon: 'calendar', name: 'Calendario', route: '/(coach)/calendar', color: '#6366f1', webOnly: true },
-        { icon: 'analytics', name: 'Análisis Técnico', route: '/(coach)/analysis', color: '#f97316', webOnly: true },
-        { icon: 'trophy', name: 'Objetivos', route: '/(coach)/goals', color: '#eab308', webOnly: true },
-        { icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7', webOnly: true },
-        { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
-    ].filter(item => !item.webOnly || Platform.OS === 'web');
 
     if (loading) {
         return (
@@ -183,140 +401,150 @@ export default function TrainerDashboard() {
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Header con Información del Entrenador */}
+                {/* Header con Información del Entrenador - Rediseño Minimalista */}
                 <LinearGradient
-                    colors={['#1e293b', '#334155']}
+                    colors={['#0f172a', '#1e293b']}
                     style={styles.header}
                 >
-                    {/* Código de Entrenador */}
-                    <View style={styles.codeSection}>
-                        <Text style={styles.codeLabel}>CÓDIGO DE ENTRENADOR</Text>
+                    {/* Fila Superior: Perfil + Código discreto */}
+                    <View style={styles.topRow}>
+                        {/* Perfil del Entrenador */}
                         <TouchableOpacity
-                            style={styles.codeContainer}
-                            onPress={copyCodeToClipboard}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={styles.codeText}>
-                                {trainerProfile?.trainerCode || 'NO-CONFIGURADO'}
-                            </Text>
-                            <Ionicons name="copy-outline" size={20} color="#10b981" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Info del Entrenador */}
-                    <View style={styles.profileSection}>
-                        <View style={styles.profileInfo}>
-                            <Text style={styles.trainerName}>{user?.nombre || 'Entrenador'}</Text>
-                            <Text style={styles.brandName}>
-                                {trainerProfile?.brandName || 'Configura tu marca'}
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.profileImageContainer}
+                            style={styles.profileSection}
                             onPress={() => router.push('/(coach)/profile')}
+                            activeOpacity={0.8}
                         >
-                            {trainerProfile?.logoUrl ? (
-                                <Image
-                                    source={{ uri: trainerProfile.logoUrl }}
-                                    style={styles.profileImage}
-                                />
-                            ) : (
-                                <View style={styles.profileImagePlaceholder}>
-                                    <Ionicons name="person" size={40} color="#94a3b8" />
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Clientes Info */}
-                    <View style={styles.clientsSection}>
-                        <View style={styles.clientsInfo}>
-                            <Text style={styles.clientsLabel}>CLIENTES</Text>
-                            <View style={styles.clientsCount}>
-                                <Text style={styles.currentClients}>{currentClients}</Text>
-                                <Text style={styles.maxClients}> / {maxClients}</Text>
+                            <View style={styles.profileImageContainer}>
+                                {trainerProfile?.logoUrl ? (
+                                    <Image
+                                        source={{ uri: trainerProfile.logoUrl }}
+                                        style={styles.profileImage}
+                                    />
+                                ) : (
+                                    <View style={styles.profileImagePlaceholder}>
+                                        <Ionicons name="person" size={28} color="#64748b" />
+                                    </View>
+                                )}
                             </View>
-                        </View>
-
-                        {/* Messages Button with Badge */}
-                        <TouchableOpacity
-                            style={styles.messagesButton}
-                            onPress={openMessagesModal}
-                        >
-                            <Ionicons name="chatbubbles" size={22} color="#fff" />
-                            <Text style={styles.buttonLabel}>Chat</Text>
-                            {unreadMessages > 0 && (
-                                <View style={styles.messageBadge}>
-                                    <Text style={styles.messageBadgeText}>
-                                        {unreadMessages > 99 ? '99+' : unreadMessages}
+                            <View style={styles.profileInfo}>
+                                <Text style={styles.trainerName}>{user?.nombre || 'Entrenador'}</Text>
+                                <View style={styles.codeRow}>
+                                    <Text style={styles.trainerCode}>
+                                        {trainerProfile?.trainerCode || 'SIN-CÓDIGO'}
                                     </Text>
+                                    <TouchableOpacity onPress={copyCodeToClipboard} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                                        <Ionicons name="copy-outline" size={14} color="#64748b" />
+                                    </TouchableOpacity>
                                 </View>
-                            )}
+                            </View>
                         </TouchableOpacity>
 
-                        {/* Feedbacks Button - NEW */}
-                        <TouchableOpacity
-                            style={styles.feedbacksButton}
-                            onPress={() => router.push('/(coach)/feedbacks')}
-                        >
-                            <Ionicons name="document-text" size={22} color="#fff" />
-                            <Text style={styles.buttonLabel}>Feedback</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.upgradeButton,
-                                !canUpgrade && styles.upgradeButtonDisabled
-                            ]}
-                            onPress={() => router.push('/(app)/payment')}
-                        >
-                            <Ionicons name="add-circle" size={24} color={canUpgrade ? "#fff" : "#64748b"} />
-                        </TouchableOpacity>
+                        {/* Botones de Acción - Cambiar Modo y Editar Perfil */}
+                        <View style={styles.topRowActions}>
+                            <TouchableOpacity
+                                style={styles.editProfileBtn}
+                                onPress={() => router.replace('/mode-select')}
+                            >
+                                <Ionicons name="swap-horizontal" size={16} color="#94a3b8" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.editProfileBtn}
+                                onPress={() => router.push('/(coach)/profile')}
+                            >
+                                <Ionicons name="pencil" size={16} color="#94a3b8" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
-                    {/* Progress Bar */}
-                    <View style={styles.progressContainer}>
-                        <View style={styles.progressBar}>
-                            <View
-                                style={[
-                                    styles.progressFill,
-                                    { width: `${Math.min((currentClients / maxClients) * 100, 100)}%` }
-                                ]}
-                            />
+                    {/* Sección Clientes - Reorganizada */}
+                    <View style={styles.clientsCard}>
+                        {/* Header de la tarjeta */}
+                        <View style={styles.clientsHeader}>
+                            <Text style={styles.clientsTitle}>Clientes</Text>
+                            <Text style={styles.clientsStats}>
+                                {currentClients} de {maxClients} ocupados
+                            </Text>
                         </View>
-                        <Text style={styles.progressText}>
-                            {currentClients >= maxClients ? '¡Límite alcanzado!' : `${maxClients - currentClients} slots disponibles`}
-                        </Text>
+
+                        {/* Barra de Progreso */}
+                        <View style={styles.progressContainer}>
+                            <View style={styles.progressBar}>
+                                <View
+                                    style={[
+                                        styles.progressFill,
+                                        { width: `${Math.min((currentClients / maxClients) * 100, 100)}%` }
+                                    ]}
+                                />
+                            </View>
+                            <Text style={styles.progressText}>
+                                {currentClients >= maxClients ? '¡Límite alcanzado!' : `${maxClients - currentClients} slots disponibles`}
+                            </Text>
+                        </View>
+
+                        {/* Botones de Acción */}
+                        <View style={styles.actionsRow}>
+                            {/* Botón Principal: Añadir Cliente */}
+                            <TouchableOpacity
+                                style={styles.addClientBtn}
+                                onPress={() => router.push('/(app)/payment')}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="add" size={20} color="#fff" />
+                                <Text style={styles.addClientBtnText}>Añadir</Text>
+                            </TouchableOpacity>
+
+                            {/* Botones Secundarios */}
+                            <TouchableOpacity
+                                style={styles.secondaryBtn}
+                                onPress={openMessagesModal}
+                            >
+                                <Ionicons name="chatbubbles-outline" size={20} color="#94a3b8" />
+                                {unreadMessages > 0 && (
+                                    <View style={styles.messageBadge}>
+                                        <Text style={styles.messageBadgeText}>
+                                            {unreadMessages > 99 ? '99+' : unreadMessages}
+                                        </Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.secondaryBtn}
+                                onPress={() => router.push('/(coach)/feedbacks')}
+                            >
+                                <Ionicons name="document-text-outline" size={20} color="#94a3b8" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </LinearGradient>
 
-                {/* Dashboard Sections */}
-                <View style={styles.sectionsContainer}>
-                    <Text style={styles.sectionsTitle}>Panel de Control</Text>
-
-                    <View style={styles.grid}>
-                        {dashboardSections.map((section, index) => (
-                            <TouchableOpacity
-                                key={index}
-                                style={styles.sectionCard}
-                                onPress={() => router.push(section.route)}
-                                activeOpacity={0.7}
-                            >
-                                <LinearGradient
-                                    colors={[section.color, `${section.color}dd`]}
-                                    style={styles.sectionGradient}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 1 }}
-                                >
-                                    <Ionicons name={section.icon} size={28} color="#fff" />
-                                </LinearGradient>
-                                <Text style={styles.sectionName}>{section.name}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+                {/* Cajas Temáticas */}
+                <View style={[
+                    styles.boxesContainer,
+                    !isMobile && styles.boxesContainerDesktop
+                ]}>
+                    {THEMED_BOXES.map((box) => (
+                        <ThemedBox
+                            key={box.id}
+                            box={box}
+                            isExpanded={expandedBoxes[box.id] || !isMobile}
+                            onToggle={() => toggleBox(box.id)}
+                            badges={badges}
+                            router={router}
+                            isMobile={isMobile}
+                            desktopWidth={(width - 48) / 2} // 2 columnas con padding
+                        />
+                    ))}
                 </View>
             </ScrollView>
+
+            {/* FAB - Solo en móvil */}
+            {isMobile && (
+                <FAB
+                    onNewAthlete={() => router.push('/(coach)/clients_coach?action=new')}
+                    onNewRoutine={() => router.push('/(coach)/workouts?action=new')}
+                />
+            )}
 
             {/* Modal de Onboarding */}
             <CoachOnboardingModal
@@ -429,10 +657,7 @@ export default function TrainerDashboard() {
                         <FlatList
                             data={clientsList
                                 .filter(client => {
-                                    // Search filter
                                     const matchesSearch = client.nombre?.toLowerCase().includes(searchQuery.toLowerCase());
-
-                                    // Tab filter
                                     const summary = feedbackSummary[client._id] || {};
                                     if (activeFilter === 'unread') {
                                         return matchesSearch && summary.unreadMessages > 0;
@@ -455,21 +680,20 @@ export default function TrainerDashboard() {
                                 const hasUnread = summary.unreadMessages > 0;
                                 const totalMsgs = summary.totalMessages || 0;
 
-                                // Calcular estado del cliente basado en última comunicación
-                                let statusColor = '#6b7280'; // Gris - sin datos
+                                let statusColor = '#6b7280';
                                 let statusLabel = 'Sin contacto';
                                 if (summary.lastFeedbackDate) {
                                     const daysSince = Math.floor(
                                         (new Date() - new Date(summary.lastFeedbackDate)) / (1000 * 60 * 60 * 24)
                                     );
                                     if (daysSince < 7) {
-                                        statusColor = '#10b981'; // Verde
+                                        statusColor = '#10b981';
                                         statusLabel = 'Activo';
                                     } else if (daysSince < 14) {
-                                        statusColor = '#f59e0b'; // Naranja
+                                        statusColor = '#f59e0b';
                                         statusLabel = 'Atención';
                                     } else {
-                                        statusColor = '#ef4444'; // Rojo
+                                        statusColor = '#ef4444';
                                         statusLabel = 'Urgente';
                                     }
                                 }
@@ -491,7 +715,6 @@ export default function TrainerDashboard() {
                                                 ]}>
                                                     {item.nombre?.charAt(0)?.toUpperCase() || '?'}
                                                 </Text>
-                                                {/* Status Dot */}
                                                 <View style={[
                                                     styles.statusDot,
                                                     { backgroundColor: statusColor }
@@ -558,335 +781,347 @@ export default function TrainerDashboard() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8fafc'
+        backgroundColor: '#f1f5f9'
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f8fafc'
+        backgroundColor: '#f1f5f9'
     },
     header: {
-        padding: 24,
+        padding: 20,
         paddingTop: 14,
-        borderBottomLeftRadius: 32,
-        borderBottomRightRadius: 32
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24
     },
-    codeSection: {
-        marginBottom: 10
-    },
-    codeLabel: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#94a3b8',
-        letterSpacing: 1.5,
-        marginBottom: 8
-    },
-    codeContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#1e293b',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#334155'
-    },
-    codeText: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#10b981',
-        letterSpacing: 2
-    },
-    profileSection: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24
-    },
-    profileInfo: {
-        flex: 1
-    },
-    trainerName: {
-        fontSize: 24,
-        fontWeight: '800',
-        color: '#fff',
-        marginBottom: 4
-    },
-    brandName: {
-        fontSize: 16,
-        color: '#94a3b8',
-        fontWeight: '500'
-    },
-    profileImageContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        overflow: 'hidden',
-        borderWidth: 3,
-        borderColor: '#10b981'
-    },
-    profileImage: {
-        width: '100%',
-        height: '100%'
-    },
-    profileImagePlaceholder: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#334155',
-        justifyContent: 'center',
-        alignItems: 'center'
-    },
-    clientsSection: {
+    topRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: 16
     },
-    clientsInfo: {
+    profileSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
         flex: 1
     },
-    clientsLabel: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#94a3b8',
-        letterSpacing: 1.5,
-        marginBottom: 4
+    profileImageContainer: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        overflow: 'hidden',
+        borderWidth: 2,
+        borderColor: '#3b82f6'
     },
-    clientsCount: {
-        flexDirection: 'row',
-        alignItems: 'baseline'
+    profileImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 26
     },
-    currentClients: {
-        fontSize: 36,
-        fontWeight: '800',
-        color: '#fff'
-    },
-    maxClients: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#64748b'
-    },
-    upgradeButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: '#3b82f6',
+    profileImagePlaceholder: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#1e293b',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#3b82f6',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8
+        borderRadius: 26
     },
-    upgradeButtonDisabled: {
+    profileInfo: {
+        marginLeft: 12,
+        flex: 1
+    },
+    trainerName: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#f8fafc',
+        marginBottom: 2
+    },
+    codeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6
+    },
+    trainerCode: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+        letterSpacing: 0.5
+    },
+    editProfileBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: '#1e293b',
-        shadowOpacity: 0
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#334155'
+    },
+    topRowActions: {
+        flexDirection: 'row',
+        gap: 8
+    },
+    // Tarjeta de Clientes - Diseño Limpio
+    clientsCard: {
+        backgroundColor: '#1e293b',
+        borderRadius: 16,
+        padding: 16
+    },
+    clientsHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12
+    },
+    clientsTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#f8fafc'
+    },
+    clientsStats: {
+        fontSize: 13,
+        color: '#64748b',
+        fontWeight: '500'
     },
     progressContainer: {
-        marginTop: 8
+        marginBottom: 16
     },
     progressBar: {
         height: 8,
-        backgroundColor: '#1e293b',
+        backgroundColor: '#334155',
         borderRadius: 4,
         overflow: 'hidden',
-        marginBottom: 8
+        marginBottom: 6
     },
     progressFill: {
         height: '100%',
-        backgroundColor: '#10b981',
+        backgroundColor: '#3b82f6',
         borderRadius: 4
     },
     progressText: {
         fontSize: 12,
         color: '#94a3b8',
-        fontWeight: '600',
-        textAlign: 'center'
+        fontWeight: '500',
+        textAlign: 'right'
     },
-    sectionsContainer: {
-        padding: 24
-    },
-    sectionsTitle: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: '#1e293b',
-        marginBottom: 20
-    },
-    grid: {
+    // Botones de Acción
+    actionsRow: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 16
-    },
-    sectionCard: {
-        width: '47%',
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
+        gap: 10
+    },
+    addClientBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#3b82f6',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        gap: 6,
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
         shadowRadius: 8,
-        elevation: 2
+        elevation: 4
     },
-    sectionGradient: {
-        width: 56,
-        height: 56,
-        borderRadius: 16,
+    addClientBtnText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '700'
+    },
+    secondaryBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: '#334155',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 12
-    },
-    sectionName: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#334155',
-        textAlign: 'center'
-    },
-    // Messages Button
-    messagesButton: {
-        width: 52,
-        height: 58,
-        borderRadius: 14,
-        backgroundColor: '#8b5cf6',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 10,
-        position: 'relative',
-        paddingVertical: 6
+        position: 'relative'
     },
     messageBadge: {
         position: 'absolute',
         top: -4,
         right: -4,
         backgroundColor: '#ef4444',
-        borderRadius: 12,
-        minWidth: 20,
-        height: 20,
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 6,
+        paddingHorizontal: 4,
         borderWidth: 2,
-        borderColor: '#334155'
+        borderColor: '#1e293b'
     },
     messageBadgeText: {
         color: '#fff',
-        fontSize: 10,
-        fontWeight: '700'
-    },
-    // Feedbacks Button
-    feedbacksButton: {
-        width: 60,
-        height: 58,
-        borderRadius: 14,
-        backgroundColor: '#f59e0b',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 10,
-        position: 'relative',
-        paddingVertical: 6
-    },
-    // Button Label
-    buttonLabel: {
-        color: '#fff',
         fontSize: 9,
-        fontWeight: '600',
-        marginTop: 2
-    },
-    // Messages Modal
-    messagesModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end'
-    },
-    messagesModalContainer: {
-        backgroundColor: '#fff',
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        maxHeight: '80%',
-        paddingBottom: 32
-    },
-    messagesModalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0'
-    },
-    messagesModalTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#1e293b'
-    },
-    clientMessageItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9'
-    },
-    clientMessageItemUnread: {
-        backgroundColor: '#eff6ff'
-    },
-    clientMessageInfo: {
-        flex: 1,
-        marginLeft: 12
-    },
-    clientMessageName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#1e293b'
-    },
-    clientMessageDate: {
-        fontSize: 12,
-        color: '#64748b',
-        marginTop: 2
-    },
-    clientUnreadBadge: {
-        backgroundColor: '#3b82f6',
-        borderRadius: 12,
-        minWidth: 24,
-        height: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 8
-    },
-    clientUnreadText: {
-        color: '#fff',
-        fontSize: 12,
         fontWeight: '700'
     },
-    statusDot: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 14,
-        height: 14,
-        borderRadius: 7,
+    // Estilos para Cajas Temáticas
+    boxesContainer: {
+        padding: 16,
+        gap: 12
+    },
+    boxesContainerDesktop: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        gap: 12
+    },
+    themedBox: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
         borderWidth: 2,
-        borderColor: '#fff'
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 3,
+        marginBottom: 0
     },
-    broadcastBtn: {
-        width: 40,
-        height: 40,
+    themedBoxMobile: {
+        width: '100%'
+    },
+    themedBoxDesktop: {
+        width: '48.5%',
+        marginBottom: 0
+    },
+    boxHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f3f0ff',
-        borderRadius: 20
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        paddingHorizontal: 14
     },
-    emptyMessages: {
-        padding: 40,
+    boxHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10
+    },
+    boxIconContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        justifyContent: 'center',
         alignItems: 'center'
     },
-    emptyMessagesText: {
-        color: '#94a3b8',
-        marginTop: 12
+    boxTitle: {
+        fontSize: 14,
+        fontWeight: '700'
     },
-    // Full Screen Modal Styles
+    boxHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10
+    },
+    boxBadge: {
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        minWidth: 22,
+        height: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6
+    },
+    boxBadgeText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700'
+    },
+    boxContent: {
+        paddingHorizontal: 10,
+        paddingBottom: 10
+    },
+    boxItemsGrid: {
+        gap: 6
+    },
+    boxItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        borderRadius: 10,
+        padding: 10,
+        gap: 10,
+        position: 'relative'
+    },
+    boxItemIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    boxItemName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#334155',
+        flex: 1
+    },
+    itemBadge: {
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        minWidth: 22,
+        height: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 6
+    },
+    itemBadgeText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700'
+    },
+    // FAB Styles
+    fabContainer: {
+        position: 'absolute',
+        bottom: 24,
+        right: 24,
+        alignItems: 'flex-end'
+    },
+    fabActions: {
+        marginBottom: 12,
+        gap: 10
+    },
+    fabAction: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 24,
+        gap: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        elevation: 4
+    },
+    fabActionText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600'
+    },
+    fabButton: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#3b82f6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        elevation: 8
+    },
+    fabButtonOpen: {
+        backgroundColor: '#64748b',
+        transform: [{ rotate: '45deg' }]
+    },
+    // Modal Styles
     fullScreenModal: {
         flex: 1,
         backgroundColor: '#f8fafc'
@@ -911,6 +1146,14 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
         color: '#1e293b'
+    },
+    broadcastBtn: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f3f0ff',
+        borderRadius: 20
     },
     statsBar: {
         flexDirection: 'row',
@@ -1057,6 +1300,16 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 12,
         fontWeight: '700'
+    },
+    statusDot: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        borderWidth: 2,
+        borderColor: '#fff'
     },
     emptyFullScreen: {
         alignItems: 'center',

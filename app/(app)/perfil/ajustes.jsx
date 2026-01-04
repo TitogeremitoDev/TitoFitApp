@@ -1278,6 +1278,39 @@ export default function AjustesScreen() {
           </View>
         </View>
 
+        {/* Sección de Tutoriales */}
+        <View style={styles.section}>
+          <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>
+            <Ionicons name="school-outline" size={20} color={theme.text} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Ayuda
+            </Text>
+          </View>
+
+          <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => router.push('/perfil/tutoriales')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                  <Ionicons name="play-circle-outline" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingItemTitle, { color: theme.text }]}>
+                    Tutoriales
+                  </Text>
+                  <Text style={[styles.settingItemSubtitle, { color: theme.textSecondary }]}>
+                    Aprende a usar todas las funciones de la app
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Sección de Información */}
         <View style={styles.section}>
           <View style={[styles.sectionHeader, { backgroundColor: theme.sectionHeader }]}>

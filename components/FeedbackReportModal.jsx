@@ -14,14 +14,40 @@ import {
     ScrollView,
     ActivityIndicator,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useFeedbackDraft } from '../context/FeedbackDraftContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { Image } from 'expo-image';
 import ConfirmModal from './ConfirmModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIDEO PREVIEW PLAYER (expo-video wrapper)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VideoPreviewPlayer = ({ uri, style }) => {
+    const player = useVideoPlayer(uri, player => {
+        player.loop = false;
+    });
+
+    if (!uri) return null;
+
+    return (
+        <VideoView
+            style={style}
+            player={player}
+            allowsFullscreen
+            allowsPictureInPicture
+            contentFit="contain"
+        />
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SECTION HEADER
@@ -96,6 +122,107 @@ const ItemInput = ({ items, setItems, placeholder, color }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TECHNICAL NOTE INPUT (with visual cards for imported notes)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TechnicalNoteInput = ({ items, setItems, placeholder, color, onViewMedia }) => {
+    const [newItem, setNewItem] = useState('');
+
+    const addItem = () => {
+        if (!newItem.trim()) return;
+        setItems([...items, { text: newItem.trim(), id: Date.now().toString() }]);
+        setNewItem('');
+    };
+
+    const removeItem = (id) => {
+        setItems(items.filter(item => item.id !== id));
+    };
+
+    return (
+        <View style={styles.itemInputContainer}>
+            {/* Existing Items - With visual cards for imported notes */}
+            {items.map((item) => (
+                <View
+                    key={item.id}
+                    style={[
+                        styles.itemRow,
+                        item.exerciseName && styles.importedNoteCard
+                    ]}
+                >
+                    {/* If imported note, show exercise context */}
+                    {item.exerciseName ? (
+                        <View style={styles.importedNoteContent}>
+                            <View style={styles.importedNoteHeader}>
+                                <View style={styles.importedNoteBadge}>
+                                    <Ionicons name="barbell" size={12} color="#3b82f6" />
+                                    <Text style={styles.importedNoteExercise}>
+                                        {item.exerciseName}
+                                    </Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => removeItem(item.id)}
+                                    style={styles.itemRemove}
+                                >
+                                    <Ionicons name="close-circle" size={20} color="#ef4444" />
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.importedNoteText}>{item.text}</Text>
+                            {/* Link al video original del atleta */}
+                            {item.sourceMediaUrl && (
+                                <TouchableOpacity
+                                    style={styles.viewMediaLink}
+                                    onPress={() => onViewMedia?.(item)}
+                                >
+                                    <Ionicons name="play-circle" size={14} color="#8b5cf6" />
+                                    <Text style={styles.viewMediaLinkText}>Ver video del atleta</Text>
+                                </TouchableOpacity>
+                            )}
+                            {item.videoUrl && (
+                                <View style={styles.importedVideoTag}>
+                                    <Ionicons name="logo-youtube" size={12} color="#ef4444" />
+                                    <Text style={styles.importedVideoText}>Video referencia adjunto</Text>
+                                </View>
+                            )}
+                        </View>
+                    ) : (
+                        <>
+                            <View style={[styles.itemDot, { backgroundColor: color }]} />
+                            <Text style={styles.itemText}>{item.text}</Text>
+                            <TouchableOpacity
+                                onPress={() => removeItem(item.id)}
+                                style={styles.itemRemove}
+                            >
+                                <Ionicons name="close-circle" size={20} color="#ef4444" />
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            ))}
+
+            {/* Add New */}
+            <View style={styles.addItemRow}>
+                <TextInput
+                    style={styles.addItemInput}
+                    value={newItem}
+                    onChangeText={setNewItem}
+                    placeholder={placeholder}
+                    placeholderTextColor="#94a3b8"
+                    onSubmitEditing={addItem}
+                    returnKeyType="done"
+                />
+                <TouchableOpacity
+                    style={[styles.addItemBtn, { backgroundColor: color }]}
+                    onPress={addItem}
+                    disabled={!newItem.trim()}
+                >
+                    <Ionicons name="add" size={20} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRAFFIC LIGHT SELECTOR
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -139,6 +266,7 @@ const TrafficLightSelector = ({ value, onChange }) => {
 
 export default function FeedbackReportModal({ visible, onClose, client, prefillData = null }) {
     const { token } = useAuth();
+    const { drafts, clearDrafts, removeTechnicalNote } = useFeedbackDraft();
     const insets = useSafeAreaInsets();
 
     const [loading, setLoading] = useState(false);
@@ -158,6 +286,9 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [modalMessage, setModalMessage] = useState({ title: '', message: '' });
     const [shouldCloseOnSuccess, setShouldCloseOnSuccess] = useState(false);
+
+    // Media Preview Modal (for viewing athlete videos/photos)
+    const [mediaPreviewItem, setMediaPreviewItem] = useState(null);
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD CLIENT DATA (Snapshot)
@@ -226,11 +357,25 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 setTrafficLight('green');
                 setWeekNumber('');
                 setHighlights([]);
-                setTechnicalNotes([]);
                 setActionPlan([]);
+
+                // 🆕 Load drafts from context into technicalNotes
+                if (drafts.technicalNotes.length > 0) {
+                    const draftNotes = drafts.technicalNotes.map(note => ({
+                        text: note.text,
+                        id: note.id,
+                        exerciseName: note.exerciseName,
+                        thumbnail: note.thumbnail,
+                        videoUrl: note.videoUrl,
+                        sourceMediaUrl: note.sourceMediaUrl // URL del video/foto original del atleta
+                    }));
+                    setTechnicalNotes(draftNotes);
+                } else {
+                    setTechnicalNotes([]);
+                }
             }
         }
-    }, [visible, loadSnapshot, prefillData]);
+    }, [visible, loadSnapshot, prefillData, drafts.technicalNotes]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // SAVE / SEND
@@ -253,7 +398,13 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 trafficLight,
                 weekNumber: weekNumber || null,
                 highlights: highlights.map(h => ({ text: h.text })),
-                technicalNotes: technicalNotes.map(n => ({ text: n.text, category: 'other' })),
+                technicalNotes: technicalNotes.map(n => ({
+                    text: n.text,
+                    category: 'other',
+                    sourceMediaUrl: n.sourceMediaUrl || null,
+                    exerciseName: n.exerciseName || null,
+                    videoUrl: n.videoUrl || null
+                })),
                 actionPlan: actionPlan.map(a => ({ text: a.text })),
                 snapshotData: snapshotData || {},
                 status: send ? 'sent' : 'draft'
@@ -270,6 +421,11 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
 
             const data = await res.json();
             if (data.success) {
+                // Limpiar borradores después de enviar
+                if (send) {
+                    clearDrafts();
+                }
+
                 setModalMessage({
                     title: send ? '✅ Enviado' : '💾 Guardado',
                     message: send ? 'El feedback ha sido enviado al cliente' : 'Borrador guardado correctamente'
@@ -306,154 +462,157 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
             transparent={false}
             onRequestClose={onClose}
         >
-            <KeyboardAvoidingView
-                style={[styles.container, { paddingTop: insets.top }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                        <Ionicons name="close" size={24} color="#64748b" />
-                    </TouchableOpacity>
-                    <View style={styles.headerCenter}>
-                        <Text style={styles.headerTitle}>📋 Nuevo Feedback</Text>
-                        <Text style={styles.headerSubtitle}>{client?.nombre || 'Cliente'}</Text>
+            <View style={[styles.container, { paddingTop: insets.top }]}>
+                <KeyboardAvoidingView
+                    style={styles.keyboardView}
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                >
+                    {/* Header */}
+                    <View style={styles.header}>
+                        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                            <Ionicons name="close" size={24} color="#64748b" />
+                        </TouchableOpacity>
+                        <View style={styles.headerCenter}>
+                            <Text style={styles.headerTitle}>📋 Nuevo Feedback</Text>
+                            <Text style={styles.headerSubtitle}>{client?.nombre || 'Cliente'}</Text>
+                        </View>
+                        <View style={{ width: 40 }} />
                     </View>
-                    <View style={{ width: 40 }} />
-                </View>
 
-                {loading ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#8b5cf6" />
-                        <Text style={styles.loadingText}>Cargando datos...</Text>
-                    </View>
-                ) : (
-                    <ScrollView
-                        style={styles.content}
-                        contentContainerStyle={styles.contentInner}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        {/* Snapshot Preview (if available) */}
-                        {snapshotData && (
-                            <View style={styles.snapshotCard}>
-                                <Text style={styles.snapshotTitle}>📊 Métricas de la Semana</Text>
-                                <View style={styles.snapshotRow}>
-                                    <View style={styles.snapshotItem}>
-                                        <Text style={styles.snapshotValue}>{snapshotData.workoutsCompleted || 0}</Text>
-                                        <Text style={styles.snapshotLabel}>Entrenos</Text>
-                                    </View>
-                                    <View style={styles.snapshotItem}>
-                                        <Text style={styles.snapshotValue}>{snapshotData.weightAvg?.toFixed(1) || '--'}</Text>
-                                        <Text style={styles.snapshotLabel}>Peso (kg)</Text>
-                                    </View>
-                                    <View style={styles.snapshotItem}>
-                                        <Text style={styles.snapshotValue}>{snapshotData.compliancePercent || 0}%</Text>
-                                        <Text style={styles.snapshotLabel}>Cumplimiento</Text>
+                    {loading ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#8b5cf6" />
+                            <Text style={styles.loadingText}>Cargando datos...</Text>
+                        </View>
+                    ) : (
+                        <ScrollView
+                            style={styles.content}
+                            contentContainerStyle={styles.contentInner}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {/* Snapshot Preview (if available) */}
+                            {snapshotData && (
+                                <View style={styles.snapshotCard}>
+                                    <Text style={styles.snapshotTitle}>📊 Métricas de la Semana</Text>
+                                    <View style={styles.snapshotRow}>
+                                        <View style={styles.snapshotItem}>
+                                            <Text style={styles.snapshotValue}>{snapshotData.workoutsCompleted || 0}</Text>
+                                            <Text style={styles.snapshotLabel}>Entrenos</Text>
+                                        </View>
+                                        <View style={styles.snapshotItem}>
+                                            <Text style={styles.snapshotValue}>{snapshotData.weightAvg?.toFixed(1) || '--'}</Text>
+                                            <Text style={styles.snapshotLabel}>Peso (kg)</Text>
+                                        </View>
+                                        <View style={styles.snapshotItem}>
+                                            <Text style={styles.snapshotValue}>{snapshotData.compliancePercent || 0}%</Text>
+                                            <Text style={styles.snapshotLabel}>Cumplimiento</Text>
+                                        </View>
                                     </View>
                                 </View>
+                            )}
+
+                            {/* Week Number */}
+                            <View style={styles.weekInputRow}>
+                                <Text style={styles.weekLabel}>Semana del plan:</Text>
+                                <TextInput
+                                    style={styles.weekInput}
+                                    value={weekNumber}
+                                    onChangeText={setWeekNumber}
+                                    placeholder="Ej: 4 de 12"
+                                    placeholderTextColor="#94a3b8"
+                                />
                             </View>
-                        )}
 
-                        {/* Week Number */}
-                        <View style={styles.weekInputRow}>
-                            <Text style={styles.weekLabel}>Semana del plan:</Text>
-                            <TextInput
-                                style={styles.weekInput}
-                                value={weekNumber}
-                                onChangeText={setWeekNumber}
-                                placeholder="Ej: 4 de 12"
-                                placeholderTextColor="#94a3b8"
+                            {/* Traffic Light */}
+                            <TrafficLightSelector
+                                value={trafficLight}
+                                onChange={setTrafficLight}
                             />
-                        </View>
 
-                        {/* Traffic Light */}
-                        <TrafficLightSelector
-                            value={trafficLight}
-                            onChange={setTrafficLight}
-                        />
+                            {/* Logros */}
+                            <SectionHeader
+                                emoji="✨"
+                                title="Logros"
+                                color="#10b981"
+                                count={highlights.length}
+                            />
+                            <Text style={styles.sectionHint}>Lo que ha ido bien esta semana</Text>
+                            <ItemInput
+                                items={highlights}
+                                setItems={setHighlights}
+                                placeholder="Añadir logro..."
+                                color="#10b981"
+                            />
 
-                        {/* Logros */}
-                        <SectionHeader
-                            emoji="✨"
-                            title="Logros"
-                            color="#10b981"
-                            count={highlights.length}
-                        />
-                        <Text style={styles.sectionHint}>Lo que ha ido bien esta semana</Text>
-                        <ItemInput
-                            items={highlights}
-                            setItems={setHighlights}
-                            placeholder="Añadir logro..."
-                            color="#10b981"
-                        />
+                            {/* Technical Notes */}
+                            <SectionHeader
+                                emoji="📊"
+                                title="Análisis Técnico"
+                                color="#3b82f6"
+                                count={technicalNotes.length}
+                            />
+                            <Text style={styles.sectionHint}>Observaciones sobre entreno, nutrición, técnica...</Text>
+                            <TechnicalNoteInput
+                                items={technicalNotes}
+                                setItems={setTechnicalNotes}
+                                placeholder="Añadir nota técnica..."
+                                color="#3b82f6"
+                                onViewMedia={(item) => setMediaPreviewItem(item)}
+                            />
 
-                        {/* Technical Notes */}
-                        <SectionHeader
-                            emoji="📊"
-                            title="Análisis Técnico"
-                            color="#3b82f6"
-                            count={technicalNotes.length}
-                        />
-                        <Text style={styles.sectionHint}>Observaciones sobre entreno, nutrición, técnica...</Text>
-                        <ItemInput
-                            items={technicalNotes}
-                            setItems={setTechnicalNotes}
-                            placeholder="Añadir nota técnica..."
-                            color="#3b82f6"
-                        />
+                            {/* Action Plan */}
+                            <SectionHeader
+                                emoji="🎯"
+                                title="Plan de Acción"
+                                color="#f59e0b"
+                                count={actionPlan.length}
+                            />
+                            <Text style={styles.sectionHint}>Qué hacer la próxima semana</Text>
+                            <ItemInput
+                                items={actionPlan}
+                                setItems={setActionPlan}
+                                placeholder="Añadir acción..."
+                                color="#f59e0b"
+                            />
 
-                        {/* Action Plan */}
-                        <SectionHeader
-                            emoji="🎯"
-                            title="Plan de Acción"
-                            color="#f59e0b"
-                            count={actionPlan.length}
-                        />
-                        <Text style={styles.sectionHint}>Qué hacer la próxima semana</Text>
-                        <ItemInput
-                            items={actionPlan}
-                            setItems={setActionPlan}
-                            placeholder="Añadir acción..."
-                            color="#f59e0b"
-                        />
+                            <View style={{ height: 20 }} />
+                        </ScrollView>
+                    )}
 
-                        <View style={{ height: 100 }} />
-                    </ScrollView>
-                )}
+                    {/* Footer Actions */}
+                    <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                        <TouchableOpacity
+                            style={styles.draftBtn}
+                            onPress={() => handleSave(false)}
+                            disabled={saving}
+                        >
+                            {saving ? (
+                                <ActivityIndicator size="small" color="#8b5cf6" />
+                            ) : (
+                                <>
+                                    <Ionicons name="save-outline" size={18} color="#8b5cf6" />
+                                    <Text style={styles.draftBtnText}>Guardar Borrador</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
 
-                {/* Footer Actions */}
-                <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-                    <TouchableOpacity
-                        style={styles.draftBtn}
-                        onPress={() => handleSave(false)}
-                        disabled={saving}
-                    >
-                        {saving ? (
-                            <ActivityIndicator size="small" color="#8b5cf6" />
-                        ) : (
-                            <>
-                                <Ionicons name="save-outline" size={18} color="#8b5cf6" />
-                                <Text style={styles.draftBtnText}>Guardar Borrador</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.sendBtn}
-                        onPress={() => handleSave(true)}
-                        disabled={saving}
-                    >
-                        {saving ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <>
-                                <Ionicons name="send" size={18} color="#fff" />
-                                <Text style={styles.sendBtnText}>Enviar</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
+                        <TouchableOpacity
+                            style={styles.sendBtn}
+                            onPress={() => handleSave(true)}
+                            disabled={saving}
+                        >
+                            {saving ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="send" size={18} color="#fff" />
+                                    <Text style={styles.sendBtnText}>Enviar</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </KeyboardAvoidingView>
+            </View>
 
             {/* Modal de validación */}
             <ConfirmModal
@@ -497,6 +656,80 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 confirmStyle="destructive"
                 icon="close-circle-outline"
             />
+
+            {/* Media Preview Modal (video/foto del atleta) */}
+            <Modal
+                visible={!!mediaPreviewItem}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => setMediaPreviewItem(null)}
+            >
+                <View style={styles.mediaPreviewOverlay}>
+                    <View style={styles.mediaPreviewContainer}>
+                        {/* Header */}
+                        <View style={styles.mediaPreviewHeader}>
+                            <View style={styles.mediaPreviewBadge}>
+                                <Ionicons name="barbell" size={14} color="#3b82f6" />
+                                <Text style={styles.mediaPreviewExercise}>
+                                    {mediaPreviewItem?.exerciseName || 'Ejercicio'}
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => setMediaPreviewItem(null)}
+                                style={styles.mediaPreviewClose}
+                            >
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Media Content */}
+                        <View style={styles.mediaPreviewContent}>
+                            {mediaPreviewItem?.mediaType === 'photo' ? (
+                                <Image
+                                    source={{ uri: mediaPreviewItem?.sourceMediaUrl }}
+                                    style={styles.mediaPreviewImage}
+                                    contentFit="contain"
+                                />
+                            ) : (
+                                <VideoPreviewPlayer
+                                    uri={mediaPreviewItem?.sourceMediaUrl}
+                                    style={styles.mediaPreviewVideo}
+                                />
+                            )}
+                        </View>
+
+                        {/* Current Note */}
+                        <View style={styles.mediaPreviewNote}>
+                            <Text style={styles.mediaPreviewNoteLabel}>Tu feedback:</Text>
+                            <Text style={styles.mediaPreviewNoteText}>
+                                {mediaPreviewItem?.text}
+                            </Text>
+                        </View>
+
+                        {/* Actions */}
+                        <View style={styles.mediaPreviewActions}>
+                            <TouchableOpacity
+                                style={styles.mediaPreviewEditBtn}
+                                onPress={() => {
+                                    // Abrir link externo como alternativa
+                                    if (mediaPreviewItem?.sourceMediaUrl) {
+                                        Linking.openURL(mediaPreviewItem.sourceMediaUrl);
+                                    }
+                                }}
+                            >
+                                <Ionicons name="open-outline" size={18} color="#64748b" />
+                                <Text style={styles.mediaPreviewEditBtnText}>Abrir en navegador</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.mediaPreviewDoneBtn}
+                                onPress={() => setMediaPreviewItem(null)}
+                            >
+                                <Text style={styles.mediaPreviewDoneBtnText}>Cerrar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </Modal>
     );
 }
@@ -507,8 +740,19 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%',
         backgroundColor: '#f8fafc'
+    },
+    keyboardView: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column'
     },
     loadingContainer: {
         flex: 1,
@@ -773,5 +1017,186 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: '#fff'
-    }
+    },
+
+    // Imported Note Cards (from MediaFeedbackResponseModal)
+    importedNoteCard: {
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        padding: 0,
+        borderWidth: 0,
+        borderLeftWidth: 4,
+        borderLeftColor: '#3b82f6',
+        backgroundColor: '#eff6ff',
+        borderRadius: 8,
+        marginBottom: 8,
+    },
+    importedNoteContent: {
+        flex: 1,
+        padding: 12,
+    },
+    importedNoteHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    importedNoteBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#dbeafe',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    importedNoteExercise: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#1d4ed8',
+        textTransform: 'uppercase',
+    },
+    importedNoteText: {
+        fontSize: 14,
+        color: '#1e293b',
+        lineHeight: 20,
+    },
+    importedVideoTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 8,
+    },
+    importedVideoText: {
+        fontSize: 11,
+        color: '#10b981',
+        fontWeight: '500',
+    },
+    // Link para ver video original del atleta
+    viewMediaLink: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 10,
+        backgroundColor: '#f3e8ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+    },
+    viewMediaLinkText: {
+        fontSize: 12,
+        color: '#8b5cf6',
+        fontWeight: '600',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MEDIA PREVIEW MODAL STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    mediaPreviewOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    mediaPreviewContainer: {
+        backgroundColor: '#1e293b',
+        borderRadius: 20,
+        width: '100%',
+        maxWidth: 500,
+        maxHeight: '90%',
+        overflow: 'hidden',
+    },
+    mediaPreviewHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+    },
+    mediaPreviewBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#dbeafe',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    mediaPreviewExercise: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1d4ed8',
+        textTransform: 'uppercase',
+    },
+    mediaPreviewClose: {
+        padding: 4,
+    },
+    mediaPreviewContent: {
+        width: '100%',
+        height: 280,
+        backgroundColor: '#000',
+    },
+    mediaPreviewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    mediaPreviewVideo: {
+        width: '100%',
+        height: '100%',
+    },
+    mediaPreviewNote: {
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+    },
+    mediaPreviewNoteLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#94a3b8',
+        marginBottom: 6,
+    },
+    mediaPreviewNoteText: {
+        fontSize: 14,
+        color: '#e2e8f0',
+        lineHeight: 20,
+    },
+    mediaPreviewActions: {
+        flexDirection: 'row',
+        gap: 12,
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+    },
+    mediaPreviewEditBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+    mediaPreviewEditBtnText: {
+        fontSize: 14,
+        color: '#94a3b8',
+        fontWeight: '500',
+    },
+    mediaPreviewDoneBtn: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: '#8b5cf6',
+    },
+    mediaPreviewDoneBtnText: {
+        fontSize: 14,
+        color: '#fff',
+        fontWeight: '600',
+    },
 });

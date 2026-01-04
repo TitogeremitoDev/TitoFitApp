@@ -41,6 +41,9 @@ import {
   calcHeavySetsByWeek,
   calcMuscleBalance,
   calcPRCountByWeek,
+  calcSessionRPEByDay,
+  RPE_COLORS,
+  RPE_LABELS,
 } from '../../../src/utils/calculateKPIs';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -254,7 +257,7 @@ export default function EvolucionScreen() {
   const [dataSource, setDataSource] = useState('local'); // 'local' o 'cloud'
 
   // 📊 KPI System 2.0 (igual que coach progress)
-  const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table'
+  const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table' | 'comments'
   const [selectedKpi, setSelectedKpi] = useState('volume');
   const [kpiModalVisible, setKpiModalVisible] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState('all');
@@ -268,8 +271,19 @@ export default function EvolucionScreen() {
   // Estado para tabla expandible por rutina (current expandido por defecto)
   const [expandedRoutines, setExpandedRoutines] = useState({ current: true });
 
+  // Estado para semanas expandidas en comentarios (primera semana expandida por defecto)
+  const [expandedWeeks, setExpandedWeeks] = useState({ 'current-1': true });
+  const toggleWeek = (routineKey, week) => {
+    const key = `${routineKey}-${week}`;
+    setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // Modal para ver notas
   const [noteModal, setNoteModal] = useState({ visible: false, note: null });
+
+  // Palabras clave de dolor/alerta para destacar comentarios críticos
+  const PAIN_KEYWORDS = ['dolor', 'molestia', 'pinchazo', 'lesión', 'daño', 'mal', 'pincha', 'duele', 'molesta', 'lesion'];
+  const hasPainKeyword = (text) => text && PAIN_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
 
   // Colores de prioridad de notas
   const NOTE_COLORS = {
@@ -636,6 +650,13 @@ export default function EvolucionScreen() {
     };
   }, [filteredSessions]);
 
+  // 🆕 KPI: Sensación (Session RPE)
+  const sessionRPEData = useMemo(() => {
+    const data = calcSessionRPEByDay(filteredSessions);
+    if (data.data.length === 0) return null;
+    return data;
+  }, [filteredSessions]);
+
   // KPI actual seleccionado
   const currentKpi = useMemo(() => {
     return KPI_OPTIONS.find(k => k.id === selectedKpi) || KPI_OPTIONS[0];
@@ -801,6 +822,125 @@ export default function EvolucionScreen() {
     return { current, old };
   }, [sessions]);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 💬 DATOS AGRUPADOS POR COMENTARIOS (SOLO SETS CON NOTAS)
+  // Ordena de más reciente a más antigua, agrupa por semana
+  // ═══════════════════════════════════════════════════════════════════════════
+  const comentariosPorRutina = useMemo(() => {
+    if (!sessions || sessions.length === 0) return { current: null, old: [] };
+
+    // Agrupar sesiones por routineId
+    const rutinasMap = new Map();
+
+    sessions.forEach((session) => {
+      const routineId = session.routineId || session.routineNameSnapshot || 'unknown';
+      const routineName = session.routineNameSnapshot || 'Rutina';
+
+      if (!rutinasMap.has(routineId)) {
+        rutinasMap.set(routineId, {
+          routineId,
+          routineName,
+          lastDate: new Date(session.date),
+          sessionsData: [],
+        });
+      }
+
+      const rutina = rutinasMap.get(routineId);
+      const sessionDate = new Date(session.date);
+      if (sessionDate > rutina.lastDate) rutina.lastDate = sessionDate;
+      rutina.sessionsData.push(session);
+    });
+
+    // Ordenar rutinas por fecha más reciente
+    const rutinasArray = Array.from(rutinasMap.values())
+      .sort((a, b) => b.lastDate - a.lastDate);
+
+    // Procesar cada rutina extrayendo solo comentarios
+    const procesarRutina = (rutina) => {
+      // Ordenar sesiones de MÁS RECIENTE a MÁS ANTIGUA
+      const sesionesOrdenadas = [...rutina.sessionsData].sort((a, b) =>
+        new Date(b.date) - new Date(a.date)
+      );
+
+      // Agrupar por semana (week)
+      const semanasMap = new Map();
+
+      sesionesOrdenadas.forEach((session) => {
+        const week = session.week ?? 1;
+        const dayIdx = session.dayIndex ?? 0;
+        const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
+        const sessionDate = new Date(session.date);
+
+        // Extraer ejercicios con comentarios
+        const ejerciciosConComentarios = [];
+        (session.exercises || []).forEach((ex) => {
+          const setsConNota = (ex.sets || []).filter((s) =>
+            s.notes?.value && s.notes?.note
+          );
+          if (setsConNota.length > 0) {
+            ejerciciosConComentarios.push({
+              exerciseName: ex.exerciseName,
+              muscleGroup: ex.muscleGroup || 'SIN GRUPO',
+              sets: setsConNota.map((s, idx) => ({
+                setNumber: s.setNumber || idx + 1,
+                weight: s.weight,
+                reps: s.actualReps,
+                noteValue: s.notes.value,
+                noteText: s.notes.note,
+                hasPain: hasPainKeyword(s.notes.note),
+              })),
+            });
+          }
+        });
+
+        if (ejerciciosConComentarios.length > 0 || session.sessionRPE) {
+          if (!semanasMap.has(week)) {
+            semanasMap.set(week, { week, dias: [] });
+          }
+          semanasMap.get(week).dias.push({
+            dayIndex: dayIdx,
+            dayLabel,
+            date: sessionDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+            dateSort: sessionDate,
+            exercises: ejerciciosConComentarios,
+            // RPE de la sesión
+            sessionRPE: session.sessionRPE || null,
+            sessionNote: session.sessionNote || null,
+            rpeColor: RPE_COLORS[session.sessionRPE] || null,
+            rpeLabel: RPE_LABELS[session.sessionRPE] || null,
+          });
+        }
+      });
+
+      // Ordenar semanas descendente (más reciente primero)
+      const semanas = Array.from(semanasMap.values())
+        .sort((a, b) => b.week - a.week)
+        .map(sem => ({
+          ...sem,
+          dias: sem.dias.sort((a, b) => b.dateSort - a.dateSort),
+        }));
+
+      const totalComentarios = semanas.reduce((acc, sem) =>
+        acc + sem.dias.reduce((acc2, d) =>
+          acc2 + d.exercises.reduce((acc3, ex) => acc3 + ex.sets.length, 0)
+          , 0)
+        , 0);
+
+      return {
+        routineId: rutina.routineId,
+        routineName: rutina.routineName,
+        lastDate: rutina.lastDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        semanas,
+        totalComentarios,
+      };
+    };
+
+    const current = rutinasArray.length > 0 ? procesarRutina(rutinasArray[0]) : null;
+    const old = rutinasArray.slice(1).map(procesarRutina).filter(r => r.totalComentarios > 0);
+
+    return { current, old };
+  }, [sessions]);
+
   // Estado para expandir días
   const [expandedDays, setExpandedDays] = useState({});
   const [expandedExercises, setExpandedExercises] = useState({});
@@ -919,7 +1059,7 @@ export default function EvolucionScreen() {
       ]}>
 
         {/* ═══════════════════════════════════════════════════════════════════════════
-          TOGGLE: GRÁFICA vs TABLA
+          TOGGLE: GRÁFICA vs TABLA vs NOTAS/MEDIA
           ═══════════════════════════════════════════════════════════════════════════ */}
         <View style={styles.viewModeToggle}>
           <Pressable
@@ -938,6 +1078,15 @@ export default function EvolucionScreen() {
             <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? '#fff' : '#9ca3af'} />
             <Text style={[styles.viewModeBtnText, viewMode === 'table' && styles.viewModeBtnTextActive]}>
               Tabla
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.viewModeBtn, viewMode === 'comments' && styles.viewModeBtnActive]}
+            onPress={() => setViewMode('comments')}
+          >
+            <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#9ca3af'} />
+            <Text style={[styles.viewModeBtnText, viewMode === 'comments' && styles.viewModeBtnTextActive]}>
+              Notas
             </Text>
           </Pressable>
         </View>
@@ -1158,6 +1307,78 @@ export default function EvolucionScreen() {
                 </>
               )}
 
+              {/* 🆕 Sensación (Session RPE) - Blue Energy Bars */}
+              {selectedKpi === 'sessionRPE' && sessionRPEData && (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.chartTitle}>Tu Sensación 🔵</Text>
+                    <View style={styles.chartSummary}>
+                      <Text style={[styles.chartSummaryValue, { color: '#3b82f6' }]}>
+                        {sessionRPEData.average}/5
+                      </Text>
+                      <Text style={styles.chartSummaryLabel}>promedio</Text>
+                    </View>
+                  </View>
+
+                  {/* Streak indicator */}
+                  {sessionRPEData.maxStreak >= 3 && (
+                    <View style={styles.rpeStreakBadge}>
+                      <Text style={styles.rpeStreakText}>
+                        🔥 {sessionRPEData.maxStreak} días en Modo Bestia
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Custom RPE Bar Chart */}
+                  <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalChartScroll}>
+                    <View style={styles.rpeBarContainer}>
+                      {sessionRPEData.data.map((item, index) => (
+                        <View key={index} style={styles.rpeBarWrapper}>
+                          <View
+                            style={[
+                              styles.rpeBar,
+                              {
+                                height: (item.value / 5) * 120,
+                                backgroundColor: item.color,
+                                shadowColor: item.value >= 4 ? item.color : 'transparent',
+                                shadowOpacity: item.value >= 4 ? 0.6 : 0,
+                                shadowRadius: item.value >= 4 ? 8 : 0,
+                                elevation: item.value >= 4 ? 4 : 0,
+                              }
+                            ]}
+                          />
+                          {item.hasNote && (
+                            <View style={styles.rpeNoteDot} />
+                          )}
+                          <Text style={styles.rpeBarLabel}>{item.label}</Text>
+                          <Text style={[styles.rpeBarValue, { color: item.color }]}>
+                            {item.value}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </ScrollView>
+
+                  {/* Legend */}
+                  <View style={styles.rpeLegend}>
+                    <View style={styles.rpeLegendItem}>
+                      <View style={[styles.rpeLegendDot, { backgroundColor: RPE_COLORS[5] }]} />
+                      <Text style={styles.rpeLegendText}>Bestia</Text>
+                    </View>
+                    <View style={styles.rpeLegendItem}>
+                      <View style={[styles.rpeLegendDot, { backgroundColor: RPE_COLORS[3] }]} />
+                      <Text style={styles.rpeLegendText}>Bien</Text>
+                    </View>
+                    <View style={styles.rpeLegendItem}>
+                      <View style={[styles.rpeLegendDot, { backgroundColor: RPE_COLORS[1] }]} />
+                      <Text style={styles.rpeLegendText}>Ñe</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
+                </>
+              )}
+
               {/* PRs */}
               {selectedKpi === 'prCount' && prCountData && (
                 <>
@@ -1186,6 +1407,7 @@ export default function EvolucionScreen() {
                 (selectedKpi === 'compliance' && !complianceWeeklyData) ||
                 (selectedKpi === 'heavySets' && !heavySetsData) ||
                 (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+                (selectedKpi === 'sessionRPE' && !sessionRPEData) ||
                 (selectedKpi === 'prCount' && !prCountData)) && (
                   <View style={styles.noDataContainer}>
                     <Ionicons name="bar-chart-outline" size={48} color="#475569" />
@@ -1426,6 +1648,221 @@ export default function EvolucionScreen() {
                 <Text style={styles.noDataText}>¡Empieza a entrenar para ver tu progreso!</Text>
                 <Text style={styles.noDataSubtext}>Tus sesiones aparecerán aquí</Text>
               </View>
+            )}
+          </View>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            💬 VISTA NOTAS/COMENTARIOS - TUS NOTAS DE ENTRENAMIENTO
+           ════════════════════════════════════════════════════════════════ */}
+        {viewMode === 'comments' && (
+          <View style={styles.commentsContainer}>
+            {/* Sin comentarios */}
+            {(!comentariosPorRutina.current || comentariosPorRutina.current.semanas?.length === 0) && comentariosPorRutina.old.length === 0 ? (
+              <View style={styles.noDataContainer}>
+                <Ionicons name="chatbubble-ellipses-outline" size={48} color="#475569" />
+                <Text style={styles.noDataText}>Sin notas registradas</Text>
+                <Text style={styles.noDataSubtext}>Tus comentarios y notas de entrenamiento aparecerán aquí</Text>
+              </View>
+            ) : (
+              <>
+                {/* RUTINA ACTUAL */}
+                {comentariosPorRutina.current && comentariosPorRutina.current.semanas?.length > 0 && (
+                  <View style={styles.commentsRoutineSection}>
+                    <View style={styles.commentsRoutineHeader}>
+                      <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
+                      <View style={styles.commentsBadge}>
+                        <Text style={styles.commentsBadgeText}>{comentariosPorRutina.current.totalComentarios}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
+
+                    {comentariosPorRutina.current.semanas.map((semana) => {
+                      // Calcular RPE promedio de la semana
+                      const diasConRPE = semana.dias.filter(d => d.sessionRPE);
+                      const avgRPE = diasConRPE.length > 0
+                        ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
+                        : null;
+                      const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
+                      const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
+
+                      return (
+                        <View key={semana.week} style={styles.commentsWeekGroup}>
+                          <Pressable
+                            onPress={() => toggleWeek('current', semana.week)}
+                            style={styles.commentsWeekHeaderPressable}
+                          >
+                            <View style={styles.commentsWeekBadge}>
+                              <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
+                            </View>
+                            <View style={styles.commentsWeekRight}>
+                              {/* RPE promedio de la semana */}
+                              {avgRPE && (
+                                <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
+                                  <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
+                                    {avgRPE} {avgLabel}
+                                  </Text>
+                                </View>
+                              )}
+                              <Text style={styles.commentsWeekCount}>
+                                {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
+                              </Text>
+                              <Ionicons
+                                name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                size={18}
+                                color="#64748b"
+                              />
+                            </View>
+                          </Pressable>
+
+                          {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
+                            <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                              <View style={styles.commentsDayHeaderRow}>
+                                <Text style={styles.commentsDayHeader}>
+                                  {dia.dayLabel} • {dia.date}
+                                </Text>
+                                {dia.sessionRPE && (
+                                  <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                    <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
+                                      {dia.sessionRPE}/5 {dia.rpeLabel}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Session note if exists */}
+                              {dia.sessionNote && (
+                                <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
+                                  <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
+                                </View>
+                              )}
+
+                              {dia.exercises.map((exercise, exIdx) => (
+                                <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
+                                  <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
+                                    <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
+                                    {' '}{exercise.exerciseName}
+                                  </Text>
+
+                                  {exercise.sets.map((set, setIdx) => (
+                                    <View
+                                      key={setIdx}
+                                      style={[
+                                        styles.commentCardCompact,
+                                        set.hasPain && styles.commentCardWarning
+                                      ]}
+                                    >
+                                      <View style={styles.commentCardCompactRow}>
+                                        <View style={[
+                                          styles.commentSemaphoreCompact,
+                                          { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                        ]} />
+                                        <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                        <Text style={styles.commentDataCompact}>
+                                          {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                        </Text>
+                                        {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+                                      </View>
+                                      <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              ))}
+                            </View>
+                          ))}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {/* RUTINAS ANTIGUAS CON COMENTARIOS */}
+                {comentariosPorRutina.old.length > 0 && (
+                  <View style={styles.commentsOldSection}>
+                    <Text style={styles.commentsOldLabel}>📦 Rutinas Anteriores</Text>
+                    {comentariosPorRutina.old.map((rutina) => (
+                      <View key={rutina.routineId} style={styles.commentsOldRoutine}>
+                        <Pressable
+                          onPress={() => toggleRoutine(rutina.routineId)}
+                          style={styles.commentsOldRoutineHeader}
+                        >
+                          <View style={styles.commentsOldRoutineInfo}>
+                            <Text style={styles.commentsOldRoutineName}>{rutina.routineName}</Text>
+                            <Text style={styles.commentsOldRoutineDate}>Última: {rutina.lastDate}</Text>
+                          </View>
+                          <View style={styles.commentsOldRoutineRight}>
+                            <View style={styles.commentsBadgeSmall}>
+                              <Text style={styles.commentsBadgeSmallText}>{rutina.totalComentarios}</Text>
+                            </View>
+                            <Ionicons
+                              name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'}
+                              size={18}
+                              color="#64748b"
+                            />
+                          </View>
+                        </Pressable>
+
+                        {expandedRoutines[rutina.routineId] && (
+                          <View style={styles.commentsOldRoutineContent}>
+                            {rutina.semanas.map((semana) => (
+                              <View key={semana.week} style={styles.commentsWeekGroupSmall}>
+                                <Text style={styles.commentsWeekLabelSmall}>Semana {semana.week}</Text>
+                                {semana.dias.map((dia, dIdx) => (
+                                  <View key={`${dia.dayIndex}-${dIdx}`}>
+                                    <View style={styles.commentsDayHeaderRow}>
+                                      <Text style={styles.commentsDayHeaderSmall}>
+                                        {dia.dayLabel} • {dia.date}
+                                      </Text>
+                                      {dia.sessionRPE && (
+                                        <View style={[styles.commentsDayRpeBadgeSmall, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                          <Text style={[styles.commentsDayRpeTextSmall, { color: dia.rpeColor }]}>
+                                            {dia.sessionRPE}/5
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                    {dia.exercises.map((exercise, exIdx) => (
+                                      <View key={exIdx} style={styles.commentsExerciseBlockSmall}>
+                                        <Text style={styles.commentsExerciseNameSmall}>
+                                          {exercise.muscleGroup} - {exercise.exerciseName}
+                                        </Text>
+                                        {exercise.sets.map((set, setIdx) => (
+                                          <View
+                                            key={setIdx}
+                                            style={[
+                                              styles.commentCardSmall,
+                                              set.hasPain && styles.commentCardWarning
+                                            ]}
+                                          >
+                                            <View style={styles.commentCardSmallLeft}>
+                                              <Text style={styles.commentSetLabelSmall}>S{set.setNumber}</Text>
+                                              <Text style={styles.commentDataSmall}>
+                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                              </Text>
+                                              {set.hasPain && <Text>⚠️</Text>}
+                                              <View style={[
+                                                styles.commentSemaphoreSmall,
+                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                              ]} />
+                                            </View>
+                                            <Text style={styles.commentTextSmall} numberOfLines={2}>
+                                              "{set.noteText}"
+                                            </Text>
+                                          </View>
+                                        ))}
+                                      </View>
+                                    ))}
+                                  </View>
+                                ))}
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
             )}
           </View>
         )}
@@ -2043,6 +2480,83 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // 🆕 RPE Bar Chart Styles (Blue Energy)
+  rpeStreakBadge: {
+    backgroundColor: '#1e3a5f',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  rpeStreakText: {
+    color: '#60a5fa',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rpeBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    height: 180,
+    gap: 10,
+  },
+  rpeBarWrapper: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: 40,
+  },
+  rpeBar: {
+    width: 28,
+    borderRadius: 6,
+    minHeight: 24,
+  },
+  rpeNoteDot: {
+    position: 'absolute',
+    top: -4,
+    right: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  rpeBarLabel: {
+    fontSize: 9,
+    color: '#9ca3af',
+    marginTop: 6,
+  },
+  rpeBarValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  rpeLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 8,
+    paddingVertical: 8,
+  },
+  rpeLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rpeLegendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  rpeLegendText: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+
   // No Data
   noDataContainer: {
     alignItems: 'center',
@@ -2067,8 +2581,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '70%',
-    paddingBottom: 32,
+    maxHeight: '60%',
+    paddingBottom: Platform.select({ android: 60, default: 32 }),
   },
   kpiModalHeader: {
     flexDirection: 'row',
@@ -2696,5 +3210,305 @@ const styles = StyleSheet.create({
   },
   setColNoteBtnEmpty: {
     backgroundColor: '#374151',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 💬 COMMENTS VIEW STYLES
+  // ═══════════════════════════════════════════════════════════════════════════
+  commentsContainer: {
+    marginBottom: 16,
+  },
+  commentsRoutineSection: {
+    marginBottom: 20,
+  },
+  commentsRoutineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  commentsRoutineLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#60a5fa',
+  },
+  commentsRoutineName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E5E7EB',
+    marginBottom: 12,
+  },
+  commentsBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  commentsBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  commentsWeekGroup: {
+    marginBottom: 12,
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  commentsWeekHeaderPressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#1e3a5f',
+  },
+  commentsWeekBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  commentsWeekBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  commentsWeekRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  commentsWeekRpeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  commentsWeekRpeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  commentsWeekCount: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  commentsDaySection: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+  },
+  commentsDayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  commentsDayHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  commentsDayRpeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  commentsDayRpeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  commentsDaySessionNote: {
+    backgroundColor: '#0f172a',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+  },
+  commentsDaySessionNoteText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  commentsExerciseBlockCompact: {
+    marginBottom: 10,
+  },
+  commentsExerciseLineCompact: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#60a5fa',
+    marginBottom: 6,
+  },
+  commentsExerciseMuscleInline: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+  },
+  commentCardCompact: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+  },
+  commentCardWarning: {
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    backgroundColor: '#1a1a0f',
+  },
+  commentCardCompactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  commentSemaphoreCompact: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  commentSetLabelCompact: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#60a5fa',
+  },
+  commentDataCompact: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  commentPainIconCompact: {
+    fontSize: 12,
+  },
+  commentTextCompact: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+
+  // Old Routines Comments
+  commentsOldSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#374151',
+  },
+  commentsOldLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#9ca3af',
+    marginBottom: 12,
+  },
+  commentsOldRoutine: {
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  commentsOldRoutineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  commentsOldRoutineInfo: {
+    flex: 1,
+  },
+  commentsOldRoutineName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  commentsOldRoutineDate: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  commentsOldRoutineRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  commentsBadgeSmall: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  commentsBadgeSmallText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  commentsOldRoutineContent: {
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#374151',
+  },
+  commentsWeekGroupSmall: {
+    marginBottom: 12,
+  },
+  commentsWeekLabelSmall: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#60a5fa',
+    marginBottom: 8,
+  },
+  commentsDayHeaderSmall: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9ca3af',
+  },
+  commentsDayRpeBadgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  commentsDayRpeTextSmall: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  commentsExerciseBlockSmall: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  commentsExerciseNameSmall: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#60a5fa',
+    marginBottom: 6,
+  },
+  commentCardSmall: {
+    backgroundColor: '#0f172a',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 4,
+  },
+  commentCardSmallLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  commentSetLabelSmall: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#60a5fa',
+  },
+  commentDataSmall: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  commentSemaphoreSmall: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 'auto',
+  },
+  commentTextSmall: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontStyle: 'italic',
   },
 });

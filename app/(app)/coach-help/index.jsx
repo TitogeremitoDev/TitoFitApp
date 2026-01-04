@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
     ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Platform,
-    useWindowDimensions
+    useWindowDimensions, Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -28,7 +28,7 @@ const CATEGORIES_CONFIG = {
 
 export default function CoachHelpScreen() {
     const router = useRouter();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const { width: screenWidth } = useWindowDimensions();
 
     const [loading, setLoading] = useState(true);
@@ -41,6 +41,7 @@ export default function CoachHelpScreen() {
     const [topFaqs, setTopFaqs] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [expandedFaq, setExpandedFaq] = useState(null);
+    const [votedFaqs, setVotedFaqs] = useState({}); // Trackéa qué FAQs ya fueron votadas { faqId: 'helpful' | 'not-helpful' }
 
     // Responsive: calcular ancho de categorías
     const isWeb = Platform.OS === 'web';
@@ -146,8 +147,48 @@ export default function CoachHelpScreen() {
         }
     };
 
-    const openChat = () => {
-        router.push('/(app)/chat');
+    // URL del formulario de contacto para usuarios sin entrenador
+    const CONTACT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSca4SqUuyDKe_hQGRqfES467zF16Wb_jDvb7hob_E3ht8PRlg/viewform';
+
+    // Determinar si el usuario tiene entrenador
+    const hasTrainer = !!user?.currentTrainerId;
+
+    const openContact = () => {
+        if (hasTrainer) {
+            // Si tiene entrenador, abrir chat
+            router.push('/(app)/chat');
+        } else {
+            // Si no tiene entrenador, abrir formulario de Google
+            Linking.openURL(CONTACT_FORM_URL);
+        }
+    };
+
+    // Votar FAQ como útil
+    const voteFaqHelpful = async (faqId) => {
+        if (votedFaqs[faqId]) return; // Ya votó
+        try {
+            await fetch(`${API_URL}/api/coach-faq/helpful/${faqId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setVotedFaqs(prev => ({ ...prev, [faqId]: 'helpful' }));
+        } catch (error) {
+            console.error('[CoachHelp] Error voting helpful:', error);
+        }
+    };
+
+    // Votar FAQ como no útil
+    const voteFaqNotHelpful = async (faqId) => {
+        if (votedFaqs[faqId]) return; // Ya votó
+        try {
+            await fetch(`${API_URL}/api/coach-faq/not-helpful/${faqId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setVotedFaqs(prev => ({ ...prev, [faqId]: 'not-helpful' }));
+        } catch (error) {
+            console.error('[CoachHelp] Error voting not helpful:', error);
+        }
     };
 
     // Renderizar FAQ item
@@ -179,6 +220,41 @@ export default function CoachHelpScreen() {
                                         <Text style={styles.tagText}>{tag}</Text>
                                     </View>
                                 ))}
+                            </View>
+                        )}
+                        {/* Botones de Like/Dislike solo para usuarios con entrenador */}
+                        {hasTrainer && (
+                            <View style={styles.feedbackRow}>
+                                <Text style={styles.feedbackLabel}>¿Te ayudó esta respuesta?</Text>
+                                <View style={styles.feedbackButtons}>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.feedbackBtn,
+                                            styles.feedbackBtnLike,
+                                            votedFaqs[faq._id] === 'helpful' && styles.feedbackBtnActive
+                                        ]}
+                                        onPress={() => voteFaqHelpful(faq._id)}
+                                        disabled={!!votedFaqs[faq._id]}
+                                    >
+                                        <Feather name="thumbs-up" size={16} color={votedFaqs[faq._id] === 'helpful' ? '#fff' : '#4CAF50'} />
+                                        <Text style={[styles.feedbackBtnText, votedFaqs[faq._id] === 'helpful' && styles.feedbackBtnTextActive]}>Sí</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.feedbackBtn,
+                                            styles.feedbackBtnDislike,
+                                            votedFaqs[faq._id] === 'not-helpful' && styles.feedbackBtnActiveRed
+                                        ]}
+                                        onPress={() => voteFaqNotHelpful(faq._id)}
+                                        disabled={!!votedFaqs[faq._id]}
+                                    >
+                                        <Feather name="thumbs-down" size={16} color={votedFaqs[faq._id] === 'not-helpful' ? '#fff' : '#EF4444'} />
+                                        <Text style={[styles.feedbackBtnText, styles.feedbackBtnTextRed, votedFaqs[faq._id] === 'not-helpful' && styles.feedbackBtnTextActive]}>No</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {votedFaqs[faq._id] && (
+                                    <Text style={styles.feedbackThanks}>¡Gracias por tu feedback!</Text>
+                                )}
                             </View>
                         )}
                     </View>
@@ -299,10 +375,12 @@ export default function CoachHelpScreen() {
                     )}
                 </View>
 
-                {/* Contact Coach Button */}
-                <TouchableOpacity style={styles.contactButton} onPress={openChat}>
-                    <Feather name="message-circle" size={20} color="#fff" />
-                    <Text style={styles.contactButtonText}>¿No resolvió tu duda? Contactar Coach</Text>
+                {/* Contact Button - Chat para clientes con entrenador, Formulario para FREEUSER/PREMIUM */}
+                <TouchableOpacity style={styles.contactButton} onPress={openContact}>
+                    <Feather name={hasTrainer ? 'message-circle' : 'external-link'} size={20} color="#fff" />
+                    <Text style={styles.contactButtonText}>
+                        {hasTrainer ? '¿No resolvió tu duda? Contactar Coach' : '¿No resolvió tu duda? Enviar consulta'}
+                    </Text>
                 </TouchableOpacity>
 
                 <View style={{ height: 40 }} />
@@ -368,5 +446,65 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
         backgroundColor: '#4CAF50', marginHorizontal: 16, padding: 14, borderRadius: 12
     },
-    contactButtonText: { color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 8 }
+    contactButtonText: { color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 8 },
+
+    // Estilos para botones de feedback
+    feedbackRow: {
+        marginTop: 16,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#333',
+        alignItems: 'center'
+    },
+    feedbackLabel: {
+        color: '#888',
+        fontSize: 13,
+        marginBottom: 10
+    },
+    feedbackButtons: {
+        flexDirection: 'row',
+        gap: 12
+    },
+    feedbackBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        gap: 6
+    },
+    feedbackBtnLike: {
+        borderColor: '#4CAF50',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)'
+    },
+    feedbackBtnDislike: {
+        borderColor: '#EF4444',
+        backgroundColor: 'rgba(239, 68, 68, 0.1)'
+    },
+    feedbackBtnActive: {
+        backgroundColor: '#4CAF50',
+        borderColor: '#4CAF50'
+    },
+    feedbackBtnActiveRed: {
+        backgroundColor: '#EF4444',
+        borderColor: '#EF4444'
+    },
+    feedbackBtnText: {
+        color: '#4CAF50',
+        fontSize: 13,
+        fontWeight: '600'
+    },
+    feedbackBtnTextRed: {
+        color: '#EF4444'
+    },
+    feedbackBtnTextActive: {
+        color: '#fff'
+    },
+    feedbackThanks: {
+        color: '#4CAF50',
+        fontSize: 12,
+        marginTop: 8,
+        fontStyle: 'italic'
+    }
 });

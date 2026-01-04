@@ -162,7 +162,7 @@ const ExercisePreviewItem = ({ exercise, onSelectExercise, allExercises, searchQ
 };
 
 export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const [step, setStep] = useState(1); // 1: Upload, 2: Preview
     const [loading, setLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');

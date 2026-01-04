@@ -382,6 +382,16 @@ export const KPI_OPTIONS = [
         useFilters: true
     },
     {
+        id: 'sessionRPE',
+        name: 'Sensación',
+        icon: '🔵',
+        chartType: 'bar',
+        aggregation: 'daily',
+        description: 'Tu nivel de energía/disfrute (1-5)',
+        unit: '',
+        useFilters: false
+    },
+    {
         id: 'compliance',
         name: 'Cumplimiento',
         icon: '✅',
@@ -469,3 +479,74 @@ export const calcVolumeByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio = 
     });
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// KPI: SENSACIÓN / RPE (Blue Energy Scale)
+// Escala: 1 (Ñe) → 5 (Modo Bestia)
+// ═══════════════════════════════════════════════════════════════════════════
+export const RPE_COLORS = {
+    1: '#CBD5E1', // Gris Azulado (Ñe)
+    2: '#93C5FD', // Azul Grisáceo (Flojo)
+    3: '#60A5FA', // Azul Medio (Cumplidor)
+    4: '#3B82F6', // Azul Intenso (Muy bueno)
+    5: '#2563EB', // Azul Eléctrico (Modo Bestia)
+};
+
+export const RPE_LABELS = {
+    1: 'Ñe',
+    2: 'Flojo',
+    3: 'Bien',
+    4: 'Genial',
+    5: 'Bestia',
+};
+
+export const calcSessionRPEByDay = (sessions) => {
+    // Filter sessions that have sessionRPE
+    const sessionsWithRPE = sessions
+        .filter(s => s.sessionRPE && s.sessionRPE >= 1 && s.sessionRPE <= 5)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate streak (consecutive days at 5)
+    let currentStreak = 0;
+    let maxStreak = 0;
+
+    const results = sessionsWithRPE.map((session, index) => {
+        const date = new Date(session.date);
+        const dayLabel = date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+        const rpe = session.sessionRPE;
+
+        // Update streak
+        if (rpe === 5) {
+            currentStreak++;
+            if (currentStreak > maxStreak) maxStreak = currentStreak;
+        } else {
+            currentStreak = 0;
+        }
+
+        return {
+            date: session.date,
+            label: dayLabel,
+            value: rpe,
+            color: RPE_COLORS[rpe] || '#CBD5E1',
+            note: session.sessionNote || null,
+            hasNote: !!session.sessionNote,
+            streak: currentStreak,
+            rpeLabel: RPE_LABELS[rpe] || ''
+        };
+    });
+
+    // Calculate average
+    const avg = results.length > 0
+        ? Math.round((results.reduce((sum, r) => sum + r.value, 0) / results.length) * 10) / 10
+        : 0;
+
+    return {
+        data: results,
+        labels: results.map(r => r.label),
+        datasets: [{ data: results.map(r => r.value) }],
+        colors: results.map(r => () => r.color),
+        average: avg,
+        maxStreak,
+        totalSessions: results.length,
+        modoBestaCount: results.filter(r => r.value === 5).length
+    };
+};

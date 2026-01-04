@@ -419,8 +419,12 @@ export default function FAQManagerScreen() {
                                         <Text style={styles.metaText}>{faq.viewCount || 0}</Text>
                                     </View>
                                     <View style={styles.metaItem}>
-                                        <Ionicons name="thumbs-up-outline" size={14} color="#94a3b8" />
-                                        <Text style={styles.metaText}>{faq.helpfulCount || 0}</Text>
+                                        <Ionicons name="thumbs-up-outline" size={14} color="#22c55e" />
+                                        <Text style={[styles.metaText, { color: '#22c55e' }]}>{faq.helpfulCount || 0}</Text>
+                                    </View>
+                                    <View style={styles.metaItem}>
+                                        <Ionicons name="thumbs-down-outline" size={14} color="#ef4444" />
+                                        <Text style={[styles.metaText, { color: '#ef4444' }]}>{faq.notHelpfulCount || 0}</Text>
                                     </View>
                                 </View>
                             </View>

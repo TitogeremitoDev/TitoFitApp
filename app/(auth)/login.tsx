@@ -22,6 +22,7 @@ import axios from 'axios';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -166,7 +167,22 @@ export default function LoginScreen() {
         : ANDROID_DEV;
 
   // ════════════════════════════════════════════════════════════════════════
-  // CONFIGURACIÓN DEL HOOK DE GOOGLE
+  // INICIALIZACIÓN DE GOOGLE SIGN-IN NATIVO (Android/iOS)
+  // ════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' && WEB_CLIENT_ID) {
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID,
+        offlineAccess: true,
+        scopes: ['profile', 'email'],
+      });
+      console.log('[Login] GoogleSignin configurado con webClientId:', WEB_CLIENT_ID);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // CONFIGURACIÓN DEL HOOK DE GOOGLE (solo para Web)
   // ════════════════════════════════════════════════════════════════════════
 
   // Determinar redirectUri para web
@@ -237,41 +253,89 @@ export default function LoginScreen() {
   // ════════════════════════════════════════════════════════════════════════
 
   const handleGoogleLogin = async () => {
-    if (Platform.OS === 'android' && !androidClientId) {
-      Alert.alert(
-        'Configuración incompleta',
-        `Falta el GOOGLE_ANDROID_CLIENT_ID para el entorno: ${APP_ENV}`
-      );
+    // En Web, usar expo-auth-session
+    if (Platform.OS === 'web') {
+      if (!request) {
+        Alert.alert('No listo', 'La petición de Google aún no está inicializada. Intenta de nuevo.');
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('[Login] Iniciando Google Login (Web)...');
+      }
+
+      try {
+        setIsGoogleLoading(true);
+        await promptAsync();
+      } catch (e) {
+        console.error('[Login] Error en promptAsync:', e);
+        setIsGoogleLoading(false);
+        let msg = 'No se pudo iniciar sesión con Google';
+        if (axios.isAxiosError(e) && e.response?.data?.message) {
+          msg = e.response.data.message;
+        }
+        Alert.alert('Error', msg);
+      }
       return;
     }
 
-    if (!request) {
-      Alert.alert(
-        'No listo',
-        'La petición de Google aún no está inicializada. Intenta de nuevo.'
-      );
-      return;
-    }
-
+    // En Android/iOS, usar el SDK nativo de Google Sign-In
     if (__DEV__) {
-      console.log('[Login] Iniciando Google Login...');
+      console.log('[Login] Iniciando Google Login (Nativo)...');
       console.log('[Login] Platform:', Platform.OS);
-      console.log('[Login] Android Client ID en uso:', androidClientId);
-      console.log('[Login] Web Client ID:', WEB_CLIENT_ID);
     }
 
     try {
       setIsGoogleLoading(true);
-      await promptAsync();
-    } catch (e) {
-      console.error('[Login] Error en promptAsync:', e);
-      setIsGoogleLoading(false);
 
-      let msg = 'No se pudo iniciar sesión con Google';
-      if (axios.isAxiosError(e) && e.response?.data?.message) {
-        msg = e.response.data.message;
+      // Verificar si Play Services está disponible (Android)
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // Iniciar el flujo de sign-in nativo
+      const userInfo = await GoogleSignin.signIn();
+
+      if (__DEV__) {
+        console.log('[Login] Google Sign-In exitoso:', userInfo.data?.user?.email);
       }
-      Alert.alert('Error', msg);
+
+      // Obtener el accessToken para enviar al backend
+      const tokens = await GoogleSignin.getTokens();
+      const accessToken = tokens.accessToken;
+
+      if (__DEV__) {
+        console.log('[Login] AccessToken obtenido:', accessToken ? 'SÍ' : 'NO');
+      }
+
+      if (!accessToken) {
+        throw new Error('No se recibió accessToken de Google');
+      }
+
+      // Enviar al backend usando loginWithGoogle
+      await loginWithGoogle(accessToken);
+
+      if (__DEV__) {
+        console.log('[Login] Login con Google completado exitosamente');
+      }
+    } catch (error: any) {
+      console.error('[Login] Error en Google Sign-In nativo:', error);
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('[Login] Usuario canceló el login de Google');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        console.log('[Login] Login de Google ya en progreso');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Error', 'Google Play Services no está disponible');
+      } else {
+        let msg = 'No se pudo iniciar sesión con Google';
+        if (axios.isAxiosError(error) && error.response?.data?.message) {
+          msg = error.response.data.message;
+        } else if (error.message) {
+          msg = error.message;
+        }
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 

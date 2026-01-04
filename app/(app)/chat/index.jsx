@@ -15,7 +15,9 @@ import {
     ActivityIndicator,
     Modal,
     Animated,
-    Dimensions
+    Dimensions,
+    Alert,
+    Vibration
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -707,6 +709,13 @@ export default function ChatHomeScreen() {
         setToast(prev => ({ ...prev, visible: false }));
     };
 
+    // 🗑️ Estado para el modal de acciones (long press)
+    const [actionModal, setActionModal] = useState({
+        visible: false,
+        conversation: null
+    });
+    const [actionLoading, setActionLoading] = useState(false);
+
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD CONVERSATIONS
     // ─────────────────────────────────────────────────────────────────────────
@@ -780,6 +789,61 @@ export default function ChatHomeScreen() {
     };
 
     // ─────────────────────────────────────────────────────────────────────────
+    // LONG PRESS HANDLERS (Eliminar chat/contacto)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const handleLongPress = (conversation) => {
+        Vibration.vibrate(50); // Vibración táctil suave
+        setActionModal({
+            visible: true,
+            conversation
+        });
+    };
+
+    const closeActionModal = () => {
+        setActionModal({ visible: false, conversation: null });
+    };
+
+    const handleDeleteChat = async (deleteContact = false) => {
+        const conv = actionModal.conversation;
+        if (!conv) return;
+
+        setActionLoading(true);
+        try {
+            const url = deleteContact
+                ? `${API_URL}/api/conversations/${conv._id}/contact`
+                : `${API_URL}/api/conversations/${conv._id}`;
+
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                closeActionModal();
+                loadConversations();
+                incrementFriendsVersion(); // Actualizar lista de amigos
+
+                if (data.archived) {
+                    showToast('Chat de entrenador archivado', 'info');
+                } else if (deleteContact) {
+                    showToast('Chat y contacto eliminados', 'success');
+                } else {
+                    showToast('Chat eliminado', 'success');
+                }
+            } else {
+                showToast(data.message || 'Error al eliminar', 'error');
+            }
+        } catch (error) {
+            console.error('[ChatHome] Error deleting:', error);
+            showToast('Error de conexión', 'error');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
     // RENDER CONVERSATION ITEM
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -800,6 +864,8 @@ export default function ChatHomeScreen() {
                     hasUnread && { backgroundColor: chatTheme.primary + '10' }
                 ]}
                 onPress={() => openConversation(item)}
+                onLongPress={() => handleLongPress(item)}
+                delayLongPress={600}
                 activeOpacity={0.7}
             >
                 {/* Avatar */}
@@ -950,6 +1016,91 @@ export default function ChatHomeScreen() {
                 type={toast.type}
                 onHide={hideToast}
             />
+
+            {/* Action Modal (Long Press) */}
+            <Modal
+                visible={actionModal.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={closeActionModal}
+            >
+                <TouchableOpacity
+                    style={styles.actionModalOverlay}
+                    activeOpacity={1}
+                    onPress={closeActionModal}
+                >
+                    <View style={[styles.actionModalContent, { backgroundColor: chatTheme.cardBackground }]}>
+                        {/* Header */}
+                        <View style={styles.actionModalHeader}>
+                            <View style={[
+                                styles.actionModalAvatar,
+                                { backgroundColor: actionModal.conversation?.isTrainerChat ? chatTheme.primary : chatTheme.textTertiary }
+                            ]}>
+                                {actionModal.conversation?.isTrainerChat ? (
+                                    <Ionicons name="fitness" size={24} color="#fff" />
+                                ) : (
+                                    <Text style={styles.actionModalAvatarText}>
+                                        {actionModal.conversation?.displayName?.charAt(0)?.toUpperCase() || '?'}
+                                    </Text>
+                                )}
+                            </View>
+                            <Text style={[styles.actionModalName, { color: chatTheme.text }]}>
+                                {actionModal.conversation?.displayName}
+                            </Text>
+                            {actionModal.conversation?.isTrainerChat && (
+                                <View style={[styles.trainerBadge, { backgroundColor: chatTheme.primary + '20' }]}>
+                                    <Text style={[styles.trainerBadgeText, { color: chatTheme.primary }]}>Coach</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* Divider */}
+                        <View style={[styles.actionModalDivider, { backgroundColor: chatTheme.border }]} />
+
+                        {/* Actions */}
+                        {actionLoading ? (
+                            <View style={styles.actionModalLoading}>
+                                <ActivityIndicator size="large" color={chatTheme.primary} />
+                                <Text style={[styles.actionModalLoadingText, { color: chatTheme.textSecondary }]}>
+                                    Eliminando...
+                                </Text>
+                            </View>
+                        ) : (
+                            <>
+                                {/* Eliminar Chat */}
+                                <TouchableOpacity
+                                    style={styles.actionModalBtn}
+                                    onPress={() => handleDeleteChat(false)}
+                                >
+                                    <Ionicons name="trash-outline" size={22} color="#ef4444" />
+                                    <Text style={styles.actionModalBtnTextRed}>
+                                        {actionModal.conversation?.isTrainerChat ? 'Archivar Chat' : 'Eliminar Chat'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* Eliminar Chat + Contacto (solo para chats directos, no entrenador) */}
+                                {actionModal.conversation?.type === 'direct' && !actionModal.conversation?.isTrainerChat && (
+                                    <TouchableOpacity
+                                        style={styles.actionModalBtn}
+                                        onPress={() => handleDeleteChat(true)}
+                                    >
+                                        <Ionicons name="person-remove-outline" size={22} color="#ef4444" />
+                                        <Text style={styles.actionModalBtnTextRed}>Eliminar Chat y Contacto</Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Cancelar */}
+                                <TouchableOpacity
+                                    style={[styles.actionModalBtn, styles.actionModalBtnCancel]}
+                                    onPress={closeActionModal}
+                                >
+                                    <Text style={[styles.actionModalBtnText, { color: chatTheme.text }]}>Cancelar</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -1404,5 +1555,84 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 14,
         fontWeight: '600'
+    },
+
+    // Action Modal (Long Press)
+    actionModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    actionModalContent: {
+        width: '90%',
+        maxWidth: 340,
+        borderRadius: 20,
+        paddingVertical: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 10
+    },
+    actionModalHeader: {
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingBottom: 16
+    },
+    actionModalAvatar: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12
+    },
+    actionModalAvatarText: {
+        fontSize: 26,
+        fontWeight: '700',
+        color: '#fff'
+    },
+    actionModalName: {
+        fontSize: 18,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 4
+    },
+    actionModalDivider: {
+        height: 1,
+        marginHorizontal: 20,
+        marginBottom: 8
+    },
+    actionModalLoading: {
+        padding: 30,
+        alignItems: 'center',
+        gap: 12
+    },
+    actionModalLoadingText: {
+        fontSize: 14
+    },
+    actionModalBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        gap: 12
+    },
+    actionModalBtnCancel: {
+        marginTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        justifyContent: 'center'
+    },
+    actionModalBtnText: {
+        fontSize: 16,
+        fontWeight: '500'
+    },
+    actionModalBtnTextRed: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#ef4444'
     }
 });

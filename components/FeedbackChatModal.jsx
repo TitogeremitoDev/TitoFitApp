@@ -585,7 +585,11 @@ export default function FeedbackChatModal({
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
                 {/* Header */}
-                <View style={[styles.header, { backgroundColor: theme.cardBackground, borderBottomColor: theme.border }]}>
+                <View style={[styles.header, {
+                    backgroundColor: theme.cardBackground,
+                    borderBottomColor: theme.border,
+                    paddingTop: Math.max(insets.top, 12) + 12
+                }]}>
                     <TouchableOpacity onPress={onClose} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={theme.text} />
                     </TouchableOpacity>
@@ -896,7 +900,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        paddingTop: Platform.OS === 'ios' ? 60 : 40,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#e2e8f0'
@@ -1111,7 +1114,6 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        paddingBottom: Platform.OS === 'ios' ? 32 : 32,
         backgroundColor: '#fff',
         borderTopWidth: 1,
         borderTopColor: '#e2e8f0',
@@ -1146,12 +1148,12 @@ const styles = StyleSheet.create({
     // Quick Responses
     quickResponsesContainer: {
         position: 'absolute',
-        bottom: Platform.OS === 'ios' ? 120 : 90,
+        bottom: 100,
         left: 16,
         right: 16,
         backgroundColor: '#fff',
         borderRadius: 16,
-        maxHeight: 250,
+        maxHeight: '40%',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.15,
@@ -1224,20 +1226,26 @@ const styles = StyleSheet.create({
     // Schedule Modal
     scheduleModalOverlay: {
         position: 'absolute',
-        bottom: 80,
+        top: 0,
+        bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        zIndex: 100
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 16
     },
     scheduleModal: {
         backgroundColor: '#fff',
-        margin: 16,
+        width: '100%',
+        maxWidth: 400,
+        maxHeight: '80%',
         borderRadius: 20,
         padding: 20,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.2,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
         shadowRadius: 16,
         elevation: 10
     },

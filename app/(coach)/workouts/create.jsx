@@ -22,6 +22,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../../context/AuthContext';
+import ExerciseSearchModal from '../../../components/ExerciseSearchModal';
 
 const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales', 'Biserie'];
 
@@ -86,70 +87,71 @@ const SerieRow = React.memo(({ diaKey, ejercicioId, s, index, updateSerieCampo, 
   return (
     <View style={styles.serieRowContainer}>
       <View style={[styles.serieRow, isBiserie && styles.serieRowBiserie]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={styles.serieLabel}>Serie {index + 1}</Text>
-          {isFallo && (
-            <View style={styles.falloBadge}>
-              <Text style={styles.falloBadgeText}>🔥</Text>
-            </View>
-          )}
-          {isBiserie && (
-            <View style={styles.biserieBadge}>
-              <Text style={styles.biserieBadgeText}>🔗</Text>
-            </View>
+        {/* Columna: S# (ancho fijo) */}
+        <View style={styles.colS}>
+          <Text style={styles.serieLabel}>S{index + 1}</Text>
+          {isFallo && <Text style={styles.miniIcon}>🔥</Text>}
+          {isBiserie && <Text style={styles.miniIcon}>🔗</Text>}
+        </View>
+
+        {/* Columna: Fallo toggle (ancho fijo) */}
+        <View style={styles.colFallo}>
+          <TouchableOpacity
+            style={[styles.falloBtn, isFallo && styles.falloBtnActive]}
+            onPress={() => toggleFallo(diaKey, ejercicioId, s.id)}
+          >
+            <Text style={[styles.falloBtnTxt, isFallo && styles.falloBtnTxtActive]} numberOfLines={1}>
+              Fallo
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Columna: Reps Min-Max (ancho fijo) */}
+        <View style={styles.colReps}>
+          {!isFallo ? (
+            <>
+              <TextInput
+                style={styles.serieInputSmall}
+                placeholder="8"
+                keyboardType="numeric"
+                value={String(s.repMin ?? '')}
+                onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
+              />
+              <Text style={styles.repsSeparator}>–</Text>
+              <TextInput
+                style={styles.serieInputSmall}
+                placeholder="12"
+                keyboardType="numeric"
+                value={String(s.repMax ?? '')}
+                onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
+              />
+            </>
+          ) : (
+            <Text style={styles.falloIndicatorSmall}>Al Fallo</Text>
           )}
         </View>
 
-        {/* Botón Fallo toggle */}
-        <TouchableOpacity
-          style={[styles.falloBtn, isFallo && styles.falloBtnActive]}
-          onPress={() => toggleFallo(diaKey, ejercicioId, s.id)}
-        >
-          <Text style={[styles.falloBtnTxt, isFallo && styles.falloBtnTxtActive]}>
-            {isFallo ? 'FALLO' : 'Fallo'}
-          </Text>
-        </TouchableOpacity>
+        {/* Columna: Técnica (flex) */}
+        <View style={styles.colTecnica}>
+          <TouchableOpacity
+            style={[styles.extraPillCompact, isBiserie && styles.extraPillBiserie]}
+            onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
+          >
+            <Text style={[styles.extraPillTxtCompact, isBiserie && styles.extraPillTxtBiserie]} numberOfLines={1}>
+              {s.extra || 'Ninguno'}
+            </Text>
+            <Ionicons name="chevron-down-outline" size={14} color={isBiserie ? '#92400e' : '#64748b'} />
+          </TouchableOpacity>
+        </View>
 
-        {/* Inputs de repeticiones (deshabilitados si Fallo) */}
-        {!isFallo ? (
-          <>
-            <TextInput
-              style={styles.serieInput}
-              placeholder="min"
-              keyboardType="numeric"
-              value={String(s.repMin ?? '')}
-              onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMin', v)}
-            />
-            <Text style={{ marginHorizontal: 6, color: '#94a3b8' }}>–</Text>
-            <TextInput
-              style={styles.serieInput}
-              placeholder="max"
-              keyboardType="numeric"
-              value={String(s.repMax ?? '')}
-              onChangeText={(v) => updateSerieCampo(diaKey, ejercicioId, s.id, 'repMax', v)}
-            />
-          </>
-        ) : (
-          <View style={styles.falloIndicator}>
-            <Text style={styles.falloIndicatorText}>Al Fallo</Text>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.extraPill, isBiserie && styles.extraPillBiserie]}
-          onPress={() => toggleSerieExtra(diaKey, ejercicioId, s.id)}
-        >
-          <Text style={[styles.extraPillTxt, isBiserie && styles.extraPillTxtBiserie]}>{s.extra || 'Ninguno'}</Text>
-          <Ionicons name="chevron-down-outline" size={16} color={isBiserie ? '#92400e' : '#475569'} />
-        </TouchableOpacity>
-
-        <View style={{ flex: 1 }} />
-
-        <IconBtn
-          onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
-          icon="close-circle"
-          tint="#ef4444"
-        />
+        {/* Columna: Delete (ancho fijo) */}
+        <View style={styles.colDelete}>
+          <IconBtn
+            onPress={() => deleteSerie(diaKey, ejercicioId, s.id)}
+            icon="close-circle"
+            tint="#ef4444"
+          />
+        </View>
       </View>
 
       {/* Nota del entrenador */}
@@ -185,11 +187,21 @@ const ExerciseCard = React.memo(({
   exercises,
   onMuscleChange,
   onExerciseChange,
+  onOpenExerciseSearch,
+  setImageModal, // 🆕 Props para modales de preview
+  setVideoModal,
+  setTechModal,
   isBiserie = false,
 }) => {
   const diaKey = section.title;
   const abierto = isOpen(item.id);
   const isValidated = !!item.dbId || exercises.some(e => e.name === item.nombre && e.muscle === item.musculo);
+
+  // 🔍 Obtener datos del ejercicio actual para preview
+  const currentExercise = exercises.find(e => e._id === item.dbId || (e.name === item.nombre && e.muscle === item.musculo));
+  const hasImage = !!currentExercise?.imagen_ejercicio_ID?.trim();
+  const hasTips = Array.isArray(currentExercise?.instructions) && currentExercise.instructions.length > 0;
+  const hasVideo = !!currentExercise?.videoId?.trim();
 
   return (
     <View style={[styles.card, isBiserie && styles.cardBiserie]}>
@@ -220,94 +232,104 @@ const ExerciseCard = React.memo(({
       {/* Editar musculo / nombre */}
       {abierto && (
         <View style={styles.editBlock}>
-          <View style={styles.inlineRow}>
-            <Text style={styles.inlineLabel}>Músculo</Text>
-            {Platform.OS === 'ios' ? (
-              <TouchableOpacity
-                style={[styles.iosPickerButton, { flex: 1 }]}
-                onPress={() => {
-                  const options = ['Cancelar', ...muscles];
-                  ActionSheetIOS.showActionSheetWithOptions(
-                    { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
-                    (buttonIndex) => {
-                      if (buttonIndex > 0) {
-                        onMuscleChange(diaKey, item.id, muscles[buttonIndex - 1]);
-                      }
-                    }
-                  );
-                }}
-              >
-                <Text style={[styles.iosPickerText, !item.musculo && { color: '#94a3b8' }]}>
-                  {item.musculo || 'Seleccionar...'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#64748b" />
-              </TouchableOpacity>
-            ) : (
-              <View style={[styles.pickerWrapper, { flex: 1 }]}>
-                <Picker
-                  selectedValue={item.musculo ?? ''}
-                  onValueChange={(val) => onMuscleChange(diaKey, item.id, val)}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Seleccionar..." value="" />
-                  {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
-                </Picker>
+          {/* 🔍 Botón de Búsqueda Inteligente de Ejercicio */}
+          <TouchableOpacity
+            style={styles.exerciseSearchButton}
+            onPress={() => onOpenExerciseSearch(diaKey, item.id)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.exerciseSearchContent}>
+              <Ionicons name="search" size={18} color="#3b82f6" />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                {item.nombre ? (
+                  <>
+                    <Text style={styles.exerciseSearchName}>{item.nombre}</Text>
+                    <Text style={styles.exerciseSearchMuscle}>{item.musculo}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.exerciseSearchPlaceholder}>
+                    🔍 Buscar ejercicio...
+                  </Text>
+                )}
               </View>
-            )}
-          </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            </View>
+          </TouchableOpacity>
 
-          <View style={[styles.inlineRow, { marginTop: 8 }]}>
-            <Text style={styles.inlineLabel}>Ejercicio</Text>
-            {Platform.OS === 'ios' ? (
+          {/* 📷 Botones de Vista Previa (solo si hay ejercicio seleccionado) */}
+          {item.nombre && currentExercise && (
+            <View style={styles.previewActions}>
               <TouchableOpacity
-                style={[styles.iosPickerButton, { flex: 1 }, !item.musculo && { opacity: 0.5 }]}
-                disabled={!item.musculo}
+                style={[styles.previewBtn, !hasImage && styles.previewBtnDisabled]}
                 onPress={() => {
-                  const filteredExercises = exercises.filter(e => e.muscle === item.musculo);
-                  const options = ['Cancelar', ...filteredExercises.map(e => e.name)];
-                  ActionSheetIOS.showActionSheetWithOptions(
-                    { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
-                    (buttonIndex) => {
-                      if (buttonIndex > 0) {
-                        onExerciseChange(diaKey, item.id, filteredExercises[buttonIndex - 1]._id);
-                      }
-                    }
-                  );
+                  if (hasImage) {
+                    setImageModal({
+                      visible: true,
+                      imageUrl: currentExercise.imagen_ejercicio_ID,
+                      title: currentExercise.name
+                    });
+                  }
                 }}
+                disabled={!hasImage}
               >
-                <Text style={[styles.iosPickerText, !item.nombre && { color: '#94a3b8' }]}>
-                  {item.nombre || (item.musculo ? 'Seleccionar...' : 'Primero selecciona músculo')}
+                <Text style={styles.previewBtnTxt}>📸</Text>
+                <Text style={[styles.previewBtnLabel, !hasImage && styles.previewBtnTxtDisabled]}>
+                  Imagen
                 </Text>
-                <Ionicons name="chevron-down" size={20} color="#64748b" />
               </TouchableOpacity>
-            ) : (
-              <View style={[styles.pickerWrapper, { flex: 1 }]}>
-                <Picker
-                  selectedValue={item.dbId || ''}
-                  onValueChange={(val) => onExerciseChange(diaKey, item.id, val)}
-                  style={styles.picker}
-                  enabled={!!item.musculo}
-                >
-                  <Picker.Item label={item.musculo ? (item.nombre || "Seleccionar...") : "Primero selecciona músculo"} value="" />
-                  {exercises.filter(e => e.muscle === item.musculo).map(e => (
-                    <Picker.Item key={e._id} label={e.name} value={e._id} />
-                  ))}
-                </Picker>
-              </View>
-            )}
-          </View>
+
+              <TouchableOpacity
+                style={[styles.previewBtn, !hasTips && styles.previewBtnDisabled]}
+                onPress={() => {
+                  if (hasTips) {
+                    setTechModal({
+                      visible: true,
+                      title: currentExercise.name,
+                      tips: currentExercise.instructions
+                    });
+                  }
+                }}
+                disabled={!hasTips}
+              >
+                <Text style={styles.previewBtnTxt}>📖</Text>
+                <Text style={[styles.previewBtnLabel, !hasTips && styles.previewBtnTxtDisabled]}>
+                  Técnica
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.previewBtn, !hasVideo && styles.previewBtnDisabled]}
+                onPress={() => {
+                  if (hasVideo) {
+                    setVideoModal({
+                      visible: true,
+                      videoId: currentExercise.videoId,
+                      playing: true,
+                      title: currentExercise.name
+                    });
+                  }
+                }}
+                disabled={!hasVideo}
+              >
+                <Text style={styles.previewBtnTxt}>🎬</Text>
+                <Text style={[styles.previewBtnLabel, !hasVideo && styles.previewBtnTxtDisabled]}>
+                  Video
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
       {/* Series */}
       {abierto && (
-        <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
+        <View style={styles.seriesContainer}>
           <View style={styles.serieHeadRow}>
-            <Text style={[styles.serieLabel, { fontWeight: '700' }]}>#</Text>
-            <Text style={styles.headCol}>Min</Text>
-            <Text style={styles.headCol}>Max</Text>
-            <Text style={[styles.headCol, { flex: 1, textAlign: 'left' }]}>Técnica</Text>
-            <Text style={{ width: 28 }} />
+            <Text style={styles.headColS}>#</Text>
+            <Text style={styles.headColFallo}>Fallo</Text>
+            <Text style={styles.headColReps}>Reps</Text>
+            <Text style={styles.headColTecnica}>Técnica</Text>
+            <View style={styles.headColDelete} />
           </View>
 
           {item.series?.map((s, idx) => (
@@ -332,8 +354,9 @@ const ExerciseCard = React.memo(({
             <Text style={styles.addSerieTxt}>Añadir serie</Text>
           </TouchableOpacity>
         </View>
-      )}
-    </View>
+      )
+      }
+    </View >
   );
 });
 
@@ -378,6 +401,16 @@ export default function CreateRoutineScreen() {
   const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
   const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false, title: '' });
   const [imageModal, setImageModal] = useState({ visible: false, imageUrl: null, title: '' });
+
+  // 🔍 Estado para modal de búsqueda de ejercicios
+  // mode: 'ADD' = crear ejercicio nuevo al final del día
+  // mode: 'REPLACE' = reemplazar ejercicio existente
+  const [exerciseSearchModal, setExerciseSearchModal] = useState({
+    visible: false,
+    mode: null, // 'ADD' | 'REPLACE'
+    targetDia: null,
+    targetExerciseId: null, // Solo usado en modo REPLACE
+  });
 
   /* ───────── Initial Load ───────── */
   useEffect(() => {
@@ -780,6 +813,66 @@ export default function CreateRoutineScreen() {
     });
   }, [exercises]);
 
+  // 🔍 Abrir modal para REEMPLAZAR ejercicio existente
+  const openExerciseSearch = useCallback((diaKey, ejercicioId) => {
+    setExerciseSearchModal({
+      visible: true,
+      mode: 'REPLACE',
+      targetDia: diaKey,
+      targetExerciseId: ejercicioId,
+    });
+  }, []);
+
+  // 🔍 Abrir modal para AÑADIR ejercicio nuevo al final del día
+  const openExerciseSearchForAdd = useCallback((diaKey) => {
+    setExerciseSearchModal({
+      visible: true,
+      mode: 'ADD',
+      targetDia: diaKey,
+      targetExerciseId: null,
+    });
+  }, []);
+
+  // 🔍 Manejar selección de ejercicio desde el modal
+  const handleExerciseSelect = useCallback((exercise) => {
+    const { mode, targetDia, targetExerciseId } = exerciseSearchModal;
+    if (!targetDia || !exercise) return;
+
+    if (mode === 'ADD') {
+      // MODO AÑADIR: Crear ejercicio nuevo con datos ya rellenos
+      const newId = `ej-${uid()}`;
+      const newExercise = {
+        id: newId,
+        musculo: exercise.muscle,
+        nombre: exercise.name,
+        dbId: exercise._id,
+        series: [
+          { id: `s-${newId}-0`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
+          { id: `s-${newId}-1`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
+          { id: `s-${newId}-2`, repMin: '8', repMax: '12', extra: 'Ninguno', nota: '' },
+        ],
+      };
+
+      setRutina((prev) => ({
+        ...prev,
+        [targetDia]: [...(prev[targetDia] || []), newExercise]
+      }));
+
+      // Abrir la card automáticamente
+      setOpenSet((s) => new Set([...s, newId]));
+    } else if (mode === 'REPLACE' && targetExerciseId) {
+      // MODO REEMPLAZAR: Actualizar ejercicio existente
+      setRutina((prev) => {
+        const newList = (prev[targetDia] || []).map((e) =>
+          e.id === targetExerciseId
+            ? { ...e, nombre: exercise.name, musculo: exercise.muscle, dbId: exercise._id }
+            : e
+        );
+        return { ...prev, [targetDia]: newList };
+      });
+    }
+  }, [exerciseSearchModal]);
+
   /* ───────── SERIES ───────── */
   const updateSerieCampo = useCallback((diaKey, ejercicioId, serieId, campo, val) => {
     setRutina((prev) => {
@@ -1068,201 +1161,17 @@ export default function CreateRoutineScreen() {
   };
 
   const DiaFooter = ({ diaKey }) => {
-    const dayNum = parseInt(diaKey.replace('dia', ''));
-    const isAdding = addingToDay === dayNum;
-
     return (
       <View style={styles.dayFooter}>
-        {isAdding && (
-          <View style={styles.selectorContainer}>
-            <View style={styles.pickerGroup}>
-              <Text style={styles.pickerLabel}>Músculo</Text>
-              {Platform.OS === 'ios' ? (
-                <TouchableOpacity
-                  style={styles.iosPickerButton}
-                  onPress={() => {
-                    const options = ['Cancelar', ...muscles];
-                    ActionSheetIOS.showActionSheetWithOptions(
-                      { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
-                      (buttonIndex) => {
-                        if (buttonIndex > 0) {
-                          const selected = muscles[buttonIndex - 1];
-                          setSelectedMuscle(selected);
-                          setSelectedExercise(''); // Clear previous exercise selection
-                          fetchExercisesForMuscle(selected);
-                        }
-                      }
-                    );
-                  }}
-                >
-                  <Text style={[styles.iosPickerText, !selectedMuscle && { color: '#94a3b8' }]}>
-                    {selectedMuscle || 'Seleccionar...'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={20} color="#64748b" />
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={selectedMuscle}
-                    onValueChange={(val) => {
-                      setSelectedMuscle(val);
-                      setSelectedExercise(''); // Clear previous exercise selection
-                      fetchExercisesForMuscle(val);
-                    }}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Seleccionar..." value="" />
-                    {muscles.map(m => <Picker.Item key={m} label={m} value={m} />)}
-                  </Picker>
-                </View>
-              )}
-            </View>
-
-            {selectedMuscle && (
-              <View style={styles.pickerGroup}>
-                <Text style={styles.pickerLabel}>Ejercicio</Text>
-                {loadingExercises ? (
-                  <ActivityIndicator color="#3b82f6" style={{ padding: 14 }} />
-                ) : Platform.OS === 'ios' ? (
-                  <TouchableOpacity
-                    style={styles.iosPickerButton}
-                    onPress={() => {
-                      const filteredExercises = exercises.filter(e => e.muscle === selectedMuscle);
-                      const options = ['Cancelar', ...filteredExercises.map(e => e.name)];
-                      ActionSheetIOS.showActionSheetWithOptions(
-                        { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
-                        (buttonIndex) => {
-                          if (buttonIndex > 0) {
-                            setSelectedExercise(filteredExercises[buttonIndex - 1]._id);
-                          }
-                        }
-                      );
-                    }}
-                  >
-                    <Text style={[styles.iosPickerText, !selectedExercise && { color: '#94a3b8' }]}>
-                      {exercises.find(e => e._id === selectedExercise)?.name || 'Seleccionar...'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={20} color="#64748b" />
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={selectedExercise}
-                      onValueChange={setSelectedExercise}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Seleccionar..." value="" />
-                      {exercises.filter(e => e.muscle === selectedMuscle).map(e => <Picker.Item key={e._id} label={e.name} value={e._id} />)}
-                    </Picker>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* 🆕 Vista Previa del Ejercicio */}
-            {selectedExercise && (() => {
-              const exerciseObj = exercises.find(e => e._id === selectedExercise);
-              if (!exerciseObj) return null;
-
-              const hasImage = !!exerciseObj.imagen_ejercicio_ID?.trim();
-              const hasTips = Array.isArray(exerciseObj.instructions) && exerciseObj.instructions.length > 0;
-              const hasVideo = !!exerciseObj.videoId?.trim();
-
-              return (
-                <View style={styles.previewActions}>
-                  <TouchableOpacity
-                    style={[styles.previewBtn, !hasImage && styles.previewBtnDisabled]}
-                    onPress={() => {
-                      if (hasImage) {
-                        setImageModal({
-                          visible: true,
-                          imageUrl: exerciseObj.imagen_ejercicio_ID,
-                          title: exerciseObj.name
-                        });
-                      }
-                    }}
-                    disabled={!hasImage}
-                  >
-                    <Text style={[styles.previewBtnTxt, !hasImage && styles.previewBtnTxtDisabled]}>
-                      {hasImage ? '📸' : '📸̶'}
-                    </Text>
-                    <Text style={[styles.previewBtnTxt, !hasImage && styles.previewBtnTxtDisabled]}>
-                      Imagen
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.previewBtn, !hasTips && styles.previewBtnDisabled]}
-                    onPress={() => {
-                      if (hasTips) {
-                        setTechModal({
-                          visible: true,
-                          title: exerciseObj.name,
-                          tips: exerciseObj.instructions
-                        });
-                      }
-                    }}
-                    disabled={!hasTips}
-                  >
-                    <Text style={[styles.previewBtnTxt, !hasTips && styles.previewBtnTxtDisabled]}>
-                      {hasTips ? '📖' : '📖̶'}
-                    </Text>
-                    <Text style={[styles.previewBtnTxt, !hasTips && styles.previewBtnTxtDisabled]}>
-                      Técnica
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.previewBtn, !hasVideo && styles.previewBtnDisabled]}
-                    onPress={() => {
-                      if (hasVideo) {
-                        setVideoModal({
-                          visible: true,
-                          videoId: exerciseObj.videoId,
-                          playing: true,
-                          title: exerciseObj.name
-                        });
-                      }
-                    }}
-                    disabled={!hasVideo}
-                  >
-                    <Text style={[styles.previewBtnTxt, !hasVideo && styles.previewBtnTxtDisabled]}>
-                      {hasVideo ? '🎬' : '🎬̶'}
-                    </Text>
-                    <Text style={[styles.previewBtnTxt, !hasVideo && styles.previewBtnTxtDisabled]}>
-                      Video
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
-
-            <TouchableOpacity
-              style={[styles.confirmAddBtn, !selectedExercise && { backgroundColor: '#94a3b8' }]}
-              onPress={addExerciseFromSelector}
-              disabled={!selectedExercise}
-            >
-              <Text style={styles.confirmAddText}>Guardar Ejercicio</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
+        {/* 🆕 Botón Direct-Add: Abre modal y crea ejercicio relleno */}
         <TouchableOpacity
-          style={[styles.addExerciseCTA, isAdding && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }]}
-          onPress={() => {
-            if (isAdding) {
-              setAddingToDay(null);
-              setSelectedMuscle('');
-              setSelectedExercise('');
-            } else {
-              setAddingToDay(dayNum);
-            }
-          }}
+          style={styles.addExerciseCTA}
+          onPress={() => openExerciseSearchForAdd(diaKey)}
           activeOpacity={0.88}
         >
-          <Ionicons name={isAdding ? "close-circle-outline" : "add-circle-outline"} size={20} color={isAdding ? "#ef4444" : "#10b981"} />
-          <Text style={[styles.addExerciseCTATxt, isAdding && { color: '#ef4444' }]}>
-            {isAdding ? 'Cancelar' : 'Añadir ejercicio'}
+          <Ionicons name="add-circle-outline" size={20} color="#10b981" />
+          <Text style={styles.addExerciseCTATxt}>
+            Añadir ejercicio
           </Text>
         </TouchableOpacity>
       </View>
@@ -1320,6 +1229,10 @@ export default function CreateRoutineScreen() {
                 exercises={exercises}
                 onMuscleChange={onMuscleChange}
                 onExerciseChange={onExerciseChange}
+                onOpenExerciseSearch={openExerciseSearch}
+                setImageModal={setImageModal}
+                setVideoModal={setVideoModal}
+                setTechModal={setTechModal}
                 isBiserie={currentIsBiserie}
               />
 
@@ -1347,12 +1260,26 @@ export default function CreateRoutineScreen() {
         extraData={{ openSetSize: openSet.size, diasAbiertos, rutina }}
         ListHeaderComponent={
           <View style={styles.headerTop}>
-            <TextInput
-              style={styles.titleInput}
-              placeholder="Nombre de la rutina"
-              value={routineName}
-              onChangeText={setRoutineName}
-            />
+            <Text style={styles.inputLabel}>
+              <Ionicons name="create-outline" size={14} color="#3b82f6" /> Nombre de la rutina *
+            </Text>
+            <View style={[
+              styles.titleInputContainer,
+              !routineName?.trim() && styles.titleInputContainerEmpty
+            ]}>
+              <TextInput
+                style={styles.titleInput}
+                placeholder="Ej: Full Body Principiante, Push-Pull-Legs..."
+                placeholderTextColor="#94a3b8"
+                value={routineName}
+                onChangeText={setRoutineName}
+              />
+              {!routineName?.trim() && (
+                <View style={styles.requiredBadge}>
+                  <Text style={styles.requiredBadgeText}>Requerido</Text>
+                </View>
+              )}
+            </View>
           </View>
         }
         ListFooterComponent={
@@ -1553,6 +1480,15 @@ export default function CreateRoutineScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* 🔍 Modal de Búsqueda de Ejercicios */}
+      <ExerciseSearchModal
+        visible={exerciseSearchModal.visible}
+        onClose={() => setExerciseSearchModal({ visible: false, mode: null, targetDia: null, targetExerciseId: null })}
+        onSelect={handleExerciseSelect}
+        exercises={exercises}
+        muscles={muscles}
+      />
     </View>
   );
 }
@@ -1591,13 +1527,43 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.6,
     borderBottomColor: '#e2e8f0',
   },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3b82f6',
+    marginBottom: 8,
+  },
+  titleInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  titleInputContainerEmpty: {
+    borderColor: '#f59e0b',
+    backgroundColor: '#fffbeb',
+  },
   titleInput: {
-    fontSize: 20,
-    fontWeight: '800',
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
     color: '#1e293b',
-    borderBottomWidth: 1,
-    borderBottomColor: '#cbd5e1',
-    paddingBottom: 4,
+    paddingVertical: 10,
+  },
+  requiredBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  requiredBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#d97706',
   },
 
   /* Día */
@@ -1626,6 +1592,37 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.6,
     borderTopColor: '#f1f5f9',
   },
+
+  // 🔍 Estilos del botón de búsqueda de ejercicio
+  exerciseSearchButton: {
+    marginTop: 10,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#bae6fd',
+    borderStyle: 'dashed',
+  },
+  exerciseSearchContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  exerciseSearchName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  exerciseSearchMuscle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  exerciseSearchPlaceholder: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+
   addExerciseCTA: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1652,7 +1649,7 @@ const styles = StyleSheet.create({
 
   /* Card ejercicio */
   card: {
-    marginHorizontal: 12,
+    marginHorizontal: 8,
     marginTop: 10,
     borderRadius: 12,
     borderWidth: 0.6,
@@ -1699,14 +1696,26 @@ const styles = StyleSheet.create({
     padding: 10,
   },
 
-  /* Series */
+  // Contenedor de series con overflow hidden
+  seriesContainer: {
+    paddingHorizontal: 6,
+    paddingBottom: 10,
+    overflow: 'hidden',
+  },
+
+  /* Series - Layout de columnas alineadas */
   serieHeadRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
     paddingHorizontal: 4,
   },
-  headCol: { flex: 1, textAlign: 'center', fontWeight: '700', color: '#334155' },
+  // Estilos para columnas del header (porcentuales)
+  headColS: { width: '8%', fontSize: 10, fontWeight: '700', color: '#64748b', textAlign: 'center' },
+  headColFallo: { width: '17%', fontSize: 10, fontWeight: '700', color: '#64748b', textAlign: 'center' },
+  headColReps: { width: '25%', fontSize: 10, fontWeight: '700', color: '#64748b', textAlign: 'center' },
+  headColTecnica: { width: '40%', fontSize: 10, fontWeight: '700', color: '#64748b', textAlign: 'center' },
+  headColDelete: { width: '10%' },
 
   serieRow: {
     flexDirection: 'row',
@@ -1715,24 +1724,52 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     backgroundColor: '#fff',
     borderRadius: 10,
-    padding: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     marginTop: 8,
+    overflow: 'hidden',
   },
-  serieLabel: { width: 50, fontSize: 12, color: '#334155' },
-  serieInput: {
+
+  // Columnas con anchos porcentuales para responsive
+  colS: { width: '8%', alignItems: 'center', justifyContent: 'center' },
+  colFallo: { width: '17%', alignItems: 'center', justifyContent: 'center' },
+  colReps: { width: '25%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  colTecnica: { width: '40%', alignItems: 'center' },
+  colDelete: { width: '10%', alignItems: 'center' },
+
+  serieLabel: { fontSize: 10, color: '#334155', fontWeight: '700' },
+  miniIcon: { fontSize: 8, marginLeft: 1 },
+
+  serieInputSmall: {
     flex: 1,
+    maxWidth: 28,
+    minWidth: 20,
     borderWidth: 1,
     borderColor: '#cbd5e1',
     backgroundColor: '#fff',
     color: '#1e293b',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    fontSize: 12,
+    borderRadius: 5,
+    paddingVertical: 2,
+    paddingHorizontal: 1,
+    fontSize: 10,
     textAlign: 'center',
-    width: 50,
-    marginLeft: 10,
   },
+  repsSeparator: { color: '#94a3b8', fontSize: 10, marginHorizontal: 1 },
+  falloIndicatorSmall: { fontSize: 8, color: '#ef4444', fontWeight: '600' },
+
+  extraPillCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  extraPillTxtCompact: { fontSize: 10, fontWeight: '600', color: '#475569' },
 
   extraPill: {
     flex: 1,
@@ -1747,7 +1784,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
-    marginLeft: 50,
   },
   extraPillTxt: { fontSize: 12, fontWeight: '700', color: '#334155' },
 
@@ -1936,13 +1972,15 @@ const styles = StyleSheet.create({
   },
   // 🔥 Estilos para Fallo y Biserie
   falloBtn: {
-    paddingHorizontal: 8,
+    minWidth: 50,
+    paddingHorizontal: 6,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#ef4444',
     backgroundColor: '#fef2f2',
-    marginHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   falloBtnActive: {
     backgroundColor: '#ef4444',
@@ -2070,37 +2108,50 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#e0f2fe',
   },
+  // 📷 Estilos de botones de preview (Imagen, Técnica, Video)
   previewActions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: 8,
-    marginBottom: 8,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
   previewBtn: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 8,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
+    minHeight: 56,
   },
   previewBtnDisabled: {
-    opacity: 0.6,
-    backgroundColor: '#f8fafc',
+    opacity: 0.45,
+    backgroundColor: '#fafafa',
+    borderColor: '#f1f1f1',
   },
   previewBtnTxt: {
-    fontSize: 12,
+    fontSize: 18,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  previewBtnLabel: {
+    fontSize: 11,
     fontWeight: '600',
-    color: '#334155',
+    color: '#475569',
+    textAlign: 'center',
+    marginTop: 2,
   },
   previewBtnTxtDisabled: {
     color: '#94a3b8',
-    textDecorationLine: 'line-through',
   },
   // Estilos para modales de vista previa
   previewModalCard: {

@@ -83,7 +83,8 @@ export function FeedbackBubbleProvider({ children }) {
     // Refs for pan responder
     const isExpandedRef = useRef(false);
     const isDragging = useRef(false);
-    const lastPosition = useRef({ x: INITIAL_WIDTH - BUBBLE_SIZE - 16, y: INITIAL_HEIGHT * 0.5 });
+    // Posición inicial: izquierda, centro vertical
+    const lastPosition = useRef({ x: 16, y: INITIAL_HEIGHT * 0.4 });
     const positionY = useRef(new Animated.Value(lastPosition.current.y)).current;
     const positionX = useRef(new Animated.Value(lastPosition.current.x)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
