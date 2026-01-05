@@ -15,6 +15,7 @@ import {
     Alert,
     ActivityIndicator,
     Animated,
+    Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -26,6 +27,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import FeedbackHistoryModal from '../../../components/FeedbackHistoryModal';
+import * as DocumentPicker from 'expo-document-picker';
+import { useRouter } from 'expo-router';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -448,14 +451,17 @@ const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
 export default function SeguimientoScreen() {
     const { user, token, refreshUser } = useAuth();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
+    const router = useRouter();
 
     // Estados de secciones expandidas
     const [diarioExpanded, setDiarioExpanded] = useState(false);
     const [semanalExpanded, setSemanalExpanded] = useState(false);
     const [nutricionExpanded, setNutricionExpanded] = useState(false);
 
-    // Modal cámara
+    // Modal cámara/fotos
     const [cameraModalVisible, setCameraModalVisible] = useState(false);
+    const [progressPhotos, setProgressPhotos] = useState([]);
+    const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
     // Feedback del entrenador
     const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
@@ -1250,6 +1256,75 @@ export default function SeguimientoScreen() {
         }
     };
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // FUNCIONES FOTOS DE PROGRESO
+    // ─────────────────────────────────────────────────────────────────────────
+    const handlePickPhotos = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['image/*'],
+                copyToCacheDirectory: true,
+                multiple: true,
+            });
+
+            if (result.canceled) return;
+
+            const files = result.assets || [result];
+            const newPhotos = files
+                .filter(f => f.mimeType?.startsWith('image/') ||
+                    f.name?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|heic)$/))
+                .map(f => ({
+                    uri: f.uri,
+                    name: f.name,
+                    mimeType: f.mimeType,
+                }));
+
+            if (newPhotos.length === 0) {
+                Alert.alert('Error', 'No se detectaron imágenes válidas');
+                return;
+            }
+
+            setProgressPhotos(prev => [...prev, ...newPhotos]);
+            setCameraModalVisible(false);
+            Alert.alert('✅ Fotos añadidas', `${newPhotos.length} foto(s) añadidas`);
+        } catch (err) {
+            console.error('[Seguimiento] Error picking photos:', err);
+            Alert.alert('Error', 'No se pudieron seleccionar las fotos');
+        }
+    };
+
+    const handleRemovePhoto = (index) => {
+        setProgressPhotos(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleOpenCamera = () => {
+        setCameraModalVisible(false);
+        // Navegar a la pantalla de cámara para fotos de progreso
+        router.push({
+            pathname: '/(app)/video-feedback/progress-photo',
+            params: { returnTo: 'seguimiento' }
+        });
+    };
+
+    // Verificar si hay foto pendiente de la cámara
+    useEffect(() => {
+        const checkPendingProgressPhoto = async () => {
+            try {
+                const pendingData = await AsyncStorage.getItem('pending_progress_photo');
+                if (pendingData) {
+                    const { photoUri } = JSON.parse(pendingData);
+                    await AsyncStorage.removeItem('pending_progress_photo');
+                    if (photoUri) {
+                        setProgressPhotos(prev => [...prev, { uri: photoUri, name: 'foto_progreso.jpg' }]);
+                    }
+                }
+            } catch (err) {
+                console.error('[Seguimiento] Error checking pending progress photo:', err);
+            }
+        };
+        checkPendingProgressPhoto();
+    }, []);
+
     const handleGuardarSemanal = async () => {
         try {
             // Calcular inicio de semana (lunes)
@@ -1605,7 +1680,7 @@ export default function SeguimientoScreen() {
                 {/* SECCIÓN SEMANAL */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
                 <ExpandableSection
-                    title="Check-in Semanal 5min"
+                    title="Check-in semanal y fotos"
                     icon="📊"
                     expanded={semanalExpanded}
                     onToggle={() => setSemanalExpanded(!semanalExpanded)}
@@ -1777,6 +1852,41 @@ export default function SeguimientoScreen() {
                         placeholder="¿De qué te sientes orgulloso/a?"
                     />
 
+                    {/* FOTOS DE PROGRESO */}
+                    <SubsectionTitle title="Fotos de progreso" icon="📸" />
+
+                    <View style={styles.photosSection}>
+                        <Text style={styles.photosHint}>
+                            Sube fotos semanales para ver tu evolución física
+                        </Text>
+
+                        {progressPhotos.length > 0 && (
+                            <View style={styles.photosGrid}>
+                                {progressPhotos.map((photo, index) => (
+                                    <View key={index} style={styles.photoItem}>
+                                        <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+                                        <TouchableOpacity
+                                            style={styles.photoRemoveBtn}
+                                            onPress={() => handleRemovePhoto(index)}
+                                        >
+                                            <Ionicons name="close-circle" size={22} color="#EF4444" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+
+                        <TouchableOpacity
+                            style={styles.addPhotoBtn}
+                            onPress={() => setCameraModalVisible(true)}
+                        >
+                            <Ionicons name="camera-outline" size={22} color="#3B82F6" />
+                            <Text style={styles.addPhotoBtnText}>
+                                {progressPhotos.length > 0 ? 'Añadir más fotos' : 'Añadir fotos'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+
                     {/* MEDICIONES (Opcional) */}
                     <SubsectionTitle title="Mediciones (Opcional)" icon="📐" />
 
@@ -1848,7 +1958,7 @@ export default function SeguimientoScreen() {
                 <View style={{ height: 40 }} />
             </ScrollView>
 
-            {/* Modal Cámara - Building in Progress */}
+            {/* Modal Fotos de Progreso */}
             <Modal
                 visible={cameraModalVisible}
                 transparent
@@ -1863,16 +1973,35 @@ export default function SeguimientoScreen() {
                         >
                             <Ionicons name="close-circle" size={32} color="#9CA3AF" />
                         </Pressable>
-                        <Text style={styles.modalEmoji}>🚧📷</Text>
-                        <Text style={styles.modalTitle}>Building in Progress</Text>
+                        <Text style={styles.modalEmoji}>📸</Text>
+                        <Text style={styles.modalTitle}>Añadir fotos</Text>
                         <Text style={styles.modalText}>
-                            La funcionalidad de fotos de progreso estará disponible próximamente.
+                            Selecciona fotos de tu galería para documentar tu progreso semanal.
                         </Text>
+
                         <TouchableOpacity
-                            style={styles.modalBtn}
+                            style={[styles.modalBtn, styles.modalBtnPrimary]}
+                            onPress={handlePickPhotos}
+                        >
+                            <Ionicons name="images-outline" size={20} color="#FFF" />
+                            <Text style={styles.modalBtnText}>Seleccionar de galería</Text>
+                        </TouchableOpacity>
+
+                        {Platform.OS !== 'web' && (
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnCamera]}
+                                onPress={handleOpenCamera}
+                            >
+                                <Ionicons name="camera-outline" size={20} color="#FFF" />
+                                <Text style={styles.modalBtnText}>Hacer foto</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={[styles.modalBtn, styles.modalBtnSecondary]}
                             onPress={() => setCameraModalVisible(false)}
                         >
-                            <Text style={styles.modalBtnText}>Entendido</Text>
+                            <Text style={styles.modalBtnTextSecondary}>Cancelar</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -2528,6 +2657,89 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: '700',
+    },
+    modalBtnPrimary: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        marginBottom: 12,
+        width: '100%',
+    },
+    modalBtnCamera: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        marginBottom: 12,
+        width: '100%',
+        backgroundColor: '#10B981',
+    },
+    modalBtnSecondary: {
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: '#6B7280',
+        width: '100%',
+    },
+    modalBtnTextSecondary: {
+        color: '#9CA3AF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ESTILOS FOTOS DE PROGRESO
+    // ═══════════════════════════════════════════════════════════════════════════
+    photosSection: {
+        marginBottom: 20,
+    },
+    photosHint: {
+        color: '#9CA3AF',
+        fontSize: 13,
+        textAlign: 'center',
+        marginBottom: 16,
+        fontStyle: 'italic',
+    },
+    photosGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+        marginBottom: 16,
+    },
+    photoItem: {
+        position: 'relative',
+        width: 80,
+        height: 80,
+    },
+    photoThumbnail: {
+        width: 80,
+        height: 80,
+        borderRadius: 10,
+        backgroundColor: '#374151',
+    },
+    photoRemoveBtn: {
+        position: 'absolute',
+        top: -8,
+        right: -8,
+        backgroundColor: '#111827',
+        borderRadius: 12,
+    },
+    addPhotoBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: 'rgba(59, 130, 246, 0.4)',
+        borderStyle: 'dashed',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    },
+    addPhotoBtnText: {
+        color: '#3B82F6',
+        fontSize: 15,
+        fontWeight: '600',
     },
 
     // ═══════════════════════════════════════════════════════════════════════════

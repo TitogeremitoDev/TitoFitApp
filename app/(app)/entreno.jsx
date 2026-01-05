@@ -405,10 +405,12 @@ const NOTE_VALUES = [
   { key: 'custom', label: 'Nota', color: '#3b82f6', emoji: '🔵' },
 ];
 
-function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, initialAudioUri, onSave, theme }) {
+function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, initialAudioUri, onSave, theme, initialMediaUri, initialMediaType }) {
   const [value, setValue] = useState(initialValue || 'normal');
   const [noteText, setNoteText] = useState(initialNote || '');
   const [audioUri, setAudioUri] = useState(initialAudioUri || null);
+  const [mediaUri, setMediaUri] = useState(initialMediaUri || null);
+  const [mediaType, setMediaType] = useState(initialMediaType || null);
   // expo-audio hooks
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
@@ -422,6 +424,8 @@ function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, ini
       setValue(initialValue || 'normal');
       setNoteText(initialNote || '');
       setAudioUri(initialAudioUri || null);
+      setMediaUri(initialMediaUri || null);
+      setMediaType(initialMediaType || null);
       setIsRecording(false);
       setRecordingTime(0);
     }
@@ -429,7 +433,7 @@ function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, ini
       if (timerRef.current) clearInterval(timerRef.current);
       if (sound) sound.unloadAsync();
     };
-  }, [visible, initialValue, initialNote, initialAudioUri]);
+  }, [visible, initialValue, initialNote, initialAudioUri, initialMediaUri, initialMediaType]);
 
   // Iniciar grabación (expo-audio)
   const startRecording = async () => {
@@ -498,12 +502,12 @@ function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, ini
   };
 
   const handleSave = () => {
-    onSave(serieKey, value, noteText, audioUri);
+    onSave(serieKey, value, noteText, audioUri, mediaUri, mediaType);
     onClose();
   };
 
   const handleDelete = () => {
-    onSave(serieKey, null, null, null);
+    onSave(serieKey, null, null, null, null, null);
     onClose();
   };
 
@@ -2514,7 +2518,7 @@ export default function Entreno() {
   const { token } = useAuth();
 
   // 📹 Hook para subida de media feedback a R2
-  const { uploadVideoFeedback, uploadPhotoFeedback, uploading: mediaUploading } = useVideoFeedback(API_URL, token);
+  const { uploadVideoFeedback, uploadPhotoFeedback, uploadAudioFeedback, uploading: mediaUploading } = useVideoFeedback(API_URL, token);
   // 🆕 Índice dinámico de ejercicios
   const exercisesIndex = useMemo(() => {
     return buildExerciseIndex(exercises);
@@ -4226,13 +4230,13 @@ export default function Entreno() {
           }
 
           // 📹 Subir media a R2 en background si existe
-          if (mediaUri && token && API_URL) {
-            console.log('[Entreno] 📤 Iniciando subida de media a R2:', mediaType);
+          if ((mediaUri || audioUri) && token && API_URL) {
+            console.log('[Entreno] 📤 Iniciando subida de media/audio a R2:', mediaType, audioUri ? '+audio' : '');
 
             try {
               let uploadResult;
 
-              if (mediaType === 'video') {
+              if (mediaUri && mediaType === 'video') {
                 uploadResult = await uploadVideoFeedback({
                   videoUri: mediaUri,
                   exerciseId: notesModal.exerciseId,
@@ -4244,7 +4248,7 @@ export default function Entreno() {
                   trimStart,
                   trimEnd
                 });
-              } else if (mediaType === 'photo') {
+              } else if (mediaUri && mediaType === 'photo') {
                 uploadResult = await uploadPhotoFeedback({
                   photoUri: mediaUri,
                   exerciseId: notesModal.exerciseId,
@@ -4252,6 +4256,26 @@ export default function Entreno() {
                   serieKey,
                   athleteNote: noteText
                 });
+              }
+
+              // 🆕 Subir AUDIO independientemente (puede ser solo audio o audio + media)
+              if (audioUri && !audioUri.startsWith('http')) { // Solo si es local
+                console.log('[Entreno] 📤 Iniciando subida de AUDIO a R2');
+                const audioUploadResult = await uploadAudioFeedback({
+                  audioUri: audioUri,
+                  exerciseId: notesModal.exerciseId,
+                  exerciseName: notesModal.exerciseName,
+                  serieKey,
+                  athleteNote: noteText
+                });
+
+                if (audioUploadResult?.success) {
+                  console.log('[Entreno] ✅ Audio subido correctamente');
+                  // Si no había uploadResult (solo audio), usamos este resultado
+                  if (!uploadResult) uploadResult = audioUploadResult;
+                } else {
+                  console.error('[Entreno] ❌ Error subiendo audio:', audioUploadResult?.error);
+                }
               }
 
               if (uploadResult?.success) {
@@ -4265,7 +4289,7 @@ export default function Entreno() {
                     r2FeedbackId: uploadResult.feedback?.feedbackId || uploadResult.feedback?._id
                   }
                 }));
-              } else {
+              } else if (audioUri || mediaUri) {
                 console.error('[Entreno] ❌ Error subiendo media:', uploadResult?.error);
                 setNotes(prev => ({
                   ...prev,

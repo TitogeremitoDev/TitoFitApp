@@ -151,40 +151,42 @@ const ThemedBox = ({ box, isExpanded, onToggle, badges, router, isMobile, deskto
                 </View>
             </TouchableOpacity>
 
-            {/* Contenido colapsable */}
-            <Animated.View style={[
-                styles.boxContent,
-                isMobile && { height: contentHeight, overflow: 'hidden' },
-                !isMobile && { height: 'auto' }
-            ]}>
-                <View style={styles.boxItemsGrid}>
-                    {visibleItems.map((item, index) => (
-                        <TouchableOpacity
-                            key={index}
-                            style={styles.boxItem}
-                            onPress={() => router.push(item.route)}
-                            activeOpacity={0.7}
-                        >
-                            <LinearGradient
-                                colors={[item.color, `${item.color}dd`]}
-                                style={styles.boxItemIcon}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
+            {/* Contenido colapsable - Solo renderizar si está expandido en móvil */}
+            {(isExpanded || !isMobile) && (
+                <Animated.View style={[
+                    styles.boxContent,
+                    isMobile && { height: contentHeight, overflow: 'hidden' },
+                    !isMobile && { height: 'auto' }
+                ]}>
+                    <View style={styles.boxItemsGrid}>
+                        {visibleItems.map((item, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={styles.boxItem}
+                                onPress={() => router.push(item.route)}
+                                activeOpacity={0.7}
                             >
-                                <Ionicons name={item.icon} size={22} color="#fff" />
-                            </LinearGradient>
-                            <Text style={styles.boxItemName}>{item.name}</Text>
-                            {item.badgeKey && badges[item.badgeKey] > 0 && (
-                                <View style={styles.itemBadge}>
-                                    <Text style={styles.itemBadgeText}>
-                                        {badges[item.badgeKey] > 99 ? '99+' : badges[item.badgeKey]}
-                                    </Text>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </Animated.View>
+                                <LinearGradient
+                                    colors={[item.color, `${item.color}dd`]}
+                                    style={styles.boxItemIcon}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                >
+                                    <Ionicons name={item.icon} size={22} color="#fff" />
+                                </LinearGradient>
+                                <Text style={styles.boxItemName}>{item.name}</Text>
+                                {item.badgeKey && badges[item.badgeKey] > 0 && (
+                                    <View style={styles.itemBadge}>
+                                        <Text style={styles.itemBadgeText}>
+                                            {badges[item.badgeKey] > 99 ? '99+' : badges[item.badgeKey]}
+                                        </Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </Animated.View>
+            )}
         </View>
     );
 };

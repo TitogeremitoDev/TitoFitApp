@@ -22,6 +22,7 @@ import {
     FlatList,
     Platform,
     ActionSheetIOS,
+    useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +31,7 @@ import { Picker } from '@react-native-picker/picker'
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import MediaFeedbackResponseModal from '../../../src/components/coach/MediaFeedbackResponseModal';
+import InlineAudioPlayer from '../../../src/components/coach/InlineAudioPlayer';
 
 // KPI Utilities
 import {
@@ -86,6 +88,10 @@ export default function ClientProgressDetail() {
     const router = useRouter();
     const { clientId, clientName } = useLocalSearchParams();
     const { token } = useAuth();
+
+    // 🖥️ Responsive layout - split view on large screens
+    const { width: windowWidth } = useWindowDimensions();
+    const isLargeScreen = windowWidth >= 900; // Tablet/Desktop threshold
 
     const [sessions, setSessions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -163,6 +169,14 @@ export default function ClientProgressDetail() {
             if (data.feedbacks) {
                 setVideoFeedbacks(data.feedbacks);
                 console.log('[ClientProgress] Video feedbacks cargados:', data.feedbacks.length);
+                // 🔍 DEBUG: Log first 3 feedbacks for debugging
+                console.log('[DEBUG] Sample feedbacks:', data.feedbacks.slice(0, 5).map(f => ({
+                    exerciseName: f.exerciseName,
+                    serieKey: f.serieKey,
+                    r2Key: f.r2Key,
+                    createdAt: f.createdAt,
+                    mediaType: f.mediaType
+                })));
             }
         } catch (error) {
             console.error('[ClientProgress] Error loading video feedbacks:', error);
@@ -580,27 +594,57 @@ export default function ClientProgressDetail() {
     const PAIN_KEYWORDS = ['dolor', 'molestia', 'pinchazo', 'lesión', 'daño', 'mal', 'pincha', 'duele', 'molesta', 'lesion'];
     const hasPainKeyword = (text) => text && PAIN_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
 
-    // Helper para encontrar video asociado a un set específico
-    // El video guarda serieKey con formato "week|day|exId|setIdx" donde setIdx es 0-based
-    const findVideoForSet = (exerciseName, setNumber) => {
-        return videoFeedbacks.find(fb => {
-            // Match por nombre de ejercicio
-            const nameMatch = fb.exerciseName?.toLowerCase() === exerciseName?.toLowerCase();
+    // Helper para normalizar nombres de ejercicios (quitar acentos y palabras comunes)
+    const normalizeExerciseName = (name) => {
+        if (!name) return '';
+        return name
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Quitar acentos
+            .replace(/\b(en|al|el|la|los|las|de|del|con)\b/g, '') // Quitar artículos
+            .replace(/\s+/g, ' ') // Normalizar espacios
+            .trim();
+    };
+
+    // Helper para encontrar TODOS los feedbacks asociados a un set específico
+    const findAllMediaForSet = (exerciseName, setNumber, weekNumber) => {
+        const normalizedSearch = normalizeExerciseName(exerciseName);
+
+        return videoFeedbacks.filter(fb => {
+            const normalizedFeedback = normalizeExerciseName(fb.exerciseName);
+            const nameMatch = normalizedFeedback === normalizedSearch ||
+                normalizedSearch.includes(normalizedFeedback) ||
+                normalizedFeedback.includes(normalizedSearch);
+
             if (!nameMatch) return false;
 
-            // Extraer setIdx del serieKey (último segmento, 0-based)
-            // Formato: "week|day|exerciseId|setIdx" o "ejerKey|setIdx"
             if (fb.serieKey) {
                 const parts = fb.serieKey.split('|');
+                if (parts.length >= 4) {
+                    const fbWeek = parseInt(parts[0], 10);
+                    const setIdx = parseInt(parts[parts.length - 1], 10);
+                    return fbWeek === weekNumber && setIdx + 1 === setNumber;
+                }
                 const setIdx = parseInt(parts[parts.length - 1], 10);
-                // setNumber es 1-based, setIdx es 0-based
                 return setIdx + 1 === setNumber;
             }
-
-            // Fallback: comparar setNumber directo si existe
             return fb.setNumber === setNumber;
-        });
+        }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     };
+
+    // Helper para encontrar AUDIO asociado a un set (para inline player)
+    const findAudioForSet = (exerciseName, setNumber, weekNumber) => {
+        const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
+        return allMedia.find(fb => fb.mediaType === 'audio');
+    };
+
+    // Helper para encontrar VISUAL (foto/video) asociado a un set (para modal)
+    const findVisualForSet = (exerciseName, setNumber, weekNumber) => {
+        const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
+        return allMedia.find(fb => fb.mediaType === 'video' || fb.mediaType === 'photo');
+    };
+
+    // Alias para retrocompatibilidad
+    const findVideoForSet = findVisualForSet;
 
     const getRepStatus = (actual, min, max) => {
         if (!actual) return 'none';
@@ -905,12 +949,22 @@ export default function ClientProgressDetail() {
     // ═══════════════════════════════════════════════════════════════════════════
 
     // Helper para detectar si un set tiene videoFeedback asociado
-    const hasVideoFeedbackForSet = (exerciseName, setNumber) => {
+    const hasVideoFeedbackForSet = (exerciseName, setNumber, weekNumber) => {
+        const normalizedSearch = normalizeExerciseName(exerciseName);
         return videoFeedbacks.some(fb => {
-            const nameMatch = fb.exerciseName?.toLowerCase() === exerciseName?.toLowerCase();
+            const normalizedFeedback = normalizeExerciseName(fb.exerciseName);
+            const nameMatch = normalizedFeedback === normalizedSearch ||
+                normalizedSearch.includes(normalizedFeedback) ||
+                normalizedFeedback.includes(normalizedSearch);
             if (!nameMatch) return false;
+
             if (fb.serieKey) {
                 const parts = fb.serieKey.split('|');
+                if (parts.length >= 4) {
+                    const fbWeek = parseInt(parts[0], 10);
+                    const setIdx = parseInt(parts[parts.length - 1], 10);
+                    return fbWeek === weekNumber && setIdx + 1 === setNumber;
+                }
                 const setIdx = parseInt(parts[parts.length - 1], 10);
                 return setIdx + 1 === setNumber;
             }
@@ -970,7 +1024,7 @@ export default function ClientProgressDetail() {
                     const setsConFeedback = (ex.sets || []).filter((s, idx) => {
                         const hasTextNote = s.notes?.value && s.notes?.note;
                         const setNum = s.setNumber || idx + 1;
-                        const hasMedia = hasVideoFeedbackForSet(ex.exerciseName, setNum);
+                        const hasMedia = hasVideoFeedbackForSet(ex.exerciseName, setNum, week);
                         return hasTextNote || hasMedia;
                     });
                     if (setsConFeedback.length > 0) {
@@ -1083,8 +1137,23 @@ export default function ClientProgressDetail() {
         return count;
     }, [sessions]);
 
-    // Estado para semanas expandidas en comentarios (primera semana expandida por defecto)
-    const [expandedWeeks, setExpandedWeeks] = useState({ 'current-1': true });
+    // Estado para semanas expandidas en comentarios
+    const [expandedWeeks, setExpandedWeeks] = useState({});
+
+    // 🆕 Expandir por defecto la última semana (la primera en la lista ordenada descendente)
+    useEffect(() => {
+        if (comentariosPorRutina.current?.semanas?.length > 0) {
+            const latestWeek = comentariosPorRutina.current.semanas[0].week;
+            const key = `current-${latestWeek}`;
+            setExpandedWeeks(prev => {
+                // Solo establecer si está vacío (primera carga) para no interferir con el usuario
+                if (Object.keys(prev).length === 0) {
+                    return { [key]: true };
+                }
+                return prev;
+            });
+        }
+    }, [comentariosPorRutina.current]);
     const toggleWeek = (routineKey, week, weekDays) => {
         const key = `${routineKey}-${week}`;
         const isCurrentlyExpanded = expandedWeeks[key];
@@ -1121,7 +1190,7 @@ export default function ClientProgressDetail() {
         <SafeAreaView style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
 
-            {/* Header */}
+            {/* Header - siempre full width */}
             <View style={styles.header}>
                 <Pressable onPress={() => router.back()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#1e293b" />
@@ -1138,716 +1207,644 @@ export default function ClientProgressDetail() {
                 </View>
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* 🖥️ Split View Container - flex row on large screens */}
+            <View style={[
+                styles.splitViewWrapper,
+                isLargeScreen && selectedFeedback && styles.splitViewWrapperActive
+            ]}>
+                {/* Main Content - shrinks when panel open */}
+                <ScrollView
+                    style={[
+                        styles.content,
+                        isLargeScreen && selectedFeedback && styles.contentWithPanel
+                    ]}
+                    showsVerticalScrollIndicator={false}
+                >
 
-                {/* === TOGGLE GRÁFICA / TABLA === */}
-                <View style={styles.viewModeContainer}>
-                    <Pressable
-                        style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
-                        onPress={() => setViewMode('chart')}
-                    >
-                        <Ionicons name="analytics" size={18} color={viewMode === 'chart' ? '#fff' : '#64748b'} />
-                        <Text style={[styles.viewModeText, viewMode === 'chart' && styles.viewModeTextActive]}>
-                            Gráfica
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
-                        onPress={() => setViewMode('table')}
-                    >
-                        <Ionicons name="grid" size={18} color={viewMode === 'table' ? '#fff' : '#64748b'} />
-                        <Text style={[styles.viewModeText, viewMode === 'table' && styles.viewModeTextActive]}>
-                            Tabla
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.viewModeBtn, viewMode === 'comments' && styles.viewModeBtnActive]}
-                        onPress={() => setViewMode('comments')}
-                    >
-                        <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#64748b'} />
-                        <Text style={[styles.viewModeText, viewMode === 'comments' && styles.viewModeTextActive]}>
-                            Notas/Media
-                        </Text>
-                        {/* Contador de pendientes: media + notas de texto no vistas */}
-                        {(() => {
-                            const unviewedMedia = videoFeedbacks.filter(f => !f.viewedByCoach && !f.coachResponse?.respondedAt).length;
-                            const totalPending = unviewedMedia + unviewedTextNotesCount;
-                            return totalPending > 0 ? (
-                                <View style={styles.videoBadge}>
-                                    <Text style={styles.videoBadgeText}>{totalPending}</Text>
-                                </View>
-                            ) : null;
-                        })()}
-                    </Pressable>
-                </View>
+                    {/* === TOGGLE GRÁFICA / TABLA === */}
+                    <View style={styles.viewModeContainer}>
+                        <Pressable
+                            style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
+                            onPress={() => setViewMode('chart')}
+                        >
+                            <Ionicons name="analytics" size={18} color={viewMode === 'chart' ? '#fff' : '#64748b'} />
+                            <Text style={[styles.viewModeText, viewMode === 'chart' && styles.viewModeTextActive]}>
+                                Gráfica
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+                            onPress={() => setViewMode('table')}
+                        >
+                            <Ionicons name="grid" size={18} color={viewMode === 'table' ? '#fff' : '#64748b'} />
+                            <Text style={[styles.viewModeText, viewMode === 'table' && styles.viewModeTextActive]}>
+                                Tabla
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            style={[styles.viewModeBtn, viewMode === 'comments' && styles.viewModeBtnActive]}
+                            onPress={() => setViewMode('comments')}
+                        >
+                            <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#64748b'} />
+                            <Text style={[styles.viewModeText, viewMode === 'comments' && styles.viewModeTextActive]}>
+                                Notas/Media
+                            </Text>
+                            {/* Contador de pendientes: media + notas de texto no vistas */}
+                            {(() => {
+                                const unviewedMedia = videoFeedbacks.filter(f => !f.viewedByCoach && !f.coachResponse?.respondedAt).length;
+                                const totalPending = unviewedMedia + unviewedTextNotesCount;
+                                return totalPending > 0 ? (
+                                    <View style={styles.videoBadge}>
+                                        <Text style={styles.videoBadgeText}>{totalPending}</Text>
+                                    </View>
+                                ) : null;
+                            })()}
+                        </Pressable>
+                    </View>
 
-                {/* ════════════════════════════════════════════════════════════════
+                    {/* ════════════════════════════════════════════════════════════════
                     CHARTS 2.0 - SISTEMA DE KPIs
                    ════════════════════════════════════════════════════════════════ */}
-                {viewMode === 'chart' && (
-                    <>
-                        {/* ═══ PERIOD FILTER ═══ */}
-                        <View style={styles.periodFilter}>
-                            {PERIOD_OPTIONS.map(p => (
-                                <Pressable
-                                    key={p.id}
-                                    style={[
-                                        styles.periodBtn,
-                                        selectedPeriod === p.id && styles.periodBtnActive
-                                    ]}
-                                    onPress={() => setSelectedPeriod(p.id)}
-                                >
-                                    <Text style={[
-                                        styles.periodBtnText,
-                                        selectedPeriod === p.id && styles.periodBtnTextActive
-                                    ]}>
-                                        {p.label}
-                                    </Text>
-                                </Pressable>
-                            ))}
-                        </View>
-
-                        {/* ═══ KPI SELECTOR ═══ */}
-                        <Pressable
-                            style={styles.kpiSelector}
-                            onPress={() => setKpiModalVisible(true)}
-                        >
-                            <View style={styles.kpiSelectorLeft}>
-                                <View style={styles.kpiSelectorIconWrap}>
-                                    <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
-                                    <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
-                                </View>
+                    {viewMode === 'chart' && (
+                        <>
+                            {/* ═══ PERIOD FILTER ═══ */}
+                            <View style={styles.periodFilter}>
+                                {PERIOD_OPTIONS.map(p => (
+                                    <Pressable
+                                        key={p.id}
+                                        style={[
+                                            styles.periodBtn,
+                                            selectedPeriod === p.id && styles.periodBtnActive
+                                        ]}
+                                        onPress={() => setSelectedPeriod(p.id)}
+                                    >
+                                        <Text style={[
+                                            styles.periodBtnText,
+                                            selectedPeriod === p.id && styles.periodBtnTextActive
+                                        ]}>
+                                            {p.label}
+                                        </Text>
+                                    </Pressable>
+                                ))}
                             </View>
-                            <View style={styles.kpiSelectorChevron}>
-                                <Ionicons name="chevron-down" size={18} color="#fff" />
-                            </View>
-                        </Pressable>
 
-                        {/* ═══ FILTROS MÚSCULO/EJERCICIO (solo para KPIs que lo usen) ═══ */}
-                        {currentKpi.useFilters && (
-                            <View style={styles.kpiFilters}>
-                                <View style={styles.kpiFilterRow}>
-                                    <Text style={styles.kpiFilterLabel}>Músculo:</Text>
-                                    {Platform.OS === 'ios' ? (
-                                        <TouchableOpacity
-                                            style={styles.iosPickerButton}
-                                            onPress={() => {
-                                                const options = ['Cancelar', ...listaMusculos.map(m => m === 'TOTAL' ? 'Todos' : m)];
-                                                ActionSheetIOS.showActionSheetWithOptions(
-                                                    { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
-                                                    (buttonIndex) => {
-                                                        if (buttonIndex > 0) {
-                                                            handleMusculoChange(listaMusculos[buttonIndex - 1]);
-                                                        }
-                                                    }
-                                                );
-                                            }}
-                                        >
-                                            <Text style={styles.iosPickerText}>
-                                                {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
-                                            </Text>
-                                            <Ionicons name="chevron-down" size={18} color="#64748b" />
-                                        </TouchableOpacity>
-                                    ) : (
-                                        <TouchableOpacity
-                                            style={styles.iosPickerButton}
-                                            onPress={() => setAndroidMusculoModal(true)}
-                                        >
-                                            <Text style={styles.iosPickerText}>
-                                                {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
-                                            </Text>
-                                            <Ionicons name="chevron-down" size={18} color="#64748b" />
-                                        </TouchableOpacity>
-                                    )}
+                            {/* ═══ KPI SELECTOR ═══ */}
+                            <Pressable
+                                style={styles.kpiSelector}
+                                onPress={() => setKpiModalVisible(true)}
+                            >
+                                <View style={styles.kpiSelectorLeft}>
+                                    <View style={styles.kpiSelectorIconWrap}>
+                                        <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
+                                        <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
+                                    </View>
                                 </View>
-                                {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
+                                <View style={styles.kpiSelectorChevron}>
+                                    <Ionicons name="chevron-down" size={18} color="#fff" />
+                                </View>
+                            </Pressable>
+
+                            {/* ═══ FILTROS MÚSCULO/EJERCICIO (solo para KPIs que lo usen) ═══ */}
+                            {currentKpi.useFilters && (
+                                <View style={styles.kpiFilters}>
                                     <View style={styles.kpiFilterRow}>
-                                        <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                                        <Text style={styles.kpiFilterLabel}>Músculo:</Text>
                                         {Platform.OS === 'ios' ? (
                                             <TouchableOpacity
                                                 style={styles.iosPickerButton}
                                                 onPress={() => {
-                                                    const options = ['Cancelar', 'Todos', ...listaEjercicios];
+                                                    const options = ['Cancelar', ...listaMusculos.map(m => m === 'TOTAL' ? 'Todos' : m)];
                                                     ActionSheetIOS.showActionSheetWithOptions(
-                                                        { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                                                        { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
                                                         (buttonIndex) => {
-                                                            if (buttonIndex === 1) {
-                                                                setSelEjercicio('');
-                                                            } else if (buttonIndex > 1) {
-                                                                setSelEjercicio(listaEjercicios[buttonIndex - 2]);
+                                                            if (buttonIndex > 0) {
+                                                                handleMusculoChange(listaMusculos[buttonIndex - 1]);
                                                             }
                                                         }
                                                     );
                                                 }}
                                             >
                                                 <Text style={styles.iosPickerText}>
-                                                    {selEjercicio || 'Todos'}
+                                                    {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
                                                 </Text>
                                                 <Ionicons name="chevron-down" size={18} color="#64748b" />
                                             </TouchableOpacity>
                                         ) : (
                                             <TouchableOpacity
                                                 style={styles.iosPickerButton}
-                                                onPress={() => setAndroidEjercicioModal(true)}
+                                                onPress={() => setAndroidMusculoModal(true)}
                                             >
                                                 <Text style={styles.iosPickerText}>
-                                                    {selEjercicio || 'Todos'}
+                                                    {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
                                                 </Text>
                                                 <Ionicons name="chevron-down" size={18} color="#64748b" />
                                             </TouchableOpacity>
                                         )}
                                     </View>
+                                    {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
+                                        <View style={styles.kpiFilterRow}>
+                                            <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                                            {Platform.OS === 'ios' ? (
+                                                <TouchableOpacity
+                                                    style={styles.iosPickerButton}
+                                                    onPress={() => {
+                                                        const options = ['Cancelar', 'Todos', ...listaEjercicios];
+                                                        ActionSheetIOS.showActionSheetWithOptions(
+                                                            { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                                                            (buttonIndex) => {
+                                                                if (buttonIndex === 1) {
+                                                                    setSelEjercicio('');
+                                                                } else if (buttonIndex > 1) {
+                                                                    setSelEjercicio(listaEjercicios[buttonIndex - 2]);
+                                                                }
+                                                            }
+                                                        );
+                                                    }}
+                                                >
+                                                    <Text style={styles.iosPickerText}>
+                                                        {selEjercicio || 'Todos'}
+                                                    </Text>
+                                                    <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                                </TouchableOpacity>
+                                            ) : (
+                                                <TouchableOpacity
+                                                    style={styles.iosPickerButton}
+                                                    onPress={() => setAndroidEjercicioModal(true)}
+                                                >
+                                                    <Text style={styles.iosPickerText}>
+                                                        {selEjercicio || 'Todos'}
+                                                    </Text>
+                                                    <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* ═══ CHART RENDERING ═══ */}
+                            <View style={styles.chartContainer}>
+
+                                {/* KPI: VOLUMEN */}
+                                {selectedKpi === 'volume' && volumeData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>
+                                                Volumen {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                                {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                            </Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={[styles.chartSummaryValue, {
+                                                    color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444'
+                                                }]}>
+                                                    {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                                            </View>
+                                        </View>
+                                        <LineChart
+                                            data={volumeData}
+                                            width={screenWidth - 32}
+                                            height={220}
+                                            chartConfig={{
+                                                ...chartConfig,
+                                                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                            }}
+                                            bezier
+                                            style={styles.chart}
+                                            yAxisSuffix="%"
+                                        />
+                                        <Text style={styles.chartSubInfo}>
+                                            Total período: {volumeData.totalVolK}k kg
+                                        </Text>
+                                    </>
                                 )}
-                            </View>
-                        )}
 
-                        {/* ═══ CHART RENDERING ═══ */}
-                        <View style={styles.chartContainer}>
-
-                            {/* KPI: VOLUMEN */}
-                            {selectedKpi === 'volume' && volumeData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>
-                                            Volumen {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                {/* KPI: INTENSIDAD */}
+                                {selectedKpi === 'intensity' && intensityData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>
+                                                Intensidad {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                                {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                            </Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={[styles.chartSummaryValue, {
+                                                    color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444'
+                                                }]}>
+                                                    {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                                            </View>
+                                        </View>
+                                        <LineChart
+                                            data={intensityData}
+                                            width={screenWidth - 32}
+                                            height={220}
+                                            chartConfig={chartConfig}
+                                            bezier
+                                            style={styles.chart}
+                                            yAxisSuffix="%"
+                                        />
+                                        <Text style={styles.chartSubInfo}>
+                                            Carga media: {intensityData.lastAvgLoad} kg/rep
                                         </Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={[styles.chartSummaryValue, {
-                                                color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444'
-                                            }]}>
-                                                {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
-                                        </View>
-                                    </View>
-                                    <LineChart
-                                        data={volumeData}
-                                        width={screenWidth - 32}
-                                        height={220}
-                                        chartConfig={{
-                                            ...chartConfig,
-                                            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                                        }}
-                                        bezier
-                                        style={styles.chart}
-                                        yAxisSuffix="%"
-                                    />
-                                    <Text style={styles.chartSubInfo}>
-                                        Total período: {volumeData.totalVolK}k kg
-                                    </Text>
-                                </>
-                            )}
+                                    </>
+                                )}
 
-                            {/* KPI: INTENSIDAD */}
-                            {selectedKpi === 'intensity' && intensityData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>
-                                            Intensidad {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                {/* KPI: CUMPLIMIENTO */}
+                                {selectedKpi === 'compliance' && complianceWeeklyData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>Cumplimiento del Plan</Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={[styles.chartSummaryValue, {
+                                                    color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
+                                                        complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
+                                                }]}>
+                                                    {complianceWeeklyData.lastValue}%
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                            </View>
+                                        </View>
+                                        <LineChart
+                                            data={complianceWeeklyData}
+                                            width={screenWidth - 32}
+                                            height={220}
+                                            chartConfig={{
+                                                ...chartConfig,
+                                                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                            }}
+                                            bezier
+                                            style={styles.chart}
+                                            yAxisSuffix="%"
+                                        />
+                                        <Text style={styles.chartSubInfo}>
+                                            Media: {complianceWeeklyData.avgValue}% de sets en rango
                                         </Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={[styles.chartSummaryValue, {
-                                                color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444'
-                                            }]}>
-                                                {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
-                                        </View>
-                                    </View>
-                                    <LineChart
-                                        data={intensityData}
-                                        width={screenWidth - 32}
-                                        height={220}
-                                        chartConfig={chartConfig}
-                                        bezier
-                                        style={styles.chart}
-                                        yAxisSuffix="%"
-                                    />
-                                    <Text style={styles.chartSubInfo}>
-                                        Carga media: {intensityData.lastAvgLoad} kg/rep
-                                    </Text>
-                                </>
-                            )}
+                                    </>
+                                )}
 
-                            {/* KPI: CUMPLIMIENTO */}
-                            {selectedKpi === 'compliance' && complianceWeeklyData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>Cumplimiento del Plan</Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={[styles.chartSummaryValue, {
-                                                color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
-                                                    complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
-                                            }]}>
-                                                {complianceWeeklyData.lastValue}%
+                                {/* KPI: CARGA ALTA */}
+                                {selectedKpi === 'heavySets' && heavySetsData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>
+                                                Carga Alta {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
+                                                {selEjercicio ? ` - ${selEjercicio}` : ''}
                                             </Text>
-                                            <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={styles.chartSummaryValue}>
+                                                    {heavySetsData.lastValue}%
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                            </View>
                                         </View>
-                                    </View>
-                                    <LineChart
-                                        data={complianceWeeklyData}
-                                        width={screenWidth - 32}
-                                        height={220}
-                                        chartConfig={{
-                                            ...chartConfig,
-                                            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                                        }}
-                                        bezier
-                                        style={styles.chart}
-                                        yAxisSuffix="%"
-                                    />
-                                    <Text style={styles.chartSubInfo}>
-                                        Media: {complianceWeeklyData.avgValue}% de sets en rango
-                                    </Text>
-                                </>
-                            )}
-
-                            {/* KPI: CARGA ALTA */}
-                            {selectedKpi === 'heavySets' && heavySetsData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>
-                                            Carga Alta {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                            {selEjercicio ? ` - ${selEjercicio}` : ''}
-                                        </Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={styles.chartSummaryValue}>
-                                                {heavySetsData.lastValue}%
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>última semana</Text>
-                                        </View>
-                                    </View>
-                                    <BarChart
-                                        data={heavySetsData}
-                                        width={screenWidth - 32}
-                                        height={220}
-                                        chartConfig={{
-                                            ...barChartConfig,
-                                            color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                                        }}
-                                        style={styles.chart}
-                                        yAxisSuffix="%"
-                                        showValuesOnTopOfBars
-                                    />
-                                    <Text style={styles.chartSubInfo}>
-                                        Media: {heavySetsData.avgValue}% sets con ≥85% del máximo
-                                    </Text>
-                                </>
-                            )}
-
-                            {/* KPI: BALANCE MUSCULAR */}
-                            {selectedKpi === 'muscleBalance' && muscleBalanceData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>Balance Muscular</Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={styles.chartSummaryValue}>
-                                                {muscleBalanceData.fullData?.[0]?.share || 0}%
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>
-                                                {muscleBalanceData.fullData?.[0]?.muscle || '-'}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <ScrollView
-                                        horizontal
-                                        showsHorizontalScrollIndicator={true}
-                                        style={styles.horizontalChartScroll}
-                                    >
                                         <BarChart
-                                            data={muscleBalanceData}
-                                            width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                                            data={heavySetsData}
+                                            width={screenWidth - 32}
                                             height={220}
                                             chartConfig={{
                                                 ...barChartConfig,
-                                                barPercentage: 0.6,
+                                                color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
                                             }}
                                             style={styles.chart}
                                             yAxisSuffix="%"
                                             showValuesOnTopOfBars
                                         />
-                                    </ScrollView>
-                                    <View style={styles.muscleBalanceLegend}>
-                                        {muscleBalanceData.fullData?.slice(0, 8).map((m, i) => (
-                                            <View key={i} style={styles.muscleBalanceItem}>
-                                                <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
-                                                <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
+                                        <Text style={styles.chartSubInfo}>
+                                            Media: {heavySetsData.avgValue}% sets con ≥85% del máximo
+                                        </Text>
+                                    </>
+                                )}
+
+                                {/* KPI: BALANCE MUSCULAR */}
+                                {selectedKpi === 'muscleBalance' && muscleBalanceData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>Balance Muscular</Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={styles.chartSummaryValue}>
+                                                    {muscleBalanceData.fullData?.[0]?.share || 0}%
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>
+                                                    {muscleBalanceData.fullData?.[0]?.muscle || '-'}
+                                                </Text>
                                             </View>
-                                        ))}
-                                    </View>
-                                </>
-                            )}
-
-                            {/* 🆕 KPI: Sensación (Session RPE) */}
-                            {selectedKpi === 'sessionRPE' && sessionRPEData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>Sensación 🔵</Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={[styles.chartSummaryValue, { color: '#3b82f6' }]}>
-                                                {sessionRPEData.average}/5
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>promedio</Text>
                                         </View>
-                                    </View>
-
-                                    {/* Streak indicator */}
-                                    {sessionRPEData.maxStreak >= 3 && (
-                                        <View style={styles.rpeStreakBadge}>
-                                            <Text style={styles.rpeStreakText}>
-                                                🔥 {sessionRPEData.maxStreak} días en Modo Bestia
-                                            </Text>
-                                        </View>
-                                    )}
-
-                                    {/* Custom RPE Bar Chart */}
-                                    <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalScroll}>
-                                        <View style={styles.rpeBarContainer}>
-                                            {sessionRPEData.data.map((item, index) => (
-                                                <View key={index} style={styles.rpeBarWrapper}>
-                                                    <View
-                                                        style={[
-                                                            styles.rpeBar,
-                                                            {
-                                                                height: (item.value / 5) * 100,
-                                                                backgroundColor: item.color,
-                                                                shadowColor: item.value >= 4 ? item.color : 'transparent',
-                                                                shadowOpacity: item.value >= 4 ? 0.6 : 0,
-                                                                shadowRadius: item.value >= 4 ? 8 : 0,
-                                                                elevation: item.value >= 4 ? 4 : 0,
-                                                            }
-                                                        ]}
-                                                    />
-                                                    {item.hasNote && (
-                                                        <View style={styles.rpeNoteDot} />
-                                                    )}
-                                                    <Text style={styles.rpeBarLabel}>{item.label}</Text>
-                                                    <Text style={[styles.rpeBarValue, { color: item.color }]}>
-                                                        {item.value}
-                                                    </Text>
+                                        <ScrollView
+                                            horizontal
+                                            showsHorizontalScrollIndicator={true}
+                                            style={styles.horizontalChartScroll}
+                                        >
+                                            <BarChart
+                                                data={muscleBalanceData}
+                                                width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                                                height={220}
+                                                chartConfig={{
+                                                    ...barChartConfig,
+                                                    barPercentage: 0.6,
+                                                }}
+                                                style={styles.chart}
+                                                yAxisSuffix="%"
+                                                showValuesOnTopOfBars
+                                            />
+                                        </ScrollView>
+                                        <View style={styles.muscleBalanceLegend}>
+                                            {muscleBalanceData.fullData?.slice(0, 8).map((m, i) => (
+                                                <View key={i} style={styles.muscleBalanceItem}>
+                                                    <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
+                                                    <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
                                                 </View>
                                             ))}
                                         </View>
-                                    </ScrollView>
-
-                                    {/* Stats summary */}
-                                    <View style={styles.rpeSummaryRow}>
-                                        <View style={styles.rpeSummaryItem}>
-                                            <Text style={styles.rpeSummaryLabel}>Sesiones</Text>
-                                            <Text style={styles.rpeSummaryValue}>{sessionRPEData.totalSessions}</Text>
-                                        </View>
-                                        <View style={styles.rpeSummaryItem}>
-                                            <Text style={styles.rpeSummaryLabel}>Modo Bestia</Text>
-                                            <Text style={[styles.rpeSummaryValue, { color: RPE_COLORS[5] }]}>
-                                                {sessionRPEData.modoBestaCount}
-                                            </Text>
-                                        </View>
-                                    </View>
-
-                                    <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
-                                </>
-                            )}
-
-                            {/* KPI: PRs */}
-                            {selectedKpi === 'prCount' && prCountData && (
-                                <>
-                                    <View style={styles.chartHeader}>
-                                        <Text style={styles.sectionTitle}>PRs (Récords Personales)</Text>
-                                        <View style={styles.chartSummary}>
-                                            <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>
-                                                {prCountData.totalPRs}
-                                            </Text>
-                                            <Text style={styles.chartSummaryLabel}>en el período</Text>
-                                        </View>
-                                    </View>
-                                    <BarChart
-                                        data={prCountData}
-                                        width={screenWidth - 32}
-                                        height={220}
-                                        chartConfig={{
-                                            ...barChartConfig,
-                                            color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})`,
-                                        }}
-                                        style={styles.chart}
-                                        showValuesOnTopOfBars
-                                    />
-                                    <Text style={styles.chartSubInfo}>
-                                        {currentKpi.description}
-                                    </Text>
-                                </>
-                            )}
-
-                            {/* No data fallback */}
-                            {((selectedKpi === 'volume' && !volumeData) ||
-                                (selectedKpi === 'intensity' && !intensityData) ||
-                                (selectedKpi === 'compliance' && !complianceWeeklyData) ||
-                                (selectedKpi === 'heavySets' && !heavySetsData) ||
-                                (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
-                                (selectedKpi === 'sessionRPE' && !sessionRPEData) ||
-                                (selectedKpi === 'prCount' && !prCountData)) && (
-                                    <View style={styles.noDataContainer}>
-                                        <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
-                                        <Text style={styles.noDataText}>Sin datos para este período</Text>
-                                    </View>
+                                    </>
                                 )}
-                        </View>
 
-                        {/* Selector de agrupación para tabla */}
-                        <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
-                        <View style={styles.selectorContainer}>
-                            <Pressable
-                                style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
-                                onPress={() => setTemporalidad('semanas')}
-                            >
-                                <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
-                                    Semanas
-                                </Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
-                                onPress={() => setTemporalidad('meses')}
-                            >
-                                <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
-                                    Meses
-                                </Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
-                                onPress={() => setTemporalidad('total')}
-                            >
-                                <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
-                                    Total
-                                </Text>
-                            </Pressable>
-                        </View>
+                                {/* 🆕 KPI: Sensación (Session RPE) */}
+                                {selectedKpi === 'sessionRPE' && sessionRPEData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>Sensación 🔵</Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={[styles.chartSummaryValue, { color: '#3b82f6' }]}>
+                                                    {sessionRPEData.average}/5
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>promedio</Text>
+                                            </View>
+                                        </View>
 
-                        {/* Tabla comparativa */}
-                        {datosAgrupados.length > 0 && (
-                            <View style={styles.tableContainer}>
+                                        {/* Streak indicator */}
+                                        {sessionRPEData.maxStreak >= 3 && (
+                                            <View style={styles.rpeStreakBadge}>
+                                                <Text style={styles.rpeStreakText}>
+                                                    🔥 {sessionRPEData.maxStreak} días en Modo Bestia
+                                                </Text>
+                                            </View>
+                                        )}
 
-
-                                <View style={styles.tableHeader}>
-                                    <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
-                                    <Text style={styles.tableHeaderCell}>Volumen</Text>
-                                    <Text style={styles.tableHeaderCell}>Reps</Text>
-                                    <Text style={styles.tableHeaderCell}>Carga</Text>
-                                    <Text style={styles.tableHeaderCell}>Ses.</Text>
-                                </View>
-
-                                {datosAgrupados.map((dato, index) => {
-                                    const anterior = datosAgrupados[index + 1];
-                                    const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
-                                    const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
-                                    const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
-                                    const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
-
-                                    return (
-                                        <View key={dato.periodo} style={styles.tableRow}>
-                                            <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
-                                                {dato.periodo}
-                                            </Text>
-
-                                            <View style={styles.tableCellValue}>
-                                                <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
-                                                {anterior && (
-                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
-                                                        <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
-                                                        <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
-                                                            {cambioVol > 0 ? '+' : ''}{cambioVol}%
+                                        {/* Custom RPE Bar Chart */}
+                                        <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalScroll}>
+                                            <View style={styles.rpeBarContainer}>
+                                                {sessionRPEData.data.map((item, index) => (
+                                                    <View key={index} style={styles.rpeBarWrapper}>
+                                                        <View
+                                                            style={[
+                                                                styles.rpeBar,
+                                                                {
+                                                                    height: (item.value / 5) * 100,
+                                                                    backgroundColor: item.color,
+                                                                    shadowColor: item.value >= 4 ? item.color : 'transparent',
+                                                                    shadowOpacity: item.value >= 4 ? 0.6 : 0,
+                                                                    shadowRadius: item.value >= 4 ? 8 : 0,
+                                                                    elevation: item.value >= 4 ? 4 : 0,
+                                                                }
+                                                            ]}
+                                                        />
+                                                        {item.hasNote && (
+                                                            <View style={styles.rpeNoteDot} />
+                                                        )}
+                                                        <Text style={styles.rpeBarLabel}>{item.label}</Text>
+                                                        <Text style={[styles.rpeBarValue, { color: item.color }]}>
+                                                            {item.value}
                                                         </Text>
                                                     </View>
-                                                )}
+                                                ))}
                                             </View>
+                                        </ScrollView>
 
-                                            <View style={styles.tableCellValue}>
-                                                <Text style={styles.tableValue}>{dato.reps}</Text>
-                                                {anterior && (
-                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
-                                                        <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
-                                                    </View>
-                                                )}
+                                        {/* Stats summary */}
+                                        <View style={styles.rpeSummaryRow}>
+                                            <View style={styles.rpeSummaryItem}>
+                                                <Text style={styles.rpeSummaryLabel}>Sesiones</Text>
+                                                <Text style={styles.rpeSummaryValue}>{sessionRPEData.totalSessions}</Text>
                                             </View>
-
-                                            <View style={styles.tableCellValue}>
-                                                <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
-                                                {anterior && (
-                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
-                                                        <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
-                                                    </View>
-                                                )}
-                                            </View>
-
-                                            <View style={styles.tableCellValue}>
-                                                <Text style={styles.tableValue}>{dato.numSesiones}</Text>
-                                                {anterior && cambioSes !== 0 && (
-                                                    <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
-                                                        {cambioSes > 0 ? '+' : ''}{cambioSes}
-                                                    </Text>
-                                                )}
+                                            <View style={styles.rpeSummaryItem}>
+                                                <Text style={styles.rpeSummaryLabel}>Modo Bestia</Text>
+                                                <Text style={[styles.rpeSummaryValue, { color: RPE_COLORS[5] }]}>
+                                                    {sessionRPEData.modoBestaCount}
+                                                </Text>
                                             </View>
                                         </View>
-                                    );
-                                })}
-                            </View>
-                        )}
 
-                        {/* Resumen de totales */}
-                        <View style={styles.totalesContainer}>
-                            <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
-                            <View style={styles.totalesGrid}>
-                                <View style={styles.totalItem}>
-                                    <Text style={styles.totalLabel}>Volumen Total</Text>
-                                    <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
-                                </View>
-                                <View style={styles.totalItem}>
-                                    <Text style={styles.totalLabel}>Reps Totales</Text>
-                                    <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
-                                </View>
-                                <View style={styles.totalItem}>
-                                    <Text style={styles.totalLabel}>Sesiones</Text>
-                                    <Text style={styles.totalValue}>{totales.sesiones}</Text>
-                                </View>
-                                <View style={styles.totalItem}>
-                                    <Text style={styles.totalLabel}>Tendencia</Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                        <Ionicons
-                                            name={getCambioStyle(tendenciaGeneral).icon}
-                                            size={20}
-                                            color={getCambioStyle(tendenciaGeneral).color}
-                                        />
-                                        <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
-                                            {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-                        </View>
-                    </>
-                )}
-
-                {/* ════════════════════════════════════════════════════════════════
-                   VISTA TABLA DETALLADA
-                   ════════════════════════════════════════════════════════════════ */}
-                {viewMode === 'table' && (
-                    <View style={styles.detailedTableContainer}>
-                        {/* Sin datos */}
-                        {!datosPorRutina.current && datosPorRutina.old.length === 0 ? (
-                            <View style={styles.noDataContainer}>
-                                <Ionicons name="calendar-outline" size={48} color="#cbd5e1" />
-                                <Text style={styles.noDataText}>Sin sesiones registradas</Text>
-                            </View>
-                        ) : (
-                            <>
-                                {/* RUTINA ACTUAL */}
-                                {datosPorRutina.current && (
-                                    <View style={styles.routineSection}>
-                                        <Text style={styles.routineSectionTitle}>📋 Rutina Actual</Text>
-                                        <View style={styles.routineCard}>
-                                            <Pressable onPress={() => toggleRoutine('current')} style={styles.routineHeader}>
-                                                <View style={styles.routineHeaderLeft}>
-                                                    <Text style={styles.routineName}>{datosPorRutina.current.routineName}</Text>
-                                                    <Text style={styles.routineDate}>Última: {datosPorRutina.current.lastDate}</Text>
-                                                </View>
-                                                <Ionicons name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'} size={22} color="#3b82f6" />
-                                            </Pressable>
-
-                                            {expandedRoutines['current'] && (
-                                                <View style={styles.routineContent}>
-                                                    {datosPorRutina.current.dias.map((dia) => {
-                                                        const dayKey = `current-${dia.dayIndex}`;
-                                                        const isDayExpanded = expandedDays[dayKey];
-                                                        return (
-                                                            <View key={dia.dayIndex} style={styles.dayCard}>
-                                                                <Pressable onPress={() => toggleDay('current', dia.dayIndex)} style={styles.dayHeader}>
-                                                                    <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
-                                                                    <View style={styles.dayHeaderRight}>
-                                                                        <Text style={styles.dayStats}>{dia.exercises.length} ej. • {dia.totalSessions} ses.</Text>
-                                                                        <Ionicons name={isDayExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
-                                                                    </View>
-                                                                </Pressable>
-                                                                {isDayExpanded && (
-                                                                    <View style={styles.dayContent}>
-                                                                        {dia.exercises.map((exercise, exIdx) => (
-                                                                            <View key={exIdx} style={styles.exerciseBlock}>
-                                                                                <View style={styles.exerciseBlockHeader}>
-                                                                                    <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
-                                                                                    <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
-                                                                                </View>
-                                                                                <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.sessionsCarousel} contentContainerStyle={styles.sessionsCarouselContent}>
-                                                                                    {exercise.sesiones.map((sesion, sIdx) => (
-                                                                                        <View key={sIdx} style={styles.sessionBox}>
-                                                                                            <View style={styles.sessionBoxHeader}>
-                                                                                                <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
-                                                                                                <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
-                                                                                            </View>
-                                                                                            <View style={styles.setHeaderRow}>
-                                                                                                <Text style={styles.setHeaderCell}>S</Text>
-                                                                                                <Text style={styles.setHeaderCellData}>Rep</Text>
-                                                                                                <Text style={styles.setHeaderCellData}>Kg</Text>
-                                                                                                <Text style={styles.setHeaderCellNote}>📝</Text>
-                                                                                            </View>
-                                                                                            {sesion.sets.map((set, setIdx) => (
-                                                                                                <View key={setIdx} style={styles.setTableRow}>
-                                                                                                    <Text style={styles.setColNum}>{set.setNumber}</Text>
-                                                                                                    <View style={styles.setColData}>
-                                                                                                        <Text style={[styles.setColReps, { color: getRepStatusColor(set.status) }]}>{set.reps ?? '-'}</Text>
-                                                                                                        {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
-                                                                                                    </View>
-                                                                                                    <View style={styles.setColData}>
-                                                                                                        <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
-                                                                                                        {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
-                                                                                                    </View>
-                                                                                                    <TouchableOpacity
-                                                                                                        onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
-                                                                                                        style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
-                                                                                                        activeOpacity={set.notes?.value ? 0.6 : 1}
-                                                                                                    >
-                                                                                                        {set.notes?.value && <Ionicons name="chatbubble" size={8} color="#fff" />}
-                                                                                                    </TouchableOpacity>
-                                                                                                </View>
-                                                                                            ))}
-                                                                                        </View>
-                                                                                    ))}
-                                                                                </ScrollView>
-                                                                            </View>
-                                                                        ))}
-                                                                    </View>
-                                                                )}
-                                                            </View>
-                                                        );
-                                                    })}
-                                                </View>
-                                            )}
-                                        </View>
-                                    </View>
+                                        <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
+                                    </>
                                 )}
 
-                                {/* RUTINAS ANTIGUAS */}
-                                {datosPorRutina.old.length > 0 && (
-                                    <View style={styles.routineSection}>
-                                        <Text style={styles.routineSectionTitle}>📦 Rutinas Antiguas</Text>
-                                        {datosPorRutina.old.map((rutina) => (
-                                            <View key={rutina.routineId} style={styles.routineCardOld}>
-                                                <Pressable onPress={() => toggleRoutine(rutina.routineId)} style={styles.routineHeaderOld}>
+                                {/* KPI: PRs */}
+                                {selectedKpi === 'prCount' && prCountData && (
+                                    <>
+                                        <View style={styles.chartHeader}>
+                                            <Text style={styles.sectionTitle}>PRs (Récords Personales)</Text>
+                                            <View style={styles.chartSummary}>
+                                                <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>
+                                                    {prCountData.totalPRs}
+                                                </Text>
+                                                <Text style={styles.chartSummaryLabel}>en el período</Text>
+                                            </View>
+                                        </View>
+                                        <BarChart
+                                            data={prCountData}
+                                            width={screenWidth - 32}
+                                            height={220}
+                                            chartConfig={{
+                                                ...barChartConfig,
+                                                color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})`,
+                                            }}
+                                            style={styles.chart}
+                                            showValuesOnTopOfBars
+                                        />
+                                        <Text style={styles.chartSubInfo}>
+                                            {currentKpi.description}
+                                        </Text>
+                                    </>
+                                )}
+
+                                {/* No data fallback */}
+                                {((selectedKpi === 'volume' && !volumeData) ||
+                                    (selectedKpi === 'intensity' && !intensityData) ||
+                                    (selectedKpi === 'compliance' && !complianceWeeklyData) ||
+                                    (selectedKpi === 'heavySets' && !heavySetsData) ||
+                                    (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
+                                    (selectedKpi === 'sessionRPE' && !sessionRPEData) ||
+                                    (selectedKpi === 'prCount' && !prCountData)) && (
+                                        <View style={styles.noDataContainer}>
+                                            <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
+                                            <Text style={styles.noDataText}>Sin datos para este período</Text>
+                                        </View>
+                                    )}
+                            </View>
+
+                            {/* Selector de agrupación para tabla */}
+                            <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
+                            <View style={styles.selectorContainer}>
+                                <Pressable
+                                    style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
+                                    onPress={() => setTemporalidad('semanas')}
+                                >
+                                    <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
+                                        Semanas
+                                    </Text>
+                                </Pressable>
+                                <Pressable
+                                    style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
+                                    onPress={() => setTemporalidad('meses')}
+                                >
+                                    <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
+                                        Meses
+                                    </Text>
+                                </Pressable>
+                                <Pressable
+                                    style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
+                                    onPress={() => setTemporalidad('total')}
+                                >
+                                    <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
+                                        Total
+                                    </Text>
+                                </Pressable>
+                            </View>
+
+                            {/* Tabla comparativa */}
+                            {datosAgrupados.length > 0 && (
+                                <View style={styles.tableContainer}>
+
+
+                                    <View style={styles.tableHeader}>
+                                        <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
+                                        <Text style={styles.tableHeaderCell}>Volumen</Text>
+                                        <Text style={styles.tableHeaderCell}>Reps</Text>
+                                        <Text style={styles.tableHeaderCell}>Carga</Text>
+                                        <Text style={styles.tableHeaderCell}>Ses.</Text>
+                                    </View>
+
+                                    {datosAgrupados.map((dato, index) => {
+                                        const anterior = datosAgrupados[index + 1];
+                                        const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
+                                        const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
+                                        const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
+                                        const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
+
+                                        return (
+                                            <View key={dato.periodo} style={styles.tableRow}>
+                                                <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
+                                                    {dato.periodo}
+                                                </Text>
+
+                                                <View style={styles.tableCellValue}>
+                                                    <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
+                                                    {anterior && (
+                                                        <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
+                                                            <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
+                                                            <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
+                                                                {cambioVol > 0 ? '+' : ''}{cambioVol}%
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+
+                                                <View style={styles.tableCellValue}>
+                                                    <Text style={styles.tableValue}>{dato.reps}</Text>
+                                                    {anterior && (
+                                                        <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
+                                                            <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
+                                                        </View>
+                                                    )}
+                                                </View>
+
+                                                <View style={styles.tableCellValue}>
+                                                    <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
+                                                    {anterior && (
+                                                        <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
+                                                            <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
+                                                        </View>
+                                                    )}
+                                                </View>
+
+                                                <View style={styles.tableCellValue}>
+                                                    <Text style={styles.tableValue}>{dato.numSesiones}</Text>
+                                                    {anterior && cambioSes !== 0 && (
+                                                        <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
+                                                            {cambioSes > 0 ? '+' : ''}{cambioSes}
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            )}
+
+                            {/* Resumen de totales */}
+                            <View style={styles.totalesContainer}>
+                                <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
+                                <View style={styles.totalesGrid}>
+                                    <View style={styles.totalItem}>
+                                        <Text style={styles.totalLabel}>Volumen Total</Text>
+                                        <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
+                                    </View>
+                                    <View style={styles.totalItem}>
+                                        <Text style={styles.totalLabel}>Reps Totales</Text>
+                                        <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
+                                    </View>
+                                    <View style={styles.totalItem}>
+                                        <Text style={styles.totalLabel}>Sesiones</Text>
+                                        <Text style={styles.totalValue}>{totales.sesiones}</Text>
+                                    </View>
+                                    <View style={styles.totalItem}>
+                                        <Text style={styles.totalLabel}>Tendencia</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                            <Ionicons
+                                                name={getCambioStyle(tendenciaGeneral).icon}
+                                                size={20}
+                                                color={getCambioStyle(tendenciaGeneral).color}
+                                            />
+                                            <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
+                                                {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+                            </View>
+                        </>
+                    )}
+
+                    {/* ════════════════════════════════════════════════════════════════
+                   VISTA TABLA DETALLADA
+                   ════════════════════════════════════════════════════════════════ */}
+                    {viewMode === 'table' && (
+                        <View style={styles.detailedTableContainer}>
+                            {/* Sin datos */}
+                            {!datosPorRutina.current && datosPorRutina.old.length === 0 ? (
+                                <View style={styles.noDataContainer}>
+                                    <Ionicons name="calendar-outline" size={48} color="#cbd5e1" />
+                                    <Text style={styles.noDataText}>Sin sesiones registradas</Text>
+                                </View>
+                            ) : (
+                                <>
+                                    {/* RUTINA ACTUAL */}
+                                    {datosPorRutina.current && (
+                                        <View style={styles.routineSection}>
+                                            <Text style={styles.routineSectionTitle}>📋 Rutina Actual</Text>
+                                            <View style={styles.routineCard}>
+                                                <Pressable onPress={() => toggleRoutine('current')} style={styles.routineHeader}>
                                                     <View style={styles.routineHeaderLeft}>
-                                                        <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
-                                                        <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                                                        <Text style={styles.routineName}>{datosPorRutina.current.routineName}</Text>
+                                                        <Text style={styles.routineDate}>Última: {datosPorRutina.current.lastDate}</Text>
                                                     </View>
-                                                    <Ionicons name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'} size={20} color="#64748b" />
+                                                    <Ionicons name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'} size={22} color="#3b82f6" />
                                                 </Pressable>
-                                                {expandedRoutines[rutina.routineId] && (
+
+                                                {expandedRoutines['current'] && (
                                                     <View style={styles.routineContent}>
-                                                        {rutina.dias.map((dia) => {
-                                                            const dayKey = `${rutina.routineId}-${dia.dayIndex}`;
+                                                        {datosPorRutina.current.dias.map((dia) => {
+                                                            const dayKey = `current-${dia.dayIndex}`;
                                                             const isDayExpanded = expandedDays[dayKey];
                                                             return (
                                                                 <View key={dia.dayIndex} style={styles.dayCard}>
-                                                                    <Pressable onPress={() => toggleDay(rutina.routineId, dia.dayIndex)} style={styles.dayHeader}>
+                                                                    <Pressable onPress={() => toggleDay('current', dia.dayIndex)} style={styles.dayHeader}>
                                                                         <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
                                                                         <View style={styles.dayHeaderRight}>
                                                                             <Text style={styles.dayStats}>{dia.exercises.length} ej. • {dia.totalSessions} ses.</Text>
@@ -1886,13 +1883,69 @@ export default function ClientProgressDetail() {
                                                                                                             <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
                                                                                                             {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
                                                                                                         </View>
-                                                                                                        <TouchableOpacity
-                                                                                                            onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
-                                                                                                            style={[styles.setColNoteBtn, set.notes?.value ? { backgroundColor: NOTE_COLORS[set.notes.value] } : styles.setColNoteBtnEmpty]}
-                                                                                                            activeOpacity={set.notes?.value ? 0.6 : 1}
-                                                                                                        >
-                                                                                                            {set.notes?.value && <Ionicons name="chatbubble" size={8} color="#fff" />}
-                                                                                                        </TouchableOpacity>
+                                                                                                        {/* 📝 Botón de media/nota - detecta todo el contenido disponible */}
+                                                                                                        {(() => {
+                                                                                                            // Buscar todos los medios para este set
+                                                                                                            const visualMedia = findVisualForSet(exercise.exerciseName, set.setNumber, sesion.week);
+                                                                                                            const audioMedia = findAudioForSet(exercise.exerciseName, set.setNumber, sesion.week);
+                                                                                                            const hasNote = set.notes?.note;
+
+                                                                                                            // Determinar emoji por prioridad: video > foto > audio > nota
+                                                                                                            let icon = null;
+                                                                                                            let iconColor = '#fff';
+                                                                                                            let bgColor = styles.setColNoteBtnEmpty;
+
+                                                                                                            if (visualMedia?.mediaType === 'video') {
+                                                                                                                icon = 'videocam';
+                                                                                                                bgColor = { backgroundColor: '#ef4444' }; // Rojo para video
+                                                                                                            } else if (visualMedia?.mediaType === 'photo') {
+                                                                                                                icon = 'image';
+                                                                                                                bgColor = { backgroundColor: '#3b82f6' }; // Azul para foto
+                                                                                                            } else if (audioMedia) {
+                                                                                                                icon = 'mic';
+                                                                                                                bgColor = { backgroundColor: '#8b5cf6' }; // Púrpura para audio
+                                                                                                            } else if (hasNote || set.notes?.value) {
+                                                                                                                icon = 'chatbubble';
+                                                                                                                bgColor = { backgroundColor: NOTE_COLORS[set.notes?.value] || '#10b981' };
+                                                                                                            }
+
+                                                                                                            const hasContent = visualMedia || audioMedia || hasNote || set.notes?.value;
+
+                                                                                                            return (
+                                                                                                                <TouchableOpacity
+                                                                                                                    onPress={() => {
+                                                                                                                        if (!hasContent) return;
+
+                                                                                                                        // Prioridad: visual > audio > nota
+                                                                                                                        if (visualMedia) {
+                                                                                                                            setSelectedFeedback(visualMedia);
+                                                                                                                            setVideoModalVisible(true);
+                                                                                                                            markFeedbackAsViewed(visualMedia._id);
+                                                                                                                        } else if (audioMedia) {
+                                                                                                                            setSelectedFeedback(audioMedia);
+                                                                                                                            setVideoModalVisible(true);
+                                                                                                                        } else if (hasNote || set.notes?.value) {
+                                                                                                                            // Crear pseudo-feedback para nota de texto
+                                                                                                                            const pseudoFeedback = {
+                                                                                                                                _id: `table-note-${sesion.week}-${exercise.exerciseName}-${set.setNumber}`,
+                                                                                                                                exerciseName: exercise.exerciseName,
+                                                                                                                                athleteNote: set.notes?.note || '',
+                                                                                                                                mediaType: 'text-note',
+                                                                                                                                setNumber: set.setNumber,
+                                                                                                                                createdAt: sesion.date,
+                                                                                                                                athleteId: clientId,
+                                                                                                                            };
+                                                                                                                            setSelectedFeedback(pseudoFeedback);
+                                                                                                                            setVideoModalVisible(true);
+                                                                                                                        }
+                                                                                                                    }}
+                                                                                                                    style={[styles.setColNoteBtn, hasContent ? bgColor : styles.setColNoteBtnEmpty]}
+                                                                                                                    activeOpacity={hasContent ? 0.6 : 1}
+                                                                                                                >
+                                                                                                                    {icon && <Ionicons name={icon} size={8} color={iconColor} />}
+                                                                                                                </TouchableOpacity>
+                                                                                                            );
+                                                                                                        })()}
                                                                                                     </View>
                                                                                                 ))}
                                                                                             </View>
@@ -1908,281 +1961,484 @@ export default function ClientProgressDetail() {
                                                     </View>
                                                 )}
                                             </View>
-                                        ))}
-                                    </View>
-                                )}
-                            </>
-                        )}
-                    </View>
-                )}
+                                        </View>
+                                    )}
 
-                {/* ════════════════════════════════════════════════════════════════
+                                    {/* RUTINAS ANTIGUAS */}
+                                    {datosPorRutina.old.length > 0 && (
+                                        <View style={styles.routineSection}>
+                                            <Text style={styles.routineSectionTitle}>📦 Rutinas Antiguas</Text>
+                                            {datosPorRutina.old.map((rutina) => (
+                                                <View key={rutina.routineId} style={styles.routineCardOld}>
+                                                    <Pressable onPress={() => toggleRoutine(rutina.routineId)} style={styles.routineHeaderOld}>
+                                                        <View style={styles.routineHeaderLeft}>
+                                                            <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
+                                                            <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                                                        </View>
+                                                        <Ionicons name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'} size={20} color="#64748b" />
+                                                    </Pressable>
+                                                    {expandedRoutines[rutina.routineId] && (
+                                                        <View style={styles.routineContent}>
+                                                            {rutina.dias.map((dia) => {
+                                                                const dayKey = `${rutina.routineId}-${dia.dayIndex}`;
+                                                                const isDayExpanded = expandedDays[dayKey];
+                                                                return (
+                                                                    <View key={dia.dayIndex} style={styles.dayCard}>
+                                                                        <Pressable onPress={() => toggleDay(rutina.routineId, dia.dayIndex)} style={styles.dayHeader}>
+                                                                            <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                                                                            <View style={styles.dayHeaderRight}>
+                                                                                <Text style={styles.dayStats}>{dia.exercises.length} ej. • {dia.totalSessions} ses.</Text>
+                                                                                <Ionicons name={isDayExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                                                                            </View>
+                                                                        </Pressable>
+                                                                        {isDayExpanded && (
+                                                                            <View style={styles.dayContent}>
+                                                                                {dia.exercises.map((exercise, exIdx) => (
+                                                                                    <View key={exIdx} style={styles.exerciseBlock}>
+                                                                                        <View style={styles.exerciseBlockHeader}>
+                                                                                            <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
+                                                                                            <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                                                                        </View>
+                                                                                        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.sessionsCarousel} contentContainerStyle={styles.sessionsCarouselContent}>
+                                                                                            {exercise.sesiones.map((sesion, sIdx) => (
+                                                                                                <View key={sIdx} style={styles.sessionBox}>
+                                                                                                    <View style={styles.sessionBoxHeader}>
+                                                                                                        <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
+                                                                                                        <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
+                                                                                                    </View>
+                                                                                                    <View style={styles.setHeaderRow}>
+                                                                                                        <Text style={styles.setHeaderCell}>S</Text>
+                                                                                                        <Text style={styles.setHeaderCellData}>Rep</Text>
+                                                                                                        <Text style={styles.setHeaderCellData}>Kg</Text>
+                                                                                                        <Text style={styles.setHeaderCellNote}>📝</Text>
+                                                                                                    </View>
+                                                                                                    {sesion.sets.map((set, setIdx) => (
+                                                                                                        <View key={setIdx} style={styles.setTableRow}>
+                                                                                                            <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                                                                                            <View style={styles.setColData}>
+                                                                                                                <Text style={[styles.setColReps, { color: getRepStatusColor(set.status) }]}>{set.reps ?? '-'}</Text>
+                                                                                                                {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                            </View>
+                                                                                                            <View style={styles.setColData}>
+                                                                                                                <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
+                                                                                                                {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                                                                            </View>
+                                                                                                            {/* 📝 Botón de media/nota - detecta todo el contenido disponible */}
+                                                                                                            {(() => {
+                                                                                                                const visualMedia = findVisualForSet(exercise.exerciseName, set.setNumber, sesion.week);
+                                                                                                                const audioMedia = findAudioForSet(exercise.exerciseName, set.setNumber, sesion.week);
+                                                                                                                const hasNote = set.notes?.note;
+
+                                                                                                                let icon = null;
+                                                                                                                let bgColor = styles.setColNoteBtnEmpty;
+
+                                                                                                                if (visualMedia?.mediaType === 'video') {
+                                                                                                                    icon = 'videocam';
+                                                                                                                    bgColor = { backgroundColor: '#ef4444' };
+                                                                                                                } else if (visualMedia?.mediaType === 'photo') {
+                                                                                                                    icon = 'image';
+                                                                                                                    bgColor = { backgroundColor: '#3b82f6' };
+                                                                                                                } else if (audioMedia) {
+                                                                                                                    icon = 'mic';
+                                                                                                                    bgColor = { backgroundColor: '#8b5cf6' };
+                                                                                                                } else if (hasNote || set.notes?.value) {
+                                                                                                                    icon = 'chatbubble';
+                                                                                                                    bgColor = { backgroundColor: NOTE_COLORS[set.notes?.value] || '#10b981' };
+                                                                                                                }
+
+                                                                                                                const hasContent = visualMedia || audioMedia || hasNote || set.notes?.value;
+
+                                                                                                                return (
+                                                                                                                    <TouchableOpacity
+                                                                                                                        onPress={() => {
+                                                                                                                            if (!hasContent) return;
+                                                                                                                            if (visualMedia) {
+                                                                                                                                setSelectedFeedback(visualMedia);
+                                                                                                                                setVideoModalVisible(true);
+                                                                                                                                markFeedbackAsViewed(visualMedia._id);
+                                                                                                                            } else if (audioMedia) {
+                                                                                                                                setSelectedFeedback(audioMedia);
+                                                                                                                                setVideoModalVisible(true);
+                                                                                                                            } else if (hasNote || set.notes?.value) {
+                                                                                                                                const pseudoFeedback = {
+                                                                                                                                    _id: `old-table-${sesion.week}-${exercise.exerciseName}-${set.setNumber}`,
+                                                                                                                                    exerciseName: exercise.exerciseName,
+                                                                                                                                    athleteNote: set.notes?.note || '',
+                                                                                                                                    mediaType: 'text-note',
+                                                                                                                                    setNumber: set.setNumber,
+                                                                                                                                    createdAt: sesion.date,
+                                                                                                                                    athleteId: clientId,
+                                                                                                                                };
+                                                                                                                                setSelectedFeedback(pseudoFeedback);
+                                                                                                                                setVideoModalVisible(true);
+                                                                                                                            }
+                                                                                                                        }}
+                                                                                                                        style={[styles.setColNoteBtn, hasContent ? bgColor : styles.setColNoteBtnEmpty]}
+                                                                                                                        activeOpacity={hasContent ? 0.6 : 1}
+                                                                                                                    >
+                                                                                                                        {icon && <Ionicons name={icon} size={8} color="#fff" />}
+                                                                                                                    </TouchableOpacity>
+                                                                                                                );
+                                                                                                            })()}
+                                                                                                        </View>
+                                                                                                    ))}
+                                                                                                </View>
+                                                                                            ))}
+                                                                                        </ScrollView>
+                                                                                    </View>
+                                                                                ))}
+                                                                            </View>
+                                                                        )}
+                                                                    </View>
+                                                                );
+                                                            })}
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ))}
+                                        </View>
+                                    )}
+                                </>
+                            )}
+                        </View>
+                    )}
+
+                    {/* ════════════════════════════════════════════════════════════════
                     💬 VISTA COMENTARIOS - FEEDBACK VISUAL DEL CLIENTE
                    ════════════════════════════════════════════════════════════════ */}
-                {viewMode === 'comments' && (
-                    <View style={styles.commentsContainer}>
-                        {/* Sin comentarios ni RPE */}
-                        {(!comentariosPorRutina.current || comentariosPorRutina.current.semanas?.length === 0) && comentariosPorRutina.old.length === 0 ? (
-                            <View style={styles.noDataContainer}>
-                                <Ionicons name="chatbubble-ellipses-outline" size={48} color="#cbd5e1" />
-                                <Text style={styles.noDataText}>Sin comentarios registrados</Text>
-                                <Text style={styles.noDataSubtext}>Los comentarios del cliente aparecerán aquí</Text>
-                            </View>
-                        ) : (
-                            <>
-                                {/* RUTINA ACTUAL */}
-                                {comentariosPorRutina.current && comentariosPorRutina.current.semanas?.length > 0 && (
-                                    <View style={styles.commentsRoutineSection}>
-                                        <View style={styles.commentsRoutineHeader}>
-                                            <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
-                                            <View style={styles.commentsBadge}>
-                                                <Text style={styles.commentsBadgeText}>{comentariosPorRutina.current.totalComentarios}</Text>
+                    {viewMode === 'comments' && (
+                        <View style={styles.commentsContainer}>
+                            {/* Sin comentarios ni RPE */}
+                            {(!comentariosPorRutina.current || comentariosPorRutina.current.semanas?.length === 0) && comentariosPorRutina.old.length === 0 ? (
+                                <View style={styles.noDataContainer}>
+                                    <Ionicons name="chatbubble-ellipses-outline" size={48} color="#cbd5e1" />
+                                    <Text style={styles.noDataText}>Sin comentarios registrados</Text>
+                                    <Text style={styles.noDataSubtext}>Los comentarios del cliente aparecerán aquí</Text>
+                                </View>
+                            ) : (
+                                <>
+                                    {/* RUTINA ACTUAL */}
+                                    {comentariosPorRutina.current && comentariosPorRutina.current.semanas?.length > 0 && (
+                                        <View style={styles.commentsRoutineSection}>
+                                            <View style={styles.commentsRoutineHeader}>
+                                                <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
+                                                <View style={styles.commentsBadge}>
+                                                    <Text style={styles.commentsBadgeText}>{comentariosPorRutina.current.totalComentarios}</Text>
+                                                </View>
                                             </View>
-                                        </View>
-                                        <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
+                                            <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
 
-                                        {comentariosPorRutina.current.semanas.map((semana) => {
-                                            // Calcular RPE promedio de la semana
-                                            const diasConRPE = semana.dias.filter(d => d.sessionRPE);
-                                            const avgRPE = diasConRPE.length > 0
-                                                ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
-                                                : null;
-                                            const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
-                                            const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
+                                            {comentariosPorRutina.current.semanas.map((semana) => {
+                                                // Calcular RPE promedio de la semana
+                                                const diasConRPE = semana.dias.filter(d => d.sessionRPE);
+                                                const avgRPE = diasConRPE.length > 0
+                                                    ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
+                                                    : null;
+                                                const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
+                                                const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
 
-                                            return (
-                                                <View key={semana.week} style={styles.commentsWeekGroup}>
-                                                    <Pressable
-                                                        onPress={() => toggleWeek('current', semana.week, semana.dias)}
-                                                        style={styles.commentsWeekHeaderPressable}
-                                                    >
-                                                        <View style={styles.commentsWeekBadge}>
-                                                            <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
-                                                        </View>
-                                                        <View style={styles.commentsWeekRight}>
-                                                            {/* 🆕 RPE promedio de la semana */}
-                                                            {avgRPE && (
-                                                                <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
-                                                                    <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
-                                                                        {avgRPE} {avgLabel}
+                                                return (
+                                                    <View key={semana.week} style={styles.commentsWeekGroup}>
+                                                        <Pressable
+                                                            onPress={() => toggleWeek('current', semana.week, semana.dias)}
+                                                            style={styles.commentsWeekHeaderPressable}
+                                                        >
+                                                            <View style={styles.commentsWeekBadge}>
+                                                                <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
+                                                            </View>
+                                                            <View style={styles.commentsWeekRight}>
+                                                                {/* 🆕 RPE promedio de la semana */}
+                                                                {avgRPE && (
+                                                                    <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
+                                                                        <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
+                                                                            {avgRPE} {avgLabel}
+                                                                        </Text>
+                                                                    </View>
+                                                                )}
+                                                                <Text style={styles.commentsWeekCount}>
+                                                                    {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
+                                                                </Text>
+                                                                <Ionicons
+                                                                    name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                                                    size={18}
+                                                                    color="#64748b"
+                                                                />
+                                                            </View>
+                                                        </Pressable>
+
+                                                        {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
+                                                            <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                                                                <View style={styles.commentsDayHeaderRow}>
+                                                                    <Text style={styles.commentsDayHeader}>
+                                                                        {dia.dayLabel} • {dia.date}
                                                                     </Text>
+                                                                    {dia.sessionRPE && (
+                                                                        <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                                                            <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
+                                                                                {dia.sessionRPE}/5 {dia.rpeLabel}
+                                                                            </Text>
+                                                                        </View>
+                                                                    )}
                                                                 </View>
-                                                            )}
-                                                            <Text style={styles.commentsWeekCount}>
-                                                                {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
-                                                            </Text>
+
+                                                                {/* Session note if exists */}
+                                                                {dia.sessionNote && (
+                                                                    <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
+                                                                        <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
+                                                                    </View>
+                                                                )}
+
+                                                                {dia.exercises.map((exercise, exIdx) => (
+                                                                    <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
+                                                                        <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
+                                                                            <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
+                                                                            {' '}{exercise.exerciseName}
+                                                                        </Text>
+
+                                                                        {exercise.sets.map((set, setIdx) => {
+                                                                            // Buscar media visual (foto/video) y audio por separado
+                                                                            const visualMedia = findVisualForSet(exercise.exerciseName, set.setNumber, semana.week);
+                                                                            const audioMedia = findAudioForSet(exercise.exerciseName, set.setNumber, semana.week);
+                                                                            const hasAnyMedia = visualMedia || audioMedia;
+
+                                                                            return (
+                                                                                <View
+                                                                                    key={setIdx}
+                                                                                    style={[
+                                                                                        styles.commentCardCompact,
+                                                                                        set.hasPain && styles.commentCardWarning,
+                                                                                        hasAnyMedia && styles.commentCardWithVideo
+                                                                                    ]}
+                                                                                >
+                                                                                    <View style={styles.commentCardCompactRow}>
+                                                                                        <View style={[
+                                                                                            styles.commentSemaphoreCompact,
+                                                                                            { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                                        ]} />
+                                                                                        <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                                                                        <Text style={styles.commentDataCompact}>
+                                                                                            {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                                        </Text>
+                                                                                        {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+
+                                                                                        {/* Icono de foto/video a la derecha (abre modal) */}
+                                                                                        {visualMedia && (() => {
+                                                                                            const isPending = !visualMedia.viewedByCoach && !visualMedia.coachResponse?.respondedAt;
+                                                                                            const isPhoto = visualMedia.mediaType === 'photo';
+
+                                                                                            return (
+                                                                                                <Pressable
+                                                                                                    style={[
+                                                                                                        styles.inlineVideoBtn,
+                                                                                                        isPending && styles.inlineVideoBtnPending
+                                                                                                    ]}
+                                                                                                    onPress={() => {
+                                                                                                        setSelectedFeedback(visualMedia);
+                                                                                                        setVideoModalVisible(true);
+                                                                                                        markFeedbackAsViewed(visualMedia._id);
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <Ionicons
+                                                                                                        name={isPhoto ? 'image' : 'videocam'}
+                                                                                                        size={14}
+                                                                                                        color={isPending ? '#fff' : '#4361ee'}
+                                                                                                    />
+                                                                                                    {isPending && (
+                                                                                                        <View style={styles.inlineVideoPendingDot} />
+                                                                                                    )}
+                                                                                                </Pressable>
+                                                                                            );
+                                                                                        })()}
+
+                                                                                        {/* Botón responder a nota de texto (solo si no hay visual NI audio) */}
+                                                                                        {set.noteText && !visualMedia && !audioMedia && (
+                                                                                            <Pressable
+                                                                                                style={styles.inlineReplyBtn}
+                                                                                                onPress={() => {
+                                                                                                    // Crear pseudo-feedback para notas de texto
+                                                                                                    const pseudoFeedback = {
+                                                                                                        _id: `note-${dia.sessionId}-${exercise.exerciseName}-${set.setNumber}`,
+                                                                                                        exerciseName: exercise.exerciseName,
+                                                                                                        athleteNote: set.noteText,
+                                                                                                        mediaType: 'text-note',
+                                                                                                        setNumber: set.setNumber,
+                                                                                                        serieKey: `${semana.week}|${dia.dayIndex}|${exIdx}|${set.setNumber - 1}`,
+                                                                                                        createdAt: dia.dateSort,
+                                                                                                        athleteId: clientId,
+                                                                                                    };
+                                                                                                    setSelectedFeedback(pseudoFeedback);
+                                                                                                    setVideoModalVisible(true);
+                                                                                                }}
+                                                                                            >
+                                                                                                <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
+                                                                                            </Pressable>
+                                                                                        )}
+                                                                                    </View>
+
+                                                                                    {/* Texto de nota */}
+                                                                                    {set.noteText ? (
+                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                                                                    ) : visualMedia?.athleteNote ? (
+                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                            {visualMedia.mediaType === 'photo' ? '📷' : '📹'} "{visualMedia.athleteNote}"
+                                                                                        </Text>
+                                                                                    ) : audioMedia?.athleteNote ? (
+                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                            🎤 "{audioMedia.athleteNote}"
+                                                                                        </Text>
+                                                                                    ) : set.hasMediaOnly && !audioMedia ? (
+                                                                                        <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
+                                                                                            {visualMedia?.mediaType === 'photo' ? '📷 Foto enviada' : '📹 Video enviado'}
+                                                                                        </Text>
+                                                                                    ) : null}
+
+                                                                                    {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
+                                                                                    {audioMedia && (
+                                                                                        <View style={styles.audioRowContainer}>
+                                                                                            <View style={{ flex: 1 }}>
+                                                                                                <InlineAudioPlayer
+                                                                                                    feedback={audioMedia}
+                                                                                                    onViewed={markFeedbackAsViewed}
+                                                                                                />
+                                                                                            </View>
+                                                                                            {/* Botón responder a audio (sin visual media) */}
+                                                                                            {!visualMedia && (
+                                                                                                <Pressable
+                                                                                                    style={styles.inlineReplyBtn}
+                                                                                                    onPress={() => {
+                                                                                                        setSelectedFeedback(audioMedia);
+                                                                                                        setVideoModalVisible(true);
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
+                                                                                                </Pressable>
+                                                                                            )}
+                                                                                        </View>
+                                                                                    )}
+                                                                                </View>
+                                                                            );
+                                                                        })}
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        ))}
+                                                    </View>
+                                                );
+                                            })}
+                                        </View>
+                                    )}
+
+                                    {/* RUTINAS ANTIGUAS CON COMENTARIOS */}
+                                    {comentariosPorRutina.old.length > 0 && (
+                                        <View style={styles.commentsOldSection}>
+                                            <Text style={styles.commentsOldLabel}>📦 Rutinas Anteriores</Text>
+                                            {comentariosPorRutina.old.map((rutina) => (
+                                                <View key={rutina.routineId} style={styles.commentsOldRoutine}>
+                                                    <Pressable
+                                                        onPress={() => toggleRoutine(rutina.routineId)}
+                                                        style={styles.commentsOldRoutineHeader}
+                                                    >
+                                                        <View style={styles.commentsOldRoutineInfo}>
+                                                            <Text style={styles.commentsOldRoutineName}>{rutina.routineName}</Text>
+                                                            <Text style={styles.commentsOldRoutineDate}>Última: {rutina.lastDate}</Text>
+                                                        </View>
+                                                        <View style={styles.commentsOldRoutineRight}>
+                                                            <View style={styles.commentsBadgeSmall}>
+                                                                <Text style={styles.commentsBadgeSmallText}>{rutina.totalComentarios}</Text>
+                                                            </View>
                                                             <Ionicons
-                                                                name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                                                name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'}
                                                                 size={18}
                                                                 color="#64748b"
                                                             />
                                                         </View>
                                                     </Pressable>
 
-                                                    {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
-                                                        <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
-                                                            <View style={styles.commentsDayHeaderRow}>
-                                                                <Text style={styles.commentsDayHeader}>
-                                                                    {dia.dayLabel} • {dia.date}
-                                                                </Text>
-                                                                {dia.sessionRPE && (
-                                                                    <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
-                                                                        <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
-                                                                            {dia.sessionRPE}/5 {dia.rpeLabel}
-                                                                        </Text>
-                                                                    </View>
-                                                                )}
-                                                            </View>
-
-                                                            {/* Session note if exists */}
-                                                            {dia.sessionNote && (
-                                                                <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
-                                                                    <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
-                                                                </View>
-                                                            )}
-
-                                                            {dia.exercises.map((exercise, exIdx) => (
-                                                                <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
-                                                                    <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
-                                                                        <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
-                                                                        {' '}{exercise.exerciseName}
-                                                                    </Text>
-
-                                                                    {exercise.sets.map((set, setIdx) => {
-                                                                        const setVideo = findVideoForSet(exercise.exerciseName, set.setNumber);
-                                                                        return (
-                                                                            <View
-                                                                                key={setIdx}
-                                                                                style={[
-                                                                                    styles.commentCardCompact,
-                                                                                    set.hasPain && styles.commentCardWarning,
-                                                                                    setVideo && styles.commentCardWithVideo
-                                                                                ]}
-                                                                            >
-                                                                                <View style={styles.commentCardCompactRow}>
-                                                                                    <View style={[
-                                                                                        styles.commentSemaphoreCompact,
-                                                                                        { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
-                                                                                    ]} />
-                                                                                    <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
-                                                                                    <Text style={styles.commentDataCompact}>
-                                                                                        {set.weight ?? '-'}kg × {set.reps ?? '-'}
-                                                                                    </Text>
-                                                                                    {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
-
-                                                                                    {/* Video inline si existe */}
-                                                                                    {setVideo && (() => {
-                                                                                        // Pendiente = no visto Y no respondido
-                                                                                        const isPending = !setVideo.viewedByCoach && !setVideo.coachResponse?.respondedAt;
-                                                                                        return (
-                                                                                            <Pressable
-                                                                                                style={[
-                                                                                                    styles.inlineVideoBtn,
-                                                                                                    isPending && styles.inlineVideoBtnPending
-                                                                                                ]}
-                                                                                                onPress={() => {
-                                                                                                    setSelectedFeedback(setVideo);
-                                                                                                    setVideoModalVisible(true);
-                                                                                                    // Marcar como visto al abrir
-                                                                                                    markFeedbackAsViewed(setVideo._id);
-                                                                                                }}
-                                                                                            >
-                                                                                                <Ionicons
-                                                                                                    name={
-                                                                                                        setVideo.mediaType === 'audio' ? 'mic' :
-                                                                                                            setVideo.mediaType === 'photo' ? 'image' :
-                                                                                                                'videocam'
-                                                                                                    }
-                                                                                                    size={14}
-                                                                                                    color={isPending ? '#fff' : '#4361ee'}
-                                                                                                />
-                                                                                                {isPending && (
-                                                                                                    <View style={styles.inlineVideoPendingDot} />
-                                                                                                )}
-                                                                                            </Pressable>
-                                                                                        );
-                                                                                    })()}
-                                                                                </View>
-                                                                                {/* Mostrar texto de nota o indicador de media */}
-                                                                                {set.noteText ? (
-                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
-                                                                                ) : setVideo?.athleteNote ? (
-                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>
-                                                                                        📹 "{setVideo.athleteNote}"
-                                                                                    </Text>
-                                                                                ) : set.hasMediaOnly ? (
-                                                                                    <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
-                                                                                        {setVideo?.mediaType === 'audio' ? '🎤 Audio enviado' :
-                                                                                            setVideo?.mediaType === 'photo' ? '📷 Foto enviada' :
-                                                                                                '📹 Video enviado'}
-                                                                                    </Text>
-                                                                                ) : null}
+                                                    {expandedRoutines[rutina.routineId] && (
+                                                        <View style={styles.commentsOldRoutineContent}>
+                                                            {rutina.semanas.map((semana) => (
+                                                                <View key={semana.week} style={styles.commentsWeekGroupSmall}>
+                                                                    <Text style={styles.commentsWeekLabelSmall}>Semana {semana.week}</Text>
+                                                                    {semana.dias.map((dia, dIdx) => (
+                                                                        <View key={`${dia.dayIndex}-${dIdx}`}>
+                                                                            <View style={styles.commentsDayHeaderRow}>
+                                                                                <Text style={styles.commentsDayHeaderSmall}>
+                                                                                    {dia.dayLabel} • {dia.date}
+                                                                                </Text>
+                                                                                {dia.sessionRPE && (
+                                                                                    <View style={[styles.commentsDayRpeBadgeSmall, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                                                                        <Text style={[styles.commentsDayRpeTextSmall, { color: dia.rpeColor }]}>
+                                                                                            {dia.sessionRPE}/5
+                                                                                        </Text>
+                                                                                    </View>
+                                                                                )}
                                                                             </View>
-                                                                        );
-                                                                    })}
+                                                                            {dia.exercises.map((exercise, exIdx) => (
+                                                                                <View key={exIdx} style={styles.commentsExerciseBlockSmall}>
+                                                                                    <Text style={styles.commentsExerciseNameSmall}>
+                                                                                        {exercise.muscleGroup} - {exercise.exerciseName}
+                                                                                    </Text>
+                                                                                    {exercise.sets.map((set, setIdx) => (
+                                                                                        <View
+                                                                                            key={setIdx}
+                                                                                            style={[
+                                                                                                styles.commentCardSmall,
+                                                                                                set.hasPain && styles.commentCardWarning
+                                                                                            ]}
+                                                                                        >
+                                                                                            <View style={styles.commentCardSmallLeft}>
+                                                                                                <Text style={styles.commentSetLabelSmall}>S{set.setNumber}</Text>
+                                                                                                <Text style={styles.commentDataSmall}>
+                                                                                                    {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                                                </Text>
+                                                                                                {set.hasPain && <Text>⚠️</Text>}
+                                                                                                <View style={[
+                                                                                                    styles.commentSemaphoreSmall,
+                                                                                                    { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                                                ]} />
+                                                                                            </View>
+                                                                                            <Text style={styles.commentTextSmall} numberOfLines={2}>
+                                                                                                "{set.noteText}"
+                                                                                            </Text>
+                                                                                        </View>
+                                                                                    ))}
+                                                                                </View>
+                                                                            ))}
+                                                                        </View>
+                                                                    ))}
                                                                 </View>
                                                             ))}
                                                         </View>
-                                                    ))}
+                                                    )}
                                                 </View>
-                                            );
-                                        })}
-                                    </View>
-                                )}
+                                            ))}
+                                        </View>
+                                    )}
+                                </>
+                            )}
+                        </View>
+                    )}
 
-                                {/* RUTINAS ANTIGUAS CON COMENTARIOS */}
-                                {comentariosPorRutina.old.length > 0 && (
-                                    <View style={styles.commentsOldSection}>
-                                        <Text style={styles.commentsOldLabel}>📦 Rutinas Anteriores</Text>
-                                        {comentariosPorRutina.old.map((rutina) => (
-                                            <View key={rutina.routineId} style={styles.commentsOldRoutine}>
-                                                <Pressable
-                                                    onPress={() => toggleRoutine(rutina.routineId)}
-                                                    style={styles.commentsOldRoutineHeader}
-                                                >
-                                                    <View style={styles.commentsOldRoutineInfo}>
-                                                        <Text style={styles.commentsOldRoutineName}>{rutina.routineName}</Text>
-                                                        <Text style={styles.commentsOldRoutineDate}>Última: {rutina.lastDate}</Text>
-                                                    </View>
-                                                    <View style={styles.commentsOldRoutineRight}>
-                                                        <View style={styles.commentsBadgeSmall}>
-                                                            <Text style={styles.commentsBadgeSmallText}>{rutina.totalComentarios}</Text>
-                                                        </View>
-                                                        <Ionicons
-                                                            name={expandedRoutines[rutina.routineId] ? 'chevron-up' : 'chevron-down'}
-                                                            size={18}
-                                                            color="#64748b"
-                                                        />
-                                                    </View>
-                                                </Pressable>
+                    <View style={{ height: 40 }} />
+                </ScrollView>
 
-                                                {expandedRoutines[rutina.routineId] && (
-                                                    <View style={styles.commentsOldRoutineContent}>
-                                                        {rutina.semanas.map((semana) => (
-                                                            <View key={semana.week} style={styles.commentsWeekGroupSmall}>
-                                                                <Text style={styles.commentsWeekLabelSmall}>Semana {semana.week}</Text>
-                                                                {semana.dias.map((dia, dIdx) => (
-                                                                    <View key={`${dia.dayIndex}-${dIdx}`}>
-                                                                        <View style={styles.commentsDayHeaderRow}>
-                                                                            <Text style={styles.commentsDayHeaderSmall}>
-                                                                                {dia.dayLabel} • {dia.date}
-                                                                            </Text>
-                                                                            {dia.sessionRPE && (
-                                                                                <View style={[styles.commentsDayRpeBadgeSmall, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
-                                                                                    <Text style={[styles.commentsDayRpeTextSmall, { color: dia.rpeColor }]}>
-                                                                                        {dia.sessionRPE}/5
-                                                                                    </Text>
-                                                                                </View>
-                                                                            )}
-                                                                        </View>
-                                                                        {dia.exercises.map((exercise, exIdx) => (
-                                                                            <View key={exIdx} style={styles.commentsExerciseBlockSmall}>
-                                                                                <Text style={styles.commentsExerciseNameSmall}>
-                                                                                    {exercise.muscleGroup} - {exercise.exerciseName}
-                                                                                </Text>
-                                                                                {exercise.sets.map((set, setIdx) => (
-                                                                                    <View
-                                                                                        key={setIdx}
-                                                                                        style={[
-                                                                                            styles.commentCardSmall,
-                                                                                            set.hasPain && styles.commentCardWarning
-                                                                                        ]}
-                                                                                    >
-                                                                                        <View style={styles.commentCardSmallLeft}>
-                                                                                            <Text style={styles.commentSetLabelSmall}>S{set.setNumber}</Text>
-                                                                                            <Text style={styles.commentDataSmall}>
-                                                                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
-                                                                                            </Text>
-                                                                                            {set.hasPain && <Text>⚠️</Text>}
-                                                                                            <View style={[
-                                                                                                styles.commentSemaphoreSmall,
-                                                                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
-                                                                                            ]} />
-                                                                                        </View>
-                                                                                        <Text style={styles.commentTextSmall} numberOfLines={2}>
-                                                                                            "{set.noteText}"
-                                                                                        </Text>
-                                                                                    </View>
-                                                                                ))}
-                                                                            </View>
-                                                                        ))}
-                                                                    </View>
-                                                                ))}
-                                                            </View>
-                                                        ))}
-                                                    </View>
-                                                )}
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-                            </>
-                        )}
+                {/* 🖥️ Panel lateral - solo visible en pantallas grandes con feedback seleccionado */}
+                {isLargeScreen && selectedFeedback && (
+                    <View style={styles.splitViewPanel}>
+                        <MediaFeedbackResponseModal
+                            visible={true}
+                            onClose={() => {
+                                setVideoModalVisible(false);
+                                setSelectedFeedback(null);
+                            }}
+                            feedback={selectedFeedback}
+                            onResponseSent={handleVideoResponseSent}
+                            isInline={true}
+                        />
                     </View>
                 )}
+            </View>
 
-                <View style={{ height: 40 }} />
-            </ScrollView>
 
             {/* ═══ KPI SELECTOR MODAL ═══ */}
             <Modal
@@ -2354,16 +2610,19 @@ export default function ClientProgressDetail() {
                 </View>
             </Modal>
 
-            {/* 📹 Modal de Respuesta a Media Feedback */}
-            <MediaFeedbackResponseModal
-                visible={videoModalVisible}
-                onClose={() => {
-                    setVideoModalVisible(false);
-                    setSelectedFeedback(null);
-                }}
-                feedback={selectedFeedback}
-                onResponseSent={handleVideoResponseSent}
-            />
+
+            {/* 📹 Modal overlay - solo en pantallas pequeñas */}
+            {!isLargeScreen && (
+                <MediaFeedbackResponseModal
+                    visible={videoModalVisible}
+                    onClose={() => {
+                        setVideoModalVisible(false);
+                        setSelectedFeedback(null);
+                    }}
+                    feedback={selectedFeedback}
+                    onResponseSent={handleVideoResponseSent}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -4177,6 +4436,21 @@ const styles = StyleSheet.create({
         borderRadius: 3,
         backgroundColor: '#fbbf24',
     },
+    inlineReplyBtn: {
+        marginLeft: 'auto',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        backgroundColor: '#e0e7ff',
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    audioRowContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 4,
+    },
     inlineVideoNote: {
         fontSize: 11,
         color: '#4361ee',
@@ -4244,6 +4518,23 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
         fontStyle: 'italic',
         marginTop: 4,
+    },
+    // 🖥️ Split View Styles for Large Screens
+    splitViewWrapper: {
+        flex: 1,
+    },
+    splitViewWrapperActive: {
+        flexDirection: 'row',
+    },
+    contentWithPanel: {
+        flex: 1,
+        maxWidth: 'calc(100% - 420px)',
+    },
+    splitViewPanel: {
+        width: 420,
+        backgroundColor: '#0a0a14',
+        borderLeftWidth: 1,
+        borderLeftColor: '#1e293b',
     },
 });
 

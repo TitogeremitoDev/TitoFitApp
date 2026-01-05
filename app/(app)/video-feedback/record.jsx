@@ -36,7 +36,7 @@ const useWebFormat = () => null;
 const useWebCameraPermission = () => ({ hasPermission: false, requestPermission: () => Promise.resolve(false) });
 const useWebMicPermission = () => ({ hasPermission: false, requestPermission: () => Promise.resolve(false) });
 
-const MAX_DURATION = 60; // 60 segundos máximo
+const MAX_DURATION = 120; // 120 segundos máximo (2 minutos)
 
 export default function VideoRecordScreen() {
     const router = useRouter();

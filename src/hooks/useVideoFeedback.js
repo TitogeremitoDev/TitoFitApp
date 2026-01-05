@@ -329,6 +329,57 @@ export function useVideoFeedback(apiUrl, token) {
     }, [getUploadUrl, uploadToR2, confirmUpload]);
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // Flujo de subida de AUDIO
+    // ═══════════════════════════════════════════════════════════════════════════
+    const uploadAudioFeedback = useCallback(async ({
+        audioUri,
+        exerciseId,
+        exerciseName,
+        serieKey,
+        athleteNote
+    }) => {
+        setUploading(true);
+        setProgress(0);
+        setError(null);
+
+        try {
+            // 1. Verificar conexión
+            const networkState = await Network.getNetworkStateAsync();
+            if (!networkState.isConnected) {
+                setUploading(false);
+                return { queued: true, message: 'Sin conexión. Inténtalo cuando tengas conexión.' };
+            }
+
+            setProgress(10);
+
+            // 2. Obtener presigned URL
+            const { uploadUrl, feedbackId } = await getUploadUrl(
+                'audio',
+                'audio/m4a', // Default for expo-audio/av usually
+                { exerciseId, exerciseName, serieKey, athleteNote }
+            );
+            setProgress(30);
+
+            // 3. Subir audio a R2
+            await uploadToR2(uploadUrl, audioUri, 'audio/m4a');
+            setProgress(80);
+
+            // 4. Confirmar en backend
+            const result = await confirmUpload(feedbackId, null, null);
+            setProgress(100);
+
+            setUploading(false);
+            return { success: true, feedback: result };
+
+        } catch (err) {
+            console.error('[AudioFeedback] Error en subida:', err);
+            setError(err.message);
+            setUploading(false);
+            return { success: false, error: err.message };
+        }
+    }, [getUploadUrl, uploadToR2, confirmUpload]);
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // Cola offline
     // ═══════════════════════════════════════════════════════════════════════════
     const addToUploadQueue = useCallback(async (item) => {
@@ -449,6 +500,7 @@ export function useVideoFeedback(apiUrl, token) {
         // Subida
         uploadVideoFeedback,
         uploadPhotoFeedback,
+        uploadAudioFeedback,
         compressVideo,
 
         // Cola offline

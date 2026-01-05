@@ -17,7 +17,7 @@ const SIDEBAR_SECTIONS = [
         items: [
             { id: 'clients', icon: 'people', label: 'Clientes', route: '/(coach)/clients_coach' },
             { id: 'progress', icon: 'stats-chart', label: 'Progreso', route: '/(coach)/progress' },
-            { id: 'seguimiento', icon: 'resize-outline', label: 'Seguimiento', route: '/(coach)/seguimiento_coach' },
+            { id: 'seguimiento', icon: 'body', label: 'Seguimiento', route: '/(coach)/seguimiento_coach' },
         ]
     },
     {

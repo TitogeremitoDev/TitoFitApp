@@ -35,8 +35,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 export default function VideoFeedbackResponseModal({
     visible,
     onClose,
-    feedback,       // VideoFeedback object
-    onResponseSent  // Callback when response is successfully sent
+    feedback,       // VideoFeedback object (primary/priority media)
+    allMedia = [],  // 🆕 Array of all media items for this set (video, photo, audio)
+    textNote = null, // 🆕 Text note from workout (set.notes?.note)
+    onResponseSent, // Callback when response is successfully sent
+    isInline = false // When true, renders without Modal wrapper (for split-view)
 }) {
     const { token } = useAuth();
     const { addTechnicalNote } = useFeedbackDraft();
@@ -68,13 +71,15 @@ export default function VideoFeedbackResponseModal({
 
     // 🆕 Audio Player for athlete's audio feedback
     const [isPlayingAthleteAudio, setIsPlayingAthleteAudio] = useState(false);
-    const athleteAudioPlayer = useAudioPlayer(mediaUrl && feedback?.mediaType === 'audio' ? mediaUrl : null);
+    const [audioDuration, setAudioDuration] = useState(0);
+    // Initialize player with null, will load source via useEffect when mediaUrl is ready
+    const athleteAudioPlayer = useAudioPlayer(null);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CARGAR DATOS INICIALES
     // ═══════════════════════════════════════════════════════════════════════════
     useEffect(() => {
-        if (visible) {
+        if (visible && feedback?._id) {
             loadSnippets(); // 🆕 Load TrainerSnippets instead of quickReplies
             loadMediaUrl();
         }
@@ -86,14 +91,21 @@ export default function VideoFeedbackResponseModal({
             if (recordingInterval.current) {
                 clearInterval(recordingInterval.current);
             }
-            // 🆕 Clear media on close
+            // 🆕 Clear media and audio state on close
             setMediaUrl(null);
+            setIsPlayingAthleteAudio(false);
+            setAudioDuration(0);
         };
-    }, [visible]);
+    }, [visible, feedback?._id]);
 
     // 🆕 Cargar URL de media desde R2
     const loadMediaUrl = async () => {
         if (!feedback?._id) return;
+        // Skip for text-only notes (no media to load)
+        if (feedback.mediaType === 'text-note') {
+            setLoadingMedia(false);
+            return;
+        }
 
         try {
             setLoadingMedia(true);
@@ -102,9 +114,20 @@ export default function VideoFeedbackResponseModal({
             });
             const data = await response.json();
 
+            console.log('[MediaModal] API Response:', {
+                mediaType: data.mediaType,
+                mediaUrl: data.mediaUrl?.slice(0, 100),
+                r2Key: data.r2Key,
+                contentType: data.contentType
+            });
+
             if (data.mediaUrl) {
                 console.log('[MediaModal] URL cargada:', data.mediaType, data.mediaUrl.slice(0, 100));
                 setMediaUrl(data.mediaUrl);
+                // Update feedback object with correct mediaType from API
+                if (data.mediaType && data.mediaType !== feedback.mediaType) {
+                    console.log('[MediaModal] Updating mediaType from', feedback.mediaType, 'to', data.mediaType);
+                }
             }
         } catch (error) {
             console.error('[MediaModal] Error loading media URL:', error);
@@ -128,6 +151,28 @@ export default function VideoFeedbackResponseModal({
             console.error('[Modal] Error loading snippets:', error);
         }
     };
+
+    // 🆕 Load audio source when mediaUrl becomes available
+    useEffect(() => {
+        if (athleteAudioPlayer && mediaUrl && feedback?.mediaType === 'audio') {
+            console.log('[MediaModal] Loading audio source:', mediaUrl.slice(0, 100));
+            athleteAudioPlayer.replace({ uri: mediaUrl });
+        }
+    }, [mediaUrl, feedback?.mediaType, athleteAudioPlayer]);
+
+    // 🆕 Listen to playback status for audio player
+    useEffect(() => {
+        if (!athleteAudioPlayer) return;
+
+        // Set up event listener for playback status
+        const subscription = athleteAudioPlayer.addListener('playingChange', (event) => {
+            setIsPlayingAthleteAudio(event.isPlaying);
+        });
+
+        return () => {
+            subscription?.remove();
+        };
+    }, [athleteAudioPlayer]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // AUDIO RECORDING (expo-audio)
@@ -275,13 +320,15 @@ export default function VideoFeedbackResponseModal({
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // Wrapper: Modal for overlay, View for inline
+    const Wrapper = isInline ? View : Modal;
+    const wrapperProps = isInline
+        ? { style: { flex: 1 } }
+        : { visible, animationType: 'slide', presentationStyle: 'pageSheet', onRequestClose: handleClose };
+
     return (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            presentationStyle="pageSheet"
-            onRequestClose={handleClose}
-        >
+        <Wrapper {...wrapperProps}>
             <View style={[styles.container, { maxWidth: isWeb ? 600 : undefined, alignSelf: isWeb ? 'center' : undefined, width: isWeb ? '100%' : undefined }]}>
                 {/* Header */}
                 <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
@@ -311,10 +358,46 @@ export default function VideoFeedbackResponseModal({
                                         {feedback.exerciseName || 'Ejercicio'}
                                     </Text>
                                     <Text style={styles.videoMeta}>
-                                        Serie {feedback.setNumber || '?'} • {feedback.athleteNote || 'Sin nota'}
+                                        Serie {feedback.setNumber || (feedback.serieKey ? parseInt(feedback.serieKey.split('|')[3]) + 1 : '?')}
                                     </Text>
                                 </View>
+                                {/* Badges de medios disponibles */}
+                                {(allMedia.length > 0 || textNote) && (
+                                    <View style={styles.mediaBadges}>
+                                        {allMedia.some(m => m.mediaType === 'video') && (
+                                            <View style={[styles.mediaBadge, { backgroundColor: '#ef4444' }]}>
+                                                <Ionicons name="videocam" size={10} color="#fff" />
+                                            </View>
+                                        )}
+                                        {allMedia.some(m => m.mediaType === 'photo') && (
+                                            <View style={[styles.mediaBadge, { backgroundColor: '#3b82f6' }]}>
+                                                <Ionicons name="image" size={10} color="#fff" />
+                                            </View>
+                                        )}
+                                        {allMedia.some(m => m.mediaType === 'audio') && (
+                                            <View style={[styles.mediaBadge, { backgroundColor: '#8b5cf6' }]}>
+                                                <Ionicons name="mic" size={10} color="#fff" />
+                                            </View>
+                                        )}
+                                        {(textNote || feedback.athleteNote) && (
+                                            <View style={[styles.mediaBadge, { backgroundColor: '#10b981' }]}>
+                                                <Ionicons name="chatbubble" size={10} color="#fff" />
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
                             </View>
+
+                            {/* Nota del atleta (siempre visible si existe) */}
+                            {(textNote || feedback.athleteNote) && (
+                                <View style={styles.athleteNoteSection}>
+                                    <View style={styles.athleteNoteHeader}>
+                                        <Ionicons name="chatbubble-ellipses" size={16} color="#10b981" />
+                                        <Text style={styles.athleteNoteLabel}>Nota del atleta</Text>
+                                    </View>
+                                    <Text style={styles.athleteNoteText}>"{textNote || feedback.athleteNote}"</Text>
+                                </View>
+                            )}
 
                             {/* Media Content */}
                             <View style={styles.mediaContainer}>
@@ -349,8 +432,11 @@ export default function VideoFeedbackResponseModal({
                                             )
                                         ) : feedback.mediaType === 'audio' ? (
                                             <View style={styles.audioPreview}>
+                                                {/* Mostrar nota del atleta si existe */}
+                                                {feedback.athleteNote && (
+                                                    <Text style={styles.audioNoteText}>"{feedback.athleteNote}"</Text>
+                                                )}
                                                 <Ionicons name="musical-notes" size={48} color="#4361ee" />
-                                                <Text style={styles.audioLabel}>Audio del atleta</Text>
                                                 <TouchableOpacity
                                                     style={styles.audioPlayBtn}
                                                     onPress={() => {
@@ -360,7 +446,6 @@ export default function VideoFeedbackResponseModal({
                                                             } else {
                                                                 athleteAudioPlayer.play();
                                                             }
-                                                            setIsPlayingAthleteAudio(!isPlayingAthleteAudio);
                                                         }
                                                     }}
                                                 >
@@ -374,6 +459,11 @@ export default function VideoFeedbackResponseModal({
                                                     </Text>
                                                 </TouchableOpacity>
                                             </View>
+                                        ) : feedback.mediaType === 'text-note' ? (
+                                            // Nota de texto sin media - mostrar nota directamente
+                                            <View style={styles.textNotePreview}>
+                                                <Text style={styles.textNoteContent}>"{feedback.athleteNote}"</Text>
+                                            </View>
                                         ) : (
                                             <View style={styles.mediaPlaceholder}>
                                                 <Ionicons name="document" size={48} color="#4361ee" />
@@ -381,6 +471,11 @@ export default function VideoFeedbackResponseModal({
                                             </View>
                                         )}
                                     </>
+                                ) : feedback.mediaType === 'text-note' ? (
+                                    // Text-note no necesita mediaUrl, mostrar nota directamente
+                                    <View style={styles.textNotePreview}>
+                                        <Text style={styles.textNoteContent}>"{feedback.athleteNote}"</Text>
+                                    </View>
                                 ) : (
                                     <View style={styles.mediaPlaceholder}>
                                         <Ionicons
@@ -390,7 +485,7 @@ export default function VideoFeedbackResponseModal({
                                         />
                                         <Text style={styles.mediaPlaceholderText}>
                                             {feedback.mediaType === 'photo' ? 'Foto no disponible' :
-                                                feedback.mediaType === 'audio' ? 'Audio no disponible' :
+                                                feedback.mediaType === 'audio' ? 'Cargando audio...' :
                                                     'Video no disponible'}
                                         </Text>
                                     </View>
@@ -524,7 +619,7 @@ export default function VideoFeedbackResponseModal({
                     </TouchableOpacity>
                 </View>
             </View>
-        </Modal>
+        </Wrapper>
     );
 }
 
@@ -594,6 +689,44 @@ const styles = StyleSheet.create({
         color: '#888',
         fontSize: 13,
         marginTop: 4,
+    },
+    // Media Badges
+    mediaBadges: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    mediaBadge: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Athlete Note Section
+    athleteNoteSection: {
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderRadius: 12,
+        padding: 12,
+        marginTop: 12,
+        borderLeftWidth: 3,
+        borderLeftColor: '#10b981',
+    },
+    athleteNoteHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+    },
+    athleteNoteLabel: {
+        color: '#10b981',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    athleteNoteText: {
+        color: '#e0e0e0',
+        fontSize: 14,
+        fontStyle: 'italic',
+        lineHeight: 20,
     },
     // Sections
     section: {
@@ -877,5 +1010,38 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: '600',
+    },
+    audioNoteText: {
+        color: '#fff',
+        fontSize: 15,
+        fontStyle: 'italic',
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    // Text Note Preview (for notes without media)
+    textNotePreview: {
+        padding: 40,
+        alignItems: 'center',
+        gap: 12,
+    },
+    textNoteLabel: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    textNoteBubble: {
+        backgroundColor: '#1a1a2e',
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#4361ee30',
+        marginTop: 8,
+        maxWidth: '100%',
+    },
+    textNoteContent: {
+        color: '#fff',
+        fontSize: 15,
+        lineHeight: 22,
+        fontStyle: 'italic',
     },
 });
