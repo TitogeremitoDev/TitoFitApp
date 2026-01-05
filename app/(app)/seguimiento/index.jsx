@@ -1936,13 +1936,6 @@ export default function SeguimientoScreen() {
                                 )}
                             </TouchableOpacity>
                         </Animated.View>
-
-                        <TouchableOpacity
-                            style={styles.cameraBtn}
-                            onPress={() => setCameraModalVisible(true)}
-                        >
-                            <Ionicons name="camera-outline" size={24} color="#FFF" />
-                        </TouchableOpacity>
                     </View>
                 )}
 

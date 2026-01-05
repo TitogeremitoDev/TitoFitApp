@@ -102,7 +102,7 @@ export default function VideoSuccessScreen() {
     // ═══════════════════════════════════════════════════════════════════════════
     const handleShareToStories = async () => {
         try {
-            // Capturar el sticker como imagen
+            // Capturar el sticker
             let stickerUri = null;
             if (stickerRef.current) {
                 stickerUri = await stickerRef.current.capture();
@@ -116,9 +116,20 @@ export default function VideoSuccessScreen() {
                 appId: 'com.german92.titofitapp',
             };
 
-            // Si tenemos sticker, añadirlo
+            // AÑADIR VIDEO DE FONDO (CRÍTICO)
+            if (videoPath) {
+                shareOptions.backgroundVideo = videoPath;
+            }
+
+            // Si tenemos sticker, añadirlo correctamente según plataforma
             if (stickerUri) {
-                shareOptions.stickerImage = stickerUri;
+                if (Platform.OS === 'android') {
+                    // Android requiere Base64 con prefijo
+                    shareOptions.stickerImage = `data:image/png;base64,${stickerUri}`;
+                } else {
+                    // iOS funciona con file path
+                    shareOptions.stickerImage = stickerUri;
+                }
             }
 
             await Share.shareSingle(shareOptions);
@@ -126,6 +137,7 @@ export default function VideoSuccessScreen() {
         } catch (error) {
             console.log('[Success] Error compartiendo IG:', error);
             // Si falla IG Stories, ofrecer share normal
+            // Alert.alert('Instagram no detectado', 'Abriendo menú general de compartir...');
             try {
                 await Share.open({
                     message: `💪 Acabo de enviar un video de mi técnica de ${exerciseName} para que mi coach me corrija. #TotalGains`,
@@ -143,9 +155,15 @@ export default function VideoSuccessScreen() {
         try {
             // TikTok requiere el video directamente
             if (videoPath) {
+                let shareUrl = videoPath;
+                // Asegurar formato file:// en Android
+                if (Platform.OS === 'android' && !shareUrl.startsWith('file://')) {
+                    shareUrl = `file://${shareUrl}`;
+                }
+
                 await Share.shareSingle({
                     social: Share.Social.TIKTOK,
-                    url: videoPath,
+                    url: shareUrl,
                     title: `${exerciseName || 'Mi entreno'} 💪 #TotalGains #Fitness`,
                 });
             } else {
@@ -157,6 +175,7 @@ export default function VideoSuccessScreen() {
         } catch (error) {
             console.log('[Success] Error compartiendo TikTok:', error);
             // Fallback a share general
+            // Alert.alert('TikTok no detectado', 'Abriendo menú general de compartir...');
             try {
                 await Share.open({
                     message: `💪 Entrenamiento de ${exerciseName || 'hoy'} con TotalGains! #Fitness #GymTok`,
@@ -225,16 +244,40 @@ export default function VideoSuccessScreen() {
             {/* Sticker para captura (oculto) */}
             <ViewShot
                 ref={stickerRef}
-                options={{ format: 'png', quality: 1 }}
+                options={{
+                    format: 'png',
+                    quality: 0.8,
+                    // Android requiere base64 para stickerImage en react-native-share
+                    result: Platform.OS === 'android' ? 'base64' : 'tmpfile'
+                }}
                 style={styles.stickerCapture}
             >
                 <View style={styles.sticker}>
-                    <Text style={styles.stickerEmoji}>💪</Text>
-                    <Text style={styles.stickerText}>BUILT BY</Text>
-                    <Text style={styles.stickerBrand}>TOTALGAINS</Text>
+                    {/* Logo de la App */}
+                    <Image
+                        source={require('../../../assets/images/logo.png')}
+                        style={styles.stickerLogo}
+                        resizeMode="contain"
+                    />
+                    <View style={styles.stickerBadge}>
+                        <Text style={styles.stickerText}>ENTRENAMIENTO</Text>
+                    </View>
                     {exerciseName && (
                         <Text style={styles.stickerExercise}>{exerciseName.toUpperCase()}</Text>
                     )}
+                    <Text style={styles.stickerBrand}>TOTALGAINS</Text>
+
+                    {/* Redes Sociales */}
+                    <View style={styles.stickerSocialRow}>
+                        <View style={styles.stickerSocialItem}>
+                            <Ionicons name="logo-instagram" size={12} color="#ccc" />
+                            <Text style={styles.stickerSocialText}>@TotalGainsFitnes</Text>
+                        </View>
+                        <View style={styles.stickerSocialItem}>
+                            <Ionicons name="logo-tiktok" size={12} color="#ccc" />
+                            <Text style={styles.stickerSocialText}>@totalgainsapp</Text>
+                        </View>
+                    </View>
                 </View>
             </ViewShot>
 
@@ -410,34 +453,79 @@ const styles = StyleSheet.create({
     },
     sticker: {
         backgroundColor: '#1a1a2e',
-        padding: 20,
-        borderRadius: 16,
+        padding: 24,
+        borderRadius: 24,
         alignItems: 'center',
-        borderWidth: 2,
+        borderWidth: 3,
         borderColor: '#4361ee',
+        minWidth: 200,
+        // Sombra para dar profundidad
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 10,
+    },
+    stickerLogo: {
+        width: 80,
+        height: 80,
+        marginBottom: 12,
+    },
+    stickerBadge: {
+        backgroundColor: '#4361ee',
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 12,
+        marginBottom: 8,
     },
     stickerEmoji: {
         fontSize: 40,
         marginBottom: 8,
     },
     stickerText: {
-        color: '#888',
+        color: '#fff',
         fontSize: 12,
-        fontWeight: '600',
-        letterSpacing: 2,
-    },
-    stickerBrand: {
-        color: '#4361ee',
-        fontSize: 24,
         fontWeight: '800',
         letterSpacing: 1,
     },
+    stickerBrand: {
+        color: '#4361ee',
+        fontSize: 28,
+        fontWeight: '900',
+        letterSpacing: 1,
+        marginTop: 4,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 2,
+    },
     stickerExercise: {
         color: '#fff',
-        fontSize: 14,
+        fontSize: 18,
+        fontWeight: '700',
+        marginTop: 4,
+        letterSpacing: 0.5,
+        textAlign: 'center',
+    },
+    stickerSocialRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        marginTop: 12,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        paddingVertical: 4,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+    },
+    stickerSocialItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    stickerSocialText: {
+        color: '#ccc',
+        fontSize: 10,
         fontWeight: '600',
-        marginTop: 8,
-        letterSpacing: 1,
     },
     // Contenido principal
     content: {

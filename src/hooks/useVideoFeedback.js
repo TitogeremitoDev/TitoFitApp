@@ -45,6 +45,16 @@ export function useVideoFeedback(apiUrl, token) {
             };
 
             console.log('[VideoFeedback] Comprimiendo video con modo auto:', videoUri);
+
+            // Log size original
+            try {
+                const origResp = await fetch(videoUri);
+                const origBlob = await origResp.blob();
+                console.log('[VideoFeedback] Tamaño ORIGINAL:', origBlob.size, 'bytes');
+            } catch (e) {
+                console.log('[VideoFeedback] No se pudo leer tamaño original:', e.message);
+            }
+
             const result = await Video.compress(
                 videoUri,
                 options,
