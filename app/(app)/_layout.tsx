@@ -52,7 +52,6 @@ const safeParseArray = (jsonString: string | null): any[] => {
 
 // --- FUNCIÓN DE SEEDING ACTUALIZADA ---
 const checkAndSeedPredefinedRoutines = async () => {
-  console.log('Checking for predefined routines seeding...');
   try {
     const currentRoutinesJson = await AsyncStorage.getItem(RUTINAS_LIST_KEY);
     const currentRoutinesList = safeParseArray(currentRoutinesJson);
@@ -71,7 +70,7 @@ const checkAndSeedPredefinedRoutines = async () => {
 
       // Si la rutina NO existe ya en AsyncStorage
       if (!existingIds.has(routine.id)) {
-        console.log(`Seeding routine: ${routine.nombre} (ID: ${routine.id})`);
+        // Seeding routine silently
 
         // 1. Preparamos los metadatos (sin diasArr) para la lista principal 'rutinas'
         //    Usamos destructuring para quitar diasArr
@@ -97,14 +96,12 @@ const checkAndSeedPredefinedRoutines = async () => {
           continue; // Saltar si los datos no son válidos
         }
 
-      } else {
-        console.log(`Routine already exists: ${routine.nombre} (ID: ${routine.id})`);
       }
+      // Routine already exists - skip silently
     }
 
     // Si hay rutinas nuevas para añadir...
     if (routinesMetadataToAdd.length > 0) {
-      console.log(`Adding ${routinesMetadataToAdd.length} new predefined routines to list and storage...`);
       const updatedRoutinesList = [...currentRoutinesList, ...routinesMetadataToAdd];
 
       // Guardamos la nueva lista de metadatos
@@ -114,11 +111,9 @@ const checkAndSeedPredefinedRoutines = async () => {
       if (routinesDataToSave.length > 0) {
         await AsyncStorage.multiSet(routinesDataToSave);
       }
-      console.log('Predefined routines seeded successfully.');
       return true; // Indicamos que se hizo seeding
 
     } else {
-      console.log('No new predefined routines to seed.');
       return false; // No se hizo seeding
     }
 

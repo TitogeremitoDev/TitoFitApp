@@ -69,7 +69,7 @@ const SectionHeader = ({ emoji, title, color, count = 0 }) => (
 // ITEM INPUT (reusable for highlights, notes, actions)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ItemInput = ({ items, setItems, placeholder, color }) => {
+const ItemInput = ({ items, setItems, placeholder, color, onViewMedia }) => {
     const [newItem, setNewItem] = useState('');
 
     const addItem = () => {
@@ -84,17 +84,63 @@ const ItemInput = ({ items, setItems, placeholder, color }) => {
 
     return (
         <View style={styles.itemInputContainer}>
-            {/* Existing Items */}
+            {/* Existing Items - with support for media */}
             {items.map((item) => (
-                <View key={item.id} style={styles.itemRow}>
-                    <View style={[styles.itemDot, { backgroundColor: color }]} />
-                    <Text style={styles.itemText}>{item.text}</Text>
-                    <TouchableOpacity
-                        onPress={() => removeItem(item.id)}
-                        style={styles.itemRemove}
-                    >
-                        <Ionicons name="close-circle" size={20} color="#ef4444" />
-                    </TouchableOpacity>
+                <View
+                    key={item.id}
+                    style={[
+                        styles.itemRow,
+                        item.sourceMediaUrl && styles.importedNoteCard
+                    ]}
+                >
+                    {/* If item has media (photo from Coach Studio) */}
+                    {item.sourceMediaUrl ? (
+                        <View style={styles.importedNoteContent}>
+                            <View style={styles.importedNoteHeader}>
+                                <View style={styles.importedNoteBadge}>
+                                    <Ionicons
+                                        name={item.mediaType === 'photo' ? 'image' : 'videocam'}
+                                        size={12}
+                                        color="#10b981"
+                                    />
+                                    <Text style={[styles.importedNoteExercise, { color: '#10b981' }]}>
+                                        {item.exerciseName || 'Foto de progreso'}
+                                    </Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => removeItem(item.id)}
+                                    style={styles.itemRemove}
+                                >
+                                    <Ionicons name="close-circle" size={20} color="#ef4444" />
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.importedNoteText}>{item.text}</Text>
+                            <TouchableOpacity
+                                style={styles.viewMediaLink}
+                                onPress={() => onViewMedia?.(item)}
+                            >
+                                <Ionicons
+                                    name={item.mediaType === 'photo' ? 'image' : 'play-circle'}
+                                    size={14}
+                                    color="#10b981"
+                                />
+                                <Text style={[styles.viewMediaLinkText, { color: '#10b981' }]}>
+                                    {item.mediaType === 'photo' ? 'Ver foto' : 'Ver video'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <>
+                            <View style={[styles.itemDot, { backgroundColor: color }]} />
+                            <Text style={styles.itemText}>{item.text}</Text>
+                            <TouchableOpacity
+                                onPress={() => removeItem(item.id)}
+                                style={styles.itemRemove}
+                            >
+                                <Ionicons name="close-circle" size={20} color="#ef4444" />
+                            </TouchableOpacity>
+                        </>
+                    )}
                 </View>
             ))}
 
@@ -167,14 +213,20 @@ const TechnicalNoteInput = ({ items, setItems, placeholder, color, onViewMedia }
                                 </TouchableOpacity>
                             </View>
                             <Text style={styles.importedNoteText}>{item.text}</Text>
-                            {/* Link al video original del atleta */}
+                            {/* Link al media original del atleta */}
                             {item.sourceMediaUrl && (
                                 <TouchableOpacity
                                     style={styles.viewMediaLink}
                                     onPress={() => onViewMedia?.(item)}
                                 >
-                                    <Ionicons name="play-circle" size={14} color="#8b5cf6" />
-                                    <Text style={styles.viewMediaLinkText}>Ver video del atleta</Text>
+                                    <Ionicons
+                                        name={item.mediaType === 'photo' ? 'image' : 'play-circle'}
+                                        size={14}
+                                        color="#8b5cf6"
+                                    />
+                                    <Text style={styles.viewMediaLinkText}>
+                                        {item.mediaType === 'photo' ? 'Ver foto del atleta' : 'Ver video del atleta'}
+                                    </Text>
                                 </TouchableOpacity>
                             )}
                             {item.videoUrl && (
@@ -356,8 +408,23 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 // Reset form
                 setTrafficLight('green');
                 setWeekNumber('');
-                setHighlights([]);
                 setActionPlan([]);
+
+                // 🆕 Load highlights drafts (including photos from Coach Studio)
+                if (drafts.highlights.length > 0) {
+                    const draftHighlights = drafts.highlights.map(h => ({
+                        text: h.text,
+                        id: h.id,
+                        exerciseName: h.exerciseName || null,
+                        thumbnail: h.thumbnail || null,
+                        sourceMediaUrl: h.sourceMediaUrl || null,
+                        sourceMediaKey: h.sourceMediaKey || null,
+                        mediaType: h.mediaType || null
+                    }));
+                    setHighlights(draftHighlights);
+                } else {
+                    setHighlights([]);
+                }
 
                 // 🆕 Load drafts from context into technicalNotes
                 if (drafts.technicalNotes.length > 0) {
@@ -367,7 +434,10 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                         exerciseName: note.exerciseName,
                         thumbnail: note.thumbnail,
                         videoUrl: note.videoUrl,
-                        sourceMediaUrl: note.sourceMediaUrl // URL del video/foto original del atleta
+                        sourceMediaUrl: note.sourceMediaUrl,
+                        sourceMediaKey: note.sourceMediaKey || null,
+                        sourceMediaType: note.sourceMediaType || note.mediaType || null,
+                        mediaType: note.mediaType || note.sourceMediaType || 'video'
                     }));
                     setTechnicalNotes(draftNotes);
                 } else {
@@ -375,7 +445,7 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 }
             }
         }
-    }, [visible, loadSnapshot, prefillData, drafts.technicalNotes]);
+    }, [visible, loadSnapshot, prefillData, drafts.technicalNotes, drafts.highlights]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // SAVE / SEND
@@ -397,11 +467,19 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                 clientId: client._id,
                 trafficLight,
                 weekNumber: weekNumber || null,
-                highlights: highlights.map(h => ({ text: h.text })),
+                highlights: highlights.map(h => ({
+                    text: h.text,
+                    sourceMediaUrl: h.sourceMediaUrl || null,
+                    sourceMediaKey: h.sourceMediaKey || null,
+                    mediaType: h.mediaType || null,
+                    exerciseName: h.exerciseName || null
+                })),
                 technicalNotes: technicalNotes.map(n => ({
                     text: n.text,
                     category: 'other',
                     sourceMediaUrl: n.sourceMediaUrl || null,
+                    sourceMediaKey: n.sourceMediaKey || null, // 🆕 Key de R2 para regenerar URL
+                    sourceMediaType: n.sourceMediaType || n.mediaType || null, // 🆕 Tipo de media
                     exerciseName: n.exerciseName || null,
                     videoUrl: n.videoUrl || null
                 })),
@@ -542,6 +620,7 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                                 setItems={setHighlights}
                                 placeholder="Añadir logro..."
                                 color="#10b981"
+                                onViewMedia={(item) => setMediaPreviewItem(item)}
                             />
 
                             {/* Technical Notes */}

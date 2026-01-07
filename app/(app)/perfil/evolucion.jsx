@@ -46,6 +46,12 @@ import {
   RPE_LABELS,
 } from '../../../src/utils/calculateKPIs';
 
+// 🆕 Modal para ver multimedia del usuario
+import UserMediaViewerModal from '../../../src/components/user/UserMediaViewerModal';
+
+// 🆕 Audio player inline (mismo que usa coach)
+import InlineAudioPlayer from '../../../src/components/coach/InlineAudioPlayer';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SISTEMA DE MEDALLAS / EMOJIS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -257,7 +263,7 @@ export default function EvolucionScreen() {
   const [dataSource, setDataSource] = useState('local'); // 'local' o 'cloud'
 
   // 📊 KPI System 2.0 (igual que coach progress)
-  const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table' | 'comments'
+  const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table' | 'comments' | 'multimedia'
   const [selectedKpi, setSelectedKpi] = useState('volume');
   const [kpiModalVisible, setKpiModalVisible] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState('all');
@@ -271,8 +277,9 @@ export default function EvolucionScreen() {
   // Estado para tabla expandible por rutina (current expandido por defecto)
   const [expandedRoutines, setExpandedRoutines] = useState({ current: true });
 
-  // Estado para semanas expandidas en comentarios (primera semana expandida por defecto)
-  const [expandedWeeks, setExpandedWeeks] = useState({ 'current-1': true });
+  // Estado para semanas expandidas en comentarios (se expandirá la última semana automáticamente)
+  const [expandedWeeks, setExpandedWeeks] = useState({});
+  const [lastWeekAutoExpanded, setLastWeekAutoExpanded] = useState(false);
   const toggleWeek = (routineKey, week) => {
     const key = `${routineKey}-${week}`;
     setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
@@ -280,6 +287,12 @@ export default function EvolucionScreen() {
 
   // Modal para ver notas
   const [noteModal, setNoteModal] = useState({ visible: false, note: null });
+
+  // 🆕 MULTIMEDIA - Estados para feedbacks del usuario
+  const [myFeedbacks, setMyFeedbacks] = useState([]);
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(false);
+  const [selectedMediaFeedback, setSelectedMediaFeedback] = useState(null);
+  const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
 
   // Palabras clave de dolor/alerta para destacar comentarios críticos
   const PAIN_KEYWORDS = ['dolor', 'molestia', 'pinchazo', 'lesión', 'daño', 'mal', 'pincha', 'duele', 'molesta', 'lesion'];
@@ -417,6 +430,112 @@ export default function EvolucionScreen() {
   }, [isPremium, token, API_URL, transformarWorkoutsALog]);
 
   useEffect(() => { cargarLog(); }, [cargarLog]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 CARGAR FEEDBACKS MULTIMEDIA DEL USUARIO (solo premium)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const cargarMisFeedbacks = useCallback(async () => {
+    // Cargar si tiene token (cualquier usuario autenticado)
+    if (!token) {
+      return;
+    }
+
+    setLoadingFeedbacks(true);
+    try {
+      const url = `${API_URL}/api/video-feedback/my-feedbacks?limit=100`;
+
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (Array.isArray(data.feedbacks)) {
+          // Ordenar por fecha descendente
+          const sorted = data.feedbacks.sort((a, b) =>
+            new Date(b.createdAt) - new Date(a.createdAt)
+          );
+          setMyFeedbacks(sorted);
+        }
+      }
+    } catch (error) {
+      console.warn('[Evolucion] ❌ Error cargando feedbacks multimedia:', error);
+    } finally {
+      setLoadingFeedbacks(false);
+    }
+  }, [token, API_URL]);
+
+  // Cargar feedbacks al inicio junto con los datos
+  useEffect(() => {
+    if (token && myFeedbacks.length === 0) {
+      cargarMisFeedbacks();
+    }
+  }, [token, cargarMisFeedbacks, myFeedbacks.length]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 FUNCIONES HELPER PARA ENCONTRAR MULTIMEDIA DE SETS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Normalizar nombre de ejercicio para comparación
+  const normalizeExerciseName = useCallback((name) => {
+    if (!name) return '';
+    return name
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\b(en|al|el|la|los|las|de|del|con)\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, []);
+
+  // Helper para encontrar TODOS los feedbacks asociados a un set específico
+  const findAllMediaForSet = useCallback((exerciseName, setNumber, weekNumber) => {
+    const normalizedSearch = normalizeExerciseName(exerciseName);
+
+    const matches = myFeedbacks.filter(fb => {
+      const normalizedFeedback = normalizeExerciseName(fb.exerciseName);
+      const nameMatch = normalizedFeedback === normalizedSearch ||
+        normalizedSearch.includes(normalizedFeedback) ||
+        normalizedFeedback.includes(normalizedSearch);
+
+      if (!nameMatch) return false;
+
+      // Matching por serieKey (formato: week|day|ejercicioIdx|setIdx)
+      if (fb.serieKey) {
+        const parts = fb.serieKey.split('|');
+        if (parts.length >= 4) {
+          const fbWeek = parseInt(parts[0], 10);
+          const setIdx = parseInt(parts[parts.length - 1], 10);
+          return fbWeek === weekNumber && setIdx + 1 === setNumber;
+        }
+        // Fallback: solo usar el setIdx
+        const setIdx = parseInt(parts[parts.length - 1], 10);
+        return setIdx + 1 === setNumber;
+      }
+
+      // Matching alternativo por setNumber directo
+      if (fb.setNumber !== undefined) {
+        return fb.setNumber === setNumber;
+      }
+
+      // Sin serieKey ni setNumber, no hacer match
+      return false;
+    });
+
+    return matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [myFeedbacks, normalizeExerciseName]);
+
+  // Helper para encontrar AUDIO asociado a un set
+  const findAudioForSet = useCallback((exerciseName, setNumber, weekNumber) => {
+    const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
+    return allMedia.find(fb => fb.mediaType === 'audio');
+  }, [findAllMediaForSet]);
+
+  // Helper para encontrar VISUAL (foto/video) asociado a un set
+  const findVisualForSet = useCallback((exerciseName, setNumber, weekNumber) => {
+    const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
+    return allMedia.find(fb => fb.mediaType === 'video' || fb.mediaType === 'photo');
+  }, [findAllMediaForSet]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CÁLCULO DE TOTALES GLOBALES
@@ -871,23 +990,32 @@ export default function EvolucionScreen() {
         const dayLabel = session.dayLabel || `Día ${dayIdx + 1}`;
         const sessionDate = new Date(session.date);
 
-        // Extraer ejercicios con comentarios
+        // Extraer ejercicios con comentarios O multimedia
         const ejerciciosConComentarios = [];
         (session.exercises || []).forEach((ex) => {
-          const setsConNota = (ex.sets || []).filter((s) =>
-            s.notes?.value && s.notes?.note
+          // Incluir sets que tengan nota de texto O multimedia (video/foto/audio)
+          const setsConNotaOMedia = (ex.sets || []).filter((s) =>
+            (s.notes?.value && s.notes?.note) ||
+            s.notes?.mediaUri ||
+            s.notes?.audioUri ||
+            s.mediaUri ||
+            s.audioUri
           );
-          if (setsConNota.length > 0) {
+          if (setsConNotaOMedia.length > 0) {
             ejerciciosConComentarios.push({
               exerciseName: ex.exerciseName,
               muscleGroup: ex.muscleGroup || 'SIN GRUPO',
-              sets: setsConNota.map((s, idx) => ({
+              sets: setsConNotaOMedia.map((s, idx) => ({
                 setNumber: s.setNumber || idx + 1,
                 weight: s.weight,
                 reps: s.actualReps,
-                noteValue: s.notes.value,
-                noteText: s.notes.note,
-                hasPain: hasPainKeyword(s.notes.note),
+                noteValue: s.notes?.value || 'custom',
+                noteText: s.notes?.note || null,
+                hasPain: hasPainKeyword(s.notes?.note),
+                // 🆕 Datos de multimedia
+                mediaUri: s.notes?.mediaUri || s.mediaUri || null,
+                mediaType: s.notes?.mediaType || s.mediaType || null,
+                audioUri: s.notes?.audioUri || s.audioUri || null,
               })),
             });
           }
@@ -939,7 +1067,106 @@ export default function EvolucionScreen() {
     const old = rutinasArray.slice(1).map(procesarRutina).filter(r => r.totalComentarios > 0);
 
     return { current, old };
-  }, [sessions]);
+  }, [sessions, myFeedbacks]); // 🆕 Añadido myFeedbacks como dependencia
+
+  // 🆕 Fusionar semanas de feedbacks con comentariosPorRutina
+  const comentariosConFeedbacks = useMemo(() => {
+    if (!comentariosPorRutina.current) return comentariosPorRutina;
+
+    // Obtener semanas únicas de los feedbacks
+    const feedbackWeeks = new Set();
+    myFeedbacks.forEach(fb => {
+      if (fb.serieKey) {
+        const week = parseInt(fb.serieKey.split('|')[0], 10);
+        if (!isNaN(week)) feedbackWeeks.add(week);
+      }
+    });
+
+    // Si no hay feedbacks o todas las semanas ya existen, devolver sin cambios
+    const existingWeeks = new Set(comentariosPorRutina.current.semanas?.map(s => s.week) || []);
+    const missingWeeks = [...feedbackWeeks].filter(w => !existingWeeks.has(w));
+
+    if (missingWeeks.length === 0) return comentariosPorRutina;
+
+    // Añadir semanas que solo tienen feedbacks (sin notas locales)
+    const newSemanas = [...(comentariosPorRutina.current.semanas || [])];
+
+    missingWeeks.forEach(week => {
+      // Agrupar feedbacks de esta semana por ejercicio
+      const weekFeedbacks = myFeedbacks.filter(fb => {
+        if (!fb.serieKey) return false;
+        const fbWeek = parseInt(fb.serieKey.split('|')[0], 10);
+        return fbWeek === week;
+      });
+
+      if (weekFeedbacks.length > 0) {
+        // Agrupar por ejercicio
+        const ejerciciosMap = new Map();
+        weekFeedbacks.forEach(fb => {
+          if (!ejerciciosMap.has(fb.exerciseName)) {
+            ejerciciosMap.set(fb.exerciseName, {
+              exerciseName: fb.exerciseName,
+              muscleGroup: 'MULTIMEDIA',
+              sets: []
+            });
+          }
+          const setIdx = parseInt(fb.serieKey.split('|').pop(), 10);
+          ejerciciosMap.get(fb.exerciseName).sets.push({
+            setNumber: setIdx + 1,
+            weight: null,
+            reps: null,
+            noteValue: null,
+            noteText: null,
+            hasPain: false,
+            mediaUri: fb.mediaType === 'video' || fb.mediaType === 'photo' ? fb.mediaUrl : null,
+            mediaType: fb.mediaType,
+            audioUri: fb.mediaType === 'audio' ? fb.mediaUrl : null,
+          });
+        });
+
+        // Crear día ficticio para mostrar los feedbacks
+        const dia = {
+          dayIdx: 0,
+          dayLabel: 'Multimedia',
+          dateStr: 'Sin fecha',
+          dateSort: new Date(weekFeedbacks[0].createdAt || 0),
+          sessionRPE: null,
+          rpeColor: null,
+          rpeLabel: null,
+          sessionNote: null,
+          exercises: Array.from(ejerciciosMap.values())
+        };
+
+        newSemanas.push({
+          week,
+          dias: [dia]
+        });
+      }
+    });
+
+    // Ordenar semanas descendente
+    newSemanas.sort((a, b) => b.week - a.week);
+
+    return {
+      current: {
+        ...comentariosPorRutina.current,
+        semanas: newSemanas,
+        totalComentarios: comentariosPorRutina.current.totalComentarios + missingWeeks.length
+      },
+      old: comentariosPorRutina.old
+    };
+  }, [comentariosPorRutina, myFeedbacks]);
+
+  // 🆕 Auto-expandir la última semana cuando se cargan los datos
+  useEffect(() => {
+    if (!lastWeekAutoExpanded && comentariosConFeedbacks?.current?.semanas?.length > 0) {
+      const semanas = comentariosConFeedbacks.current.semanas;
+      // Obtener la semana con el número más alto (última semana)
+      const lastWeek = Math.max(...semanas.map(s => s.week));
+      setExpandedWeeks(prev => ({ ...prev, [`current-${lastWeek}`]: true }));
+      setLastWeekAutoExpanded(true);
+    }
+  }, [comentariosConFeedbacks, lastWeekAutoExpanded]);
 
   // Estado para expandir días
   const [expandedDays, setExpandedDays] = useState({});
@@ -1658,7 +1885,7 @@ export default function EvolucionScreen() {
         {viewMode === 'comments' && (
           <View style={styles.commentsContainer}>
             {/* Sin comentarios */}
-            {(!comentariosPorRutina.current || comentariosPorRutina.current.semanas?.length === 0) && comentariosPorRutina.old.length === 0 ? (
+            {(!comentariosConFeedbacks.current || comentariosConFeedbacks.current.semanas?.length === 0) && comentariosConFeedbacks.old.length === 0 ? (
               <View style={styles.noDataContainer}>
                 <Ionicons name="chatbubble-ellipses-outline" size={48} color="#475569" />
                 <Text style={styles.noDataText}>Sin notas registradas</Text>
@@ -1667,17 +1894,17 @@ export default function EvolucionScreen() {
             ) : (
               <>
                 {/* RUTINA ACTUAL */}
-                {comentariosPorRutina.current && comentariosPorRutina.current.semanas?.length > 0 && (
+                {comentariosConFeedbacks.current && comentariosConFeedbacks.current.semanas?.length > 0 && (
                   <View style={styles.commentsRoutineSection}>
                     <View style={styles.commentsRoutineHeader}>
                       <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
                       <View style={styles.commentsBadge}>
-                        <Text style={styles.commentsBadgeText}>{comentariosPorRutina.current.totalComentarios}</Text>
+                        <Text style={styles.commentsBadgeText}>{comentariosConFeedbacks.current.totalComentarios}</Text>
                       </View>
                     </View>
-                    <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
+                    <Text style={styles.commentsRoutineName}>{comentariosConFeedbacks.current.routineName}</Text>
 
-                    {comentariosPorRutina.current.semanas.map((semana) => {
+                    {comentariosConFeedbacks.current.semanas.map((semana) => {
                       // Calcular RPE promedio de la semana
                       const diasConRPE = semana.dias.filter(d => d.sessionRPE);
                       const avgRPE = diasConRPE.length > 0
@@ -1744,28 +1971,87 @@ export default function EvolucionScreen() {
                                     {' '}{exercise.exerciseName}
                                   </Text>
 
-                                  {exercise.sets.map((set, setIdx) => (
-                                    <View
-                                      key={setIdx}
-                                      style={[
-                                        styles.commentCardCompact,
-                                        set.hasPain && styles.commentCardWarning
-                                      ]}
-                                    >
-                                      <View style={styles.commentCardCompactRow}>
-                                        <View style={[
-                                          styles.commentSemaphoreCompact,
-                                          { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
-                                        ]} />
-                                        <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
-                                        <Text style={styles.commentDataCompact}>
-                                          {set.weight ?? '-'}kg × {set.reps ?? '-'}
-                                        </Text>
-                                        {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+                                  {exercise.sets.map((set, setIdx) => {
+                                    // Usar datos de media directamente del set
+                                    const hasVisualMedia = (set.mediaUri && (set.mediaType === 'video' || set.mediaType === 'photo')) ||
+                                      (set.mediaType === 'video' || set.mediaType === 'photo');
+                                    const hasAudioMedia = !!set.audioUri || set.mediaType === 'audio';
+
+                                    // Buscar feedback en la API para clientes (poder reproducir con URL firmada)
+                                    const visualFeedback = token ? findVisualForSet(exercise.exerciseName, set.setNumber, semana.week) : null;
+                                    const audioFeedback = token ? findAudioForSet(exercise.exerciseName, set.setNumber, semana.week) : null;
+
+                                    return (
+                                      <View
+                                        key={setIdx}
+                                        style={[
+                                          styles.commentCardCompact,
+                                          set.hasPain && styles.commentCardWarning
+                                        ]}
+                                      >
+                                        <View style={styles.commentCardCompactRow}>
+                                          <View style={[
+                                            styles.commentSemaphoreCompact,
+                                            { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                          ]} />
+                                          <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                          <Text style={styles.commentDataCompact}>
+                                            {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                          </Text>
+                                          {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+
+                                          {/* 🆕 Indicador de multimedia (video/foto) - pulsable si tiene feedback en nube */}
+                                          {(hasVisualMedia || visualFeedback) && (
+                                            <Pressable
+                                              style={styles.inlineMediaIndicator}
+                                              onPress={visualFeedback ? () => {
+                                                setSelectedMediaFeedback(visualFeedback);
+                                                setMediaViewerVisible(true);
+                                              } : null}
+                                            >
+                                              <Ionicons
+                                                name={(set.mediaType === 'photo' || visualFeedback?.mediaType === 'photo') ? 'image' : 'videocam'}
+                                                size={14}
+                                                color="#8b5cf6"
+                                              />
+                                              {visualFeedback && <Ionicons name="play" size={10} color="#8b5cf6" style={{ marginLeft: 2 }} />}
+                                            </Pressable>
+                                          )}
+                                        </View>
+
+                                        {/* Texto de nota */}
+                                        {set.noteText && (
+                                          <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                        )}
+
+                                        {/* 🆕 Reproductor de audio inline (debajo de la nota) */}
+                                        {audioFeedback && (
+                                          <View style={{ marginTop: 6 }}>
+                                            <InlineAudioPlayer
+                                              feedback={audioFeedback}
+                                              onViewed={() => { }} // Usuario no marca como visto
+                                            />
+                                          </View>
+                                        )}
+
+                                        {/* Indicador de tipo de media si no hay texto ni audio */}
+                                        {!set.noteText && !audioFeedback && (hasVisualMedia || visualFeedback) && (
+                                          <Text style={styles.commentTextCompact} numberOfLines={1}>
+                                            {(set.mediaType === 'photo' || visualFeedback?.mediaType === 'photo')
+                                              ? (visualFeedback ? '📷 Pulsa para ver foto' : '📷 Foto guardada')
+                                              : (visualFeedback ? '📹 Pulsa para ver video' : '📹 Video guardado')}
+                                          </Text>
+                                        )}
+
+                                        {/* Solo mostrar mensaje de audio local si no hay feedback de API */}
+                                        {!set.noteText && !audioFeedback && !hasVisualMedia && !visualFeedback && hasAudioMedia && (
+                                          <Text style={styles.commentTextCompact} numberOfLines={1}>
+                                            🎤 Audio guardado localmente
+                                          </Text>
+                                        )}
                                       </View>
-                                      <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
-                                    </View>
-                                  ))}
+                                    );
+                                  })}
                                 </View>
                               ))}
                             </View>
@@ -1777,10 +2063,10 @@ export default function EvolucionScreen() {
                 )}
 
                 {/* RUTINAS ANTIGUAS CON COMENTARIOS */}
-                {comentariosPorRutina.old.length > 0 && (
+                {comentariosConFeedbacks.old.length > 0 && (
                   <View style={styles.commentsOldSection}>
                     <Text style={styles.commentsOldLabel}>📦 Rutinas Anteriores</Text>
-                    {comentariosPorRutina.old.map((rutina) => (
+                    {comentariosConFeedbacks.old.map((rutina) => (
                       <View key={rutina.routineId} style={styles.commentsOldRoutine}>
                         <Pressable
                           onPress={() => toggleRoutine(rutina.routineId)}
@@ -1862,6 +2148,159 @@ export default function EvolucionScreen() {
                     ))}
                   </View>
                 )}
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            📹 VISTA MULTIMEDIA - TUS VIDEOS, FOTOS Y AUDIOS
+           ════════════════════════════════════════════════════════════════ */}
+        {viewMode === 'multimedia' && (
+          <View style={styles.multimediaContainer}>
+            {loadingFeedbacks ? (
+              <View style={styles.loadingCenter}>
+                <ActivityIndicator size="large" color="#8b5cf6" />
+                <Text style={styles.loadingCenterText}>Cargando multimedia...</Text>
+              </View>
+            ) : myFeedbacks.length === 0 ? (
+              <View style={styles.noDataContainer}>
+                <Ionicons name="videocam-outline" size={48} color="#475569" />
+                <Text style={styles.noDataText}>Sin multimedia</Text>
+                <Text style={styles.noDataSubtext}>
+                  Los videos, fotos y audios que envíes a tu entrenador aparecerán aquí
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Header con contador */}
+                <View style={styles.multimediaHeader}>
+                  <View style={styles.multimediaHeaderLeft}>
+                    <Ionicons name="videocam" size={20} color="#8b5cf6" />
+                    <Text style={styles.multimediaHeaderTitle}>Tu Multimedia</Text>
+                  </View>
+                  <View style={styles.multimediaCountBadge}>
+                    <Text style={styles.multimediaCountText}>{myFeedbacks.length}</Text>
+                  </View>
+                </View>
+
+                {/* Lista de feedbacks agrupados por fecha */}
+                {(() => {
+                  // Agrupar por fecha
+                  const groupedByDate = {};
+                  myFeedbacks.forEach(fb => {
+                    const dateKey = new Date(fb.createdAt).toLocaleDateString('es-ES', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    });
+                    if (!groupedByDate[dateKey]) {
+                      groupedByDate[dateKey] = [];
+                    }
+                    groupedByDate[dateKey].push(fb);
+                  });
+
+                  return Object.entries(groupedByDate).map(([date, feedbacks]) => (
+                    <View key={date} style={styles.multimediaDateGroup}>
+                      <Text style={styles.multimediaDateLabel}>{date}</Text>
+                      {feedbacks.map(fb => {
+                        const typeIcon = {
+                          video: 'videocam',
+                          photo: 'image',
+                          audio: 'mic'
+                        }[fb.mediaType] || 'document';
+
+                        const typeLabel = {
+                          video: 'Video',
+                          photo: 'Foto',
+                          audio: 'Audio'
+                        }[fb.mediaType] || 'Media';
+
+                        const hasResponse = !!fb.coachResponse?.respondedAt;
+                        const isViewed = fb.viewedByCoach;
+
+                        return (
+                          <Pressable
+                            key={fb._id}
+                            style={styles.multimediaCard}
+                            onPress={() => {
+                              setSelectedMediaFeedback(fb);
+                              setMediaViewerVisible(true);
+                            }}
+                          >
+                            {/* Icono de tipo */}
+                            <View style={[
+                              styles.multimediaTypeIcon,
+                              {
+                                backgroundColor: fb.mediaType === 'video' ? '#8b5cf620' :
+                                  fb.mediaType === 'photo' ? '#3b82f620' : '#f59e0b20'
+                              }
+                            ]}>
+                              <Ionicons
+                                name={typeIcon}
+                                size={24}
+                                color={fb.mediaType === 'video' ? '#8b5cf6' :
+                                  fb.mediaType === 'photo' ? '#3b82f6' : '#f59e0b'}
+                              />
+                            </View>
+
+                            {/* Info */}
+                            <View style={styles.multimediaCardInfo}>
+                              <Text style={styles.multimediaCardTitle} numberOfLines={1}>
+                                {fb.exerciseName || typeLabel}
+                              </Text>
+                              <Text style={styles.multimediaCardTime}>
+                                {new Date(fb.createdAt).toLocaleTimeString('es-ES', {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </Text>
+                              {fb.athleteNote && (
+                                <Text style={styles.multimediaCardNote} numberOfLines={1}>
+                                  {fb.athleteNote}
+                                </Text>
+                              )}
+                            </View>
+
+                            {/* Status */}
+                            <View style={styles.multimediaCardStatus}>
+                              {hasResponse ? (
+                                <View style={[styles.statusDot, { backgroundColor: '#10b981' }]}>
+                                  <Ionicons name="checkmark" size={12} color="#fff" />
+                                </View>
+                              ) : isViewed ? (
+                                <View style={[styles.statusDot, { backgroundColor: '#3b82f6' }]}>
+                                  <Ionicons name="eye" size={10} color="#fff" />
+                                </View>
+                              ) : (
+                                <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]}>
+                                  <Ionicons name="time" size={10} color="#fff" />
+                                </View>
+                              )}
+                              <Ionicons name="chevron-forward" size={18} color="#64748b" />
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ));
+                })()}
+
+                {/* Leyenda de estados */}
+                <View style={styles.multimediaLegend}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
+                    <Text style={styles.legendText}>Respondido</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+                    <Text style={styles.legendText}>Visto</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
+                    <Text style={styles.legendText}>Pendiente</Text>
+                  </View>
+                </View>
               </>
             )}
           </View>
@@ -2100,6 +2539,16 @@ export default function EvolucionScreen() {
             </View>
           </Pressable>
         </Modal>
+
+        {/* 🆕 MULTIMEDIA VIEWER MODAL */}
+        <UserMediaViewerModal
+          visible={mediaViewerVisible}
+          onClose={() => {
+            setMediaViewerVisible(false);
+            setSelectedMediaFeedback(null);
+          }}
+          feedback={selectedMediaFeedback}
+        />
 
       </View>{/* Cierre responsiveContainer */}
     </ScrollView>
@@ -3510,5 +3959,162 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94a3b8',
     fontStyle: 'italic',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 ESTILOS MULTIMEDIA
+  // ═══════════════════════════════════════════════════════════════════════════
+  multimediaContainer: {
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  loadingCenter: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingCenterText: {
+    color: '#94a3b8',
+    marginTop: 12,
+    fontSize: 14,
+  },
+  multimediaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  multimediaHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  multimediaHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f1f5f9',
+  },
+  multimediaCountBadge: {
+    backgroundColor: '#8b5cf620',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  multimediaCountText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8b5cf6',
+  },
+  multimediaDateGroup: {
+    marginBottom: 16,
+  },
+  multimediaDateLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 8,
+    paddingLeft: 4,
+  },
+  multimediaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  multimediaTypeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  multimediaCardInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  multimediaCardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f1f5f9',
+  },
+  multimediaCardTime: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  multimediaCardNote: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  multimediaCardStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  multimediaLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 ESTILOS MULTIMEDIA INLINE EN COMENTARIOS
+  // ═══════════════════════════════════════════════════════════════════════════
+  inlineMediaBtn: {
+    marginLeft: 'auto',
+    padding: 6,
+    backgroundColor: '#3b82f620',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3b82f640',
+  },
+  inlineMediaBtnPending: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
+  },
+  inlineAudioContainer: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+  },
+  inlineMediaIndicator: {
+    marginLeft: 'auto',
+    padding: 6,
+    backgroundColor: '#8b5cf630',
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

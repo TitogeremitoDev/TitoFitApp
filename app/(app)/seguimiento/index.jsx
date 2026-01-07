@@ -28,7 +28,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import FeedbackHistoryModal from '../../../components/FeedbackHistoryModal';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import PhotoTaggingModal from '../../../src/components/shared/PhotoTaggingModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -462,6 +463,10 @@ export default function SeguimientoScreen() {
     const [cameraModalVisible, setCameraModalVisible] = useState(false);
     const [progressPhotos, setProgressPhotos] = useState([]);
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
+    // Estado para modal de etiquetado de fotos
+    const [pendingPhotosToTag, setPendingPhotosToTag] = useState([]);
+    const [currentPhotoToTag, setCurrentPhotoToTag] = useState(null);
+    const [taggingModalVisible, setTaggingModalVisible] = useState(false);
 
     // Feedback del entrenador
     const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
@@ -1284,12 +1289,64 @@ export default function SeguimientoScreen() {
                 return;
             }
 
-            setProgressPhotos(prev => [...prev, ...newPhotos]);
+            // Cerrar camera modal y abrir tagging modal con fotos pendientes
             setCameraModalVisible(false);
-            Alert.alert('✅ Fotos añadidas', `${newPhotos.length} foto(s) añadidas`);
+
+            // Añadir a la cola de fotos pendientes de etiquetar
+            setPendingPhotosToTag(prev => [...prev, ...newPhotos]);
+
+            // Empezar a etiquetar la primera foto
+            setCurrentPhotoToTag(newPhotos[0]);
+            setTaggingModalVisible(true);
         } catch (err) {
             console.error('[Seguimiento] Error picking photos:', err);
             Alert.alert('Error', 'No se pudieron seleccionar las fotos');
+        }
+    };
+
+    // Handler cuando se completa el etiquetado de una foto
+    const handlePhotoTagged = (taggedPhoto) => {
+        // Añadir foto etiquetada a progressPhotos
+        setProgressPhotos(prev => [...prev, taggedPhoto]);
+
+        // Remover de pendientes
+        const remaining = pendingPhotosToTag.filter(p => p.uri !== taggedPhoto.uri);
+        setPendingPhotosToTag(remaining);
+
+        if (remaining.length > 0) {
+            // Hay más fotos por etiquetar
+            setCurrentPhotoToTag(remaining[0]);
+        } else {
+            // Terminamos con todas
+            setTaggingModalVisible(false);
+            setCurrentPhotoToTag(null);
+            Alert.alert('✅ Fotos añadidas', 'Todas las fotos han sido etiquetadas');
+        }
+    };
+
+    // Handler cuando se cierra sin guardar
+    const handleTaggingClose = () => {
+        if (pendingPhotosToTag.length > 1) {
+            Alert.alert(
+                'Fotos pendientes',
+                `Tienes ${pendingPhotosToTag.length} fotos por etiquetar. ¿Descartar todas?`,
+                [
+                    { text: 'Continuar', style: 'cancel' },
+                    {
+                        text: 'Descartar',
+                        style: 'destructive',
+                        onPress: () => {
+                            setPendingPhotosToTag([]);
+                            setCurrentPhotoToTag(null);
+                            setTaggingModalVisible(false);
+                        }
+                    },
+                ]
+            );
+        } else {
+            setPendingPhotosToTag([]);
+            setCurrentPhotoToTag(null);
+            setTaggingModalVisible(false);
         }
     };
 
@@ -1306,24 +1363,96 @@ export default function SeguimientoScreen() {
         });
     };
 
-    // Verificar si hay foto pendiente de la cámara
-    useEffect(() => {
-        const checkPendingProgressPhoto = async () => {
-            try {
-                const pendingData = await AsyncStorage.getItem('pending_progress_photo');
-                if (pendingData) {
-                    const { photoUri } = JSON.parse(pendingData);
-                    await AsyncStorage.removeItem('pending_progress_photo');
-                    if (photoUri) {
-                        setProgressPhotos(prev => [...prev, { uri: photoUri, name: 'foto_progreso.jpg' }]);
-                    }
+    // Verificar si hay foto pendiente de la cámara (al volver del camera screen)
+    const checkPendingProgressPhoto = useCallback(async () => {
+        try {
+            const pendingData = await AsyncStorage.getItem('pending_progress_photo');
+            if (pendingData) {
+                const { photoUri } = JSON.parse(pendingData);
+                await AsyncStorage.removeItem('pending_progress_photo');
+                if (photoUri) {
+                    // Abrir modal de etiquetado para la foto de cámara
+                    const cameraPhoto = { uri: photoUri, name: 'foto_progreso.jpg' };
+                    setPendingPhotosToTag([cameraPhoto]);
+                    setCurrentPhotoToTag(cameraPhoto);
+                    setTaggingModalVisible(true);
                 }
-            } catch (err) {
-                console.error('[Seguimiento] Error checking pending progress photo:', err);
             }
-        };
-        checkPendingProgressPhoto();
+        } catch (err) {
+            console.error('[Seguimiento] Error checking pending progress photo:', err);
+        }
     }, []);
+
+    // Usar useFocusEffect para detectar cuando volvemos de la cámara
+    useFocusEffect(
+        useCallback(() => {
+            // Este callback se ejecuta cada vez que la pantalla gana el foco
+            checkPendingProgressPhoto();
+        }, [checkPendingProgressPhoto])
+    );
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SUBIR FOTOS DE PROGRESO AL BACKEND
+    // ─────────────────────────────────────────────────────────────────────────
+    const uploadProgressPhotosToBackend = async (photos) => {
+        if (!photos || photos.length === 0) return;
+        if (!token) {
+            console.log('[Seguimiento] No token, skipping photo upload');
+            return;
+        }
+
+        console.log(`[Seguimiento] Uploading ${photos.length} progress photos...`);
+
+        for (const photo of photos) {
+            try {
+                // 1. Solicitar URL de subida
+                const prepResponse = await axios.post(
+                    `${API_URL}/api/progress-photos/upload`,
+                    {
+                        tags: photo.tags || [],
+                        visibility: photo.visibility || 'coach_only'
+                    },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+
+                if (!prepResponse.data.success) {
+                    console.error('[Seguimiento] Upload prep failed:', prepResponse.data);
+                    continue;
+                }
+
+                const { photoId, uploadUrl, r2Key } = prepResponse.data;
+                console.log(`[Seguimiento] Got upload URL for ${r2Key}`);
+
+                // 2. Subir la imagen a R2
+                const imageResponse = await fetch(photo.uri);
+                const blob = await imageResponse.blob();
+                console.log(`[Seguimiento] Blob created, size: ${blob.size} bytes, type: ${blob.type}`);
+
+                const r2Response = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: blob,
+                    headers: { 'Content-Type': 'image/jpeg' }
+                });
+
+                if (!r2Response.ok) {
+                    console.error(`[Seguimiento] R2 PUT failed: ${r2Response.status} ${r2Response.statusText}`);
+                    continue;
+                }
+                console.log(`[Seguimiento] R2 upload success, status: ${r2Response.status}`);
+
+                // 3. Confirmar la subida
+                await axios.post(
+                    `${API_URL}/api/progress-photos/${photoId}/confirm`,
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+
+                console.log(`[Seguimiento] Photo uploaded and confirmed: ${r2Key}`);
+            } catch (err) {
+                console.error('[Seguimiento] Error uploading photo:', err);
+            }
+        }
+    };
 
     const handleGuardarSemanal = async () => {
         try {
@@ -1407,6 +1536,19 @@ export default function SeguimientoScreen() {
                     await axios.post('/monitoring/recalculate-af');
                 } catch (afError) {
                     console.log('[AF] Error recalculando AF:', afError);
+                }
+            }
+
+            // 📸 Subir fotos de progreso si hay (para todos los usuarios con token)
+            if (progressPhotos.length > 0 && token) {
+                try {
+                    console.log('[Seguimiento] Uploading progress photos...');
+                    await uploadProgressPhotosToBackend(progressPhotos);
+                    setProgressPhotos([]); // Limpiar después de subir
+                    console.log('[Seguimiento] Photos uploaded successfully');
+                } catch (photoErr) {
+                    console.error('[Seguimiento] Error uploading photos:', photoErr);
+                    // No fallar el guardado por las fotos
                 }
             }
 
@@ -1865,6 +2007,33 @@ export default function SeguimientoScreen() {
                                 {progressPhotos.map((photo, index) => (
                                     <View key={index} style={styles.photoItem}>
                                         <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+
+                                        {/* Tag badges */}
+                                        {photo.tags?.length > 0 && (
+                                            <View style={styles.photoTagBadge}>
+                                                <Text style={styles.photoTagText}>
+                                                    {photo.tags.includes('front') ? 'F' :
+                                                        photo.tags.includes('side') ? 'L' :
+                                                            photo.tags.includes('back') ? 'E' : '?'}
+                                                </Text>
+                                            </View>
+                                        )}
+
+                                        {/* Visibility badge */}
+                                        {photo.visibility && (
+                                            <View style={[
+                                                styles.photoVisibilityBadge,
+                                                photo.visibility === 'shareable' && { backgroundColor: '#10b981' }
+                                            ]}>
+                                                <Ionicons
+                                                    name={photo.visibility === 'shareable' ? 'share-social' :
+                                                        photo.visibility === 'private' ? 'lock-closed' : 'eye'}
+                                                    size={10}
+                                                    color="#fff"
+                                                />
+                                            </View>
+                                        )}
+
                                         <TouchableOpacity
                                             style={styles.photoRemoveBtn}
                                             onPress={() => handleRemovePhoto(index)}
@@ -1972,23 +2141,23 @@ export default function SeguimientoScreen() {
                             Selecciona fotos de tu galería para documentar tu progreso semanal.
                         </Text>
 
-                        <TouchableOpacity
-                            style={[styles.modalBtn, styles.modalBtnPrimary]}
-                            onPress={handlePickPhotos}
-                        >
-                            <Ionicons name="images-outline" size={20} color="#FFF" />
-                            <Text style={styles.modalBtnText}>Seleccionar de galería</Text>
-                        </TouchableOpacity>
-
                         {Platform.OS !== 'web' && (
                             <TouchableOpacity
-                                style={[styles.modalBtn, styles.modalBtnCamera]}
+                                style={[styles.modalBtn, styles.modalBtnPrimary]}
                                 onPress={handleOpenCamera}
                             >
                                 <Ionicons name="camera-outline" size={20} color="#FFF" />
                                 <Text style={styles.modalBtnText}>Hacer foto</Text>
                             </TouchableOpacity>
                         )}
+
+                        <TouchableOpacity
+                            style={[styles.modalBtn, styles.modalBtnCamera]}
+                            onPress={handlePickPhotos}
+                        >
+                            <Ionicons name="images-outline" size={20} color="#FFF" />
+                            <Text style={styles.modalBtnText}>Seleccionar de galería</Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                             style={[styles.modalBtn, styles.modalBtnSecondary]}
@@ -2017,6 +2186,14 @@ export default function SeguimientoScreen() {
                     setFeedbackHistoryVisible(false);
                     loadUnreadFeedback(); // Refresh unread count
                 }}
+            />
+
+            {/* Modal Etiquetado de Fotos */}
+            <PhotoTaggingModal
+                visible={taggingModalVisible}
+                photo={currentPhotoToTag}
+                onClose={handleTaggingClose}
+                onSave={handlePhotoTagged}
             />
         </View>
     );
@@ -2716,6 +2893,31 @@ const styles = StyleSheet.create({
         right: -8,
         backgroundColor: '#111827',
         borderRadius: 12,
+    },
+    photoTagBadge: {
+        position: 'absolute',
+        bottom: 4,
+        left: 4,
+        backgroundColor: '#3b82f6',
+        borderRadius: 4,
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+    },
+    photoTagText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    photoVisibilityBadge: {
+        position: 'absolute',
+        bottom: 4,
+        right: 4,
+        backgroundColor: '#6b7280',
+        borderRadius: 10,
+        width: 18,
+        height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     addPhotoBtn: {
         flexDirection: 'row',

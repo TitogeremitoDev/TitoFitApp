@@ -19,6 +19,8 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
+import PhotoGalleryTab from '../../../src/components/coach/PhotoGalleryTab';
+import CoachStudioModal from '../../../src/components/coach/CoachStudioModal';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -129,6 +131,12 @@ export default function ClientSeguimientoDetailScreen() {
 
     // 📂 NUEVO: Estado para meses expandidos (histórico colapsado por mes)
     const [expandedMonths, setExpandedMonths] = useState({});
+
+    // 📷 NUEVO: Estado para galería de fotos y Coach Studio (con carrusel)
+    const [selectedPhoto, setSelectedPhoto] = useState(null);
+    const [photoGroup, setPhotoGroup] = useState([]); // Grupo de fotos del mismo día
+    const [photoIndex, setPhotoIndex] = useState(0);  // Índice actual en el carrusel
+    const [studioVisible, setStudioVisible] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -930,7 +938,7 @@ export default function ClientSeguimientoDetailScreen() {
                 renderStatsView()
             ) : (
                 <>
-                    {/* Tabs Diario/Semanal */}
+                    {/* Tabs Diario/Semanal/Galería */}
                     <View style={styles.tabsRow}>
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'daily' && styles.tabActive]}
@@ -958,116 +966,164 @@ export default function ClientSeguimientoDetailScreen() {
                                 Semanal ({weeklyRecords.length})
                             </Text>
                         </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.tab, activeTab === 'gallery' && styles.tabActive]}
+                            onPress={() => setActiveTab('gallery')}
+                        >
+                            <Ionicons
+                                name="images"
+                                size={18}
+                                color={activeTab === 'gallery' ? '#0ea5e9' : '#64748b'}
+                            />
+                            <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>
+                                📷 Galería
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
-                    {/* Content */}
-                    <ScrollView
-                        contentContainerStyle={styles.scrollContent}
-                        refreshControl={
-                            <RefreshControl
-                                refreshing={isRefreshing}
-                                onRefresh={onRefresh}
-                                colors={['#0ea5e9']}
+                    {/* Content - Gallery Tab */}
+                    {activeTab === 'gallery' ? (
+                        <View style={{ flex: 1 }}>
+                            <PhotoGalleryTab
+                                clientId={clientId}
+                                token={token}
+                                onPhotoPress={({ photos, initialIndex, selectedPhoto: photo }) => {
+                                    setPhotoGroup(photos || [photo]);
+                                    setPhotoIndex(initialIndex || 0);
+                                    setSelectedPhoto(photo);
+                                    setStudioVisible(true);
+                                    console.log('[Gallery] Photo group:', photos?.length || 1, 'photos, starting at index', initialIndex);
+                                }}
                             />
-                        }
-                    >
-                        {records.length === 0 ? (
-                            <View style={styles.emptyContainer}>
-                                <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
-                                <Text style={styles.emptyTitle}>Sin registros</Text>
-                                <Text style={styles.emptyText}>
-                                    {activeTab === 'daily'
-                                        ? 'Este cliente aún no ha registrado check-ins diarios.'
-                                        : 'Este cliente aún no ha registrado check-ins semanales.'}
-                                </Text>
-                            </View>
-                        ) : (
-                            <>
-                                {/* Registros del mes actual (sueltos) */}
-                                {activeTab === 'daily' ? (
-                                    <>
-                                        {groupedDailyRecords.currentMonthRecords.length > 0 && (
-                                            <View style={styles.monthSection}>
-                                                <View style={styles.monthHeaderCurrent}>
-                                                    <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                    <Text style={styles.monthCount}>
-                                                        {groupedDailyRecords.currentMonthRecords.length} registros
-                                                    </Text>
-                                                </View>
-                                                {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
-                                            </View>
-                                        )}
-                                        {/* Meses anteriores (colapsados) */}
-                                        {groupedDailyRecords.historicalGroups.map(group => (
-                                            <View key={group.key} style={styles.monthSection}>
-                                                <TouchableOpacity
-                                                    style={styles.monthHeaderCollapsible}
-                                                    onPress={() => toggleMonth(`daily-${group.key}`)}
-                                                    activeOpacity={0.7}
-                                                >
-                                                    <Ionicons
-                                                        name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                        size={20}
-                                                        color="#64748b"
-                                                    />
-                                                    <Text style={styles.monthLabelCollapsible}>
-                                                        📁 {group.label}
-                                                    </Text>
-                                                    <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                </TouchableOpacity>
-                                                {expandedMonths[`daily-${group.key}`] && (
-                                                    <View style={styles.monthRecords}>
-                                                        {group.records.map(renderDailyRecord)}
+                        </View>
+                    ) : (
+                        /* Content - Daily/Weekly */
+                        <ScrollView
+                            contentContainerStyle={styles.scrollContent}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={isRefreshing}
+                                    onRefresh={onRefresh}
+                                    colors={['#0ea5e9']}
+                                />
+                            }
+                        >
+                            {records.length === 0 ? (
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
+                                    <Text style={styles.emptyTitle}>Sin registros</Text>
+                                    <Text style={styles.emptyText}>
+                                        {activeTab === 'daily'
+                                            ? 'Este cliente aún no ha registrado check-ins diarios.'
+                                            : 'Este cliente aún no ha registrado check-ins semanales.'}
+                                    </Text>
+                                </View>
+                            ) : (
+                                <>
+                                    {/* Registros del mes actual (sueltos) */}
+                                    {activeTab === 'daily' ? (
+                                        <>
+                                            {groupedDailyRecords.currentMonthRecords.length > 0 && (
+                                                <View style={styles.monthSection}>
+                                                    <View style={styles.monthHeaderCurrent}>
+                                                        <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                        <Text style={styles.monthCount}>
+                                                            {groupedDailyRecords.currentMonthRecords.length} registros
+                                                        </Text>
                                                     </View>
-                                                )}
-                                            </View>
-                                        ))}
-                                    </>
-                                ) : (
-                                    <>
-                                        {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
-                                            <View style={styles.monthSection}>
-                                                <View style={styles.monthHeaderCurrent}>
-                                                    <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                    <Text style={styles.monthCount}>
-                                                        {groupedWeeklyRecords.currentMonthRecords.length} registros
-                                                    </Text>
+                                                    {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
                                                 </View>
-                                                {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
-                                            </View>
-                                        )}
-                                        {/* Meses anteriores (colapsados) */}
-                                        {groupedWeeklyRecords.historicalGroups.map(group => (
-                                            <View key={group.key} style={styles.monthSection}>
-                                                <TouchableOpacity
-                                                    style={styles.monthHeaderCollapsible}
-                                                    onPress={() => toggleMonth(`weekly-${group.key}`)}
-                                                    activeOpacity={0.7}
-                                                >
-                                                    <Ionicons
-                                                        name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                        size={20}
-                                                        color="#64748b"
-                                                    />
-                                                    <Text style={styles.monthLabelCollapsible}>
-                                                        📁 {group.label}
-                                                    </Text>
-                                                    <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                </TouchableOpacity>
-                                                {expandedMonths[`weekly-${group.key}`] && (
-                                                    <View style={styles.monthRecords}>
-                                                        {group.records.map(renderWeeklyRecord)}
+                                            )}
+                                            {/* Meses anteriores (colapsados) */}
+                                            {groupedDailyRecords.historicalGroups.map((group) => (
+                                                <View key={`daily-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                    <TouchableOpacity
+                                                        style={styles.monthHeaderCollapsible}
+                                                        onPress={() => toggleMonth(`daily-${group.key}`)}
+                                                    >
+                                                        <Ionicons
+                                                            name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                            size={18}
+                                                            color="#64748b"
+                                                        />
+                                                        <Text style={styles.monthLabelCollapsible}>
+                                                            📁 {group.label}
+                                                        </Text>
+                                                        <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                    </TouchableOpacity>
+                                                    {expandedMonths[`daily-${group.key}`] && (
+                                                        <View style={styles.monthRecords}>
+                                                            {group.records.map(renderDailyRecord)}
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
+                                                <View style={styles.monthSection}>
+                                                    <View style={styles.monthHeaderCurrent}>
+                                                        <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                        <Text style={styles.monthCount}>
+                                                            {groupedWeeklyRecords.currentMonthRecords.length} registros
+                                                        </Text>
                                                     </View>
-                                                )}
-                                            </View>
-                                        ))}
-                                    </>
-                                )}
-                            </>
-                        )}
-                    </ScrollView>
+                                                    {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
+                                                </View>
+                                            )}
+                                            {/* Meses anteriores (colapsados) */}
+                                            {groupedWeeklyRecords.historicalGroups.map((group) => (
+                                                <View key={`weekly-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                    <TouchableOpacity
+                                                        style={styles.monthHeaderCollapsible}
+                                                        onPress={() => toggleMonth(`weekly-${group.key}`)}
+                                                    >
+                                                        <Ionicons
+                                                            name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                            size={18}
+                                                            color="#64748b"
+                                                        />
+                                                        <Text style={styles.monthLabelCollapsible}>
+                                                            📁 {group.label}
+                                                        </Text>
+                                                        <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                    </TouchableOpacity>
+                                                    {expandedMonths[`weekly-${group.key}`] && (
+                                                        <View style={styles.monthRecords}>
+                                                            {group.records.map(renderWeeklyRecord)}
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ))}
+                                        </>
+                                    )}
+                                </>
+                            )}
+                        </ScrollView>
+                    )}
                 </>
             )}
+
+            {/* Coach Studio Modal */}
+            <CoachStudioModal
+                visible={studioVisible}
+                onClose={() => {
+                    setStudioVisible(false);
+                    setSelectedPhoto(null);
+                    setPhotoGroup([]);
+                    setPhotoIndex(0);
+                }}
+                photo={selectedPhoto}
+                photos={photoGroup}
+                initialIndex={photoIndex}
+                onIndexChange={(idx) => {
+                    setPhotoIndex(idx);
+                    setSelectedPhoto(photoGroup[idx]);
+                }}
+                token={token}
+                clientId={clientId}
+            />
         </SafeAreaView>
     );
 }

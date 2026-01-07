@@ -121,6 +121,7 @@ export default function ClientProgressDetail() {
     const [videoModalVisible, setVideoModalVisible] = useState(false);
     const [selectedFeedback, setSelectedFeedback] = useState(null);
     const [loadingVideos, setLoadingVideos] = useState(false);
+    const [expandedAiItems, setExpandedAiItems] = useState({}); // 🆕 Track expanded AI items by ID
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -161,7 +162,7 @@ export default function ClientProgressDetail() {
         try {
             setLoadingVideos(true);
             const response = await fetch(
-                `${API_URL}/api/video-feedback/inbox?athleteId=${clientId}`,
+                `${API_URL}/api/video-feedback/inbox?athleteId=${clientId}&limit=100`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             const data = await response.json();
@@ -184,6 +185,45 @@ export default function ClientProgressDetail() {
             setLoadingVideos(false);
         }
     }, [clientId, token, API_URL]);
+
+    // 🆕 Polling for Expanded AI Items
+    useEffect(() => {
+        const expandedIds = Object.keys(expandedAiItems).filter(id => expandedAiItems[id]);
+        if (expandedIds.length === 0) return;
+
+        const intervals = {};
+
+        expandedIds.forEach(id => {
+            const feedback = videoFeedbacks.find(f => f._id === id);
+            // Poll if status is 'pending' OR if status is missing (legacy) but we assume it might be processing if not present
+            // But better stick to explicit 'pending' to avoid unnecessary calls.
+            // If transcription is missing and not failed, we treat as pending for polling purposes if user clicked it.
+            if (feedback && (feedback.transcriptionStatus === 'pending' || (!feedback.transcription && feedback.transcriptionStatus !== 'failed' && feedback.transcriptionStatus !== 'completed'))) {
+                console.log(`[Polling] Starting poll for ${id}`);
+                intervals[id] = setInterval(async () => {
+                    try {
+                        const res = await fetch(`${API_URL}/api/video-feedback/${id}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                            const updatedData = await res.json();
+                            if (updatedData.transcriptionStatus !== 'pending' && updatedData.transcriptionStatus !== feedback.transcriptionStatus) {
+                                // Status changed! Update state
+                                setVideoFeedbacks(prev => prev.map(f => f._id === id ? { ...f, ...updatedData } : f));
+                                clearInterval(intervals[id]);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[Polling] Error:', err);
+                    }
+                }, 5000);
+            }
+        });
+
+        return () => {
+            Object.values(intervals).forEach(clearInterval);
+        };
+    }, [expandedAiItems, videoFeedbacks, API_URL, token]);
 
     const handleVideoResponseSent = (feedbackId) => {
         // Actualizar el feedback como respondido
@@ -704,7 +744,6 @@ export default function ClientProgressDetail() {
             });
 
             // Obtener ejercicios únicos de la primera sesión (orden de la rutina)
-            const primeraSession = dia.sessionsData[0];
             const ejerciciosUnicos = [];
             const ejerciciosVistos = new Set();
 
@@ -942,6 +981,22 @@ export default function ClientProgressDetail() {
             [routineId]: !prev[routineId]
         }));
     };
+
+    // 🆕 Auto-expand days for the CURRENT routine by default
+    useEffect(() => {
+        if (datosPorRutina.current && datosPorRutina.current.dias) {
+            setExpandedDays(prev => {
+                const newExpanded = { ...prev };
+                datosPorRutina.current.dias.forEach(dia => {
+                    const key = `current-${dia.dayIndex}`;
+                    // Only set if not already set (to avoid overriding user interaction if we had any logic, 
+                    // though here it runs on mount/data load)
+                    newExpanded[key] = true;
+                });
+                return newExpanded;
+            });
+        }
+    }, [datosPorRutina.current]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // 💬 DATOS AGRUPADOS POR COMENTARIOS (SOLO SETS CON NOTAS)
@@ -2227,26 +2282,28 @@ export default function ClientProgressDetail() {
                                                                                             const isPhoto = visualMedia.mediaType === 'photo';
 
                                                                                             return (
-                                                                                                <Pressable
-                                                                                                    style={[
-                                                                                                        styles.inlineVideoBtn,
-                                                                                                        isPending && styles.inlineVideoBtnPending
-                                                                                                    ]}
-                                                                                                    onPress={() => {
-                                                                                                        setSelectedFeedback(visualMedia);
-                                                                                                        setVideoModalVisible(true);
-                                                                                                        markFeedbackAsViewed(visualMedia._id);
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <Ionicons
-                                                                                                        name={isPhoto ? 'image' : 'videocam'}
-                                                                                                        size={14}
-                                                                                                        color={isPending ? '#fff' : '#4361ee'}
-                                                                                                    />
-                                                                                                    {isPending && (
-                                                                                                        <View style={styles.inlineVideoPendingDot} />
-                                                                                                    )}
-                                                                                                </Pressable>
+                                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                                                                                                    <Pressable
+                                                                                                        style={[
+                                                                                                            styles.inlineVideoBtn,
+                                                                                                            isPending && styles.inlineVideoBtnPending
+                                                                                                        ]}
+                                                                                                        onPress={() => {
+                                                                                                            setSelectedFeedback(visualMedia);
+                                                                                                            setVideoModalVisible(true);
+                                                                                                            markFeedbackAsViewed(visualMedia._id);
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        <Ionicons
+                                                                                                            name={isPhoto ? 'image' : 'videocam'}
+                                                                                                            size={14}
+                                                                                                            color={isPending ? '#fff' : '#4361ee'}
+                                                                                                        />
+                                                                                                        {isPending && (
+                                                                                                            <View style={styles.inlineVideoPendingDot} />
+                                                                                                        )}
+                                                                                                    </Pressable>
+                                                                                                </View>
                                                                                             );
                                                                                         })()}
 
@@ -2278,20 +2335,39 @@ export default function ClientProgressDetail() {
                                                                                     {/* Texto de nota */}
                                                                                     {set.noteText ? (
                                                                                         <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
-                                                                                    ) : visualMedia?.athleteNote ? (
-                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>
-                                                                                            {visualMedia.mediaType === 'photo' ? '📷' : '📹'} "{visualMedia.athleteNote}"
-                                                                                        </Text>
-                                                                                    ) : audioMedia?.athleteNote ? (
-                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>
-                                                                                            🎤 "{audioMedia.athleteNote}"
-                                                                                        </Text>
-                                                                                    ) : set.hasMediaOnly && !audioMedia ? (
+                                                                                    ) : (
+                                                                                        <View>
+                                                                                            {visualMedia?.athleteNote && (
+                                                                                                <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                                    {visualMedia.mediaType === 'photo' ? '📷' : '📹'} "{visualMedia.athleteNote}"
+                                                                                                </Text>
+                                                                                            )}
+                                                                                            {audioMedia?.athleteNote && (
+                                                                                                <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                                    🎤 "{audioMedia.athleteNote}"
+                                                                                                </Text>
+                                                                                            )}
+                                                                                        </View>
+                                                                                    )}
+                                                                                    {!set.noteText && !visualMedia?.athleteNote && !audioMedia?.athleteNote && set.hasMediaOnly && !audioMedia && (
                                                                                         <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
                                                                                             {visualMedia?.mediaType === 'photo' ? '📷 Foto enviada' : '📹 Video enviado'}
                                                                                         </Text>
-                                                                                    ) : null}
+                                                                                    )}
 
+                                                                                    {/* 🆕 Video Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                    {visualMedia && visualMedia.mediaType !== 'photo' && expandedAiItems[visualMedia._id] && (
+                                                                                        <View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
+                                                                                            {/* Content Hidden since button is removed, but logic kept for reference or if triggered differently? 
+                                                                                                Actually, since usage is toggled by button, this is now unreachable for video.
+                                                                                                I will keep it here or remove it?
+                                                                                                User said "solo ponglo cuando haya audio".
+                                                                                                I'll remove the entire visualMedia AI display block to be clean.
+                                                                                            */}
+                                                                                        </View>
+                                                                                    ) ? null : null}
+
+                                                                                    {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
                                                                                     {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
                                                                                     {audioMedia && (
                                                                                         <View style={styles.audioRowContainer}>
@@ -2301,6 +2377,20 @@ export default function ClientProgressDetail() {
                                                                                                     onViewed={markFeedbackAsViewed}
                                                                                                 />
                                                                                             </View>
+                                                                                            {/* 🆕 AI Transcription Button (Inline) - Toggles Inline Text */}
+                                                                                            <Pressable
+                                                                                                style={[styles.inlineReplyBtn, expandedAiItems[audioMedia._id] && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe' }]}
+                                                                                                onPress={() => {
+                                                                                                    setExpandedAiItems(prev => ({
+                                                                                                        ...prev,
+                                                                                                        [audioMedia._id]: !prev[audioMedia._id]
+                                                                                                    }));
+                                                                                                }}
+                                                                                            >
+                                                                                                <Ionicons name="sparkles" size={14} color="#8b5cf6" />
+                                                                                                <Text style={{ marginLeft: 4, fontSize: 11, fontWeight: '700', color: '#8b5cf6' }}>IA</Text>
+                                                                                            </Pressable>
+
                                                                                             {/* Botón responder a audio (sin visual media) */}
                                                                                             {!visualMedia && (
                                                                                                 <Pressable
@@ -2314,6 +2404,91 @@ export default function ClientProgressDetail() {
                                                                                                 </Pressable>
                                                                                             )}
                                                                                         </View>
+                                                                                    )
+                                                                                    }
+
+                                                                                    {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                    {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                    {audioMedia && expandedAiItems[audioMedia._id] && (<View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
+
+                                                                                        {/* LOADING STATE */}
+                                                                                        {(!audioMedia.transcriptionStatus || audioMedia.transcriptionStatus === 'pending' || audioMedia.transcriptionStatus === 'processing') && !audioMedia.transcription && (
+                                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
+                                                                                                <ActivityIndicator size="small" color="#8b5cf6" />
+                                                                                                <Text style={{ marginLeft: 6, fontSize: 12, color: '#64748b' }}>Procesando audio con IA...</Text>
+                                                                                            </View>
+                                                                                        )}
+
+                                                                                        {/* FAILED STATE */}
+                                                                                        {audioMedia.transcriptionStatus === 'failed' && (
+                                                                                            <View style={{ gap: 4 }}>
+                                                                                                <Text style={{ fontSize: 12, color: '#ef4444' }}>Error en la transcripción.</Text>
+                                                                                                <Pressable
+                                                                                                    style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fee2e2', borderRadius: 4 }}
+                                                                                                    onPress={async () => {
+                                                                                                        try {
+                                                                                                            // Set back to pending visually immediately
+                                                                                                            setVideoFeedbacks(prev => prev.map(f => f._id === audioMedia._id ? { ...f, transcriptionStatus: 'pending' } : f));
+                                                                                                            await fetch(`${API_URL}/api/video-feedback/${audioMedia._id}/retry-transcription`, {
+                                                                                                                method: 'POST',
+                                                                                                                headers: { Authorization: `Bearer ${token}` }
+                                                                                                            });
+                                                                                                        } catch (e) {
+                                                                                                            console.error("Retry failed", e);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Reintentar</Text>
+                                                                                                </Pressable>
+                                                                                            </View>
+                                                                                        )}
+
+                                                                                        {/* SUCCESS STATE */}
+                                                                                        {(audioMedia.transcription || audioMedia.summary) && (
+                                                                                            <>
+                                                                                                {/* Transcription Full Text */}
+                                                                                                {audioMedia.transcription && (
+                                                                                                    <View>
+                                                                                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                                                                                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>
+                                                                                                                📝 Transcripción:
+                                                                                                            </Text>
+                                                                                                            {/* 🆕 Accuracy Score */}
+                                                                                                            {typeof audioMedia.accuracy === 'number' && (
+                                                                                                                <View style={{ backgroundColor: audioMedia.accuracy >= 80 ? '#dcfce7' : audioMedia.accuracy >= 50 ? '#fef9c3' : '#fee2e2', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 }}>
+                                                                                                                    <Text style={{ fontSize: 9, fontWeight: '700', color: audioMedia.accuracy >= 80 ? '#166534' : audioMedia.accuracy >= 50 ? '#854d0e' : '#991b1b' }}>
+                                                                                                                        {audioMedia.accuracy}% Fiabilidad
+                                                                                                                    </Text>
+                                                                                                                </View>
+                                                                                                            )}
+                                                                                                        </View>
+                                                                                                        <Text style={{ fontSize: 13, color: '#1e293b', lineHeight: 18 }}>
+                                                                                                            {audioMedia.transcription}
+                                                                                                        </Text>
+                                                                                                    </View>
+                                                                                                )}
+
+                                                                                                {/* Summary */}
+                                                                                                {audioMedia.summary && (
+                                                                                                    <View>
+                                                                                                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 2 }}>
+                                                                                                            ✨ Resumen IA:
+                                                                                                        </Text>
+                                                                                                        <Text style={{ fontSize: 12, color: '#334155', lineHeight: 16 }}>
+                                                                                                            {audioMedia.summary}
+                                                                                                        </Text>
+                                                                                                    </View>
+                                                                                                )}
+                                                                                            </>
+                                                                                        )}
+
+                                                                                        {/* FALLBACK STATE: Completed but empty */}
+                                                                                        {audioMedia.transcriptionStatus === 'completed' && !audioMedia.transcription && !audioMedia.summary && (
+                                                                                            <Text style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', paddingVertical: 4 }}>
+                                                                                                ⚠️ No se detectó contenido inteligible en el audio.
+                                                                                            </Text>
+                                                                                        )}
+                                                                                    </View>
                                                                                     )}
                                                                                 </View>
                                                                             );
@@ -2423,29 +2598,39 @@ export default function ClientProgressDetail() {
                 </ScrollView>
 
                 {/* 🖥️ Panel lateral - solo visible en pantallas grandes con feedback seleccionado */}
-                {isLargeScreen && selectedFeedback && (
-                    <View style={styles.splitViewPanel}>
-                        <MediaFeedbackResponseModal
-                            visible={true}
-                            onClose={() => {
-                                setVideoModalVisible(false);
-                                setSelectedFeedback(null);
-                            }}
-                            feedback={selectedFeedback}
-                            onResponseSent={handleVideoResponseSent}
-                            isInline={true}
-                        />
-                    </View>
-                )}
-            </View>
+                {
+                    isLargeScreen && selectedFeedback && (
+                        <View style={styles.splitViewPanel}>
+                            <MediaFeedbackResponseModal
+                                visible={true}
+                                onClose={() => {
+                                    setVideoModalVisible(false);
+                                    setSelectedFeedback(null);
+                                }}
+                                feedback={selectedFeedback}
+                                allMedia={findAllMediaForSet(
+                                    selectedFeedback?.exerciseName,
+                                    selectedFeedback?.serieKey
+                                        ? parseInt(selectedFeedback.serieKey.split('|')[3], 10) + 1
+                                        : selectedFeedback?.setNumber,
+                                    // Note: This logic is simplified; passing selectedFeedback is main requirement
+                                )}
+                                onResponseSent={handleVideoResponseSent}
+                                isInline={true}
+                            />
+                        </View>
+                    )
+                }
+            </View >
 
 
             {/* ═══ KPI SELECTOR MODAL ═══ */}
-            <Modal
+            < Modal
                 visible={kpiModalVisible}
                 transparent
                 animationType="slide"
-                onRequestClose={() => setKpiModalVisible(false)}
+                onRequestClose={() => setKpiModalVisible(false)
+                }
             >
                 <Pressable
                     style={styles.kpiModalOverlay}
@@ -2490,10 +2675,10 @@ export default function ClientProgressDetail() {
                         />
                     </View>
                 </Pressable>
-            </Modal>
+            </Modal >
 
             {/* ═══ ANDROID MUSCLE PICKER MODAL ═══ */}
-            <Modal
+            < Modal
                 visible={androidMusculoModal}
                 transparent
                 animationType="slide"
@@ -2538,10 +2723,10 @@ export default function ClientProgressDetail() {
                         />
                     </View>
                 </Pressable>
-            </Modal>
+            </Modal >
 
             {/* ═══ ANDROID EXERCISE PICKER MODAL ═══ */}
-            <Modal
+            < Modal
                 visible={androidEjercicioModal}
                 transparent
                 animationType="slide"
@@ -2586,10 +2771,10 @@ export default function ClientProgressDetail() {
                         />
                     </View>
                 </Pressable>
-            </Modal>
+            </Modal >
 
             {/* Modal de Nota del Cliente */}
-            <Modal visible={noteModal.visible} transparent animationType="fade" onRequestClose={() => setNoteModal({ visible: false, note: null })}>
+            < Modal visible={noteModal.visible} transparent animationType="fade" onRequestClose={() => setNoteModal({ visible: false, note: null })}>
                 <View style={styles.noteModalOverlay}>
                     <View style={styles.noteModalCard}>
                         <View style={styles.noteModalHeader}>
@@ -2608,22 +2793,24 @@ export default function ClientProgressDetail() {
                         <Text style={styles.noteModalText}>{noteModal.note?.note || 'Sin texto'}</Text>
                     </View>
                 </View>
-            </Modal>
+            </Modal >
 
 
             {/* 📹 Modal overlay - solo en pantallas pequeñas */}
-            {!isLargeScreen && (
-                <MediaFeedbackResponseModal
-                    visible={videoModalVisible}
-                    onClose={() => {
-                        setVideoModalVisible(false);
-                        setSelectedFeedback(null);
-                    }}
-                    feedback={selectedFeedback}
-                    onResponseSent={handleVideoResponseSent}
-                />
-            )}
-        </SafeAreaView>
+            {
+                !isLargeScreen && (
+                    <MediaFeedbackResponseModal
+                        visible={videoModalVisible}
+                        onClose={() => {
+                            setVideoModalVisible(false);
+                            setSelectedFeedback(null);
+                        }}
+                        feedback={selectedFeedback}
+                        onResponseSent={handleVideoResponseSent}
+                    />
+                )
+            }
+        </SafeAreaView >
     );
 }
 

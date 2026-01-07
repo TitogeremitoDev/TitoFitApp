@@ -9,9 +9,6 @@ const DEFAULT_KOYEB = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app'
 const API_BASE = ((process.env.EXPO_PUBLIC_API_URL as string) || DEFAULT_KOYEB).replace(/\/+$/, '');
 axios.defaults.baseURL = `${API_BASE}/api`;
 
-if (__DEV__) {
-  console.log('[Auth] API_BASE =', axios.defaults.baseURL);
-}
 
 const TOKEN_KEY = 'totalgains_token';
 const USER_KEY = 'totalgains_user';
@@ -122,9 +119,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const s = await loadSession();
         setToken(s.token);
         setUser(s.user);
-        if (__DEV__ && s.user) {
-          console.log('[Auth] Sesión restaurada:', s.user.email);
-        }
+        // Sesión restaurada silenciosamente
       } catch (error) {
         console.error('[Auth] Error cargando sesión:', error);
       } finally {
@@ -140,9 +135,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isLoading,
 
       async login(emailOrUsername: string, password: string) {
-        if (__DEV__) {
-          console.log('[Auth] Login clásico iniciado');
-        }
+
         const { data } = await axios.post<User & { token: string }>(
           '/users/login',
           { emailOrUsername, password }
@@ -154,9 +147,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Sincroniza rutinas desde servidor
         try {
           await syncRoutinesFromServer(API_BASE, s.token);
-          if (__DEV__) {
-            console.log('[Auth] Rutinas sincronizadas tras login');
-          }
+
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);
         }
@@ -165,9 +156,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async register(nombre: string, email: string, username: string, password: string, clientCode?: string) {
-        if (__DEV__) {
-          console.log('[Auth] Registro iniciado');
-        }
+
         const payload: any = { nombre, email, username, password };
         if (clientCode && clientCode.trim()) payload.clientCode = clientCode.trim();
         const { data } = await axios.post<User & { token: string }>('/users/signup', payload);
@@ -178,9 +167,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Sincroniza rutinas tras registrarse
         try {
           await syncRoutinesFromServer(API_BASE, s.token);
-          if (__DEV__) {
-            console.log('[Auth] Rutinas sincronizadas tras registro');
-          }
+
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);
         }
@@ -189,9 +176,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async upgradeByCode(clientCode: string) {
-        if (__DEV__) {
-          console.log('[Auth] Upgrade por código iniciado');
-        }
+
         const { data } = await axios.post<User & { token: string }>(
           '/users/upgrade',
           { clientCode: clientCode.trim() }
@@ -203,9 +188,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Re-sincroniza por si el upgrade asigna rutinas
         try {
           await syncRoutinesFromServer(API_BASE, s.token);
-          if (__DEV__) {
-            console.log('[Auth] Rutinas sincronizadas tras upgrade');
-          }
+
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);
         }
@@ -214,9 +197,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async loginWithGoogle(googleAccessToken: string) {
-        if (__DEV__) {
-          console.log('[Auth] Login con Google iniciado');
-        }
+
         const { data } = await axios.post<User & { token: string }>(
           '/users/google-login',
           { accessToken: googleAccessToken }
@@ -228,9 +209,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Sincroniza rutinas al entrar con Google
         try {
           await syncRoutinesFromServer(API_BASE, s.token);
-          if (__DEV__) {
-            console.log('[Auth] Rutinas sincronizadas tras login Google');
-          }
+
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);
         }
@@ -239,9 +218,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async loginWithApple(identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) {
-        if (__DEV__) {
-          console.log('[Auth] Login con Apple iniciado');
-        }
+
         const { data } = await axios.post<User & { token: string }>(
           '/users/apple-login',
           {
@@ -259,9 +236,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Sincroniza rutinas al entrar con Apple
         try {
           await syncRoutinesFromServer(API_BASE, s.token);
-          if (__DEV__) {
-            console.log('[Auth] Rutinas sincronizadas tras login Apple');
-          }
+
         } catch (syncError) {
           console.error('[Auth] Error sincronizando rutinas:', syncError);
         }
@@ -270,9 +245,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
 
       async logout() {
-        if (__DEV__) {
-          console.log('[Auth] Cerrando sesión');
-        }
+
         await clearSession();
         setToken(null);
         setUser(null);
@@ -284,13 +257,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return undefined;
         }
         try {
-          console.log('[Auth] 🔄 Refrescando datos del usuario...');
           const { data } = await axios.get<User>('/users/me');
-          console.log('[Auth] 📦 Datos recibidos del servidor:', {
-            tipoUsuario: data.tipoUsuario,
-            subscriptionExpiry: data.subscriptionExpiry,
-            referralCode: data.referralCode
-          });
 
           // Crear un objeto completamente nuevo para forzar re-render
           const freshUser: User = {
@@ -316,7 +283,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           // IMPORTANTE: Crear nuevo objeto con spread para forzar re-render
           setUser({ ...freshUser });
 
-          console.log('[Auth] ✅ Usuario actualizado en contexto:', freshUser.tipoUsuario);
+
           return freshUser;
         } catch (error) {
           console.error('[Auth] ❌ Error refrescando usuario:', error);
@@ -331,7 +298,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return null;
         }
         try {
-          console.log(`[Auth] Sincronizando datos por cambio de plan: ${previousType} → ${newType}`);
+
           const result = await handlePlanTransition(previousType, newType, token);
           if (result) {
             setPendingSyncResult(result);

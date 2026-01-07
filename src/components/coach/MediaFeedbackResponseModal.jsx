@@ -29,6 +29,7 @@ import { useFeedbackDraft } from '../../../context/FeedbackDraftContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SmartFeedbackInput from './SmartFeedbackInput';
 import VideoSearchPicker from './VideoSearchPicker';
+// import Markdown from 'react-native-markdown-display'; // ⚠️ Temporarily disabled due to Metro bundler issues
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -39,7 +40,8 @@ export default function VideoFeedbackResponseModal({
     allMedia = [],  // 🆕 Array of all media items for this set (video, photo, audio)
     textNote = null, // 🆕 Text note from workout (set.notes?.note)
     onResponseSent, // Callback when response is successfully sent
-    isInline = false // When true, renders without Modal wrapper (for split-view)
+    isInline = false, // When true, renders without Modal wrapper (for split-view)
+    initialAiExpanded = false // 🆕 Auto-expand AI section logic
 }) {
     const { token } = useAuth();
     const { addTechnicalNote } = useFeedbackDraft();
@@ -58,7 +60,25 @@ export default function VideoFeedbackResponseModal({
 
     // 🆕 Media URL from R2
     const [mediaUrl, setMediaUrl] = useState(null);
-    const [loadingMedia, setLoadingMedia] = useState(false);
+    const [loadingMedia, setLoadingMedia] = useState(false); // ⚠️ Restored
+    const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+
+    // 🆕 AI Transcription State
+    const [aiExpanded, setAiExpanded] = useState(initialAiExpanded);
+
+    // Sync aiExpanded when prop changes or modal opens
+    useEffect(() => {
+        if (visible) {
+            setAiExpanded(initialAiExpanded);
+        }
+    }, [visible, initialAiExpanded]);
+    const [transcriptionData, setTranscriptionData] = useState({
+        status: 'none', // pending, completed, failed, none
+        text: '',
+        summary: ''
+    });
+    const [retryingAi, setRetryingAi] = useState(false);
+    const pollingInterval = useRef(null);
 
     // Audio recording with expo-audio hooks
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -91,14 +111,19 @@ export default function VideoFeedbackResponseModal({
             if (recordingInterval.current) {
                 clearInterval(recordingInterval.current);
             }
+            if (pollingInterval.current) {
+                clearInterval(pollingInterval.current);
+            }
             // 🆕 Clear media and audio state on close
             setMediaUrl(null);
             setIsPlayingAthleteAudio(false);
             setAudioDuration(0);
+            setAiExpanded(false);
+            setTranscriptionData({ status: 'none', text: '', summary: '' });
         };
     }, [visible, feedback?._id]);
 
-    // 🆕 Cargar URL de media desde R2
+    // 🆕 Cargar URL de media desde R2 (y datos de transcripción)
     const loadMediaUrl = async () => {
         if (!feedback?._id) return;
         // Skip for text-only notes (no media to load)
@@ -114,25 +139,69 @@ export default function VideoFeedbackResponseModal({
             });
             const data = await response.json();
 
-            console.log('[MediaModal] API Response:', {
-                mediaType: data.mediaType,
-                mediaUrl: data.mediaUrl?.slice(0, 100),
-                r2Key: data.r2Key,
-                contentType: data.contentType
+            // Set transcription data
+            setTranscriptionData({
+                status: data.transcriptionStatus || 'none',
+                text: data.transcription || '',
+                summary: data.summary || ''
             });
 
+            // Start polling if pending
+            if (data.transcriptionStatus === 'pending') {
+                startPolling(feedback._id);
+            }
+
             if (data.mediaUrl) {
-                console.log('[MediaModal] URL cargada:', data.mediaType, data.mediaUrl.slice(0, 100));
+                // console.log('[MediaModal] URL cargada:', data.mediaType, data.mediaUrl.slice(0, 100)); // Cleanup log
                 setMediaUrl(data.mediaUrl);
-                // Update feedback object with correct mediaType from API
-                if (data.mediaType && data.mediaType !== feedback.mediaType) {
-                    console.log('[MediaModal] Updating mediaType from', feedback.mediaType, 'to', data.mediaType);
-                }
             }
         } catch (error) {
             console.error('[MediaModal] Error loading media URL:', error);
         } finally {
             setLoadingMedia(false);
+        }
+    };
+
+    const startPolling = (id) => {
+        if (pollingInterval.current) clearInterval(pollingInterval.current);
+
+        pollingInterval.current = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_URL}/api/video-feedback/${id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (data.transcriptionStatus !== 'pending') {
+                    setTranscriptionData({
+                        status: data.transcriptionStatus,
+                        text: data.transcription || '',
+                        summary: data.summary || ''
+                    });
+                    clearInterval(pollingInterval.current);
+                }
+            } catch (e) {
+                console.log('Polling error:', e);
+            }
+        }, 5000); // Check every 5s
+    };
+
+    // 🆕 Retry Transcription logic
+    const handleRetryTranscription = async () => {
+        if (!feedback?._id) return;
+        setRetryingAi(true);
+        try {
+            await fetch(`${API_URL}/api/video-feedback/${feedback._id}/retry-transcription`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // Update state to pending immediately and start polling
+            setTranscriptionData(prev => ({ ...prev, status: 'pending' }));
+            startPolling(feedback._id);
+            Alert.alert('Iniciado', 'La IA está procesando el audio nuevamente...');
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo reiniciar la transcripción');
+        } finally {
+            setRetryingAi(false);
         }
     };
 
@@ -436,28 +505,87 @@ export default function VideoFeedbackResponseModal({
                                                 {feedback.athleteNote && (
                                                     <Text style={styles.audioNoteText}>"{feedback.athleteNote}"</Text>
                                                 )}
-                                                <Ionicons name="musical-notes" size={48} color="#4361ee" />
-                                                <TouchableOpacity
-                                                    style={styles.audioPlayBtn}
-                                                    onPress={() => {
-                                                        if (athleteAudioPlayer) {
-                                                            if (isPlayingAthleteAudio) {
-                                                                athleteAudioPlayer.pause();
-                                                            } else {
-                                                                athleteAudioPlayer.play();
+                                                {/* 🆕 Audio Controls Row with IA Button */}
+                                                <View style={styles.audioControlsRow}>
+                                                    <TouchableOpacity
+                                                        style={styles.audioPlayBtn}
+                                                        onPress={() => {
+                                                            if (athleteAudioPlayer) {
+                                                                if (isPlayingAthleteAudio) {
+                                                                    athleteAudioPlayer.pause();
+                                                                } else {
+                                                                    athleteAudioPlayer.play();
+                                                                }
                                                             }
-                                                        }
-                                                    }}
-                                                >
-                                                    <Ionicons
-                                                        name={isPlayingAthleteAudio ? "pause" : "play"}
-                                                        size={32}
-                                                        color="#fff"
-                                                    />
-                                                    <Text style={styles.audioPlayBtnText}>
-                                                        {isPlayingAthleteAudio ? 'Pausar' : 'Reproducir'}
-                                                    </Text>
-                                                </TouchableOpacity>
+                                                        }}
+                                                    >
+                                                        <Ionicons
+                                                            name={isPlayingAthleteAudio ? "pause" : "play"}
+                                                            size={24}
+                                                            color="#fff"
+                                                        />
+                                                        <Text style={styles.audioPlayBtnText}>
+                                                            {isPlayingAthleteAudio ? 'Pausar' : 'Reproducir'}
+                                                        </Text>
+                                                    </TouchableOpacity>
+
+                                                    {/* Botón IA Inline */}
+                                                    <TouchableOpacity
+                                                        style={[
+                                                            styles.aiIconButton,
+                                                            transcriptionData.status === 'completed' && styles.aiIconButtonActive,
+                                                            (transcriptionData.status === 'pending' || retryingAi) && styles.aiIconButtonLoading
+                                                        ]}
+                                                        onPress={() => {
+                                                            if (transcriptionData.status === 'none' || transcriptionData.status === 'failed') {
+                                                                handleRetryTranscription();
+                                                            } else {
+                                                                // Toggle visibility if needed, or just keep it open
+                                                                setAiExpanded(!aiExpanded);
+                                                            }
+                                                        }}
+                                                        disabled={transcriptionData.status === 'pending' || retryingAi}
+                                                    >
+                                                        {(transcriptionData.status === 'pending' || retryingAi) ? (
+                                                            <ActivityIndicator size="small" color="#fff" />
+                                                        ) : (
+                                                            <Ionicons name="sparkles" size={20} color={transcriptionData.status === 'completed' ? "#fff" : "#8b5cf6"} />
+                                                        )}
+                                                        <Text style={[styles.aiIconButtonText, transcriptionData.status === 'completed' && { color: '#fff' }]}>
+                                                            IA
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                </View>
+
+                                                {/* 🆕 AI Content Display (Below Audio Bar) */}
+                                                {(transcriptionData.status === 'completed' || transcriptionData.status === 'pending' || retryingAi) && aiExpanded && (
+                                                    <View style={styles.aiContentInline}>
+                                                        {transcriptionData.status === 'pending' || retryingAi ? (
+                                                            <Text style={styles.aiLoadingTextInline}>✨ Analizando audio...</Text>
+                                                        ) : (
+                                                            <>
+                                                                {transcriptionData.summary ? (
+                                                                    <View style={styles.aiSummaryCard}>
+                                                                        <Text style={styles.aiSummaryLabel}>RESUMEN</Text>
+                                                                        <Text style={styles.aiSummaryText}>{transcriptionData.summary}</Text>
+                                                                    </View>
+                                                                ) : null}
+                                                                <View style={styles.markdownContainer}>
+                                                                    {/* Fallback to plain Text */}
+                                                                    <Text style={{ color: '#ccc', fontSize: 14, lineHeight: 20 }}>
+                                                                        {transcriptionData.text}
+                                                                    </Text>
+                                                                </View>
+                                                            </>
+                                                        )}
+                                                    </View>
+                                                )}
+
+                                                {transcriptionData.status === 'failed' && (
+                                                    <View style={styles.aiErrorInline}>
+                                                        <Text style={styles.aiErrorText}>Fallo en transcripción</Text>
+                                                    </View>
+                                                )}
                                             </View>
                                         ) : feedback.mediaType === 'text-note' ? (
                                             // Nota de texto sin media - mostrar nota directamente
@@ -588,6 +716,7 @@ export default function VideoFeedbackResponseModal({
                                 thumbnail: feedback?.thumbnailUrl || null,
                                 videoUrl: externalUrl || null, // Video YouTube del coach
                                 sourceMediaUrl: mediaUrl || null, // Video/foto original del atleta
+                                sourceMediaKey: feedback?.r2Key || null, // 🆕 Key de R2 para regenerar URL
                                 mediaType: feedback?.mediaType || 'video'
                             });
                             setMessage('');
@@ -997,19 +1126,73 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     audioPlayBtn: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#10b981',
+        justifyContent: 'center',
+        backgroundColor: '#4361ee',
         paddingHorizontal: 20,
         paddingVertical: 12,
-        borderRadius: 24,
-        marginTop: 12,
+        borderRadius: 12,
         gap: 8,
     },
     audioPlayBtnText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: '600',
+    },
+    // New Audio Controls Layout
+    audioControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        width: '100%',
+        marginTop: 12,
+    },
+    aiIconButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#1a1a2e',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#8b5cf6',
+    },
+    aiIconButtonActive: {
+        backgroundColor: '#8b5cf6',
+        borderColor: '#8b5cf6',
+    },
+    aiIconButtonLoading: {
+        backgroundColor: '#8b5cf680',
+        borderColor: '#8b5cf680',
+    },
+    aiIconButtonText: {
+        color: '#8b5cf6',
+        fontWeight: '700',
+        fontSize: 14,
+    },
+    aiContentInline: {
+        marginTop: 16,
+        width: '100%',
+        backgroundColor: '#1a1a2e',
+        borderRadius: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#333'
+    },
+    aiLoadingTextInline: {
+        color: '#8b5cf6',
+        fontSize: 13,
+        textAlign: 'center',
+        fontStyle: 'italic'
+    },
+    aiErrorInline: {
+        marginTop: 8,
+        padding: 8,
+        backgroundColor: '#ef444420',
+        borderRadius: 8,
     },
     audioNoteText: {
         color: '#fff',
@@ -1044,4 +1227,100 @@ const styles = StyleSheet.create({
         lineHeight: 22,
         fontStyle: 'italic',
     },
+    // AI Section
+    aiSection: {
+        marginTop: 16,
+        width: '100%',
+        backgroundColor: '#13131f',
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#8b5cf640'
+    },
+    aiHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 12,
+        backgroundColor: '#8b5cf615',
+    },
+    aiHeaderTitle: {
+        color: '#8b5cf6',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    aiContent: {
+        padding: 12,
+    },
+    aiLoading: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        justifyContent: 'center',
+        padding: 10
+    },
+    aiLoadingText: {
+        color: '#ccc',
+        fontSize: 13
+    },
+    aiError: {
+        alignItems: 'center',
+        gap: 8
+    },
+    aiErrorText: {
+        color: '#ef4444',
+        fontSize: 13
+    },
+    aiRetryBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#333',
+        borderRadius: 8,
+        marginTop: 4
+    },
+    aiRetryText: {
+        color: '#fff',
+        fontSize: 12
+    },
+    aiSummaryCard: {
+        backgroundColor: '#1f1f2e',
+        padding: 10,
+        borderRadius: 8,
+        marginBottom: 10,
+        borderLeftWidth: 3,
+        borderLeftColor: '#8b5cf6',
+    },
+    aiSummaryLabel: {
+        color: '#8b5cf6',
+        fontSize: 10,
+        fontWeight: '900',
+        marginBottom: 4,
+        textTransform: 'uppercase'
+    },
+    aiSummaryText: {
+        color: '#fff',
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    markdownContainer: {
+        paddingTop: 4
+    },
+    aiEmpty: {
+        alignItems: 'center',
+        gap: 8,
+        padding: 8
+    },
+    aiEmptyText: {
+        color: '#666',
+        fontSize: 13
+    }
 });
+
+const markdownStyles = {
+    body: { color: '#ccc', fontSize: 14 },
+    heading1: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    heading2: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    strong: { color: '#fff', fontWeight: 'bold' },
+    list_item: { marginVertical: 4 },
+    bullet_list: { marginVertical: 8 },
+};

@@ -68,6 +68,8 @@ export function FeedbackDraftProvider({ children }) {
                 thumbnail: note.thumbnail || null,
                 videoUrl: note.videoUrl || null,
                 sourceMediaUrl: note.sourceMediaUrl || null, // URL del video/foto original del atleta
+                sourceMediaKey: note.sourceMediaKey || null, // 🆕 Key de R2 para regenerar URL
+                sourceMediaType: note.mediaType || 'video', // 🆕 Tipo de media
                 mediaType: note.mediaType || 'video',
                 timestamp: new Date().toISOString()
             };
@@ -83,7 +85,7 @@ export function FeedbackDraftProvider({ children }) {
     }, [saveDrafts]);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ADD HIGHLIGHT
+    // ADD HIGHLIGHT (supports media like photos)
     // ─────────────────────────────────────────────────────────────────────────
     const addHighlight = useCallback((highlight) => {
         setDrafts(prev => {
@@ -91,13 +93,20 @@ export function FeedbackDraftProvider({ children }) {
                 return prev;
             }
 
+            const newHighlight = {
+                id: highlight.id || Date.now().toString(),
+                text: highlight.text,
+                exerciseName: highlight.exerciseName || null,
+                thumbnail: highlight.thumbnail || null,
+                sourceMediaUrl: highlight.sourceMediaUrl || null,
+                sourceMediaKey: highlight.sourceMediaKey || null,
+                mediaType: highlight.mediaType || null,
+                timestamp: new Date().toISOString()
+            };
+
             const updated = {
                 ...prev,
-                highlights: [...prev.highlights, {
-                    id: highlight.id || Date.now().toString(),
-                    text: highlight.text,
-                    timestamp: new Date().toISOString()
-                }]
+                highlights: [...prev.highlights, newHighlight]
             };
 
             saveDrafts(updated);

@@ -39,21 +39,20 @@ const FRASES = [
   "Lucha cada puta repetición como si fuera la última."
 ];
 
-// DEBUG: Ver qué valor tiene Constants.expoConfig
-console.log('[Home] Constants.expoConfig?.version:', Constants?.expoConfig?.version);
-
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.1.0';
 
-const CAMBIOS_104 = [
-  '❓ Sistema FAQs: genérico para usuarios, personalizado para entrenadores.',
-  '🔍 Mejora de creación de rutinas: nuevo buscador de ejercicios integrado.',
-  '⚡ Optimizador de base de datos de ejercicios: búsquedas más rápidas y eficientes.',
-  '🐛 Arreglos de bugs visuales: mejoras de interfaz y estabilidad.',
-  '💪 Sistema de reconocimiento de sensaciones de entreno: califica cómo te sentiste en cada sesión.',
+const CAMBIOS_110 = [
+  '📹 Sistema de subida de video, audio e imágenes: comparte tu técnica y progreso con tu entrenador.',
+  '🎙️ Transcripción IA de audios: convierte tus notas de voz en texto automáticamente.',
+  '💬 Mejoras de feedback cliente-entrenador: comunicación más fluida y efectiva.',
+  '📊 Nuevo board para entrenadores: panel optimizado para gestión de clientes.',
+  '⚡ Bases de datos optimizadas: respuesta más rápida de los entrenadores.',
+  '📤 Sistema para facilitar compartir: comparte tu progreso en redes sociales fácilmente.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
+
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -96,13 +95,8 @@ export default function HomeScreen() {
 
       if (token && refreshUser) {
         hasRefreshedThisFocus.current = true;
-        console.log('[Home] 🎯 Pantalla en foco, refrescando usuario...');
-        refreshUser().then(freshUser => {
-          if (freshUser) {
-            console.log('[Home] ✅ Usuario refrescado, tipoUsuario:', freshUser.tipoUsuario);
-          }
-        }).catch(err => {
-          console.warn('[Home] Error refrescando usuario:', err);
+        refreshUser().catch(() => {
+          // Error silencioso - ya manejado en AuthContext
         });
       }
 
@@ -646,7 +640,7 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
             <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-              {CAMBIOS_104.map((line, i) => (
+              {CAMBIOS_110.map((line, i) => (
                 <View key={i} style={styles.changeRow}>
                   <Text style={styles.changeBullet}>•</Text>
                   <Text style={styles.changeText}>{line}</Text>

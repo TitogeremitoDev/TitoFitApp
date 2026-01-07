@@ -288,7 +288,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
         if (!isPremiumRef.current) return;
 
         try {
-            console.log('[Achievements] Sincronizando con la nube...');
+
 
             // Preparar datos locales para sync
             const localStats = { ...userStats };
@@ -315,7 +315,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                     );
                 }
 
-                console.log('[Achievements] Sincronización completada:', response.data.action);
+
             }
         } catch (error) {
             console.error('[Achievements] Error syncing with cloud:', error);
@@ -349,7 +349,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                     });
                     return merged;
                 });
-                console.log('[Achievements] Stats cargadas desde la nube');
+
             }
 
             // 2. Cargar achievements del usuario (del nuevo endpoint)
@@ -369,7 +369,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                             UNLOCKED_ACHIEVEMENTS_KEY,
                             JSON.stringify(Array.from(merged))
                         );
-                        console.log(`[Achievements] ${serverAchievements.length} logros del servidor, total: ${merged.size}`);
+
                         return merged;
                     });
                 }
@@ -377,7 +377,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                 // Cargar puntos del servidor (tienen prioridad sobre cálculo local)
                 if (typeof data?.points === 'number') {
                     setServerPoints(data.points);
-                    console.log(`[Achievements] Puntos del servidor: ${data.points}`);
+
                 }
             } catch (achievementError: any) {
                 // Si el endpoint no existe (404) o falla (500), simplemente ignoramos y usamos datos locales
@@ -430,7 +430,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                 if (achievement.unlockCondition(combinedStats)) {
                     currentUnlocked.add(achievement.id);
                     newlyUnlocked.push(achievement);
-                    console.log(`[Achievements] 🏆 Desbloqueado: ${achievement.name}`);
+
                 }
             } catch (error) {
                 console.warn(`[Achievements] Error checking "${achievement.id}":`, error);
@@ -453,9 +453,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                         points: a.points || 0
                     }));
                     axios.post('/achievements/sync', { achievements: achievementsToSync })
-                        .then((response) => {
-                            console.log('[Achievements] Sincronizados con servidor:', response.data);
-                        })
+                        .then(() => { })
                         .catch((error) => {
                             console.warn('[Achievements] Error syncing to server:', error);
                         });
@@ -751,7 +749,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
                 setUnlockedIds(newUnlocked);
                 saveUnlockedAchievements(newUnlocked);
                 setToastQueue(prev => [...prev, achievement]);
-                console.log(`[Achievements] DEBUG: Desbloqueado manual: ${achievement.name}`);
+
                 return true;
             }
         }
@@ -764,7 +762,7 @@ export const AchievementsProvider = ({ children }: { children: React.ReactNode }
             setUserStats(DEFAULT_STATS);
             setToastQueue([]);
             await AsyncStorage.multiRemove([UNLOCKED_ACHIEVEMENTS_KEY, USER_STATS_KEY]);
-            console.log('[Achievements] DEBUG: Reset completo');
+
         }
     }, []);
 

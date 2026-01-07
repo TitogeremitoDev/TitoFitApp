@@ -16,11 +16,14 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
-    Linking
+    Image,
+    useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useAudioPlayer } from 'expo-audio';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -45,10 +48,10 @@ const FocusStateBadge = ({ trafficLight }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION CARD
+// SECTION CARD - Con callback para abrir media
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SectionCard = ({ emoji, title, items, color }) => {
+const SectionCard = ({ emoji, title, items, color, onViewMedia }) => {
     if (!items || items.length === 0) return null;
 
     return (
@@ -58,33 +61,193 @@ const SectionCard = ({ emoji, title, items, color }) => {
                 <Text style={styles.sectionTitle}>{title}</Text>
             </View>
             <View style={styles.sectionContent}>
-                {items.map((item, index) => (
-                    <View key={index} style={styles.itemRow}>
-                        <View style={[styles.itemDot, { backgroundColor: color }]} />
-                        <View style={styles.itemContent}>
-                            {/* Mostrar nombre del ejercicio si existe */}
-                            {item.exerciseName && (
-                                <View style={styles.exerciseBadge}>
-                                    <Ionicons name="barbell" size={12} color="#3b82f6" />
-                                    <Text style={styles.exerciseName}>{item.exerciseName}</Text>
-                                </View>
-                            )}
-                            <Text style={styles.itemText}>{item.text}</Text>
-                            {/* Link al video original del atleta */}
-                            {item.sourceMediaUrl && (
-                                <TouchableOpacity
-                                    style={styles.videoLink}
-                                    onPress={() => Linking.openURL(item.sourceMediaUrl)}
-                                >
-                                    <Ionicons name="play-circle" size={16} color="#8b5cf6" />
-                                    <Text style={styles.videoLinkText}>Ver mi video</Text>
-                                </TouchableOpacity>
-                            )}
+                {items.map((item, index) => {
+                    // Normalize field names (backend may use either)
+                    const mediaType = item.sourceMediaType || item.mediaType;
+                    const mediaUrl = item.sourceMediaUrl;
+
+                    return (
+                        <View key={index} style={styles.itemRow}>
+                            <View style={[styles.itemDot, { backgroundColor: color }]} />
+                            <View style={styles.itemContent}>
+                                {/* Mostrar nombre del ejercicio si existe */}
+                                {item.exerciseName && (
+                                    <View style={styles.exerciseBadge}>
+                                        <Ionicons name="barbell" size={12} color="#3b82f6" />
+                                        <Text style={styles.exerciseName}>{item.exerciseName}</Text>
+                                    </View>
+                                )}
+                                <Text style={styles.itemText}>{item.text}</Text>
+                                {/* 🆕 Botón para abrir modal de media */}
+                                {mediaUrl && (
+                                    <TouchableOpacity
+                                        style={styles.videoLink}
+                                        onPress={() => onViewMedia?.({
+                                            ...item,
+                                            sourceMediaType: mediaType,
+                                            sourceMediaUrl: mediaUrl
+                                        })}
+                                    >
+                                        <Ionicons
+                                            name={mediaType === 'photo' ? 'image' :
+                                                mediaType === 'audio' ? 'mic' : 'play-circle'}
+                                            size={16}
+                                            color="#8b5cf6"
+                                        />
+                                        <Text style={styles.videoLinkText}>
+                                            {mediaType === 'photo' ? 'Ver mi foto' :
+                                                mediaType === 'audio' ? 'Escuchar mi audio' :
+                                                    'Ver mi video'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
                         </View>
-                    </View>
-                ))}
+                    );
+                })}
             </View>
         </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEDIA PREVIEW MODAL - Modal inline para ver video/foto/audio
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Subcomponente para el video player (necesario porque hooks no pueden ser condicionales)
+const VideoPlayer = ({ uri, style }) => {
+    const player = useVideoPlayer(uri, player => {
+        player.loop = false;
+    });
+
+    if (!uri) return null;
+
+    return (
+        <VideoView
+            style={style}
+            player={player}
+            allowsFullscreen
+            allowsPictureInPicture
+            contentFit="contain"
+        />
+    );
+};
+
+const MediaPreviewModal = ({ visible, onClose, mediaItem }) => {
+    const { width: windowWidth } = useWindowDimensions();
+    const isWeb = Platform.OS === 'web';
+
+    // Audio player for audio type
+    const audioPlayer = useAudioPlayer(mediaItem?.sourceMediaType === 'audio' ? { uri: mediaItem?.sourceMediaUrl } : null);
+    const [isPlaying, setIsPlaying] = useState(false);
+
+    const handlePlayPause = () => {
+        if (audioPlayer) {
+            if (isPlaying) {
+                audioPlayer.pause();
+            } else {
+                audioPlayer.play();
+            }
+            setIsPlaying(!isPlaying);
+        }
+    };
+
+    if (!mediaItem) return null;
+
+    return (
+        <Modal
+            visible={visible}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={onClose}
+        >
+            <View style={mediaStyles.overlay}>
+                <View style={[mediaStyles.container, { maxWidth: isWeb ? 600 : windowWidth - 40 }]}>
+                    {/* Header */}
+                    <View style={mediaStyles.header}>
+                        <View style={mediaStyles.titleRow}>
+                            <Ionicons
+                                name={mediaItem.sourceMediaType === 'photo' ? 'image' :
+                                    mediaItem.sourceMediaType === 'audio' ? 'mic' : 'videocam'}
+                                size={20}
+                                color="#8b5cf6"
+                            />
+                            <Text style={mediaStyles.title}>
+                                {mediaItem.sourceMediaType === 'photo' ? 'Mi Foto' :
+                                    mediaItem.sourceMediaType === 'audio' ? 'Mi Audio' :
+                                        'Mi Video'}
+                            </Text>
+                        </View>
+                        <TouchableOpacity onPress={onClose} style={mediaStyles.closeBtn}>
+                            <Ionicons name="close" size={24} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Exercise Badge */}
+                    {mediaItem.exerciseName && (
+                        <View style={mediaStyles.exerciseBadge}>
+                            <Ionicons name="barbell" size={14} color="#3b82f6" />
+                            <Text style={mediaStyles.exerciseName}>{mediaItem.exerciseName}</Text>
+                        </View>
+                    )}
+
+                    {/* Media Content */}
+                    <View style={mediaStyles.mediaContainer}>
+                        {mediaItem.sourceMediaType === 'photo' ? (
+                            <Image
+                                source={{ uri: mediaItem.sourceMediaUrl }}
+                                style={mediaStyles.image}
+                                resizeMode="contain"
+                            />
+                        ) : mediaItem.sourceMediaType === 'audio' ? (
+                            <View style={mediaStyles.audioContainer}>
+                                <View style={mediaStyles.audioWaveform}>
+                                    <Ionicons name="musical-notes" size={48} color="#8b5cf6" />
+                                </View>
+                                <TouchableOpacity
+                                    style={mediaStyles.audioPlayBtn}
+                                    onPress={handlePlayPause}
+                                >
+                                    <Ionicons
+                                        name={isPlaying ? 'pause' : 'play'}
+                                        size={32}
+                                        color="#fff"
+                                    />
+                                    <Text style={mediaStyles.audioPlayText}>
+                                        {isPlaying ? 'Pausar' : 'Reproducir'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            // Video - usando expo-video
+                            isWeb ? (
+                                <video
+                                    src={mediaItem.sourceMediaUrl}
+                                    controls
+                                    style={{ width: '100%', maxHeight: 350, borderRadius: 12, backgroundColor: '#000' }}
+                                />
+                            ) : (
+                                <VideoPlayer
+                                    uri={mediaItem.sourceMediaUrl}
+                                    style={mediaStyles.video}
+                                />
+                            )
+                        )}
+                    </View>
+
+                    {/* Coach's Note */}
+                    <View style={mediaStyles.noteSection}>
+                        <Text style={mediaStyles.noteLabel}>Comentario de tu entrenador:</Text>
+                        <Text style={mediaStyles.noteText}>{mediaItem.text}</Text>
+                    </View>
+
+                    {/* Close Button */}
+                    <TouchableOpacity style={mediaStyles.doneBtn} onPress={onClose}>
+                        <Text style={mediaStyles.doneBtnText}>Cerrar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
     );
 };
 
@@ -99,6 +262,9 @@ export default function FeedbackReportView({ visible, report, onClose, onReportU
     const [responseText, setResponseText] = useState('');
     const [sending, setSending] = useState(false);
     const [showResponseInput, setShowResponseInput] = useState(false);
+
+    // 🆕 Estado para el modal de media
+    const [mediaModalItem, setMediaModalItem] = useState(null);
 
     const hasResponded = !!report?.clientResponse?.text;
     const canRespond = !hasResponded && report?.status === 'read' || report?.status === 'sent';
@@ -229,20 +395,22 @@ export default function FeedbackReportView({ visible, report, onClose, onReportU
                         </View>
                     )}
 
-                    {/* Highlights */}
+                    {/* Highlights - Con callback para abrir media (fotos de Coach Studio) */}
                     <SectionCard
                         emoji="✨"
                         title="Lo que has hecho bien"
                         items={report.highlights}
                         color="#10b981"
+                        onViewMedia={(item) => setMediaModalItem(item)}
                     />
 
-                    {/* Technical Notes */}
+                    {/* Technical Notes - Con callback para abrir media */}
                     <SectionCard
                         emoji="📊"
                         title="Análisis Técnico"
                         items={report.technicalNotes}
                         color="#3b82f6"
+                        onViewMedia={(item) => setMediaModalItem(item)}
                     />
 
                     {/* Action Plan */}
@@ -327,6 +495,13 @@ export default function FeedbackReportView({ visible, report, onClose, onReportU
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* 🆕 Modal de Media */}
+            <MediaPreviewModal
+                visible={!!mediaModalItem}
+                onClose={() => setMediaModalItem(null)}
+                mediaItem={mediaModalItem}
+            />
         </Modal>
     );
 }
@@ -641,6 +816,134 @@ const styles = StyleSheet.create({
     },
     sendResponseBtnText: {
         fontSize: 14,
+        fontWeight: '600',
+        color: '#fff'
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEDIA MODAL STYLES
+// ═══════════════════════════════════════════════════════════════════════════
+
+const mediaStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    container: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 20,
+        width: '100%',
+        maxHeight: '90%'
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16
+    },
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    title: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    closeBtn: {
+        padding: 4
+    },
+    exerciseBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#eff6ff',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+        marginBottom: 12,
+        gap: 6
+    },
+    exerciseName: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#3b82f6'
+    },
+    mediaContainer: {
+        backgroundColor: '#0f172a',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: 16,
+        minHeight: 200
+    },
+    video: {
+        width: '100%',
+        height: 300
+    },
+    image: {
+        width: '100%',
+        height: 300
+    },
+    audioContainer: {
+        padding: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 200
+    },
+    audioWaveform: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#8b5cf620',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24
+    },
+    audioPlayBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#8b5cf6',
+        paddingHorizontal: 24,
+        paddingVertical: 14,
+        borderRadius: 25,
+        gap: 8
+    },
+    audioPlayText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#fff'
+    },
+    noteSection: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 16
+    },
+    noteLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 6
+    },
+    noteText: {
+        fontSize: 14,
+        color: '#1e293b',
+        lineHeight: 20
+    },
+    doneBtn: {
+        backgroundColor: '#8b5cf6',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center'
+    },
+    doneBtnText: {
+        fontSize: 15,
         fontWeight: '600',
         color: '#fff'
     }

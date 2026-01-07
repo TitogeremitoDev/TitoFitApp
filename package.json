@@ -1,7 +1,7 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
@@ -70,6 +70,7 @@
     "react-native-chart-kit": "^6.12.0",
     "react-native-compressor": "^1.13.0",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-markdown-display": "^7.0.2",
     "react-native-modal": "^14.0.0-rc.1",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
