@@ -33,6 +33,8 @@ export default function SubscriptionRetentionModal({
     userType = 'PREMIUM',
     subscriptionStatus = 'cancelled',
 }) {
+    return null; // 🔒 DESACTIVADO TEMPORALMENTE A PETICIÓN DEL USUARIO
+
     // Animaciones
     const scaleAnim = useRef(new Animated.Value(0.8)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;

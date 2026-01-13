@@ -44,7 +44,7 @@ const TAG_LABELS = {
  */
 export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
     const { width } = useWindowDimensions();
-    const numColumns = width > 900 ? 6 : width > 600 ? 5 : 4;
+    const numColumns = width > 900 ? 10 : width > 600 ? 7 : 6;
     const gap = 6;
     const imageSize = (width - 32 - (numColumns - 1) * gap) / numColumns;
 
@@ -164,7 +164,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
 
         return (
             <TouchableOpacity
-                style={[styles.photoItem, { width: imageSize, height: imageSize }]}
+                style={[styles.photoItem, { width: imageSize, height: imageSize * (16 / 9) }]}
                 onPress={() => onPhotoPress?.({
                     photos: dayPhotos,
                     initialIndex: Math.max(0, photoIndex),

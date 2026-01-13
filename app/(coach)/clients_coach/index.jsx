@@ -65,7 +65,7 @@ const getMoodEmoji = (mood) => {
 
 export default function ClientsScreen() {
     const router = useRouter();
-    const { token } = useAuth();
+    const { token, refreshUser } = useAuth();
 
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -151,6 +151,44 @@ export default function ClientsScreen() {
             }
         } catch (error) {
             console.error('[DELETE] Error deleting client:', error);
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ARCHIVAR CLIENTE - Libera cuota SIN borrar datos
+    // El cliente pierde acceso pero mantiene todo su historial
+    // ═══════════════════════════════════════════════════════════════════════════
+    const handleArchiveClient = async (clientId, clientName) => {
+        try {
+            const response = await fetch(
+                `${API_URL}/api/clients/${clientId}/archive`,
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            const data = await response.json();
+
+            if (data.success) {
+                console.log(`[Archive] ✅ ${clientName} archivado. Nuevo conteo: ${data.newClientCount}/${data.maxClients}`);
+
+                // 1. Refrescar lista de clientes
+                await fetchClients();
+
+                // 2. CRÍTICO: Refrescar datos del usuario para actualizar banner de over-quota
+                // Esto hace que el banner rojo desaparezca INSTANTÁNEAMENTE
+                if (refreshUser) {
+                    await refreshUser();
+                }
+            } else {
+                alert(data.message || 'Error al archivar');
+            }
+        } catch (error) {
+            console.error('[Archive] Error:', error);
+            alert('Error de conexión al archivar');
         }
     };
 
@@ -401,6 +439,15 @@ export default function ClientsScreen() {
                             >
                                 <Text style={[styles.actionLabel, { color: '#10b981' }]}>Feedback</Text>
                                 <Ionicons name="chatbubbles" size={22} color="#10b981" />
+                            </TouchableOpacity>
+
+                            {/* Botón Archivar - Libera cuota sin borrar datos */}
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.archiveButton]}
+                                onPress={() => handleArchiveClient(item._id, item.nombre)}
+                            >
+                                <Text style={[styles.actionLabel, { color: '#f59e0b' }]}>Archivar</Text>
+                                <Ionicons name="archive" size={22} color="#f59e0b" />
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -769,6 +816,10 @@ const styles = StyleSheet.create({
     nutritionButton: {
         borderColor: '#f9a8d4',
         backgroundColor: '#fdf2f8',
+    },
+    archiveButton: {
+        borderColor: '#fcd34d',
+        backgroundColor: '#fffbeb',
     },
     deleteButton: {
         borderColor: '#fca5a5',

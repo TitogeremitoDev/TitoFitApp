@@ -2,7 +2,7 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "runtimeVersion": "1.0.1",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
@@ -49,6 +49,12 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "intentFilters": [
         {
@@ -104,6 +110,7 @@
         {
           "android": {
             "newArchEnabled": true,
+            "ndkVersion": "28.0.13004108",
             "kotlinVersion": "2.1.20",
             "extraMavenRepos": [
               "https://maven.google.com"
@@ -135,6 +142,14 @@
           "cameraPermissionText": "TotalGains necesita acceso a la cámara para grabar videos de tu técnica.",
           "enableMicrophonePermission": true,
           "microphonePermissionText": "TotalGains necesita acceso al micrófono para grabar audio en tus videos."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "TotalGains necesita permiso para guardar tus videos y fotos de progreso en la galería.",
+          "isAccessMediaLocationEnabled": false
         }
       ]
     ],

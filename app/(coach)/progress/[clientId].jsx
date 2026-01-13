@@ -32,6 +32,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import MediaFeedbackResponseModal from '../../../src/components/coach/MediaFeedbackResponseModal';
 import InlineAudioPlayer from '../../../src/components/coach/InlineAudioPlayer';
+import ActionToast from '../../../src/components/shared/ActionToast';
 
 // KPI Utilities
 import {
@@ -122,6 +123,17 @@ export default function ClientProgressDetail() {
     const [selectedFeedback, setSelectedFeedback] = useState(null);
     const [loadingVideos, setLoadingVideos] = useState(false);
     const [expandedAiItems, setExpandedAiItems] = useState({}); // 🆕 Track expanded AI items by ID
+
+    // 🆕 Toast para confirmaciones no intrusivas
+    const [toastConfig, setToastConfig] = useState({
+        visible: false,
+        message: '',
+        submessage: '',
+        icon: 'checkmark-circle',
+        iconColor: '#10b981',
+        actionLabel: null,
+        onAction: null
+    });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -234,6 +246,18 @@ export default function ClientProgressDetail() {
         ));
         setVideoModalVisible(false);
     };
+
+    // 🆕 Mostrar Toast no intrusivo
+    const showToast = (config) => {
+        setToastConfig({ ...config, visible: true });
+    };
+
+    // 🆕 Navegar al modal de feedback del cliente
+    const handleGoToFeedback = () => {
+        setToastConfig(prev => ({ ...prev, visible: false }));
+        router.push(`/(coach)/feedbacks?clientId=${clientId}&clientName=${encodeURIComponent(clientName || '')}`);
+    };
+
 
     // Marcar feedback como visto cuando el coach lo abre
     const markFeedbackAsViewed = async (feedbackId) => {
@@ -2617,6 +2641,9 @@ export default function ClientProgressDetail() {
                                 )}
                                 onResponseSent={handleVideoResponseSent}
                                 isInline={true}
+                                clientId={clientId}
+                                onGoToFeedback={handleGoToFeedback}
+                                showToast={showToast}
                             />
                         </View>
                     )
@@ -2807,9 +2834,24 @@ export default function ClientProgressDetail() {
                         }}
                         feedback={selectedFeedback}
                         onResponseSent={handleVideoResponseSent}
+                        clientId={clientId}
+                        onGoToFeedback={handleGoToFeedback}
+                        showToast={showToast}
                     />
                 )
             }
+
+            {/* 🆕 Toast para confirmaciones no intrusivas */}
+            <ActionToast
+                visible={toastConfig.visible}
+                message={toastConfig.message}
+                submessage={toastConfig.submessage}
+                icon={toastConfig.icon}
+                iconColor={toastConfig.iconColor}
+                actionLabel={toastConfig.actionLabel}
+                onAction={toastConfig.onAction}
+                onDismiss={() => setToastConfig(prev => ({ ...prev, visible: false }))}
+            />
         </SafeAreaView >
     );
 }

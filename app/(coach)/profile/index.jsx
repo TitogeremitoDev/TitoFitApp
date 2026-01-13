@@ -47,6 +47,7 @@ export default function ProfileScreen() {
     const [isAcceptingClients, setIsAcceptingClients] = useState(true);
     const [specialties, setSpecialties] = useState([]);
     const [customSpecialty, setCustomSpecialty] = useState('');
+    const [bizumPhone, setBizumPhone] = useState('');
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -72,6 +73,7 @@ export default function ProfileScreen() {
                 setMaxClients(p.maxClients?.toString() || '5');
                 setIsAcceptingClients(p.isAcceptingClients ?? true);
                 setSpecialties(p.specialties || []);
+                setBizumPhone(p.bizumPhone || '');
             }
         } catch (error) {
             console.error('Error fetching profile:', error);
@@ -147,7 +149,8 @@ export default function ProfileScreen() {
                     instagramHandle,
                     pricePerMonth: parseFloat(pricePerMonth) || 0,
                     specialties,
-                    trainerCode: trainerCode.trim() || undefined
+                    trainerCode: trainerCode.trim() || undefined,
+                    bizumPhone: bizumPhone.trim()
                 })
             });
 
@@ -345,6 +348,19 @@ export default function ProfileScreen() {
                             </View>
                         </View>
 
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Teléfono Bizum (para pagos)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={bizumPhone}
+                                onChangeText={setBizumPhone}
+                                placeholder="600123456"
+                                placeholderTextColor="#94a3b8"
+                                keyboardType="phone-pad"
+                            />
+                            <Text style={styles.helperText}>Este número aparecerá en el aviso de pago para que los atletas te hagan Bizum.</Text>
+                        </View>
+
                         <View style={styles.switchRow}>
                             <Text style={styles.label}>¿Aceptando nuevos clientes?</Text>
                             <Switch
@@ -418,7 +434,7 @@ export default function ProfileScreen() {
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }
 

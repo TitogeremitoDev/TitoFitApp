@@ -17,9 +17,15 @@ import {
     ActivityIndicator,
     Platform,
     Animated,
-    Share,
-    Alert, // Added Alert import
+    Alert,
 } from 'react-native';
+
+// Importar react-native-share y FileSystem solo en native (no web)
+let RNShare, FileSystem;
+if (Platform.OS !== 'web') {
+    RNShare = require('react-native-share').default;
+    FileSystem = require('expo-file-system');
+}
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -327,17 +333,38 @@ export default function UnifiedFeedbackModal({
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // COMPARTIR EN INSTAGRAM
+    // COMPARTIR EN REDES SOCIALES (Abre el sistema de share nativo con el archivo)
     // ═══════════════════════════════════════════════════════════════════════════
-    const shareToInstagram = async () => {
+    const shareToSocial = async () => {
+        if (Platform.OS === 'web' || !RNShare) {
+            Alert.alert('No disponible', 'Compartir solo está disponible en la app móvil');
+            return;
+        }
+
+        if (!mediaUri) {
+            Alert.alert('Sin media', 'No hay foto o video para compartir');
+            return;
+        }
+
         try {
-            // Por ahora, usar Share nativo. Para Stories reales necesitaríamos react-native-share
-            await Share.share({
-                message: `💪 Set completado: ${exerciseName}\n#TotalGains #Workout`,
-                url: mediaUri,
+            console.log('[UnifiedModal] Sharing - mediaUri:', mediaUri, 'mediaType:', mediaType);
+
+            // Asegurar formato file:// en Android
+            let fileUri = mediaUri;
+            if (Platform.OS === 'android' && !fileUri.startsWith('file://')) {
+                fileUri = `file://${fileUri}`;
+            }
+
+            // Abrir el sistema de share nativo con el archivo incluido
+            await RNShare.open({
+                message: `💪 Set completado: ${exerciseName || 'Mi entreno'}\n#TotalGains #Fitness #Workout`,
+                url: fileUri,
+                type: mediaType === 'video' ? 'video/*' : 'image/*',
             });
+
         } catch (err) {
-            console.error('[UnifiedModal] Error sharing:', err);
+            console.log('[UnifiedModal] Share cancelled or error:', err);
+            // Si el usuario cancela, no mostramos error
         }
     };
 
@@ -370,24 +397,24 @@ export default function UnifiedFeedbackModal({
                     Tu coach lo verá pronto
                 </Text>
 
-                {/* Botón de Instagram (solo si hay media) */}
+                {/* Botón de compartir (solo si hay media) */}
                 {mediaUri && (
                     <TouchableOpacity
-                        style={styles.instagramBtn}
-                        onPress={shareToInstagram}
+                        style={styles.shareBtn}
+                        onPress={shareToSocial}
                         activeOpacity={0.85}
                     >
                         <LinearGradient
                             colors={['#833ab4', '#fd1d1d', '#fcb045']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
-                            style={styles.instagramGradient}
+                            style={styles.shareGradient}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 <Ionicons name="logo-instagram" size={20} color="#fff" />
                                 <Ionicons name="logo-tiktok" size={18} color="#fff" />
                             </View>
-                            <Text style={styles.instagramText}>Presume en tus redes</Text>
+                            <Text style={styles.shareText}>Presume en tus redes</Text>
                         </LinearGradient>
                     </TouchableOpacity>
                 )}
@@ -935,19 +962,21 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginBottom: 24,
     },
-    instagramBtn: {
+    // Unified share button
+    shareBtn: {
         borderRadius: 12,
         overflow: 'hidden',
         marginBottom: 16,
     },
-    instagramGradient: {
+    shareGradient: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         paddingVertical: 14,
         paddingHorizontal: 24,
     },
-    instagramText: {
+    shareText: {
         color: '#fff',
         fontSize: 15,
         fontWeight: '600',

@@ -10,6 +10,8 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
+    Image,
+    useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -117,12 +119,14 @@ export default function CoachSeguimientoScreen() {
         const dailyColor = getDailyBadgeColor(client.daysSinceDaily);
         const weeklyColor = getWeeklyBadgeColor(client.weeksSinceWeekly);
         const objetivoTag = getObjetivoTag(client.objetivo);
-        const moodEmoji = client.avgAnimo ? MOOD_EMOJIS[client.avgAnimo] : '❓';
+        // Use neutral gray emoji instead of alarming ❓ for missing mood
+        const moodEmoji = client.avgAnimo ? MOOD_EMOJIS[client.avgAnimo] : '—';
 
         // Determinar si hay registros nuevos sin ver
         const hasUnviewedDaily = client.daysSinceDaily !== null && !client.dailyViewed;
         const hasUnviewedWeekly = client.weeksSinceWeekly !== null && !client.weeklyViewed;
         const hasUnviewed = hasUnviewedDaily || hasUnviewedWeekly;
+        const hasUnreadNotes = client.unreadNotesCount > 0;
 
         return (
             <TouchableOpacity
@@ -137,25 +141,40 @@ export default function CoachSeguimientoScreen() {
                 <View style={styles.cardHeader}>
                     <View style={styles.clientInfo}>
                         <View style={styles.avatarContainer}>
-                            <Ionicons name="person-circle" size={44} color="#0ea5e9" />
+                            {client.profilePhoto ? (
+                                <Image
+                                    source={{ uri: client.profilePhoto }}
+                                    style={styles.avatarImage}
+                                />
+                            ) : (
+                                <Ionicons name="person-circle" size={48} color="#0ea5e9" />
+                            )}
                             {hasUnviewed && <View style={styles.unviewedDot} />}
                         </View>
                         <View style={styles.clientDetails}>
                             <Text style={styles.clientName}>{client.nombre}</Text>
-                            <Text style={styles.clientEmail}>{client.email}</Text>
+                            <Text style={styles.clientEmail} numberOfLines={1}>{client.email}</Text>
                         </View>
                     </View>
 
-                    {/* Icono visto/no visto */}
-                    {!hasUnviewed && client.daysSinceDaily !== null && (
-                        <Ionicons name="checkmark-circle" size={22} color="#10b981" />
-                    )}
+                    {/* Icono visto/no visto + Notas */}
+                    <View style={styles.headerBadges}>
+                        {hasUnreadNotes && (
+                            <View style={styles.notesBadge}>
+                                <Ionicons name="document-text" size={14} color="#8b5cf6" />
+                                <Text style={styles.notesBadgeText}>{client.unreadNotesCount}</Text>
+                            </View>
+                        )}
+                        {!hasUnviewed && client.daysSinceDaily !== null && (
+                            <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                        )}
+                    </View>
                 </View>
 
                 {/* Badges de seguimiento */}
                 <View style={styles.badgesRow}>
                     {/* Diario */}
-                    <View style={[styles.badge, { backgroundColor: dailyColor + '20', borderColor: dailyColor }]}>
+                    <View style={[styles.badge, { backgroundColor: dailyColor + '18', borderColor: dailyColor }]}>
                         <Ionicons name="calendar" size={14} color={dailyColor} />
                         <Text style={[styles.badgeText, { color: dailyColor }]}>
                             Diario: {formatDaysAgo(client.daysSinceDaily)}
@@ -163,7 +182,7 @@ export default function CoachSeguimientoScreen() {
                     </View>
 
                     {/* Semanal */}
-                    <View style={[styles.badge, { backgroundColor: weeklyColor + '20', borderColor: weeklyColor }]}>
+                    <View style={[styles.badge, { backgroundColor: weeklyColor + '18', borderColor: weeklyColor }]}>
                         <Ionicons name="calendar-outline" size={14} color={weeklyColor} />
                         <Text style={[styles.badgeText, { color: weeklyColor }]}>
                             Semanal: {formatWeeksAgo(client.weeksSinceWeekly)}
@@ -171,7 +190,7 @@ export default function CoachSeguimientoScreen() {
                     </View>
                 </View>
 
-                {/* Preview rápido */}
+                {/* Preview rápido - Mejorado */}
                 <View style={styles.previewRow}>
                     {/* Ánimo */}
                     <View style={styles.previewItem}>
@@ -179,31 +198,37 @@ export default function CoachSeguimientoScreen() {
                         <Text style={styles.previewLabel}>Ánimo</Text>
                     </View>
 
-                    {/* Peso */}
+                    {/* Peso - Media 7 días */}
                     <View style={styles.previewItem}>
-                        {client.currentWeight ? (
-                            <>
-                                <Text style={styles.previewValue}>{client.currentWeight} kg</Text>
-                                {client.weightChange !== null && (
-                                    <View style={styles.weightChangeRow}>
-                                        <Ionicons
-                                            name={client.weightChange > 0 ? 'arrow-up' : 'arrow-down'}
-                                            size={12}
-                                            color={client.weightChange > 0 ? '#10b981' : '#ef4444'}
-                                        />
-                                        <Text style={[
-                                            styles.weightChangeText,
-                                            { color: client.weightChange > 0 ? '#10b981' : '#ef4444' }
+                        <View style={styles.weightContainer}>
+                            <Ionicons name="scale-outline" size={16} color="#64748b" />
+                            {client.avgWeight7d ? (
+                                <>
+                                    <Text style={styles.previewValue}>{client.avgWeight7d} kg</Text>
+                                    {client.weightChange !== null && client.weightChange !== 0 && (
+                                        <View style={[
+                                            styles.weightChangeBadge,
+                                            { backgroundColor: client.weightChange > 0 ? '#10b98120' : '#ef444420' }
                                         ]}>
-                                            {Math.abs(client.weightChange)}%
-                                        </Text>
-                                    </View>
-                                )}
-                            </>
-                        ) : (
-                            <Text style={styles.previewValue}>-- kg</Text>
-                        )}
-                        <Text style={styles.previewLabel}>Peso</Text>
+                                            <Ionicons
+                                                name={client.weightChange > 0 ? 'arrow-up' : 'arrow-down'}
+                                                size={10}
+                                                color={client.weightChange > 0 ? '#10b981' : '#ef4444'}
+                                            />
+                                            <Text style={[
+                                                styles.weightChangeText,
+                                                { color: client.weightChange > 0 ? '#10b981' : '#ef4444' }
+                                            ]}>
+                                                {Math.abs(client.weightChange).toFixed(1)}%
+                                            </Text>
+                                        </View>
+                                    )}
+                                </>
+                            ) : (
+                                <Text style={styles.previewValueMuted}>-- kg</Text>
+                            )}
+                        </View>
+                        <Text style={styles.previewLabel}>Media 7d</Text>
                     </View>
 
                     {/* Objetivo */}
@@ -251,6 +276,7 @@ export default function CoachSeguimientoScreen() {
                     subtitle="Check-ins de clientes"
                     icon="resize-outline"
                     iconColor="#0ea5e9"
+                    onBackPress={() => router.push('/(coach)')}
                 />
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#0ea5e9" />
@@ -268,6 +294,7 @@ export default function CoachSeguimientoScreen() {
                 icon="resize-outline"
                 iconColor="#0ea5e9"
                 badge={`${clients.length} clientes`}
+                onBackPress={() => router.push('/(coach)')}
             />
 
             <FlatList
@@ -342,16 +369,42 @@ const styles = StyleSheet.create({
     avatarContainer: {
         position: 'relative',
     },
+    avatarImage: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        borderWidth: 2,
+        borderColor: '#0ea5e9',
+    },
     unviewedDot: {
         position: 'absolute',
-        top: 2,
-        right: 2,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        top: 0,
+        right: 0,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
         backgroundColor: '#ef4444',
         borderWidth: 2,
         borderColor: '#fff',
+    },
+    headerBadges: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    notesBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#8b5cf620',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    notesBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#8b5cf6',
     },
     clientDetails: {
         marginLeft: 12,
@@ -373,6 +426,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 10,
         marginBottom: 14,
+        flexWrap: 'wrap',
     },
     badge: {
         flexDirection: 'row',
@@ -392,30 +446,54 @@ const styles = StyleSheet.create({
     previewRow: {
         flexDirection: 'row',
         justifyContent: 'space-around',
-        paddingTop: 12,
-        paddingBottom: 12,
+        paddingTop: 14,
+        paddingBottom: 14,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
+        backgroundColor: '#fafafa',
+        marginHorizontal: -16,
+        paddingHorizontal: 16,
     },
     previewItem: {
         alignItems: 'center',
         flex: 1,
     },
     previewEmoji: {
-        fontSize: 24,
+        fontSize: 26,
         marginBottom: 4,
+    },
+    weightContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        flexWrap: 'wrap',
+        justifyContent: 'center',
     },
     previewValue: {
         fontSize: 15,
         fontWeight: '700',
         color: '#1e293b',
     },
+    previewValueMuted: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#94a3b8',
+    },
     previewLabel: {
         fontSize: 11,
         color: '#94a3b8',
-        marginTop: 2,
+        marginTop: 4,
+        fontWeight: '500',
+    },
+    weightChangeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 8,
+        gap: 2,
     },
     weightChangeRow: {
         flexDirection: 'row',
@@ -423,8 +501,8 @@ const styles = StyleSheet.create({
         gap: 2,
     },
     weightChangeText: {
-        fontSize: 11,
-        fontWeight: '600',
+        fontSize: 10,
+        fontWeight: '700',
     },
     objetivoTag: {
         flexDirection: 'row',

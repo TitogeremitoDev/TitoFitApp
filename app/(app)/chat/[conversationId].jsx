@@ -16,7 +16,8 @@ import {
     Platform,
     ActivityIndicator,
     Keyboard,
-    Linking
+    Linking,
+    Image
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,15 +84,38 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 </Text>
             )}
 
-            {/* 📹 Video Feedback Response - Special Card */}
-            {isVideoResponse && !isOwn && (
-                <View style={styles.videoResponseCard}>
-                    <View style={styles.videoResponseHeader}>
-                        <Ionicons name="videocam" size={18} color="#4361ee" />
-                        <Text style={styles.videoResponseTitle}>
-                            Respuesta a tu video
+            {/* 📹 Video Feedback Response - Quote-style Card con metadata */}
+            {(isVideoResponse || message.metadata?.isVideoFeedbackResponse) && !isOwn && (
+                <View style={styles.originalMediaCard}>
+                    {/* Contenedor izquierda: Texto */}
+                    <View style={styles.originalMediaHeader}>
+                        <Text style={styles.originalMediaLabel}>
+                            Respondiendo a {message.metadata?.exerciseName || 'tu video'}
                         </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons
+                                name={
+                                    message.metadata?.originalMediaType === 'video' ? 'videocam' :
+                                        message.metadata?.originalMediaType === 'photo' ? 'image' : 'mic'
+                                }
+                                size={12}
+                                color="#64748b"
+                                style={{ marginRight: 4 }}
+                            />
+                            <Text style={styles.originalMediaSubtext}>
+                                Serie {message.metadata?.setNumber || 1}
+                            </Text>
+                        </View>
                     </View>
+
+                    {/* Contenedor derecha: Thumbnail */}
+                    {message.metadata?.originalThumbnail && (
+                        <Image
+                            source={{ uri: message.metadata.originalThumbnail }}
+                            style={styles.originalMediaThumbnail}
+                            resizeMode="cover"
+                        />
+                    )}
                 </View>
             )}
 
@@ -717,7 +741,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#cbd5e1'
     },
 
-    // Video Feedback Response Card
+    // Video Feedback Response Card (Legacy)
     videoResponseCard: {
         backgroundColor: '#4361ee10',
         padding: 10,
@@ -735,6 +759,38 @@ const styles = StyleSheet.create({
         color: '#4361ee',
         fontSize: 13,
         fontWeight: '600'
+    },
+
+    // 🆕 Original Media Quote Card (Enhanced)
+    originalMediaCard: {
+        backgroundColor: '#f0f4ff',
+        borderLeftWidth: 4,
+        borderLeftColor: '#4361ee',
+        borderRadius: 8,
+        padding: 8,
+        marginBottom: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    originalMediaHeader: {
+        flex: 1,
+    },
+    originalMediaLabel: {
+        fontSize: 12,
+        color: '#4361ee',
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    originalMediaSubtext: {
+        fontSize: 11,
+        color: '#64748b',
+    },
+    originalMediaThumbnail: {
+        width: 44,
+        height: 44,
+        borderRadius: 6,
+        backgroundColor: '#e2e8f0',
     },
 
     // YouTube Link Card

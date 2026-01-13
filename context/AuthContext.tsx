@@ -62,6 +62,13 @@ export type User = {
   currentTrainerId?: string;
   // Factor de actividad para cálculos nutricionales
   af?: number;
+  subscriptionStatus?: string;
+  overQuota?: {
+    currentClients: number;
+    maxClients: number;
+    overBy: number;
+    daysFrozen: number;
+  };
 };
 
 type AuthContextData = {
@@ -275,6 +282,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             referralPremiumDays: data.referralPremiumDays,
             referredUsersCount: data.referredUsersCount,
             af: data.af,
+            // 🛑 CRITICAL: Add subscription fields for frozen/over-quota check
+            subscriptionStatus: data.subscriptionStatus,
+            overQuota: data.overQuota,
           };
 
           // Persistir y actualizar estado

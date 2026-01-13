@@ -8,6 +8,7 @@ import {
     TextInput,
     Alert,
     ActivityIndicator,
+    Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,10 +53,37 @@ export default function Onboarding() {
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
 
-    // Estado para el código de invitación universal
+    // Estado para el código de invitación universal (legacy, mantenemos por compatibilidad)
     const [invitationCode, setInvitationCode] = useState('');
     const [isRedeemingCode, setIsRedeemingCode] = useState(false);
     const [codeRedeemed, setCodeRedeemed] = useState<{ type: string; message: string } | null>(null);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROLE SELECTOR STATES
+    // ═══════════════════════════════════════════════════════════════════════════
+    const [expandedRole, setExpandedRole] = useState<'coach' | 'client' | 'free' | null>(null);
+
+    // Coach card states
+    const [coachPromoCode, setCoachPromoCode] = useState('');
+    const [isActivatingTrial, setIsActivatingTrial] = useState(false);
+    const [isRedeemingCoachCode, setIsRedeemingCoachCode] = useState(false);
+
+    // Client card states
+    const [trainerCode, setTrainerCode] = useState('');
+    const [isLinkingTrainer, setIsLinkingTrainer] = useState(false);
+    const [linkedTrainer, setLinkedTrainer] = useState<string | null>(null);
+
+    // Free user card states
+    const [freePromoCode, setFreePromoCode] = useState('');
+    const [isRedeemingFreeCode, setIsRedeemingFreeCode] = useState(false);
+
+    // Error modal for trainer linking
+    const [trainerErrorModal, setTrainerErrorModal] = useState<{
+        visible: boolean;
+        errorCode: 'TRAINER_NOT_FOUND' | 'TRAINER_AT_CAPACITY' | null;
+        trainerName?: string;
+        message?: string;
+    }>({ visible: false, errorCode: null });
 
     const [formData, setFormData] = useState({
         edad: '',
@@ -242,124 +270,525 @@ export default function Onboarding() {
         }
     };
 
-    // STEP 0: WELCOME
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROLE SELECTOR HANDLERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Handler: Activar trial de 14 días como coach
+    const handleActivateCoachTrial = async () => {
+        setIsActivatingTrial(true);
+        try {
+            console.log('[Onboarding] 🚀 Activando trial de entrenador...');
+            const response = await axios.post('/users/activate-coach-trial');
+
+            if (response.data.success) {
+                console.log('[Onboarding] ✅ Trial activado:', response.data.user?.trainerProfile?.trainerCode);
+                await refreshUser();
+
+                // Navegar directamente al dashboard de coach
+                router.replace('/(coach)/profile');
+
+                // Mostrar mensaje de bienvenida (no bloqueante)
+                setTimeout(() => {
+                    Alert.alert(
+                        '¡Bienvenido, Entrenador!',
+                        'Tu prueba de 14 días ha sido activada. Si al terminar tienes menos de 3 clientes, mantienes el acceso GRATIS para siempre.'
+                    );
+                }, 500);
+            }
+        } catch (error: any) {
+            console.error('[Onboarding] Error activando trial:', error);
+            const message = error.response?.data?.message || 'No se pudo activar el trial. Inténtalo de nuevo.';
+            Alert.alert('Error', message);
+        } finally {
+            setIsActivatingTrial(false);
+        }
+    };
+
+    // Handler: Vincular con entrenador
+    const handleLinkWithTrainer = async () => {
+        if (!trainerCode.trim()) {
+            Alert.alert('Código requerido', 'Por favor introduce el código de tu entrenador');
+            return;
+        }
+
+        setIsLinkingTrainer(true);
+        try {
+            console.log('[Onboarding] 🔗 Vinculando con entrenador:', trainerCode.trim().toUpperCase());
+            const response = await axios.post('/clients/select-trainer', {
+                trainerCode: trainerCode.trim().toUpperCase()
+            });
+
+            if (response.data.success) {
+                const trainerName = response.data.trainer?.nombre || response.data.trainer?.profile?.brandName || 'tu entrenador';
+                setLinkedTrainer(trainerName);
+                await refreshUser();
+                // Navegar directamente al siguiente paso
+                setCurrentStep(1);
+            }
+        } catch (error: any) {
+            console.error('[Onboarding] Error vinculando:', error);
+            console.log('[Onboarding] Response data:', error.response?.data);
+            console.log('[Onboarding] Response status:', error.response?.status);
+
+            const errorCode = error.response?.data?.errorCode;
+            const trainerName = error.response?.data?.trainerName;
+            const message = error.response?.data?.message;
+            const status = error.response?.status;
+
+            // Mostrar modal visual para errores específicos
+            if (errorCode === 'TRAINER_AT_CAPACITY' || errorCode === 'TRAINER_NOT_ACCEPTING' || status === 403) {
+                setTrainerErrorModal({
+                    visible: true,
+                    errorCode: 'TRAINER_AT_CAPACITY',
+                    trainerName: trainerName || 'Tu entrenador',
+                    message: message
+                });
+            } else if (errorCode === 'TRAINER_NOT_FOUND' || status === 404) {
+                setTrainerErrorModal({
+                    visible: true,
+                    errorCode: 'TRAINER_NOT_FOUND',
+                    message: message || 'No hemos encontrado ningún entrenador con ese código.'
+                });
+            } else {
+                // Fallback para otros errores - también mostrar modal
+                setTrainerErrorModal({
+                    visible: true,
+                    errorCode: 'TRAINER_NOT_FOUND',
+                    message: message || 'Ocurrió un error. Inténtalo de nuevo.'
+                });
+            }
+        } finally {
+            setIsLinkingTrainer(false);
+        }
+    };
+
+    // Handler: Canjear código promocional de coach
+    const handleRedeemCoachPromoCode = async () => {
+        if (!coachPromoCode.trim()) return;
+
+        setIsRedeemingCoachCode(true);
+        try {
+            console.log('[Onboarding] 🎫 Canjeando código de entrenador:', coachPromoCode.trim().toUpperCase());
+            const response = await axios.post('/promo-codes/redeem', {
+                code: coachPromoCode.trim().toUpperCase()
+            });
+
+            if (response.data.success) {
+                console.log('[Onboarding] ✅ Código de coach canjeado');
+                await refreshUser();
+                Alert.alert(
+                    '¡Código canjeado!',
+                    response.data.message || 'Tu cuenta de entrenador ha sido activada.',
+                    [{ text: 'Empezar', onPress: () => router.replace('/(coach)/profile') }]
+                );
+            }
+        } catch (error: any) {
+            console.error('[Onboarding] Error canjeando código coach:', error);
+            const message = error.response?.data?.message || 'Código no válido o ya ha sido usado.';
+            Alert.alert('Error', message);
+        } finally {
+            setIsRedeemingCoachCode(false);
+        }
+    };
+
+    // Handler: Canjear código premium para usuario libre
+    const handleRedeemFreePromoCode = async () => {
+        if (!freePromoCode.trim()) {
+            // Sin código, simplemente continuar al cuestionario
+            setCurrentStep(1);
+            return;
+        }
+
+        setIsRedeemingFreeCode(true);
+        try {
+            console.log('[Onboarding] 🎫 Canjeando código premium:', freePromoCode.trim().toUpperCase());
+            const response = await axios.post('/promo-codes/redeem', {
+                code: freePromoCode.trim().toUpperCase()
+            });
+
+            if (response.data.success) {
+                console.log('[Onboarding] ✅ Código premium canjeado');
+                await refreshUser();
+                Alert.alert(
+                    '¡Código canjeado!',
+                    response.data.message || 'Tu cuenta ha sido mejorada.',
+                    [{ text: 'Continuar', onPress: () => setCurrentStep(1) }]
+                );
+            }
+        } catch (error: any) {
+            console.error('[Onboarding] Error canjeando código free:', error);
+            // Si falla el código, permitir continuar de todas formas
+            Alert.alert(
+                'Código no válido',
+                'El código no existe o ya ha sido usado. Puedes continuar sin él.',
+                [
+                    { text: 'Intentar otro', style: 'cancel' },
+                    { text: 'Continuar sin código', onPress: () => setCurrentStep(1) }
+                ]
+            );
+        } finally {
+            setIsRedeemingFreeCode(false);
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 0: ROLE SELECTOR
+    // ═══════════════════════════════════════════════════════════════════════════
     if (currentStep === 0) {
         return (
             <View style={[styles.container, { backgroundColor: theme.background }]}>
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <View style={styles.welcomeContent}>
-                        <Ionicons name="barbell" size={80} color={theme.primary} />
-                        <Text style={[styles.welcomeTitle, { color: theme.text }]}>
-                            ¡Bienvenido a TotalGains!
-                        </Text>
-                        <Text style={[styles.welcomeSubtitle, { color: theme.textSecondary }]}>
-                            Antes de empezar, nos gustaría conocerte un poco mejor para personalizar tu experiencia.
-                        </Text>
-
-                        <View style={styles.benefitsList}>
-                            <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
-                                <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Rutinas adaptadas a tus objetivos
-                                </Text>
-                            </View>
-                            <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
-                                <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Recomendaciones personalizadas
-                                </Text>
-                            </View>
-                            <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
-                                <Text style={[styles.benefitText, { color: theme.text }]}>
-                                    Seguimiento más preciso de tu progreso
-                                </Text>
-                            </View>
+                <ScrollView
+                    style={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                >
+                    <View style={styles.roleSelectorContent}>
+                        {/* Header */}
+                        <View style={styles.roleSelectorHeader}>
+                            <Ionicons name="fitness" size={50} color={theme.primary} />
+                            <Text style={[styles.roleSelectorTitle, { color: theme.text }]}>
+                                ¿Cómo vas a usar TotalGains?
+                            </Text>
+                            <Text style={[styles.roleSelectorSubtitle, { color: theme.textSecondary }]}>
+                                Selecciona tu rol para personalizar tu experiencia
+                            </Text>
                         </View>
 
-                        {/* Campo de código de invitación universal */}
-                        <View style={[styles.invitationSection, { backgroundColor: theme.cardBackground, borderColor: codeRedeemed ? theme.primary : theme.border }]}>
-                            <View style={styles.invitationHeader}>
-                                <Ionicons name="gift" size={20} color={codeRedeemed ? theme.primary : '#F59E0B'} />
-                                <Text style={[styles.invitationTitle, { color: codeRedeemed ? theme.primary : theme.text }]}>
-                                    {codeRedeemed ? '¡Código aplicado!' : '¿Tienes una invitación? (Opcional)'}
-                                </Text>
-                            </View>
-
-                            {codeRedeemed ? (
-                                <View style={[styles.codeRedeemedBadge, { backgroundColor: theme.primary + '20' }]}>
-                                    <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
-                                    <Text style={[styles.codeRedeemedText, { color: theme.primary }]}>
-                                        {codeRedeemed.message}
+                        {/* CARD A: SOY ENTRENADOR */}
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        <View style={[
+                            styles.roleCard,
+                            {
+                                backgroundColor: expandedRole === 'coach' ? '#FEF3C7' : theme.cardBackground,
+                                borderColor: expandedRole === 'coach' ? '#F59E0B' : theme.border,
+                                borderWidth: expandedRole === 'coach' ? 2 : 1
+                            }
+                        ]}>
+                            {/* Solo el header es touchable para expand/collapse */}
+                            <TouchableOpacity
+                                style={styles.roleCardHeader}
+                                onPress={() => setExpandedRole(expandedRole === 'coach' ? null : 'coach')}
+                                activeOpacity={0.8}
+                            >
+                                <View style={[styles.roleIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                                    <Ionicons name="school" size={28} color="#F59E0B" />
+                                </View>
+                                <View style={styles.roleCardTitleContainer}>
+                                    <Text style={[styles.roleCardTitle, { color: expandedRole === 'coach' ? '#1e293b' : theme.text }]}>
+                                        SOY ENTRENADOR
+                                    </Text>
+                                    <Text style={[styles.roleCardSubtitle, { color: expandedRole === 'coach' ? '#78350f' : theme.textSecondary }]}>
+                                        Gestiona clientes y crea planes
                                     </Text>
                                 </View>
-                            ) : (
-                                <>
-                                    <View style={styles.invitationInputRow}>
-                                        <TextInput
-                                            style={[styles.invitationInput, {
-                                                color: theme.text,
-                                                borderColor: theme.border,
-                                                backgroundColor: theme.background
-                                            }]}
-                                            placeholder="Código de Entrenador, Amigo o VIP"
-                                            placeholderTextColor={theme.textSecondary}
-                                            value={invitationCode}
-                                            onChangeText={setInvitationCode}
-                                            autoCapitalize="characters"
-                                            editable={!isRedeemingCode}
-                                        />
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.invitationButton,
-                                                { backgroundColor: invitationCode.trim() ? '#F59E0B' : theme.border }
-                                            ]}
-                                            onPress={handleRedeemInvitationCode}
-                                            disabled={!invitationCode.trim() || isRedeemingCode}
-                                        >
-                                            {isRedeemingCode ? (
-                                                <ActivityIndicator size="small" color="#FFF" />
-                                            ) : (
-                                                <Ionicons name="checkmark" size={20} color="#FFF" />
-                                            )}
-                                        </TouchableOpacity>
-                                    </View>
-                                    <Text style={[styles.invitationHint, { color: theme.textSecondary }]}>
-                                        Si tienes un entrenador o un código de descuento, pégalo aquí y nosotros nos encargamos del resto.
+                                <Ionicons
+                                    name={expandedRole === 'coach' ? 'chevron-up' : 'chevron-down'}
+                                    size={24}
+                                    color={expandedRole === 'coach' ? '#78350f' : theme.textSecondary}
+                                />
+                            </TouchableOpacity>
+
+                            {/* Contenido expandido - FUERA del TouchableOpacity para que no propague eventos */}
+                            {expandedRole === 'coach' && (
+                                <View style={styles.roleCardExpanded}>
+                                    {/* CTA Principal: Trial 14 días */}
+                                    <TouchableOpacity
+                                        style={[styles.trialButton, { backgroundColor: '#F59E0B' }]}
+                                        onPress={handleActivateCoachTrial}
+                                        disabled={isActivatingTrial}
+                                    >
+                                        {isActivatingTrial ? (
+                                            <ActivityIndicator color="#FFF" />
+                                        ) : (
+                                            <>
+                                                <Ionicons name="rocket" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                                                <Text style={styles.trialButtonText}>
+                                                    ACTIVAR PRUEBA UNLIMITED (14 DÍAS)
+                                                </Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                    <Text style={[styles.trialMicrocopy, { color: '#78350f' }]}>
+                                        Acceso total a todas las funciones PRO. Si al terminar tienes menos de 3 clientes, te quedas con todo GRATIS para siempre.
                                     </Text>
-                                </>
+
+                                    {/* Botón secundario: Ir a pagos */}
+                                    <TouchableOpacity
+                                        style={[styles.secondaryActionButton, { borderColor: '#F59E0B', backgroundColor: '#ffffff' }]}
+                                        onPress={() => router.push('/(app)/payment')}
+                                    >
+                                        <Ionicons name="card" size={18} color="#b45309" style={{ marginRight: 6 }} />
+                                        <Text style={[styles.secondaryActionText, { color: '#b45309' }]}>
+                                            SÉ LO QUE QUIERO
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {/* Input: Código promocional de entrenador */}
+                                    <View style={styles.promoCodeSection}>
+                                        <Text style={[styles.promoCodeLabel, { color: '#78350f' }]}>
+                                            ¿Tienes código promocional de entrenador?
+                                        </Text>
+                                        <View style={styles.promoCodeInputRow}>
+                                            <TextInput
+                                                style={[styles.promoCodeInput, {
+                                                    color: '#1e293b',
+                                                    borderColor: '#fcd34d',
+                                                    backgroundColor: '#ffffff'
+                                                }]}
+                                                placeholder="CÓDIGO"
+                                                placeholderTextColor="#92400e"
+                                                value={coachPromoCode}
+                                                onChangeText={setCoachPromoCode}
+                                                autoCapitalize="characters"
+                                                editable={!isRedeemingCoachCode}
+                                            />
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.promoCodeButton,
+                                                    { backgroundColor: coachPromoCode.trim() ? '#F59E0B' : '#94a3b8' }
+                                                ]}
+                                                onPress={handleRedeemCoachPromoCode}
+                                                disabled={!coachPromoCode.trim() || isRedeemingCoachCode}
+                                            >
+                                                {isRedeemingCoachCode ? (
+                                                    <ActivityIndicator size="small" color="#FFF" />
+                                                ) : (
+                                                    <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
                             )}
                         </View>
 
-                        <TouchableOpacity
-                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-                            onPress={handleNext}
-                        >
-                            <Ionicons name="clipboard-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                            <Text style={styles.primaryButtonText}>Completar cuestionario</Text>
-                        </TouchableOpacity>
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        {/* CARD B: SOY CLIENTE DE UN ENTRENADOR */}
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        <View style={[
+                            styles.roleCard,
+                            {
+                                backgroundColor: expandedRole === 'client' ? '#DBEAFE' : theme.cardBackground,
+                                borderColor: expandedRole === 'client' ? '#3B82F6' : theme.border,
+                                borderWidth: expandedRole === 'client' ? 2 : 1
+                            }
+                        ]}>
+                            {/* Solo el header es touchable para expand/collapse */}
+                            <TouchableOpacity
+                                style={styles.roleCardHeader}
+                                onPress={() => setExpandedRole(expandedRole === 'client' ? null : 'client')}
+                                activeOpacity={0.8}
+                            >
+                                <View style={[styles.roleIconContainer, { backgroundColor: '#DBEAFE' }]}>
+                                    <Ionicons name="people" size={28} color="#3B82F6" />
+                                </View>
+                                <View style={styles.roleCardTitleContainer}>
+                                    <Text style={[styles.roleCardTitle, { color: expandedRole === 'client' ? '#1e293b' : theme.text }]}>
+                                        SOY CLIENTE DE UN ENTRENADOR
+                                    </Text>
+                                    <Text style={[styles.roleCardSubtitle, { color: expandedRole === 'client' ? '#1e40af' : theme.textSecondary }]}>
+                                        Ya tengo un entrenador que me guía
+                                    </Text>
+                                </View>
+                                <Ionicons
+                                    name={expandedRole === 'client' ? 'chevron-up' : 'chevron-down'}
+                                    size={24}
+                                    color={expandedRole === 'client' ? '#1e40af' : theme.textSecondary}
+                                />
+                            </TouchableOpacity>
 
-                        <Text style={[styles.helperText, { color: theme.textSecondary }]}>
-                            Solo te llevará 30 segundos 😉
-                        </Text>
+                            {/* Contenido expandido - FUERA del TouchableOpacity */}
+                            {expandedRole === 'client' && (
+                                <View style={styles.roleCardExpanded}>
+                                    {linkedTrainer ? (
+                                        <View style={[styles.linkedTrainerBadge, { backgroundColor: '#3B82F620' }]}>
+                                            <Ionicons name="checkmark-circle" size={24} color="#3B82F6" />
+                                            <Text style={[styles.linkedTrainerText, { color: '#3B82F6' }]}>
+                                                ¡Vinculado con {linkedTrainer}!
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <>
+                                            <Text style={[styles.clientInstructions, { color: '#1e293b' }]}>
+                                                Introduce el código que te ha dado tu entrenador:
+                                            </Text>
+                                            <View style={styles.trainerCodeInputRow}>
+                                                <TextInput
+                                                    style={[styles.trainerCodeInput, {
+                                                        color: '#1e293b',
+                                                        borderColor: '#93c5fd',
+                                                        backgroundColor: '#ffffff'
+                                                    }]}
+                                                    placeholder="Ej: COACHPRO123"
+                                                    placeholderTextColor="#64748b"
+                                                    value={trainerCode}
+                                                    onChangeText={setTrainerCode}
+                                                    autoCapitalize="characters"
+                                                    editable={!isLinkingTrainer}
+                                                />
+                                            </View>
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.linkTrainerButton,
+                                                    { backgroundColor: trainerCode.trim() ? '#3B82F6' : '#94a3b8' }
+                                                ]}
+                                                onPress={handleLinkWithTrainer}
+                                                disabled={!trainerCode.trim() || isLinkingTrainer}
+                                            >
+                                                {isLinkingTrainer ? (
+                                                    <ActivityIndicator color="#FFF" />
+                                                ) : (
+                                                    <>
+                                                        <Ionicons name="link" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                                                        <Text style={styles.linkTrainerButtonText}>VINCULAR CON MI ENTRENADOR</Text>
+                                                    </>
+                                                )}
+                                            </TouchableOpacity>
+                                            <Text style={[styles.clientMicrocopy, { color: '#475569' }]}>
+                                                Tu entrenador te dará un código único para vincularte. Después completarás tu perfil para que pueda crear tu plan.
+                                            </Text>
+                                        </>
+                                    )}
+                                </View>
+                            )}
+                        </View>
 
-                        <TouchableOpacity
-                            style={[styles.secondaryButton, { borderColor: theme.border }]}
-                            onPress={handleSkipOnboarding}
-                        >
-                            <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>
-                                Dejarlo para más tarde
-                            </Text>
-                        </TouchableOpacity>
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        {/* CARD C: SOY USUARIO POR LIBRE */}
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        <View style={[
+                            styles.roleCard,
+                            {
+                                backgroundColor: expandedRole === 'free' ? '#D1FAE5' : theme.cardBackground,
+                                borderColor: expandedRole === 'free' ? '#10B981' : theme.border,
+                                borderWidth: expandedRole === 'free' ? 2 : 1
+                            }
+                        ]}>
+                            {/* Solo el header es touchable para expand/collapse */}
+                            <TouchableOpacity
+                                style={styles.roleCardHeader}
+                                onPress={() => setExpandedRole(expandedRole === 'free' ? null : 'free')}
+                                activeOpacity={0.8}
+                            >
+                                <View style={[styles.roleIconContainer, { backgroundColor: '#D1FAE5' }]}>
+                                    <Ionicons name="person" size={28} color="#10B981" />
+                                </View>
+                                <View style={styles.roleCardTitleContainer}>
+                                    <Text style={[styles.roleCardTitle, { color: expandedRole === 'free' ? '#1e293b' : theme.text }]}>
+                                        SOY USUARIO POR LIBRE
+                                    </Text>
+                                    <Text style={[styles.roleCardSubtitle, { color: expandedRole === 'free' ? '#065f46' : theme.textSecondary }]}>
+                                        Entreno por mi cuenta con la app
+                                    </Text>
+                                </View>
+                                <Ionicons
+                                    name={expandedRole === 'free' ? 'chevron-up' : 'chevron-down'}
+                                    size={24}
+                                    color={expandedRole === 'free' ? '#065f46' : theme.textSecondary}
+                                />
+                            </TouchableOpacity>
 
-                        <Text style={[styles.skipNote, { color: theme.textSecondary }]}>
-                            Podrás rellenar tus datos en cualquier momento desde{' '}
-                            <Text style={{ fontWeight: '600', color: theme.primary }}>
-                                Perfil → Información de usuario
-                            </Text>
-                        </Text>
+                            {/* Contenido expandido - FUERA del TouchableOpacity */}
+                            {expandedRole === 'free' && (
+                                <View style={styles.roleCardExpanded}>
+                                    <TouchableOpacity
+                                        style={[styles.continueButton, { backgroundColor: '#10B981' }]}
+                                        onPress={() => setCurrentStep(1)}
+                                    >
+                                        <Ionicons name="arrow-forward" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                                        <Text style={styles.continueButtonText}>CONTINUAR</Text>
+                                    </TouchableOpacity>
+
+                                    {/* Input opcional: Código premium */}
+                                    <View style={styles.promoCodeSection}>
+                                        <Text style={[styles.promoCodeLabel, { color: '#065f46' }]}>
+                                            ¿Tienes un código premium? (Opcional)
+                                        </Text>
+                                        <View style={styles.promoCodeInputRow}>
+                                            <TextInput
+                                                style={[styles.promoCodeInput, {
+                                                    color: '#1e293b',
+                                                    borderColor: '#6ee7b7',
+                                                    backgroundColor: '#ffffff'
+                                                }]}
+                                                placeholder="CÓDIGO PREMIUM"
+                                                placeholderTextColor="#047857"
+                                                value={freePromoCode}
+                                                onChangeText={setFreePromoCode}
+                                                autoCapitalize="characters"
+                                                editable={!isRedeemingFreeCode}
+                                            />
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.promoCodeButton,
+                                                    { backgroundColor: freePromoCode.trim() ? '#10B981' : '#94a3b8' }
+                                                ]}
+                                                onPress={handleRedeemFreePromoCode}
+                                                disabled={isRedeemingFreeCode}
+                                            >
+                                                {isRedeemingFreeCode ? (
+                                                    <ActivityIndicator size="small" color="#FFF" />
+                                                ) : (
+                                                    <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+
                     </View>
                 </ScrollView>
+
+                {/* Modal de error de vinculación con entrenador */}
+                <Modal
+                    visible={trainerErrorModal.visible}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setTrainerErrorModal({ visible: false, errorCode: null })}
+                >
+                    <View style={styles.errorModalOverlay}>
+                        <View style={[styles.errorModalContent, { backgroundColor: theme.cardBackground }]}>
+                            {/* Icono según tipo de error */}
+                            <View style={[
+                                styles.errorModalIconContainer,
+                                { backgroundColor: trainerErrorModal.errorCode === 'TRAINER_AT_CAPACITY' ? '#FEE2E2' : '#FEF3C7' }
+                            ]}>
+                                <Ionicons
+                                    name={trainerErrorModal.errorCode === 'TRAINER_AT_CAPACITY' ? 'people' : 'search'}
+                                    size={40}
+                                    color={trainerErrorModal.errorCode === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B'}
+                                />
+                            </View>
+
+                            {/* Título */}
+                            <Text style={[styles.errorModalTitle, { color: theme.text }]}>
+                                {trainerErrorModal.errorCode === 'TRAINER_AT_CAPACITY'
+                                    ? `${trainerErrorModal.trainerName} está al máximo`
+                                    : 'No encontramos a tu entrenador'
+                                }
+                            </Text>
+
+                            {/* Mensaje */}
+                            <Text style={[styles.errorModalMessage, { color: theme.textSecondary }]}>
+                                {trainerErrorModal.errorCode === 'TRAINER_AT_CAPACITY'
+                                    ? `Habla con ${trainerErrorModal.trainerName} para ver opciones disponibles.`
+                                    : 'Verifica que el código esté escrito correctamente e inténtalo de nuevo.'
+                                }
+                            </Text>
+
+                            {/* Botón cerrar */}
+                            <TouchableOpacity
+                                style={[styles.errorModalButton, { backgroundColor: theme.primary }]}
+                                onPress={() => setTrainerErrorModal({ visible: false, errorCode: null })}
+                            >
+                                <Text style={styles.errorModalButtonText}>Entendido</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
             </View>
         );
     }
@@ -1245,5 +1674,242 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         flex: 1,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROLE SELECTOR STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+    roleSelectorContent: {
+        flex: 1,
+        paddingVertical: 40,
+        paddingHorizontal: 16,
+    },
+    roleSelectorHeader: {
+        alignItems: 'center',
+        marginBottom: 32,
+    },
+    roleSelectorTitle: {
+        fontSize: 26,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    roleSelectorSubtitle: {
+        fontSize: 15,
+        textAlign: 'center',
+        lineHeight: 22,
+    },
+    roleCard: {
+        borderRadius: 16,
+        marginBottom: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    roleCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    roleIconContainer: {
+        width: 52,
+        height: 52,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    roleCardTitleContainer: {
+        flex: 1,
+    },
+    roleCardTitle: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        marginBottom: 2,
+    },
+    roleCardSubtitle: {
+        fontSize: 13,
+    },
+    roleCardExpanded: {
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    trialButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 8,
+    },
+    trialButtonText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    trialMicrocopy: {
+        fontSize: 12,
+        lineHeight: 18,
+        textAlign: 'center',
+        marginBottom: 16,
+    },
+    secondaryActionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderRadius: 10,
+        borderWidth: 2,
+        backgroundColor: 'transparent',
+        marginBottom: 16,
+    },
+    secondaryActionText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    promoCodeSection: {
+        marginTop: 8,
+    },
+    promoCodeLabel: {
+        fontSize: 12,
+        marginBottom: 8,
+    },
+    promoCodeInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    promoCodeInput: {
+        flex: 1,
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        fontSize: 14,
+        fontWeight: '600',
+        letterSpacing: 1,
+        borderWidth: 1,
+    },
+    promoCodeButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    linkedTrainerBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+    },
+    linkedTrainerText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    clientInstructions: {
+        fontSize: 14,
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    trainerCodeInputRow: {
+        marginBottom: 12,
+    },
+    trainerCodeInput: {
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        fontSize: 16,
+        fontWeight: '600',
+        letterSpacing: 2,
+        borderWidth: 1,
+        textAlign: 'center',
+    },
+    linkTrainerButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 12,
+    },
+    linkTrainerButtonText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    clientMicrocopy: {
+        fontSize: 12,
+        lineHeight: 18,
+        textAlign: 'center',
+    },
+    continueButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 16,
+    },
+    continueButtonText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+    // Modal de error para vinculación con entrenador
+    errorModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    errorModalContent: {
+        width: '100%',
+        maxWidth: 350,
+        borderRadius: 20,
+        padding: 32,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    errorModalIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    errorModalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    errorModalMessage: {
+        fontSize: 15,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24,
+    },
+    errorModalButton: {
+        paddingVertical: 14,
+        paddingHorizontal: 40,
+        borderRadius: 12,
+    },
+    errorModalButtonText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

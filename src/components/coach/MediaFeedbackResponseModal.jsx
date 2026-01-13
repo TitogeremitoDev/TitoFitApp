@@ -41,7 +41,11 @@ export default function VideoFeedbackResponseModal({
     textNote = null, // 🆕 Text note from workout (set.notes?.note)
     onResponseSent, // Callback when response is successfully sent
     isInline = false, // When true, renders without Modal wrapper (for split-view)
-    initialAiExpanded = false // 🆕 Auto-expand AI section logic
+    initialAiExpanded = false, // 🆕 Auto-expand AI section logic
+    // 🆕 Toast-based UX props
+    clientId = null,           // ID del cliente para navegación
+    onGoToFeedback = null,     // Callback para ir al feedback del cliente
+    showToast = null           // Callback para mostrar Toast no intrusivo
 }) {
     const { token } = useAuth();
     const { addTechnicalNote } = useFeedbackDraft();
@@ -296,7 +300,7 @@ export default function VideoFeedbackResponseModal({
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ENVIAR RESPUESTA
+    // ENVIAR RESPUESTA AL CHAT (Tipo: entreno/musculación)
     // ═══════════════════════════════════════════════════════════════════════════
     const handleSendResponse = async () => {
         if (!message.trim() && !recordingUri && !externalUrl) {
@@ -310,7 +314,7 @@ export default function VideoFeedbackResponseModal({
             // Construir mensaje con URL si existe
             let fullMessage = message.trim();
             if (externalUrl) {
-                fullMessage += `\n\n📺 ${selectedResource?.title || 'Ver video'}: ${externalUrl}`;
+                fullMessage += `\n\n📺 ${selectedVideo?.title || 'Ver video'}: ${externalUrl}`;
             }
 
             // TODO: Si hay audio, subirlo a R2 y obtener URL
@@ -321,7 +325,12 @@ export default function VideoFeedbackResponseModal({
                 // audioUrl = await uploadAudioToR2(recordingUri);
             }
 
-            // Enviar al chat
+            // 🆕 Metadata del contenido original para mostrar en chat
+            const setNumber = feedback?.serieKey
+                ? parseInt(feedback.serieKey.split('|')[3], 10) + 1
+                : feedback?.setNumber || 1;
+
+            // Enviar al chat con tipo 'entreno' (sección musculación)
             const response = await fetch(`${API_URL}/api/chat`, {
                 method: 'POST',
                 headers: {
@@ -331,17 +340,26 @@ export default function VideoFeedbackResponseModal({
                 body: JSON.stringify({
                     clientId: feedback.athleteId,
                     message: fullMessage,
-                    type: 'video_feedback_response',
+                    type: 'entreno', // 🆕 Cambiado a 'entreno' para sección musculación
                     referenceId: feedback._id,
                     referenceType: 'VideoFeedback',
-                    isCoach: true
+                    isCoach: true,
+                    // 🆕 Metadata para mostrar contexto original en chat
+                    metadata: {
+                        isVideoFeedbackResponse: true,
+                        originalMediaType: feedback?.mediaType || 'video',
+                        originalR2Key: feedback?.r2Key || null,
+                        originalThumbnail: feedback?.thumbnailUrl || null,
+                        exerciseName: feedback?.exerciseName || 'Ejercicio',
+                        setNumber: setNumber
+                    }
                 })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                // Marcar feedback como respondido (opcional, si tienes endpoint)
+                // Marcar feedback como respondido (opcional)
                 try {
                     await fetch(`${API_URL}/api/video-feedback/${feedback._id}/respond`, {
                         method: 'PATCH',
@@ -358,9 +376,19 @@ export default function VideoFeedbackResponseModal({
                     console.log('[Modal] Could not mark as responded:', e);
                 }
 
-                Alert.alert('¡Enviado!', 'Tu respuesta se ha enviado al chat del cliente');
+                // 🆕 Cerrar modal inmediatamente + mostrar Toast
                 onResponseSent?.(feedback._id);
                 handleClose();
+
+                // Mostrar Toast no intrusivo
+                if (showToast) {
+                    showToast({
+                        message: 'Respuesta enviada',
+                        submessage: 'El atleta lo verá en su chat de entreno',
+                        icon: 'checkmark-circle',
+                        iconColor: '#10b981'
+                    });
+                }
             } else {
                 Alert.alert('Error', data.message || 'No se pudo enviar');
             }
@@ -716,14 +744,26 @@ export default function VideoFeedbackResponseModal({
                                 thumbnail: feedback?.thumbnailUrl || null,
                                 videoUrl: externalUrl || null, // Video YouTube del coach
                                 sourceMediaUrl: mediaUrl || null, // Video/foto original del atleta
-                                sourceMediaKey: feedback?.r2Key || null, // 🆕 Key de R2 para regenerar URL
+                                sourceMediaKey: feedback?.r2Key || null, // Key de R2 para regenerar URL
                                 mediaType: feedback?.mediaType || 'video'
                             });
                             setMessage('');
                             setExternalUrl('');
                             setSelectedVideo(null);
-                            Alert.alert('✓ Añadido', 'Nota guardada en el borrador del feedback');
+
+                            // 🆕 Cerrar modal inmediatamente + mostrar Toast con acción
                             handleClose();
+
+                            if (showToast) {
+                                showToast({
+                                    message: 'Guardado en borrador',
+                                    submessage: '¿Finalizar revisión ahora?',
+                                    icon: 'clipboard',
+                                    iconColor: '#4361ee',
+                                    actionLabel: 'Ir a Feedback',
+                                    onAction: onGoToFeedback
+                                });
+                            }
                         }}
                         disabled={sending}
                     >

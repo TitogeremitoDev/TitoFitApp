@@ -42,7 +42,7 @@ const COMMON_BENEFITS = [
   'Tracking completo de progreso',
   'Biblioteca de videos y tips',
   'Soporte técnico 24/7',
-  '1 Consulta mensual con Titogeremito'
+  'Todo tu progreso seguro en la nube'
 ];
 
 const COACH_BENEFITS = [
@@ -83,7 +83,7 @@ export default function PaymentScreen() {
   const [loading, setLoading] = useState(false);
   const [userToken, setUserToken] = useState(null);
   const [userType, setUserType] = useState('athlete'); // 'athlete' | 'coach'
-  const [coachClientCount, setCoachClientCount] = useState(5); // 5, 10, 20, 50, 100, ilimitado clientes
+  const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' | 'annual'
 
   // 🔄 Estado para modal de sincronización de datos
   const [syncModal, setSyncModal] = useState({
@@ -93,9 +93,7 @@ export default function PaymentScreen() {
     itemsSynced: 0,
   });
 
-  // 🎁 Estado para código promocional
-  const [promoCode, setPromoCode] = useState('');
-  const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
+
 
   // Debug logs (Safe to remove or comment out now)
   // useEffect(() => {
@@ -359,14 +357,20 @@ export default function PaymentScreen() {
     cargarPlanes();
   }, [user]); // Recargar si cambia el usuario
 
-  // Efecto para actualizar el plan seleccionado cuando cambia el número de clientes
+  // Efecto para actualizar el plan seleccionado si cambia el ciclo de facturación (solo coach)
   useEffect(() => {
-    if (userType === 'coach' && planes.length > 0) {
-      const filtered = planes.filter(p => p.isCoach && p.clientRange === coachClientCount);
-      const planDestacado = filtered.find(p => p.destacado);
-      setSelectedPlan(planDestacado || filtered[0]);
+    if (userType === 'coach' && selectedPlan) {
+      // Intentar encontrar el equivalente en el nuevo ciclo
+      const currentClients = selectedPlan.clientRange;
+      const targetDuration = billingCycle === 'monthly' ? 1 : 12;
+      const match = planes.find(p =>
+        p.isCoach &&
+        p.clientRange === currentClients &&
+        p.duracionMeses === targetDuration
+      );
+      if (match) setSelectedPlan(match);
     }
-  }, [coachClientCount, userType, planes]);
+  }, [billingCycle, userType, planes]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -650,10 +654,11 @@ export default function PaymentScreen() {
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
         <StatusBar style="light" />
         <LinearGradient
-          colors={['#0f172a', '#1e293b', '#0f172a']}
+          colors={['#242345', '#1e1b36', '#242345']}
+          locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFill}
         />
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color="#FFD700" />
         <Text style={styles.loadingText}>Cargando planes...</Text>
       </View>
     );
@@ -664,7 +669,8 @@ export default function PaymentScreen() {
       <View style={styles.root}>
         <StatusBar style="light" />
         <LinearGradient
-          colors={['#0f172a', '#1e293b', '#0f172a']}
+          colors={['#242345', '#1e1b36', '#242345']}
+          locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFill}
         />
         <View style={styles.header}>
@@ -692,7 +698,8 @@ export default function PaymentScreen() {
     <View style={styles.root}>
       <StatusBar style="light" />
       <LinearGradient
-        colors={['#0f172a', '#1e293b', '#0f172a']}
+        colors={['#242345', '#1e1b36', '#242345']}
+        locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -721,113 +728,6 @@ export default function PaymentScreen() {
           </View>
         </LinearGradient>
 
-        {/* 🎁 INPUT CÓDIGO PROMOCIONAL dentro del header */}
-        <View style={styles.promoCodeSection}>
-          <View style={styles.promoCodeHeader}>
-            <Ionicons name="gift" size={20} color="#F59E0B" />
-            <Text style={styles.promoCodeTitle}>¿Tienes un código promocional?</Text>
-          </View>
-          <View style={styles.promoCodeInputRow}>
-            <TextInput
-              style={styles.promoCodeInput}
-              placeholder="Introduce tu código aquí"
-              placeholderTextColor="#64748B"
-              value={promoCode}
-              onChangeText={setPromoCode}
-              autoCapitalize="characters"
-              editable={!isRedeemingPromo}
-            />
-            <Pressable
-              style={[
-                styles.promoCodeButton,
-                (!promoCode.trim() || isRedeemingPromo) && styles.promoCodeButtonDisabled
-              ]}
-              disabled={!promoCode.trim() || isRedeemingPromo}
-              onPress={async () => {
-                if (!promoCode.trim()) return;
-                setIsRedeemingPromo(true);
-                const codeToRedeem = promoCode.trim().toUpperCase();
-                const token = await AsyncStorage.getItem('totalgains_token');
-
-                try {
-                  // Primero intentar como código de referido
-                  const referralResponse = await fetch(`${API_URL}/api/referrals/redeem`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ code: codeToRedeem })
-                  });
-                  const referralData = await referralResponse.json();
-
-                  if (referralData.success) {
-                    // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
-                    const previousType = user?.tipoUsuario;
-                    console.log('[Payment] 🎯 Código referido canjeado. Tipo anterior:', previousType);
-
-                    // Mostrar modal de sincronización
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                      const syncResult = await syncLocalToCloud(token);
-                      setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                      await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
-
-                    const updatedUser = refreshUser ? await refreshUser() : null;
-                    console.log('[Payment] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
-
-                    setPromoCode('');
-                    Alert.alert('¡Genial! 🎉', referralData.message || '¡Has conseguido 7 días de premium gratis!');
-                    return;
-                  }
-
-                  // Si no es código de referido, intentar como código promocional
-                  const promoResponse = await fetch(`${API_URL}/api/promo-codes/redeem`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ code: codeToRedeem })
-                  });
-                  const promoData = await promoResponse.json();
-
-                  if (promoData.success) {
-                    // 🔄 SIEMPRE sincronizar datos locales al cambiar de plan
-                    const previousType = user?.tipoUsuario;
-                    console.log('[Payment] 🎯 Código promo canjeado. Tipo anterior:', previousType);
-
-                    // Mostrar modal de sincronización
-                    setSyncModal({ visible: true, direction: 'upload', isComplete: false, itemsSynced: 0 });
-                    try {
-                      const syncResult = await syncLocalToCloud(token);
-                      setSyncModal(prev => ({ ...prev, isComplete: true, itemsSynced: syncResult?.itemsSynced || 0 }));
-                      await new Promise(resolve => setTimeout(resolve, 2000));
-                    } catch (syncErr) { console.warn('[Payment] Sync error:', syncErr); }
-                    setSyncModal(prev => ({ ...prev, visible: false }));
-
-                    const updatedUser = refreshUser ? await refreshUser() : null;
-                    console.log('[Payment] ✅ Usuario actualizado tras promo. Nuevo tipo:', updatedUser?.tipoUsuario);
-
-                    setPromoCode('');
-                    Alert.alert('¡Felicidades! 🌟', promoData.message || '¡Código promocional canjeado con éxito!');
-                    return;
-                  }
-
-                  // Ninguno funcionó
-                  Alert.alert('Código no válido', promoData.message || referralData.message || 'Este código no existe o ya ha sido usado');
-                } catch (error) {
-                  console.error('[Payment] Promo error:', error);
-                  Alert.alert('Error', 'No se pudo canjear el código. Verifica tu conexión.');
-                } finally {
-                  setIsRedeemingPromo(false);
-                }
-              }}
-            >
-              {isRedeemingPromo ? (
-                <ActivityIndicator size="small" color="#FFF" />
-              ) : (
-                <Text style={styles.promoCodeButtonText}>Canjear</Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
       </View>
 
       <ScrollView
@@ -839,209 +739,273 @@ export default function PaymentScreen() {
         }
       >
 
-        {/* SECCIÓN 0: TOGGLE TIPO USUARIO */}
-        <View style={styles.toggleContainer}>
-          <Text style={styles.toggleLabel}>¿Qué eres?</Text>
-          <View style={styles.toggleWrapper}>
-            {!isPremium && (
-              <Pressable
-                style={[styles.toggleOption, userType === 'athlete' && styles.toggleOptionActive]}
-                onPress={() => {
-                  setUserType('athlete');
-                  const filtered = planes.filter(p => !p.isCoach);
-                  const planDestacado = filtered.find(p => p.destacado);
-                  setSelectedPlan(planDestacado || filtered[0]);
-                }}
-              >
-                <Text style={[styles.toggleText, userType === 'athlete' && styles.toggleTextActive]}>Atleta</Text>
-              </Pressable>
-            )}
+
+        {/* TITULO SUPERIOR */}
+        <View style={styles.heroSection}>
+          <Text style={styles.heroSubtitle}>Elige el plan perfecto para alcanzar tus objetivos</Text>
+        </View>
+
+        {/* SECCIÓN 0: TOGGLE TIPO USUARIO (Pill Custom) */}
+        <View style={styles.pillContainer}>
+          <View style={styles.pillBackground}>
+            {/* Opción Usuario */}
             <Pressable
-              style={[styles.toggleOption, userType === 'coach' && styles.toggleOptionActive]}
               onPress={() => {
-                setUserType('coach');
-                const filtered = planes.filter(p => p.isCoach && p.clientRange === coachClientCount);
-                const planDestacado = filtered.find(p => p.destacado);
-                setSelectedPlan(planDestacado || filtered[0]);
+                setUserType('athlete');
+                setBillingCycle('monthly');
               }}
+              style={[styles.pillOption, userType === 'athlete' && styles.pillOptionActiveHidden]} // Truco: ocultamos bg si está activo para mostrar el gradiente
             >
-              <Text style={[styles.toggleText, userType === 'coach' && styles.toggleTextActive]}>Entrenador</Text>
+              {userType === 'athlete' && (
+                <LinearGradient
+                  colors={['#7C3AED', '#DB2777']} // Violeta a Rosa
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <Ionicons name="flash" size={16} color={userType === 'athlete' ? '#FFF' : '#94A3B8'} style={{ marginRight: 6 }} />
+              <Text style={[styles.pillText, userType === 'athlete' && styles.pillTextActive]}>Usuario</Text>
+            </Pressable>
+
+            {/* Opción Entrenador */}
+            <Pressable
+              onPress={() => setUserType('coach')}
+              style={[styles.pillOption, userType === 'coach' && styles.pillOptionActiveHidden]}
+            >
+              {userType === 'coach' && (
+                <LinearGradient
+                  colors={['#7C3AED', '#DB2777']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <Ionicons name="flame" size={16} color={userType === 'coach' ? '#FFF' : '#94A3B8'} style={{ marginRight: 6 }} />
+              <Text style={[styles.pillText, userType === 'coach' && styles.pillTextActive]}>Entrenador</Text>
             </Pressable>
           </View>
         </View>
 
-        {/* SECCIÓN 0.5: NÚMERO DE CLIENTES (solo para entrenadores) */}
+        {/* SECCIÓN 0.5: TOGGLE FACTURACIÓN (Switch Switch) */}
         {userType === 'coach' && (
-          <View style={styles.clientCountContainer}>
-            <Text style={styles.clientCountLabel}>Número de clientes</Text>
-            {/* Primera fila: 5, 10, 20 */}
-            <View style={styles.clientCountOptions}>
-              {[5, 10, 20].map((count) => (
-                <Pressable
-                  key={count}
-                  style={[styles.clientCountOption, coachClientCount === count && styles.clientCountOptionActive]}
-                  onPress={() => setCoachClientCount(count)}
-                >
-                  <View style={[styles.radioOuter, coachClientCount === count && styles.radioOuterSelected]}>
-                    {coachClientCount === count && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[styles.clientCountText, coachClientCount === count && styles.clientCountTextActive]}>
-                    {count}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            {/* Segunda fila: 50, 100, +100 */}
-            <View style={[styles.clientCountOptions, { marginTop: 8 }]}>
-              {[50, 100, 9999].map((count) => (
-                <Pressable
-                  key={count}
-                  style={[styles.clientCountOption, coachClientCount === count && styles.clientCountOptionActive]}
-                  onPress={() => setCoachClientCount(count)}
-                >
-                  <View style={[styles.radioOuter, coachClientCount === count && styles.radioOuterSelected]}>
-                    {coachClientCount === count && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[styles.clientCountText, coachClientCount === count && styles.clientCountTextActive]}>
-                    {count === 9999 ? '+100' : count}
-                  </Text>
-                </Pressable>
-              ))}
+          <View style={styles.billingSwitchContainer}>
+            <Pressable onPress={() => setBillingCycle('monthly')}>
+              <Text style={[styles.billingLabel, billingCycle === 'monthly' && styles.billingLabelActive]}>Mensual</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setBillingCycle(billingCycle === 'monthly' ? 'annual' : 'monthly')}
+              style={styles.switchTrack}
+            >
+              <View style={[styles.switchThumb, billingCycle === 'annual' && { transform: [{ translateX: 24 }] }]} />
+            </Pressable>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Pressable onPress={() => setBillingCycle('annual')}>
+                <Text style={[styles.billingLabel, billingCycle === 'annual' && styles.billingLabelActive]}>Anual</Text>
+              </Pressable>
+              {/* Badge 2 MESES GRATIS */}
+              <View style={styles.badgeFreeMonths}>
+                <Text style={styles.badgeFreeText}>2 MESES GRATIS</Text>
+              </View>
             </View>
           </View>
         )}
 
-        {/* SECCIÓN 1: TITULO DE ALTO IMPACTO */}
-        <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>
-            {userType === 'coach' ? 'Potencia tu Negocio de Coaching' : 'Desbloquea tu mejor versión'}
-          </Text>
-          <Text style={styles.heroSubtitle}>
-            {userType === 'coach'
-              ? 'Herramientas profesionales para escalar, automatizar y fidelizar a tus atletas.'
-              : 'Elige el plan que se adapte a ti. Cancela cuando quieras.'}
-          </Text>
-        </View>
+        <View style={{ height: 20 }} />
 
-        {/* SECCIÓN 2: PLANES DINÁMICOS */}
-        <View style={styles.plansContainer}>
+        {/* SECCIÓN 2: PLANES (CARDS ROW) */}
+        {/* On Web -> Flex Row. On Mobile -> Column */}
+        <View style={[
+          styles.plansContainer,
+          (Platform.OS === 'web' || userType === 'coach') && styles.plansRow
+        ]}>
           {planes.filter(p => {
             if (userType === 'coach') {
-              // Para 100 e ilimitado, solo mostrar planes MENSUALES (restricción Apple/Play Store)
-              const soloMensual = [100, 9999].includes(coachClientCount);
-              if (soloMensual) {
-                return p.isCoach && p.clientRange === coachClientCount && p.duracionMeses < 12;
-              }
-              return p.isCoach && p.clientRange === coachClientCount;
+              // Coach: Filter by cycle
+              const isCorrectCycle = billingCycle === 'monthly' ? p.duracionMeses === 1 : p.duracionMeses === 12;
+              // Solo mostrar planes <= 20 clientes (STARTER, PRO, UNLIMITED)
+              if (p.clientRange > 20) return false;
+              // Android: ocultar UNLIMITED ANUAL (Google Play no permite precio tan alto)
+              if (Platform.OS === 'android' && p.clientRange === 20 && p.duracionMeses === 12) return false;
+              // Apple/Play restrictions...
+              return p.isCoach && isCorrectCycle;
             } else {
+              // Athlete: Show all
               return !p.isCoach;
             }
-          }).map((plan) => {
-            const isSelected = selectedPlan?.id === plan.id;
-            const tieneDescuento = plan.precioOriginal > plan.precioActual;
+          })
+            .sort((a, b) => a.precioActual - b.precioActual)
+            .map((plan, index) => {
+              // LOGIC TO DETERMINE STYLE
+              // We want Middle One to be "PRO" style (Coach view)
+              // If Coach: Index 0=Start, Index 1=Pro (Highlighted), Index 2=Club
 
-            return (
-              <Pressable
-                key={plan.id}
-                onPress={() => setSelectedPlan(plan)}
-                style={[
-                  styles.planCard,
-                  isSelected && styles.planCardSelected,
-                  plan.destacado && styles.planCardDestacado
-                ]}
-              >
-                {/* Badge destacado */}
-                {plan.destacado && (
-                  <View style={styles.badgePopular}>
-                    <Text style={styles.badgeText}>MÁS POPULAR</Text>
-                  </View>
-                )}
+              // Map index to style type
+              let cardType = 'standard'; // 'standard', 'pro', 'club'
+              let isHighlighted = false;
 
-                {/* Badge de oferta */}
-                {plan.etiquetaOferta && (
-                  <View style={styles.badgeOffer}>
-                    <Text style={styles.badgeText}>{plan.etiquetaOferta}</Text>
-                  </View>
-                )}
+              if (userType === 'coach') {
+                if (index === 0) cardType = 'start';
+                if (index === 1) { cardType = 'pro'; isHighlighted = true; } // The middle one
+                if (index >= 2) cardType = 'club';
+              } else {
+                // Athlete
+                cardType = index === 0 ? 'start' : 'pro';
+                // Maybe highlight the second one?
+              }
 
-                <View style={styles.planContent}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.planName, isSelected && styles.textActive]}>
-                      {plan.nombre}
+              const isSelected = selectedPlan?.id === plan.id;
+              const isAnnual = plan.duracionMeses > 1;
+
+              return (
+                <Pressable
+                  key={plan.id}
+                  onPress={() => setSelectedPlan(plan)}
+                  style={[
+                    styles.cardBase,
+                    cardType === 'pro' && styles.cardPro, // Scale up slightly?
+                    isSelected && styles.cardSelectedBorder
+                  ]}
+                >
+                  {/* Background: Gradient for PRO, Dark for others */}
+                  {cardType === 'pro' ? (
+                    <LinearGradient
+                      colors={['#FF9C65', '#FFD036']} // Orange to Yellow gradient
+                      start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#2E3246', opacity: 0.6 }]} />
+                    // Dark blueish distinct from bg
+                  )}
+
+                  {/* Badge RECOMMENDED (only Pro) */}
+                  {cardType === 'pro' && (
+                    <View style={styles.badgeRecommended}>
+                      <Text style={styles.badgeRecText}>RECOMENDADO</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.cardContentPadding}>
+                    {/* Header: Title & Subtitle */}
+                    <Text style={[styles.cardTitleRef, cardType === 'pro' ? { color: '#000' } : { color: '#FFF' }]}>
+                      {userType === 'coach'
+                        ? (index === 0 ? 'START' : index === 1 ? 'PRO' : 'CLUB / ELITE')
+                        : plan.nombre}
                     </Text>
-                    <Text style={styles.planDesc}>{plan.descripcion}</Text>
+                    <Text style={[styles.cardSubtitleRef, cardType === 'pro' ? { color: '#1F2937' } : { color: '#9CA3AF' }]}>
+                      {userType === 'coach'
+                        ? (index === 0 ? 'Para probar la IA sin miedo.' : index === 1 ? 'Para entrenadores que valoran su tiempo.' : 'Para escalar sin límites.')
+                        : plan.descripcion}
+                    </Text>
 
-                    {/* Texto de ahorro */}
-                    {plan.textoAhorro && (
-                      <View style={styles.saveTag}>
-                        <Text style={styles.saveTagText}>{plan.textoAhorro}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Precios */}
-                  <View style={styles.priceBlock}>
-                    {tieneDescuento && (
-                      <Text style={styles.priceOld}>
-                        {plan.moneda === 'EUR' ? '€' : '$'}{plan.precioOriginal.toFixed(2)}
+                    {/* Price */}
+                    <View style={styles.priceRowRef}>
+                      <Text style={[styles.currencyRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
+                        {plan.moneda === 'EUR' ? '€' : '$'}
+                      </Text>
+                      <Text style={[styles.priceValRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
+                        {Math.floor(plan.precioActual)}
+                      </Text>
+                      <Text style={[styles.priceDecimalsRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
+                        {/* Get decimals if any, else .00 */}
+                        {(plan.precioActual % 1).toFixed(2).substring(1)}
+                      </Text>
+                      <Text style={[styles.perMonthRef, cardType === 'pro' ? { color: '#1F2937' } : { color: '#9CA3AF' }]}>
+                        /mes
+                      </Text>
+                    </View>
+                    {/* Annual tag if applies */}
+                    {isAnnual && (
+                      <Text style={{ fontSize: 10, color: cardType === 'pro' ? '#000' : '#FFF', opacity: 0.7 }}>
                       </Text>
                     )}
-                    <Text style={styles.priceNew}>
-                      {plan.moneda === 'EUR' ? '€' : '$'}{plan.precioActual.toFixed(2)}
-                    </Text>
-                    <Text style={styles.pricePeriod}>
-                      {plan.duracionMeses === 1 ? '/mes' : `/${plan.duracionMeses} meses`}
-                    </Text>
+
+                    <View style={[styles.dividerRef, cardType === 'pro' ? { backgroundColor: 'rgba(0,0,0,0.1)' } : { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
+
+                    {/* Features List */}
+                    <View style={styles.featuresContainerRef}>
+                      {/* Custom Features mapping based on type */}
+                      {(() => {
+                        let features = [];
+                        if (userType === 'coach') {
+                          if (index === 0) {
+                            features = [
+                              'Hasta 25 Atletas',
+                              'Suite Completa + IA Ilimitada (Dietas, Entrenos, Chat)',
+                              'App para tus Clientes (iOS/Android)',
+                              'Soporte Estándar (Email en < 48h)'
+                            ];
+                          } else if (index === 1) {
+                            features = [
+                              'Hasta 100 Atletas',
+                              'Todo lo del Plan Starter',
+                              'Facturación & Finanzas (Automatizadas)',
+                              'Soporte Prioritario (Respuesta en < 24h)'
+                            ];
+                          } else {
+                            features = [
+                              'Atletas ILIMITADOS',
+                              'Migración de Datos INCLUIDA\n"Mándanos tus Excel y nosotros te subimos a todos tus clientes."',
+                              'Prioridad en Nuevas Funciones\n"Lo que tú pidas, lo desarrollamos antes."',
+                              'Soporte VIP Dedicado'
+                            ];
+                          }
+                        } else {
+                          features = COMMON_BENEFITS;
+                        }
+
+                        return features.map((feat, i) => (
+                          <View key={i} style={styles.featRowRef}>
+                            <Ionicons name="checkmark-sharp" size={18} color={cardType === 'pro' ? '#000' : '#10B981'} style={{ marginTop: 2 }} />
+                            <Text style={[
+                              styles.featTextRef,
+                              cardType === 'pro' ? { color: '#1F2937' } : { color: '#D1D5DB' },
+                              i === 0 && userType === 'coach' && { fontWeight: '900', fontSize: 16, marginBottom: 4 } // First item bold/giant for coach
+                            ]}>
+                              {feat}
+                            </Text>
+                          </View>
+                        ));
+                      })()}
+
+                      {/* Example Cross item for Start */}
+                      {cardType === 'start' && userType === 'coach' && (
+                        <View style={styles.featRowRef}>
+                          <Ionicons name="close-sharp" size={18} color="#EF4444" style={{ marginTop: 2 }} />
+                          <Text style={[styles.featTextRef, { color: '#6B7280' }]}>Sin soporte prioritario</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Spacer */}
+                    <View style={{ flex: 1 }} />
+
+                    {/* Button */}
+                    <Pressable
+                      onPress={() => setSelectedPlan(plan)}
+                      style={[
+                        styles.btnRef,
+                        isSelected && { opacity: 1 }, // Always active logic
+                        cardType === 'pro' ? { backgroundColor: '#1F2937' } : { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: '#7C3AED' }
+                      ]}
+                    >
+                      {/* Gradient for PRO Select ? No, image shows dark button */}
+                      {cardType !== 'pro' && cardType !== 'start' ? (
+                        // CLUB button in image is purple gradient
+                        <LinearGradient colors={['#7C3AED', '#6D28D9']} style={StyleSheet.absoluteFill} />
+                      ) : null}
+
+                      <Text style={[styles.btnTextRef, cardType === 'pro' ? { color: '#FFF' } : { color: '#FFF' }]}>
+                        {cardType === 'start' ? 'Empezar Gratis' : 'Seleccionar'}
+                      </Text>
+                    </Pressable>
+
                   </View>
-                </View>
-
-                {/* Radio button */}
-                <View style={styles.radioContainer}>
-                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                    {isSelected && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={styles.radioLabel}>
-                    {isSelected ? 'Plan seleccionado' : 'Seleccionar plan'}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+                </Pressable>
+              );
+            })}
         </View>
-
-        {/* SECCIÓN 3: BENEFICIOS */}
-        <View style={styles.benefitsCard}>
-          <Text style={styles.benefitsTitle}>INCLUYE {userType === 'coach' ? '(MODO ENTRENADOR)' : ''}</Text>
-          {(userType === 'coach' ? COACH_BENEFITS : COMMON_BENEFITS).map((benefit, idx) => (
-            <View key={idx} style={styles.benefitRow}>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-              <Text style={styles.benefitText}>{benefit}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* SECCIÓN 4: COACHING (HIGH TICKET UPSELL) - Solo para atletas */}
-        {userType !== 'coach' && (
-          <LinearGradient
-            colors={['#FCD34D', '#F59E0B']}
-            style={styles.coachingCard}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.coachingHeader}>
-              <Text style={styles.coachingTitle}>
-                🔥 ¿Quieres resultados garantizados?
-              </Text>
-            </View>
-            <Text style={styles.coachingDesc}>
-              Coaching personalizado 1:1 con seguimiento semanal, plan de nutrición y
-              asesoramiento directo conmigo.
-            </Text>
-            <Pressable onPress={openCoaching} style={styles.coachingButton}>
-              <Text style={styles.coachingBtnText}>CONSULTAR DISPONIBILIDAD</Text>
-            </Pressable>
-          </LinearGradient>
-        )}
 
         {/* SECCIÓN 5: MÉTODOS DE PAGO - Por plataforma */}
         <View style={styles.paymentSection}>
@@ -1253,10 +1217,11 @@ export default function PaymentScreen() {
                   setLoading(false);
                 }
               } else if (paymentMethod === 'googlepay') {
-                // Google Play Billing con react-native-iap
+                // Google Play Billing con expo-iap
                 setLoading(true);
                 try {
                   // 1. Iniciar conexión con Google Play
+                  console.log('[GooglePlay] Iniciando flujo de compra...');
                   const connected = await IAPService.initConnection();
                   if (!connected) {
                     throw new Error('No se pudo conectar con Google Play');
@@ -1270,27 +1235,35 @@ export default function PaymentScreen() {
                     throw new Error('Este plan no tiene un Product ID de Google Play configurado');
                   }
 
-                  // 3. Obtener la suscripción desde Google Play para verificar que existe
-                  const subscriptions = await IAPService.getSubscriptions([googleProductId]);
-                  console.log('[GooglePlay] Suscripciones encontradas:', subscriptions);
+                  // 3. Obtener la suscripción desde la tienda
+                  let subscriptions = [];
+                  let offerToken = null;
 
+                  try {
+                    subscriptions = await IAPService.getSubscriptions([googleProductId]);
+                    console.log('[GooglePlay] Productos encontrados:', subscriptions?.length || 0);
+
+                    if (subscriptions && subscriptions.length > 0) {
+                      const subscription = subscriptions[0];
+                      // En Android Billing v5+, necesitamos el offerToken
+                      if (subscription.subscriptionOfferDetails && subscription.subscriptionOfferDetails.length > 0) {
+                        offerToken = subscription.subscriptionOfferDetails[0].offerToken;
+                      }
+                    }
+                  } catch (fetchError) {
+                    console.warn('[GooglePlay] Error obteniendo producto:', fetchError.message);
+                  }
+
+                  // 4. Verificar que encontramos el producto
                   if (!subscriptions || subscriptions.length === 0) {
                     throw new Error(
                       `El producto "${googleProductId}" no está disponible en Google Play. ` +
-                      'Asegúrate de haberlo creado en Google Play Console.'
+                      'Contacta con soporte si el problema persiste.'
                     );
                   }
 
-                  const subscription = subscriptions[0];
-
-                  // 4. Obtener offer token (requerido para Android Billing v5+)
-                  let offerToken = null;
-                  if (subscription.subscriptionOfferDetails && subscription.subscriptionOfferDetails.length > 0) {
-                    offerToken = subscription.subscriptionOfferDetails[0].offerToken;
-                  }
-
                   // 5. Iniciar la compra
-                  console.log('[GooglePlay] Iniciando compra con offerToken:', offerToken);
+                  console.log('[GooglePlay] Iniciando compra...');
                   const purchase = await IAPService.purchaseSubscription(googleProductId, offerToken);
                   console.log('[GooglePlay] Compra completada:', purchase);
 
@@ -1644,22 +1617,13 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'center'
   },
-  backButton: {
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12
-  },
-  refreshButton: {
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12
-  },
+  backButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12 },
+  refreshButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12 },
 
-  // 🏆 Premium Banner Styles (ahora dentro del header)
+  // 🏆 Premium Banner Styles
   premiumBanner: {
     marginTop: 0,
     marginBottom: 12,
@@ -1689,66 +1653,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  // 🎁 Promo Code Styles (ahora dentro del header)
-  promoCodeSection: {
-    marginTop: 0,
-    marginBottom: 0,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    padding: 16,
-  },
-  promoCodeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  promoCodeTitle: {
-    color: '#F59E0B',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  promoCodeInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  promoCodeInput: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  promoCodeButton: {
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  promoCodeButtonDisabled: {
-    backgroundColor: '#64748B',
-    opacity: 0.6,
-  },
-  promoCodeButtonText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-
-  scrollView: { flex: 1 },
-  content: { padding: 20 },
-
   // Loading y Empty States
-  loadingText: { color: '#94A3B8', marginTop: 12, fontSize: 14 },
+  loadingText: { color: '#FFF' },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -1777,86 +1683,123 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: '#FFF', fontWeight: '700' },
 
+  // PILL TOGGLE (User Type)
+  pillContainer: { alignItems: 'center', marginBottom: 25 },
+  pillBackground: {
+    flexDirection: 'row',
+    backgroundColor: '#373656', // Darker violet
+    borderRadius: 30,
+    padding: 4,
+    height: 50,
+    width: 280,
+  },
+  pillOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  pillOptionActiveHidden: {
+    // Just a placeholder to attach logic, real style in render with absolute fill
+  },
+  pillText: { color: '#94A3B8', fontWeight: '600', fontSize: 13 },
+  pillTextActive: { color: '#FFF', fontWeight: '700' },
+
+  // BILLING SWITCH
+  billingSwitchContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 30 },
+  billingLabel: { color: '#E2E8F0', fontSize: 14, fontWeight: '600' },
+  billingLabelActive: { color: '#FFF' },
+  switchTrack: { width: 50, height: 28, backgroundColor: '#4B5563', borderRadius: 20, padding: 2, justifyContent: 'center' },
+  switchThumb: { width: 24, height: 24, backgroundColor: '#FFF', borderRadius: 12 },
+  badgeFreeMonths: { backgroundColor: '#10B981', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 6 },
+  badgeFreeText: { color: '#000', fontSize: 10, fontWeight: '800' },
+
   // HERO
-  heroSection: { marginBottom: 25, alignItems: 'center' },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginBottom: 8 },
-  heroSubtitle: { fontSize: 14, color: '#94A3B8', textAlign: 'center' },
+  heroSection: { alignItems: 'center', marginBottom: 20, paddingHorizontal: 20 },
+  heroSubtitle: { color: '#9CA3AF', fontSize: 14 },
 
-  // PLANES
-  plansContainer: { gap: 16, marginBottom: 25 },
-  planCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-    padding: 16,
+  // PLANS ROW
+  plansContainer: { paddingHorizontal: 20, paddingBottom: 40, gap: 20 },
+  plansRow: {
+    flexDirection: Platform.OS === 'web' ? 'row' : 'column',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'stretch'
+  },
+
+  // CARDS REF DESIGN
+  cardBase: {
+    backgroundColor: '#23263a', // Fallback
+    borderRadius: 20,
+    width: Platform.OS === 'web' ? 300 : '100%',
+    minHeight: 450,
+    overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  planCardSelected: {
-    borderColor: '#10B981',
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
-    borderWidth: 2,
+  cardPro: {
+    width: Platform.OS === 'web' ? 320 : '100%',
+    transform: Platform.OS === 'web' ? [{ scale: 1.05 }] : [],
+    zIndex: 10,
+    borderColor: 'transparent', // Gradient handles border visually or fill
   },
-  planCardDestacado: {
-    borderColor: '#10B981',
-    shadowColor: "#10B981",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 5
+  cardSelectedBorder: {
+    borderColor: '#7C3AED',
+    borderWidth: 2
   },
-  badgePopular: {
+
+  cardContentPadding: { padding: 24, flex: 1 },
+
+  badgeRecommended: {
     position: 'absolute',
-    top: -12,
-    right: 20,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    top: 20,
+    alignSelf: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 20,
-    zIndex: 10
+    zIndex: 20
   },
-  badgeOffer: {
-    position: 'absolute',
-    top: -12,
-    right: 20,
-    backgroundColor: '#F43F5E',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    zIndex: 10
+  badgeRecText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
+
+  cardTitleRef: { fontSize: 22, fontWeight: '800', marginBottom: 8, letterSpacing: 0.5 },
+  cardSubtitleRef: { fontSize: 13, lineHeight: 18, marginBottom: 24 },
+
+  // PRICE
+  priceRowRef: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
+  currencyRef: { fontSize: 24, fontWeight: '600', marginTop: 4 },
+  priceValRef: { fontSize: 56, fontWeight: '800', marginHorizontal: 2, letterSpacing: -2 },
+  priceDecimalsRef: { fontSize: 20, fontWeight: '700', marginTop: 8 },
+  perMonthRef: { fontSize: 14, alignSelf: 'flex-end', marginBottom: 10, marginLeft: 4 },
+
+  dividerRef: { height: 1, width: '100%', marginVertical: 20 },
+
+  // FEATURES
+  featuresContainerRef: { gap: 14 },
+  featRowRef: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  featTextRef: { fontSize: 13, lineHeight: 18, flex: 1 },
+
+  // BUTTON
+  btnRef: {
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    width: '100%',
+    overflow: 'hidden'
   },
-  badgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  btnTextRef: { fontWeight: '700', fontSize: 14 },
 
-  planContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  planName: { color: '#F8FAFC', fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  textActive: { color: '#10B981' },
-  planDesc: { color: '#94A3B8', fontSize: 12, marginBottom: 8 },
-
-  saveTag: { backgroundColor: '#F59E0B', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  saveTagText: { color: '#000', fontSize: 10, fontWeight: '800' },
-
-  priceBlock: { alignItems: 'flex-end' },
-  priceOld: { color: '#64748B', textDecorationLine: 'line-through', fontSize: 13 },
-  priceNew: { color: '#F8FAFC', fontSize: 26, fontWeight: '800' },
-  pricePeriod: { color: '#94A3B8', fontSize: 12 },
-
-  radioContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#475569', alignItems: 'center', justifyContent: 'center' },
-  radioOuterSelected: { borderColor: '#10B981' },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981' },
-  radioLabel: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
-
-  // BENEFICIOS
-  benefitsCard: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16, padding: 20, marginBottom: 25 },
-  benefitsTitle: { color: '#64748B', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12 },
-  benefitRow: { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'center' },
-  benefitText: { color: '#E2E8F0', fontSize: 14 },
-
-  // COACHING HIGH TICKET
+  // COACHING HIGH TICKET (Legacy, kept for reference if needed elsewhere)
   coachingCard: {
     borderRadius: 16,
     padding: 20,
     marginBottom: 25,
+    marginHorizontal: 20,
     borderWidth: 1,
     borderColor: '#FCD34D'
   },
@@ -1867,26 +1810,16 @@ const styles = StyleSheet.create({
   coachingBtnText: { color: '#FFD700', fontWeight: 'bold', fontSize: 14 },
 
   // MÉTODOS PAGO
-  paymentSection: { marginBottom: 25 },
-  sectionHeader: { color: '#F8FAFC', fontSize: 16, fontWeight: '700', marginBottom: 16 },
-  methodsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  methodBadge: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1E293B', paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#334155' },
-  methodBadgeActive: { backgroundColor: '#334155', borderColor: '#475569' },
+  paymentSection: { paddingHorizontal: 20, marginBottom: 40 },
+  sectionHeader: { color: '#FFF', fontWeight: '700', marginBottom: 12 },
+  methodsRow: { flexDirection: 'row', gap: 12 },
+  methodBadge: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#373656', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  methodBadgeActive: { backgroundColor: '#2E2D4D', borderColor: '#7C3AED' },
   methodText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   methodTextActive: { color: '#FFF' },
 
-  cardForm: { gap: 12 },
-  inputContainer: { position: 'relative' },
-  inputIcon: { position: 'absolute', left: 12, top: 14, zIndex: 1 },
-  input: { backgroundColor: '#1E293B', color: '#FFF', borderRadius: 10, padding: 12, fontSize: 15, borderWidth: 1, borderColor: '#334155' },
-  row: { flexDirection: 'row', gap: 12 },
-
   // RESUMEN
-  summaryContainer: { backgroundColor: '#1E293B', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#334155' },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  summaryLabel: { color: '#94A3B8', fontSize: 14 },
-  summaryVal: { color: '#E2E8F0', fontSize: 14 },
-  divider: { height: 1, backgroundColor: '#334155', marginVertical: 12 },
+  summaryContainer: { backgroundColor: '#1E293B', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#334155', marginHorizontal: 20, marginBottom: 40 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   totalLabel: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
   totalVal: { color: '#10B981', fontSize: 24, fontWeight: '800' },
@@ -1899,71 +1832,26 @@ const styles = StyleSheet.create({
   secureBadge: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center' },
   secureText: { color: '#64748B', fontSize: 12 },
 
-  // TOGGLE
-  toggleContainer: { alignItems: 'center', marginBottom: 20 },
-  toggleLabel: { color: '#94A3B8', marginBottom: 8, fontSize: 14, fontWeight: '600' },
-  toggleWrapper: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 12, padding: 4, borderWidth: 1, borderColor: '#334155' },
-  toggleOption: { paddingHorizontal: 24, paddingVertical: 8, borderRadius: 8 },
-  toggleOptionActive: { backgroundColor: '#10B981' },
-  toggleText: { color: '#94A3B8', fontWeight: '600' },
-  toggleTextActive: { color: '#FFF' },
-
   // CONTACTO
-  contactSection: { alignItems: 'center', marginTop: 20, marginBottom: 40 },
+  contactSection: { alignItems: 'center', marginTop: 10, marginBottom: 40 },
   contactTitle: { color: '#F8FAFC', fontSize: 16, fontWeight: '700', marginBottom: 8 },
   contactEmail: { color: '#10B981', fontSize: 16, textDecorationLine: 'underline' },
 
-  // CLIENT COUNT (para entrenadores)
-  clientCountContainer: { alignItems: 'center', marginBottom: 20, marginTop: 10 },
-  clientCountLabel: { color: '#94A3B8', marginBottom: 12, fontSize: 14, fontWeight: '600' },
-  clientCountOptions: { flexDirection: 'row', gap: 12, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 20 },
-  clientCountOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    gap: 8
-  },
-  clientCountOptionActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: '#10B981'
-  },
-  clientCountText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  clientCountTextActive: { color: '#10B981' },
-  clientCountHint: {
-    color: '#64748B',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 20
-  },
-  clientCountHintLink: {
-    color: '#10B981',
-    fontWeight: '600',
-    textDecorationLine: 'underline'
-  },
-
-  // LEGAL LINKS (Términos y Privacidad)
+  // LEGAL LINKS
   legalSection: {
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 20,
+    marginTop: 0,
+    marginBottom: 40,
     paddingHorizontal: 20
   },
   legalText: {
-    color: '#64748B',
+    color: '#6B7280',
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 12
   },
   legalLink: {
-    color: '#10B981',
+    color: '#7C3AED',
     fontSize: 12,
     textDecorationLine: 'underline',
     marginBottom: 8

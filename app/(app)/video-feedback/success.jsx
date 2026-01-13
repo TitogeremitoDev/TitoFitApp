@@ -136,11 +136,16 @@ export default function VideoSuccessScreen() {
 
         } catch (error) {
             console.log('[Success] Error compartiendo IG:', error);
-            // Si falla IG Stories, ofrecer share normal
-            // Alert.alert('Instagram no detectado', 'Abriendo menú general de compartir...');
+            // Si falla IG Stories, ofrecer share normal CON EL VIDEO
             try {
+                let shareUrl = videoPath;
+                if (Platform.OS === 'android' && !shareUrl?.startsWith('file://')) {
+                    shareUrl = `file://${shareUrl}`;
+                }
                 await Share.open({
                     message: `💪 Acabo de enviar un video de mi técnica de ${exerciseName} para que mi coach me corrija. #TotalGains`,
+                    url: shareUrl,
+                    type: 'video/*',
                 });
             } catch (e) {
                 console.log('[Success] Share cancelado');
@@ -174,11 +179,16 @@ export default function VideoSuccessScreen() {
             }
         } catch (error) {
             console.log('[Success] Error compartiendo TikTok:', error);
-            // Fallback a share general
-            // Alert.alert('TikTok no detectado', 'Abriendo menú general de compartir...');
+            // Fallback a share general CON EL VIDEO
             try {
+                let shareUrl = videoPath;
+                if (Platform.OS === 'android' && !shareUrl?.startsWith('file://')) {
+                    shareUrl = `file://${shareUrl}`;
+                }
                 await Share.open({
                     message: `💪 Entrenamiento de ${exerciseName || 'hoy'} con TotalGains! #Fitness #GymTok`,
+                    url: shareUrl,
+                    type: 'video/*',
                 });
             } catch (e) {
                 console.log('[Success] Share TikTok cancelado');

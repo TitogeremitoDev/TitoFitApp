@@ -1,11 +1,14 @@
-import { Stack, router, usePathname } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, router, usePathname, useFocusEffect } from 'expo-router';
+import { useEffect, useState, useCallback } from 'react';
 import { Alert, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ScrollView, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { FeedbackBubbleProvider } from '../../context/FeedbackBubbleContext';
+import OverQuotaBanner from '../../components/OverQuotaBanner';
+import OverQuotaModal from '../../components/OverQuotaModal';
+import { useOverQuotaInterceptor } from '../../hooks/useOverQuotaInterceptor';
 
 // Configuración de secciones del sidebar (coincide con las cajas temáticas del dashboard)
 const SIDEBAR_SECTIONS = [
@@ -48,6 +51,7 @@ const SIDEBAR_SECTIONS = [
         icon: 'settings',
         color: '#64748b',
         items: [
+            { id: 'billing', icon: 'card', label: 'Facturación', route: '/(coach)/billing' },
             { id: 'settings', icon: 'settings', label: 'Configuración', route: '/(coach)/settings' },
         ]
     }
@@ -176,9 +180,9 @@ const Sidebar = ({ currentPath, onNavigate, user, trainerProfile }) => {
                         style={[
                             sidebarStyles.quickAccessBtn,
                             isCollapsed && sidebarStyles.quickAccessBtnCollapsed,
-                            currentPath?.includes('/messages') && sidebarStyles.quickAccessBtnActive
+                            currentPath?.includes('/chat') && sidebarStyles.quickAccessBtnActive
                         ]}
-                        onPress={() => onNavigate('/(coach)/messages')}
+                        onPress={() => onNavigate('/chat')}
                     >
                         <Ionicons name="chatbubbles-outline" size={18} color="#94a3b8" />
                         {!isCollapsed && <Text style={sidebarStyles.quickAccessText}>Chat</Text>}
@@ -260,23 +264,71 @@ const Sidebar = ({ currentPath, onNavigate, user, trainerProfile }) => {
 };
 
 export default function CoachLayout() {
-    const { user, token } = useAuth();
+    const { user, token, refreshUser } = useAuth();
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const pathname = usePathname();
     const [trainerProfile, setTrainerProfile] = useState(null);
+    const [showOverQuotaModal, setShowOverQuotaModal] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     // Mostrar sidebar solo en pantallas grandes (900px+)
     const showSidebar = Platform.OS === 'web' && width >= 900;
 
+    // Obtener info de over-quota del usuario
+    const overQuota = user?.overQuota;
+    // Considerar congelado si el status es 'frozen' O si está excedido de cuota (isOverQuota es true)
+    // Esto es más estricto y asegura que salte el modal si hay exceso.
+    // Si queremos dar gracia, podríamos mirar daysFrozen, pero el usuario pidió bloqueo total.
+    const isFrozen = user?.subscriptionStatus === 'frozen' || (overQuota?.isOverQuota === true);
+
+
+
+    // Interceptor para mostrar modal automáticamente al recibir 403 OVER_QUOTA
+    const handleOverQuotaError = useCallback((errorData) => {
+        console.log('[CoachLayout] 🚫 Over-quota error intercepted:', errorData);
+        setShowOverQuotaModal(true);
+    }, []);
+
+    useOverQuotaInterceptor(handleOverQuotaError);
+
+    // 🔄 FORZAR REFRESH CADA VEZ QUE LA PANTALLA GANA FOCO (Counter Back-Button Spam)
+    useFocusEffect(
+        useCallback(() => {
+            console.log('[CoachLayout] 🔄 Pantalla enfocada - Verificando estado...');
+            refreshUser().then(u => {
+                // Forzar reevaluación si cambió algo
+                if (u?.subscriptionStatus === 'frozen' || u?.overQuota?.isOverQuota) {
+                    setShowOverQuotaModal(true);
+                }
+            });
+        }, [])
+    );
+
+    // Verificar acceso y redirigir si no es coach/admin
     useEffect(() => {
         if (!user || (user.tipoUsuario !== 'ADMINISTRADOR' && user.tipoUsuario !== 'ENTRENADOR')) {
             Alert.alert('Acceso denegado', 'Solo administradores y entrenadores pueden acceder');
             router.replace('/(app)');
         }
     }, [user]);
+
+    // Redirigir a billing si está congelado y no está ya en billing/settings
+    // Redirigir si está congelado y no está en una ruta permitida (pago)
+    useEffect(() => {
+        if (isFrozen && user?.tipoUsuario === 'ENTRENADOR') {
+            // Permitir acceso solo a settings y payment
+            // IMPORTANTE: /billing es para cobrar a clientes. Debe estar bloqueado.
+            const allowedPaths = ['/settings', '/payment', '/perfil/ajustes', '/(app)/payment'];
+            const isAllowedPath = allowedPaths.some(p => pathname.includes(p));
+
+            if (!isAllowedPath) {
+                console.log('[CoachLayout] 🔒 Coach congelado, redirigiendo a suscripción...');
+                router.replace('/(app)/payment');
+            }
+        }
+    }, [isFrozen, pathname, user]);
 
     // Cargar perfil del entrenador desde la API para obtener el logoUrl
     useEffect(() => {
@@ -299,6 +351,10 @@ export default function CoachLayout() {
 
     const handleNavigate = (route) => {
         router.push(route);
+    };
+
+    const handleBannerPress = () => {
+        setShowOverQuotaModal(true);
     };
 
     return (
@@ -325,6 +381,12 @@ export default function CoachLayout() {
                     paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
                     backgroundColor: '#f1f5f9',
                 }}>
+                    {/* Banner de Over-Quota - Visible en todas las pantallas */}
+                    <OverQuotaBanner
+                        overQuota={overQuota}
+                        onPress={handleBannerPress}
+                    />
+
                     <Stack
                         screenOptions={{
                             headerShown: false,
@@ -339,6 +401,14 @@ export default function CoachLayout() {
                         <Stack.Screen name="feedbacks/index" />
                     </Stack>
                 </View>
+
+                {/* Modal de Over-Quota - Renderizado directamente sin wrapper bloqueante */}
+                <OverQuotaModal
+                    visible={(isFrozen || showOverQuotaModal) && !pathname.includes('/payment') && !pathname.includes('/perfil/ajustes')}
+                    overQuota={overQuota}
+                    onClose={isFrozen ? () => { } : () => setShowOverQuotaModal(false)}
+                    canDismiss={!isFrozen}
+                />
             </View>
         </FeedbackBubbleProvider>
     );

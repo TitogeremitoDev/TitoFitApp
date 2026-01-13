@@ -10,19 +10,28 @@ import {
     StyleSheet,
     Modal,
     Image,
+    Pressable,
+    Animated,
+    Easing,
+    Dimensions,
+    useWindowDimensions,
     TouchableOpacity,
     SafeAreaView,
-    Dimensions,
     ActivityIndicator,
     Alert,
     Platform,
-    useWindowDimensions,
     ScrollView,
+    TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import SkiaAnnotationCanvas from './SkiaAnnotationCanvas';
 import { useFeedbackDraft } from '../../../context/FeedbackDraftContext';
+import MarketingCanvas from './marketing/MarketingCanvas';
+import MarketingControls from './marketing/MarketingControls';
+import DraggableSticker from './marketing/DraggableSticker';
+import * as Sharing from 'expo-sharing';
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -50,15 +59,8 @@ const NEON_COLORS = [
 ];
 
 /**
- * CoachStudioModal - Full-screen photo studio with dark theme
- * @param {boolean} visible - Modal visibility
- * @param {function} onClose - Close handler
- * @param {object} photo - Photo object with fullUrl, takenAt, etc.
- * @param {string} token - Auth token
- * @param {string} clientId - Client ID
- * @param {Array} photos - Array of photos for carousel (optional)
- * @param {number} initialIndex - Initial index in carousel (default 0)
- * @param {function} onIndexChange - Callback when carousel index changes
+ * CoachStudioModal - Smart Drawer side panel with dark theme (Modified)
+ * Slides in from right, variable width based on context.
  */
 export default function CoachStudioModal({
     visible,
@@ -82,9 +84,64 @@ export default function CoachStudioModal({
     const totalPhotos = photoList.length;
     const hasMultiplePhotos = totalPhotos > 1;
 
-    // Responsive: side previews only on tablet/desktop (>= 768px)
+    // Responsive
     const { width: windowWidth } = useWindowDimensions();
-    const isLargeScreen = windowWidth >= 768;
+    const isLargeScreen = windowWidth >= 768; // Only use Smart Drawer on Tablets+
+    const isMobile = !isLargeScreen;
+
+    // Animation & Drawer State
+    const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current; // Start off-screen right
+    const widthAnim = useRef(new Animated.Value(isMobile ? SCREEN_WIDTH : 650)).current; // Base width
+
+    useEffect(() => {
+        if (visible) {
+            // Slide In
+            Animated.timing(slideAnim, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: false, // width change requires false
+                easing: Easing.out(Easing.poly(4)),
+            }).start();
+        } else {
+            // Slide Out (handled by onClose wrapper usually, but init state needs reset)
+            slideAnim.setValue(SCREEN_WIDTH);
+        }
+    }, [visible, slideAnim]);
+
+    // Dynamic Width based on Active Tool
+    useEffect(() => {
+        let targetWidth = isMobile ? SCREEN_WIDTH : 650; // Base width (Standard Mode)
+
+        if (!isMobile && (activeTool === 'marketing' || activeTool === 'compare')) {
+            targetWidth = Math.min(SCREEN_WIDTH * 0.9, 1400); // Expanded Mode (90% width or max 1400px)
+        }
+
+        Animated.timing(widthAnim, {
+            toValue: targetWidth,
+            duration: 300,
+            useNativeDriver: false,
+            easing: Easing.inOut(Easing.ease),
+        }).start();
+
+    }, [activeTool, isMobile, widthAnim]);
+
+    const closeDrawer = () => {
+        if (isLargeScreen) {
+            // Desktop: Slide out animation manually
+            Animated.timing(slideAnim, {
+                toValue: SCREEN_WIDTH,
+                duration: 250,
+                useNativeDriver: false,
+                easing: Easing.in(Easing.poly(4)),
+            }).start(() => {
+                onClose();
+            });
+        } else {
+            // Mobile: Standard Close (Modal handles animation)
+            onClose();
+        }
+    };
+
 
     // Canvas ref for export
     const canvasRef = useRef(null);
@@ -94,10 +151,57 @@ export default function CoachStudioModal({
     const [annotationNote, setAnnotationNote] = useState(currentPhoto?.annotationVersions?.[0]?.note || '');
 
     // Compare state
-    const [showCompareMode, setShowCompareMode] = useState(false);
     const [comparePhoto, setComparePhoto] = useState(null);
     const [clientPhotos, setClientPhotos] = useState([]);
     const [loadingPhotos, setLoadingPhotos] = useState(false);
+    const [isSwapped, setIsSwapped] = useState(false); // Toggle photo positions
+
+    // Marketing State
+    const marketingRef = useRef(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [marketingConfig, setMarketingConfig] = useState({
+        templateId: 'transformation', // 'transformation', 'showcase'
+        privacy: false,
+        stats: true,
+        goal: 'loss', // 'loss' | 'gain'
+        branding: true,
+        delta: '- 2.5 kg' // Calculated later
+    });
+
+    const handleMarketingExport = async () => {
+        if (!marketingRef.current) return;
+        setIsExporting(true);
+        try {
+            if (Platform.OS === 'web') {
+                // Web: show instructions for manual screenshot
+                // html2canvas can't capture external images due to CORS
+                Alert.alert(
+                    'Compartir en Web',
+                    'Para compartir desde el navegador:\n\n1. Haz screenshot del canvas (Cmd+Shift+4 en Mac o Win+Shift+S en Windows)\n\n2. Comparte la imagen guardada\n\nEn la app móvil el botón funciona automáticamente.',
+                    [{ text: 'Entendido', style: 'default' }]
+                );
+            } else {
+                // Native: capture and share
+                const uri = await marketingRef.current.capture();
+                if (uri) {
+                    const isAvailable = await Sharing.isAvailableAsync();
+                    if (isAvailable) {
+                        await Sharing.shareAsync(uri, {
+                            mimeType: 'image/jpeg',
+                            dialogTitle: 'Compartir Progreso'
+                        });
+                    } else {
+                        Alert.alert('Error', 'Compartir no disponible en este dispositivo');
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Export error:', error);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
 
     // Feedback draft context - para guardar borradores en Logros
     const { addHighlight } = useFeedbackDraft();
@@ -137,6 +241,15 @@ export default function CoachStudioModal({
             setHasChanges(false);
         }
     }, [currentIndex, photoList, onIndexChange]);
+
+    // Wrapper for toolbar navigation
+    const navigatePhoto = useCallback((direction) => {
+        if (direction > 0) {
+            goNext();
+        } else {
+            goPrev();
+        }
+    }, [goNext, goPrev]);
 
     // Keyboard navigation (web)
     useEffect(() => {
@@ -218,8 +331,8 @@ export default function CoachStudioModal({
                     Alert.alert('🎤 Próximamente', 'Notas de voz en desarrollo');
                     break;
                 case 'compare':
-                    // Load client photos for comparison
-                    setShowCompareMode(true);
+                    // Load client photos if not already loaded
+                    // Note: activeTool is already set to 'compare' above
                     if (clientPhotos.length === 0) {
                         setLoadingPhotos(true);
                         try {
@@ -234,6 +347,7 @@ export default function CoachStudioModal({
                             }
                         } catch (error) {
                             console.error('[Compare] Error loading photos:', error);
+                            Alert.alert('Error', 'No se pudieron cargar las fotos anteriores');
                         } finally {
                             setLoadingPhotos(false);
                         }
@@ -295,7 +409,7 @@ export default function CoachStudioModal({
             // Alert.alert no funciona en web, usar confirm
             if (Platform.OS === 'web') {
                 if (window.confirm('¿Salir sin guardar? Tienes anotaciones sin guardar.')) {
-                    onClose();
+                    closeDrawer();
                 }
             } else {
                 Alert.alert(
@@ -303,13 +417,13 @@ export default function CoachStudioModal({
                     'Tienes anotaciones sin guardar.',
                     [
                         { text: 'Cancelar', style: 'cancel' },
-                        { text: 'Descartar', style: 'destructive', onPress: onClose },
+                        { text: 'Descartar', style: 'destructive', onPress: closeDrawer },
                         { text: 'Guardar', onPress: handleSave },
                     ]
                 );
             }
         } else {
-            onClose();
+            closeDrawer();
         }
     };
 
@@ -328,440 +442,694 @@ export default function CoachStudioModal({
 
     if (!photo) return null;
 
+    // Helper to wrap content conditionally (Drawer vs Full Screen)
+    const ContentWrapper = ({ children }) => {
+        if (isLargeScreen) {
+            return (
+                <Animated.View
+                    style={[
+                        styles.drawerContainer,
+                        {
+                            width: widthAnim,
+                            transform: [{ translateX: slideAnim }]
+                        }
+                    ]}
+                >
+                    {children}
+                </Animated.View>
+            );
+        }
+        return children;
+    };
+
     return (
         <Modal
             visible={visible}
-            animationType="fade"
-            presentationStyle="fullScreen"
+            transparent={isLargeScreen}
+            animationType={isLargeScreen ? "none" : "slide"}
+            presentationStyle={isLargeScreen ? "overFullScreen" : "fullScreen"}
             onRequestClose={handleClose}
         >
             <StatusBar style="light" />
-            <SafeAreaView style={styles.container}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity
-                        style={styles.headerBtn}
-                        onPress={handleClose}
-                        disabled={isLoading}
-                    >
-                        <Ionicons name="close" size={28} color="#fff" />
-                    </TouchableOpacity>
 
-                    <View style={styles.headerCenter}>
-                        <Text style={styles.dateText}>{formatDate(photo.takenAt)}</Text>
-                        {photo.tags?.length > 0 && (
-                            <View style={styles.tagsRow}>
-                                {photo.tags.map(tag => (
-                                    <Text key={tag} style={styles.tagChip}>
-                                        {tag}
-                                    </Text>
-                                ))}
-                            </View>
-                        )}
-                    </View>
+            {/* DESKTOP: Backdrop */}
+            {isLargeScreen && (
+                <Animated.View
+                    style={[
+                        styles.backdrop,
+                        {
+                            opacity: slideAnim.interpolate({
+                                inputRange: [0, SCREEN_WIDTH],
+                                outputRange: [1, 0],
+                            })
+                        }
+                    ]}
+                >
+                    <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+                </Animated.View>
+            )}
 
-                    <TouchableOpacity
-                        style={[styles.headerBtn, styles.saveBtn]}
-                        onPress={handleSave}
-                        disabled={isLoading || !hasChanges}
-                    >
-                        {isLoading ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                            <Ionicons
-                                name="checkmark"
-                                size={28}
-                                color={hasChanges ? '#10b981' : '#4b5563'}
-                            />
-                        )}
-                    </TouchableOpacity>
-                </View>
-
-                {/* Compare Mode - Side by side photos */}
-                {showCompareMode && (
-                    <View style={styles.compareContainer}>
-                        {/* Close compare button */}
+            {/* CONTENT */}
+            <ContentWrapper>
+                <SafeAreaView style={styles.container}>
+                    {/* Header */}
+                    <View style={[
+                        styles.header,
+                        isMobile && styles.headerMobile
+                    ]}>
                         <TouchableOpacity
-                            style={styles.closeCompareBtn}
-                            onPress={() => {
-                                setShowCompareMode(false);
-                                setComparePhoto(null);
-                                setActiveTool(null);
-                            }}
+                            style={styles.headerBtn}
+                            onPress={handleClose}
+                            disabled={isLoading}
                         >
-                            <Ionicons name="close" size={24} color="#fff" />
+                            <Ionicons name="close" size={28} color="#fff" />
                         </TouchableOpacity>
 
-                        {/* Side by side photos */}
-                        <View style={styles.comparePhotosRow}>
-                            {/* Current photo (left) */}
-                            <View style={styles.comparePhotoWrapper}>
-                                <Text style={styles.compareLabel}>Actual</Text>
-                                <Image
-                                    source={{ uri: currentPhoto.fullUrl }}
-                                    style={styles.comparePhoto}
-                                    resizeMode="contain"
-                                />
-                                <Text style={styles.compareDateLabel}>
-                                    {new Date(currentPhoto.takenAt).toLocaleDateString('es-ES')}
-                                </Text>
-                            </View>
-
-                            <View style={styles.compareDivider}>
-                                <Ionicons name="swap-horizontal" size={24} color="#64748b" />
-                            </View>
-
-                            {/* Compare photo (right) */}
-                            <View style={styles.comparePhotoWrapper}>
-                                <Text style={styles.compareLabel}>Antes</Text>
-                                {comparePhoto ? (
-                                    <>
-                                        <Image
-                                            source={{ uri: comparePhoto.fullUrl }}
-                                            style={styles.comparePhoto}
-                                            resizeMode="contain"
-                                        />
-                                        <Text style={styles.compareDateLabel}>
-                                            {new Date(comparePhoto.takenAt).toLocaleDateString('es-ES')}
+                        <View style={styles.headerCenter}>
+                            <Text style={styles.dateText}>{formatDate(photo.takenAt)}</Text>
+                            {photo.tags?.length > 0 && (
+                                <View style={styles.tagsRow}>
+                                    {photo.tags.map(tag => (
+                                        <Text key={tag} style={styles.tagChip}>
+                                            {tag}
                                         </Text>
-                                    </>
-                                ) : (
-                                    <View style={styles.comparePlaceholder}>
-                                        <Ionicons name="images-outline" size={48} color="#64748b" />
-                                        <Text style={styles.comparePlaceholderText}>Elige una foto</Text>
-                                    </View>
-                                )}
-                            </View>
-                        </View>
-
-                        {/* Photo picker strip */}
-                        <View style={styles.comparePickerContainer}>
-                            <Text style={styles.comparePickerTitle}>Selecciona foto anterior:</Text>
-                            {loadingPhotos ? (
-                                <ActivityIndicator color="#0ea5e9" />
-                            ) : (
-                                <ScrollView
-                                    horizontal
-                                    showsHorizontalScrollIndicator={false}
-                                    contentContainerStyle={styles.comparePickerScroll}
-                                >
-                                    {clientPhotos.map((p) => (
-                                        <TouchableOpacity
-                                            key={p._id}
-                                            style={[
-                                                styles.comparePickerItem,
-                                                comparePhoto?._id === p._id && styles.comparePickerItemActive
-                                            ]}
-                                            onPress={() => setComparePhoto(p)}
-                                        >
-                                            <Image
-                                                source={{ uri: p.thumbnailUrl || p.fullUrl }}
-                                                style={styles.comparePickerImage}
-                                                resizeMode="cover"
-                                            />
-                                            <Text style={styles.comparePickerDate}>
-                                                {new Date(p.takenAt).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
-                                            </Text>
-                                        </TouchableOpacity>
                                     ))}
-                                </ScrollView>
+                                </View>
                             )}
                         </View>
                     </View>
-                )}
 
-                {/* Photo Container - hide when annotating or comparing */}
-                {activeTool !== 'annotate' && !showCompareMode && (
-                    <View style={styles.photoContainer}>
-                        <Image
-                            source={{ uri: currentPhoto.fullUrl }}
-                            style={styles.photo}
-                            resizeMode="contain"
-                        />
+                    {/* Compare Mode - Responsive (Side by side on desktop, stacked on mobile) */}
+                    {activeTool === 'compare' && (
+                        <View style={styles.compareContainer}>
+                            {/* Close compare button */}
+                            <TouchableOpacity
+                                style={styles.closeCompareBtn}
+                                onPress={() => {
+                                    setComparePhoto(null);
+                                    setActiveTool(null);
+                                }}
+                            >
+                                <Ionicons name="close" size={24} color="#fff" />
+                            </TouchableOpacity>
 
+                            {/* Layout Container: Flex column to manage vertical space */}
+                            <View style={{ flex: 1, flexDirection: 'column' }}>
 
+                                {/* Photos Area - Grows to fill available space */}
+                                <View style={[
+                                    styles.comparePhotosRow,
+                                    !isLargeScreen && styles.comparePhotosColumn,
+                                    { flex: 1, marginBottom: 16 }
+                                ]}>
+                                    {/* LEFT = ANTERIOR (foto más antigua/seleccionada) */}
+                                    <View style={[
+                                        styles.comparePhotoWrapper,
+                                        !isLargeScreen && styles.comparePhotoWrapperMobile
+                                    ]}>
+                                        <Text style={styles.compareLabel}>Anterior</Text>
+                                        {comparePhoto ? (
+                                            <>
+                                                <Image
+                                                    source={{ uri: comparePhoto.fullUrl }}
+                                                    style={[
+                                                        styles.comparePhoto,
+                                                        !isLargeScreen && styles.comparePhotoMobile
+                                                    ]}
+                                                    resizeMode="contain"
+                                                />
+                                                <Text style={styles.compareDateLabel}>
+                                                    {new Date(comparePhoto.takenAt).toLocaleDateString('es-ES')}
+                                                </Text>
+                                            </>
+                                        ) : (
+                                            <View style={[
+                                                styles.comparePlaceholder,
+                                                !isLargeScreen && styles.comparePhotoMobile
+                                            ]}>
+                                                <Ionicons name="images-outline" size={32} color="#64748b" />
+                                                <Text style={styles.comparePlaceholderText}>Seleccionar del historial</Text>
+                                            </View>
+                                        )}
+                                    </View>
 
-                        {/* Photo Counter */}
-                        {hasMultiplePhotos && (
-                            <View style={styles.photoCounter}>
-                                <Text style={styles.photoCounterText}>
-                                    {currentIndex + 1} / {totalPhotos}
-                                </Text>
+                                    {/* Simple divider line */}
+                                    <View style={[
+                                        styles.compareDivider,
+                                        !isLargeScreen && { transform: [{ rotate: '90deg' }], marginVertical: 8 }
+                                    ]} />
+
+                                    {/* RIGHT = ACTUAL (foto principal actual) */}
+                                    <View style={[
+                                        styles.comparePhotoWrapper,
+                                        !isLargeScreen && styles.comparePhotoWrapperMobile
+                                    ]}>
+                                        <Text style={styles.compareLabel}>Actual</Text>
+                                        <Image
+                                            source={{ uri: currentPhoto.fullUrl }}
+                                            style={[
+                                                styles.comparePhoto,
+                                                !isLargeScreen && styles.comparePhotoMobile
+                                            ]}
+                                            resizeMode="contain"
+                                        />
+                                        <Text style={styles.compareDateLabel}>
+                                            {new Date(currentPhoto.takenAt).toLocaleDateString('es-ES')}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                {/* Photo picker strip - Fixed height at bottom, no shrink */}
+                                <View style={[
+                                    styles.comparePickerContainer,
+                                    !isLargeScreen && { height: 120, padding: 8, marginTop: 0 },
+                                    { flexShrink: 0 }
+                                ]}>
+                                    <Text style={styles.comparePickerTitle}>Historial ({clientPhotos.length})</Text>
+                                    {loadingPhotos ? (
+                                        <ActivityIndicator color="#0ea5e9" />
+                                    ) : (
+                                        <ScrollView
+                                            horizontal
+                                            showsHorizontalScrollIndicator={false}
+                                            contentContainerStyle={styles.comparePickerScroll}
+                                        >
+                                            {clientPhotos.map((p) => (
+                                                <TouchableOpacity
+                                                    key={p._id}
+                                                    style={[
+                                                        styles.comparePickerItem,
+                                                        comparePhoto?._id === p._id && styles.comparePickerItemActive
+                                                    ]}
+                                                    onPress={() => setComparePhoto(p)}
+                                                >
+                                                    <Image
+                                                        source={{ uri: p.thumbnailUrl || p.fullUrl }}
+                                                        style={styles.comparePickerImage}
+                                                        resizeMode="cover"
+                                                    />
+                                                    <Text style={styles.comparePickerDate}>
+                                                        {new Date(p.takenAt).toLocaleDateString('es-ES', { month: '2-digit', day: '2-digit' })}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+                                    )}
+                                </View>
+
+                            </View >
+                        </View >
+                    )
+                    }
+
+                    {/* Marketing Mode */}
+                    {
+                        activeTool === 'marketing' && (
+                            <View style={styles.marketingMainContainer}>
+
+                                {/* Zoom Toolbar - Above Preview */}
+                                <View style={styles.zoomToolbarContainer}>
+                                    {marketingConfig.templateId === 'transformation' ? (
+                                        <View style={styles.zoomToolbarRow}>
+                                            {/* INICIO */}
+                                            <View style={styles.zoomControlGroup}>
+                                                <Text style={styles.zoomLabel}>INICIO</Text>
+                                                <View style={styles.zoomButtonsRow}>
+                                                    <TouchableOpacity
+                                                        style={styles.zoomBtnSmall}
+                                                        onPress={() => setMarketingConfig(prev => ({ ...prev, zoomLeft: Math.max((prev.zoomLeft || 1) - 0.1, 0.5) }))}
+                                                    >
+                                                        <Ionicons name="remove" size={16} color="#fff" />
+                                                    </TouchableOpacity>
+                                                    <Text style={styles.zoomValueText}>
+                                                        {Math.round((marketingConfig.zoomLeft || 1) * 100)}%
+                                                    </Text>
+                                                    <TouchableOpacity
+                                                        style={styles.zoomBtnSmall}
+                                                        onPress={() => setMarketingConfig(prev => ({ ...prev, zoomLeft: Math.min((prev.zoomLeft || 1) + 0.1, 2) }))}
+                                                    >
+                                                        <Ionicons name="add" size={16} color="#fff" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+
+                                            {/* ACTUAL */}
+                                            <View style={styles.zoomControlGroup}>
+                                                <Text style={styles.zoomLabel}>ACTUAL</Text>
+                                                <View style={styles.zoomButtonsRow}>
+                                                    <TouchableOpacity
+                                                        style={styles.zoomBtnSmall}
+                                                        onPress={() => setMarketingConfig(prev => ({ ...prev, zoomRight: Math.max((prev.zoomRight || 1) - 0.1, 0.5) }))}
+                                                    >
+                                                        <Ionicons name="remove" size={16} color="#fff" />
+                                                    </TouchableOpacity>
+                                                    <Text style={styles.zoomValueText}>
+                                                        {Math.round((marketingConfig.zoomRight || 1) * 100)}%
+                                                    </Text>
+                                                    <TouchableOpacity
+                                                        style={styles.zoomBtnSmall}
+                                                        onPress={() => setMarketingConfig(prev => ({ ...prev, zoomRight: Math.min((prev.zoomRight || 1) + 0.1, 2) }))}
+                                                    >
+                                                        <Ionicons name="add" size={16} color="#fff" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    ) : (
+                                        /* Single Photo Zoom */
+                                        <View style={styles.zoomControlGroup}>
+                                            <Text style={styles.zoomLabel}>ZOOM</Text>
+                                            <View style={styles.zoomButtonsRow}>
+                                                <TouchableOpacity
+                                                    style={styles.zoomBtnSmall}
+                                                    onPress={() => setMarketingConfig(prev => ({ ...prev, zoomRight: Math.max((prev.zoomRight || 1) - 0.1, 0.5) }))}
+                                                >
+                                                    <Ionicons name="remove" size={16} color="#fff" />
+                                                </TouchableOpacity>
+                                                <Text style={styles.zoomValueText}>
+                                                    {Math.round((marketingConfig.zoomRight || 1) * 100)}%
+                                                </Text>
+                                                <TouchableOpacity
+                                                    style={styles.zoomBtnSmall}
+                                                    onPress={() => setMarketingConfig(prev => ({ ...prev, zoomRight: Math.min((prev.zoomRight || 1) + 0.1, 2) }))}
+                                                >
+                                                    <Ionicons name="add" size={16} color="#fff" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    )}
+                                </View>
+
+                                {/* Preview Area - Centered */}
+                                <View style={styles.marketingPreviewContainer}>
+                                    <View
+                                        style={{
+                                            width: 1080,
+                                            height: 1920,
+                                            transform: [{ scale: Math.min((SCREEN_WIDTH - 20) / 1080, (SCREEN_HEIGHT - 320) / 1920) }],
+                                        }}
+                                    >
+                                        <MarketingCanvas
+                                            ref={marketingRef}
+                                            photos={
+                                                marketingConfig.templateId === 'showcase'
+                                                    ? [currentPhoto]
+                                                    : [
+                                                        comparePhoto || currentPhoto,
+                                                        currentPhoto
+                                                    ]
+                                            }
+                                            templateId={marketingConfig.templateId}
+                                            config={marketingConfig}
+                                            goal={marketingConfig.goal}
+                                        />
+                                    </View>
+                                </View>
+
+                                {/* Controls - Bottom Sheet Style */}
+                                <MarketingControls
+                                    config={marketingConfig}
+                                    setConfig={setMarketingConfig}
+                                    onExport={handleMarketingExport}
+                                    isExporting={isExporting}
+                                />
                             </View>
-                        )}
+                        )
+                    }
 
-                        {/* Mobile Navigation - Simple Arrows (small screens) */}
-                        {!isLargeScreen && hasMultiplePhotos && currentIndex > 0 && (
-                            <TouchableOpacity
-                                style={[styles.mobileArrow, styles.mobileArrowLeft]}
-                                onPress={goPrev}
-                            >
-                                <Ionicons name="chevron-back" size={28} color="#fff" />
-                            </TouchableOpacity>
-                        )}
-                        {!isLargeScreen && hasMultiplePhotos && currentIndex < totalPhotos - 1 && (
-                            <TouchableOpacity
-                                style={[styles.mobileArrow, styles.mobileArrowRight]}
-                                onPress={goNext}
-                            >
-                                <Ionicons name="chevron-forward" size={28} color="#fff" />
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Side Preview - Left (previous photo) - LARGE SCREENS ONLY */}
-                        {isLargeScreen && hasMultiplePhotos && currentIndex > 0 && (
-                            <TouchableOpacity
-                                style={styles.sidePreview}
-                                onPress={goPrev}
-                            >
+                    {/* Photo Container - hide when annotating, comparing or marketing */}
+                    {
+                        activeTool !== 'annotate' && activeTool !== 'compare' && activeTool !== 'marketing' && (
+                            <View style={styles.photoContainer}>
                                 <Image
-                                    source={{ uri: photoList[currentIndex - 1]?.thumbnailUrl || photoList[currentIndex - 1]?.fullUrl }}
-                                    style={styles.sidePreviewImage}
-                                    resizeMode="cover"
+                                    source={{ uri: currentPhoto.fullUrl }}
+                                    style={styles.photo}
+                                    resizeMode="contain"
                                 />
-                                <View style={styles.sidePreviewOverlay}>
-                                    <Ionicons name="chevron-back" size={24} color="#fff" />
-                                </View>
-                            </TouchableOpacity>
-                        )}
 
-                        {/* Side Preview - Right (next photo) - LARGE SCREENS ONLY */}
-                        {isLargeScreen && hasMultiplePhotos && currentIndex < totalPhotos - 1 && (
-                            <TouchableOpacity
-                                style={[styles.sidePreview, styles.sidePreviewRight]}
-                                onPress={goNext}
-                            >
-                                <Image
-                                    source={{ uri: photoList[currentIndex + 1]?.thumbnailUrl || photoList[currentIndex + 1]?.fullUrl }}
-                                    style={styles.sidePreviewImage}
-                                    resizeMode="cover"
+
+
+                                {/* Photo Counter */}
+                                {hasMultiplePhotos && (
+                                    <View style={styles.photoCounter}>
+                                        <Text style={styles.photoCounterText}>
+                                            {currentIndex + 1} / {totalPhotos}
+                                        </Text>
+                                    </View>
+                                )}
+
+                                {/* Mobile Navigation - Simple Arrows (small screens) */}
+                                {!isLargeScreen && hasMultiplePhotos && currentIndex > 0 && (
+                                    <TouchableOpacity
+                                        style={[styles.mobileArrow, styles.mobileArrowLeft]}
+                                        onPress={goPrev}
+                                    >
+                                        <Ionicons name="chevron-back" size={28} color="#fff" />
+                                    </TouchableOpacity>
+                                )}
+                                {!isLargeScreen && hasMultiplePhotos && currentIndex < totalPhotos - 1 && (
+                                    <TouchableOpacity
+                                        style={[styles.mobileArrow, styles.mobileArrowRight]}
+                                        onPress={goNext}
+                                    >
+                                        <Ionicons name="chevron-forward" size={28} color="#fff" />
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Side Preview - Left (previous photo) - LARGE SCREENS ONLY */}
+                                {isLargeScreen && hasMultiplePhotos && currentIndex > 0 && (
+                                    <TouchableOpacity
+                                        style={styles.sidePreview}
+                                        onPress={goPrev}
+                                    >
+                                        <Image
+                                            source={{ uri: photoList[currentIndex - 1]?.thumbnailUrl || photoList[currentIndex - 1]?.fullUrl }}
+                                            style={styles.sidePreviewImage}
+                                            resizeMode="cover"
+                                        />
+                                        <View style={styles.sidePreviewOverlay}>
+                                            <Ionicons name="chevron-back" size={24} color="#fff" />
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Side Preview - Right (next photo) - LARGE SCREENS ONLY */}
+                                {isLargeScreen && hasMultiplePhotos && currentIndex < totalPhotos - 1 && (
+                                    <TouchableOpacity
+                                        style={[styles.sidePreview, styles.sidePreviewRight]}
+                                        onPress={goNext}
+                                    >
+                                        <Image
+                                            source={{ uri: photoList[currentIndex + 1]?.thumbnailUrl || photoList[currentIndex + 1]?.fullUrl }}
+                                            style={styles.sidePreviewImage}
+                                            resizeMode="cover"
+                                        />
+                                        <View style={styles.sidePreviewOverlay}>
+                                            <Ionicons name="chevron-forward" size={24} color="#fff" />
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Visibility Badge */}
+                                <View style={[
+                                    styles.visibilityBadge,
+                                    currentPhoto.visibility === 'shareable' && styles.visibilityShareable,
+                                    currentPhoto.visibility === 'private' && styles.visibilityPrivate,
+                                    isMobile && styles.visibilityBadgeMobile
+                                ]}>
+                                    <Ionicons
+                                        name={
+                                            currentPhoto.visibility === 'shareable' ? 'share-social' :
+                                                currentPhoto.visibility === 'private' ? 'lock-closed' : 'eye'
+                                        }
+                                        size={14}
+                                        color="#fff"
+                                    />
+                                    <Text style={styles.visibilityText}>
+                                        {currentPhoto.visibility === 'shareable' ? 'Compartible' :
+                                            currentPhoto.visibility === 'private' ? 'Privada' : 'Solo coach'}
+                                    </Text>
+                                </View>
+                            </View>
+                        )
+                    }
+
+                    {/* Annotation Canvas (replaces photo when annotating) */}
+                    {
+                        activeTool === 'annotate' && (
+                            <View style={styles.annotationContainer}>
+                                <SkiaAnnotationCanvas
+                                    ref={canvasRef}
+                                    imageUri={photo.fullUrl}
+                                    initialStrokes={strokes}
+                                    initialNote={annotationNote}
+                                    onStrokesChange={(newStrokes) => {
+                                        setStrokes(newStrokes);
+                                        setHasChanges(true);
+                                    }}
+                                    onNoteChange={(newNote) => {
+                                        setAnnotationNote(newNote);
+                                        setHasChanges(true);
+                                    }}
                                 />
-                                <View style={styles.sidePreviewOverlay}>
-                                    <Ionicons name="chevron-forward" size={24} color="#fff" />
-                                </View>
-                            </TouchableOpacity>
-                        )}
+                            </View>
+                        )
+                    }
 
-                        {/* Visibility Badge */}
+                    {/* Floating Toolbar - Centered Pill Design */}
+                    <View style={[
+                        styles.toolbar,
+                        isMobile && styles.toolbarMobile,
+                        isLargeScreen && styles.toolbarDesktop
+                    ]}>
                         <View style={[
-                            styles.visibilityBadge,
-                            currentPhoto.visibility === 'shareable' && styles.visibilityShareable,
-                            currentPhoto.visibility === 'private' && styles.visibilityPrivate,
+                            styles.toolbarInner,
+                            isMobile && styles.toolbarInnerMobile
                         ]}>
-                            <Ionicons
-                                name={
-                                    currentPhoto.visibility === 'shareable' ? 'share-social' :
-                                        currentPhoto.visibility === 'private' ? 'lock-closed' : 'eye'
-                                }
-                                size={14}
-                                color="#fff"
-                            />
-                            <Text style={styles.visibilityText}>
-                                {currentPhoto.visibility === 'shareable' ? 'Compartible' :
-                                    currentPhoto.visibility === 'private' ? 'Privada' : 'Solo coach'}
-                            </Text>
+                            {/* Photo Navigation - Left side */}
+                            {hasMultiplePhotos && (
+                                <View style={styles.navContainer}>
+                                    <TouchableOpacity
+                                        style={styles.navArrowBtn}
+                                        onPress={() => navigatePhoto(-1)}
+                                        disabled={currentIndex === 0}
+                                    >
+                                        <Ionicons
+                                            name="chevron-back"
+                                            size={18}
+                                            color={currentIndex === 0 ? '#4b5563' : '#fff'}
+                                        />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => setActiveTool(null)}>
+                                        <Text style={styles.photoIndexText}>
+                                            {currentIndex + 1}/{totalPhotos}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={styles.navArrowBtn}
+                                        onPress={() => navigatePhoto(1)}
+                                        disabled={currentIndex === totalPhotos - 1}
+                                    >
+                                        <Ionicons
+                                            name="chevron-forward"
+                                            size={18}
+                                            color={currentIndex === totalPhotos - 1 ? '#4b5563' : '#fff'}
+                                        />
+                                    </TouchableOpacity>
+                                    <View style={styles.toolbarDivider} />
+                                </View>
+                            )}
+
+                            {/* Tool Buttons */}
+                            {visibleTools.map(tool => (
+                                <TouchableOpacity
+                                    key={tool.id}
+                                    style={[
+                                        styles.toolBtn,
+                                        isLargeScreen && styles.toolBtnDesktop,
+                                        activeTool === tool.id && { backgroundColor: tool.color + '25' },
+                                    ]}
+                                    onPress={() => handleToolPress(tool.id)}
+                                >
+                                    <Ionicons
+                                        name={tool.icon}
+                                        size={isLargeScreen ? 20 : 22}
+                                        color={activeTool === tool.id ? tool.color : '#9ca3af'}
+                                    />
+                                    {isLargeScreen && (
+                                        <Text style={[
+                                            styles.toolLabel,
+                                            isLargeScreen && styles.toolLabelDesktop,
+                                            activeTool === tool.id && { color: tool.color },
+                                        ]}>
+                                            {tool.label}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            ))}
                         </View>
                     </View>
-                )}
 
-                {/* Annotation Canvas (replaces photo when annotating) */}
-                {activeTool === 'annotate' && (
-                    <View style={styles.annotationContainer}>
-                        <SkiaAnnotationCanvas
-                            ref={canvasRef}
-                            imageUri={photo.fullUrl}
-                            initialStrokes={strokes}
-                            initialNote={annotationNote}
-                            onStrokesChange={(newStrokes) => {
-                                setStrokes(newStrokes);
-                                setHasChanges(true);
-                            }}
-                            onNoteChange={(newNote) => {
-                                setAnnotationNote(newNote);
-                                setHasChanges(true);
-                            }}
-                        />
-                    </View>
-                )}
-
-                {/* Floating Toolbar */}
-                <View style={styles.toolbar}>
-                    {visibleTools.map(tool => (
-                        <TouchableOpacity
-                            key={tool.id}
-                            style={[
-                                styles.toolBtn,
-                                activeTool === tool.id && { backgroundColor: tool.color + '30' },
-                            ]}
-                            onPress={() => handleToolPress(tool.id)}
-                        >
-                            <Ionicons
-                                name={tool.icon}
-                                size={24}
-                                color={activeTool === tool.id ? tool.color : '#9ca3af'}
-                            />
-                            <Text style={[
-                                styles.toolLabel,
-                                activeTool === tool.id && { color: tool.color },
-                            ]}>
-                                {tool.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                {/* Annotation History Badge */}
-                {photo.annotationVersions?.length > 0 && (
-                    <View style={styles.historyBadge}>
-                        <Ionicons name="git-commit" size={14} color="#f59e0b" />
-                        <Text style={styles.historyText}>
-                            {photo.annotationVersions.length} versiones
-                        </Text>
-                    </View>
-                )}
-
-                {/* Voice Notes Badge */}
-                {photo.voiceNotes?.length > 0 && (
-                    <View style={styles.voiceNotesBadge}>
-                        <Ionicons name="mic" size={14} color="#8b5cf6" />
-                        <Text style={styles.voiceNotesText}>
-                            {photo.voiceNotes.length} notas
-                        </Text>
-                    </View>
-                )}
-
-                {/* Note Input - siempre visible */}
-                <View style={styles.noteSection}>
-                    <View style={styles.noteInputContainer}>
-                        <Ionicons name="chatbubble-outline" size={16} color="#9ca3af" />
-                        <input
-                            type="text"
-                            placeholder="Añadir nota para el cliente..."
-                            value={annotationNote}
-                            onChange={(e) => {
-                                setAnnotationNote(e.target.value);
-                                setHasChanges(true);
-                            }}
-                            style={{
-                                flex: 1,
-                                backgroundColor: 'transparent',
-                                border: 'none',
-                                color: '#fff',
-                                fontSize: 14,
-                                outline: 'none',
-                                marginLeft: 10,
-                            }}
-                        />
-                    </View>
-                </View>
-
-                {/* Action Buttons - siempre visibles */}
-                <View style={styles.actionButtonsRow}>
-                    {/* Add single photo */}
-                    <TouchableOpacity
-                        style={styles.addToFeedbackBtn}
-                        onPress={async () => {
-                            setIsLoading(true);
-                            try {
-                                if (hasChanges) handleSave();
-                                const annotatedUrl = await uploadAnnotatedImage();
-                                addHighlight({
-                                    id: `photo_${currentPhoto._id}_${Date.now()}`,
-                                    text: annotationNote || 'Foto de progreso',
-                                    exerciseName: 'Foto de progreso',
-                                    thumbnail: currentPhoto.thumbnailUrl || currentPhoto.fullUrl,
-                                    sourceMediaUrl: annotatedUrl,
-                                    mediaType: 'photo',
-                                });
-                                if (Platform.OS === 'web') {
-                                    alert('Foto añadida al feedback');
-                                } else {
-                                    Alert.alert('Borrador', 'Foto guardada como borrador');
-                                }
-                                onClose();
-                            } catch (error) {
-                                console.error('[CoachStudio] Error:', error);
-                                if (Platform.OS === 'web') {
-                                    alert('Error al guardar');
-                                } else {
-                                    Alert.alert('Error', 'No se pudo guardar');
-                                }
-                            } finally {
-                                setIsLoading(false);
-                            }
-                        }}
-                        disabled={isLoading}
-                    >
-                        {isLoading ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <>
-                                <Ionicons name="image-outline" size={18} color="#fff" />
-                                <Text style={styles.addToFeedbackText}>
-                                    {hasMultiplePhotos ? 'Añadir esta foto' : 'Añadir al Feedback'}
+                    {/* Annotation History Badge */}
+                    {
+                        photo.annotationVersions?.length > 0 && (
+                            <View style={styles.historyBadge}>
+                                <Ionicons name="git-commit" size={14} color="#f59e0b" />
+                                <Text style={styles.historyText}>
+                                    {photo.annotationVersions.length} versiones
                                 </Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
+                            </View>
+                        )
+                    }
 
-                    {/* Add all photos (only if multiple) */}
-                    {hasMultiplePhotos && (
+                    {/* Voice Notes Badge */}
+                    {
+                        photo.voiceNotes?.length > 0 && (
+                            <View style={styles.voiceNotesBadge}>
+                                <Ionicons name="mic" size={14} color="#8b5cf6" />
+                                <Text style={styles.voiceNotesText}>
+                                    {photo.voiceNotes.length} notas
+                                </Text>
+                            </View>
+                        )
+                    }
+
+                    {/* Note Input - hide in marketing mode */}
+                    {
+                        activeTool !== 'marketing' && (
+                            <View style={styles.noteSection}>
+                                <View style={styles.noteInputContainer}>
+                                    <Ionicons name="chatbubble-outline" size={16} color="#9ca3af" />
+                                    <TextInput
+                                        placeholder="Añadir nota para el cliente..."
+                                        placeholderTextColor="#9ca3af"
+                                        value={annotationNote}
+                                        onChangeText={(text) => {
+                                            setAnnotationNote(text);
+                                            setHasChanges(true);
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            color: '#fff',
+                                            fontSize: 14,
+                                            marginLeft: 10,
+                                        }}
+                                    />
+                                </View>
+                            </View>
+                        )
+                    }
+
+                    {/* Action Buttons - siempre visibles */}
+                    <View style={[
+                        styles.actionButtonsRow,
+                        isMobile && styles.actionButtonsRowMobile
+                    ]}>
+                        {/* Add single photo */}
                         <TouchableOpacity
-                            style={[styles.addToFeedbackBtn, { backgroundColor: '#0ea5e9' }]}
+                            style={[
+                                styles.addToFeedbackBtn,
+                                isMobile && styles.btnMobile
+                            ]}
                             onPress={async () => {
                                 setIsLoading(true);
                                 try {
-                                    // Add all photos in the group
-                                    for (const p of photoList) {
-                                        addHighlight({
-                                            id: `photo_${p._id}_${Date.now()}`,
-                                            text: `Grupo de ${totalPhotos} fotos`,
-                                            exerciseName: 'Fotos de progreso',
-                                            thumbnail: p.thumbnailUrl || p.fullUrl,
-                                            sourceMediaUrl: p.fullUrl,
-                                            mediaType: 'photo',
-                                        });
-                                    }
+                                    if (hasChanges) handleSave();
+                                    const annotatedUrl = await uploadAnnotatedImage();
+                                    addHighlight({
+                                        id: `photo_${currentPhoto._id}_${Date.now()}`,
+                                        text: annotationNote || 'Foto de progreso',
+                                        exerciseName: 'Foto de progreso',
+                                        thumbnail: currentPhoto.thumbnailUrl || currentPhoto.fullUrl,
+                                        sourceMediaUrl: annotatedUrl,
+                                        mediaType: 'photo',
+                                    });
                                     if (Platform.OS === 'web') {
-                                        alert(`${totalPhotos} fotos añadidas al feedback`);
+                                        alert('Foto añadida al feedback');
                                     } else {
-                                        Alert.alert('Borrador', `${totalPhotos} fotos guardadas`);
+                                        Alert.alert('Borrador', 'Foto guardada como borrador');
                                     }
                                     onClose();
                                 } catch (error) {
                                     console.error('[CoachStudio] Error:', error);
+                                    if (Platform.OS === 'web') {
+                                        alert('Error al guardar');
+                                    } else {
+                                        Alert.alert('Error', 'No se pudo guardar');
+                                    }
                                 } finally {
                                     setIsLoading(false);
                                 }
                             }}
                             disabled={isLoading}
                         >
-                            <Ionicons name="images-outline" size={18} color="#fff" />
-                            <Text style={styles.addToFeedbackText}>
-                                Añadir {totalPhotos} fotos
-                            </Text>
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="image-outline" size={18} color="#fff" />
+                                    <Text style={[
+                                        styles.addToFeedbackText,
+                                        isMobile && styles.btnTextMobile
+                                    ]}>
+                                        {hasMultiplePhotos ? 'Añadir esta foto' : 'Añadir al Feedback'}
+                                    </Text>
+                                </>
+                            )}
                         </TouchableOpacity>
-                    )}
 
-                    <TouchableOpacity
-                        style={styles.sendNowBtn}
-                        onPress={() => {
-                            if (hasChanges) handleSave();
-                            if (Platform.OS === 'web') {
-                                alert('Feedback enviado al cliente');
-                            } else {
-                                Alert.alert('Enviado', 'El cliente recibirá una notificación');
-                            }
-                            onClose();
-                        }}
-                        disabled={isLoading}
-                    >
-                        <Ionicons name="send" size={18} color="#fff" />
-                        <Text style={styles.sendNowText}>Enviar ahora</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        </Modal>
+                        {/* Add all photos (only if multiple) */}
+                        {hasMultiplePhotos && (
+                            <TouchableOpacity
+                                style={[
+                                    styles.addToFeedbackBtn,
+                                    { backgroundColor: '#0ea5e9' },
+                                    isMobile && styles.btnMobile
+                                ]}
+                                onPress={async () => {
+                                    setIsLoading(true);
+                                    try {
+                                        // Add all photos in the group
+                                        for (const p of photoList) {
+                                            addHighlight({
+                                                id: `photo_${p._id}_${Date.now()}`,
+                                                text: `Grupo de ${totalPhotos} fotos`,
+                                                exerciseName: 'Fotos de progreso',
+                                                thumbnail: p.thumbnailUrl || p.fullUrl,
+                                                sourceMediaUrl: p.fullUrl,
+                                                mediaType: 'photo',
+                                            });
+                                        }
+                                        if (Platform.OS === 'web') {
+                                            alert(`${totalPhotos} fotos añadidas al feedback`);
+                                        } else {
+                                            Alert.alert('Borrador', `${totalPhotos} fotos guardadas`);
+                                        }
+                                        onClose();
+                                    } catch (error) {
+                                        console.error('[CoachStudio] Error:', error);
+                                    } finally {
+                                        setIsLoading(false);
+                                    }
+                                }}
+                                disabled={isLoading}
+                            >
+                                <Ionicons name="images-outline" size={18} color="#fff" />
+                                <Text style={[
+                                    styles.addToFeedbackText,
+                                    isMobile && styles.btnTextMobile
+                                ]}>
+                                    Añadir {totalPhotos} fotos
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={[
+                                styles.sendNowBtn,
+                                isMobile && styles.btnMobile
+                            ]}
+                            onPress={() => {
+                                if (hasChanges) handleSave();
+                                if (Platform.OS === 'web') {
+                                    alert('Feedback enviado al cliente');
+                                } else {
+                                    Alert.alert('Enviado', 'El cliente recibirá una notificación');
+                                }
+                                onClose();
+                            }}
+                            disabled={isLoading}
+                        >
+                            <Ionicons name="send" size={18} color="#fff" />
+                            <Text style={[
+                                styles.sendNowText,
+                                isMobile && styles.btnTextMobile
+                            ]}>Enviar ahora</Text>
+                        </TouchableOpacity>
+                    </View>
+                </SafeAreaView >
+            </ContentWrapper>
+        </Modal >
     );
 }
 
@@ -770,9 +1138,33 @@ export default function CoachStudioModal({
 // ═══════════════════════════════════════════════════════════════════════════
 
 const styles = StyleSheet.create({
+    // Smart Drawer Styles
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        zIndex: 1,
+    },
+    drawerContainer: {
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        right: 0,
+        backgroundColor: '#0a0a0f',
+        zIndex: 2,
+        shadowColor: "#000",
+        shadowOffset: {
+            width: -2,
+            height: 0,
+        },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 25,
+        overflow: 'hidden', // Ensure content doesn't spill out during resize
+    },
+
     container: {
         flex: 1,
-        backgroundColor: '#0a0a0f',
+        // backgroundColor: '#0a0a0f', // Use drawer bg
     },
 
     // Header
@@ -782,6 +1174,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         padding: 16,
         backgroundColor: '#0a0a0f',
+    },
+    headerMobile: {
+        paddingTop: 50, // Clear status bar/camera notch
     },
     headerBtn: {
         width: 44,
@@ -862,6 +1257,9 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: 16,
     },
+    visibilityBadgeMobile: {
+        top: 50, // Clear status bar
+    },
     visibilityShareable: {
         backgroundColor: 'rgba(16, 185, 129, 0.8)',
     },
@@ -894,27 +1292,93 @@ const styles = StyleSheet.create({
         transform: [{ scale: 1.2 }],
     },
 
-    // Toolbar
+    // Toolbar - Compact Floating Pill
     toolbar: {
+        position: 'absolute',
+        top: 40,
+        left: 0,
+        right: 0,
         flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingVertical: 16,
-        paddingHorizontal: 24,
-        backgroundColor: '#111827',
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+        pointerEvents: 'box-none', // Allow clicks to pass through empty space
+    },
+    toolbarMobile: {
+        top: undefined, // Remove top positioning
+        bottom: 180, // Position safely above bottom elements
+        width: '50%', // Constrain width
+        left: '25%', // Center it
+        paddingHorizontal: 0,
+    },
+    toolbarInner: {
+        flexDirection: 'row',
+        backgroundColor: 'rgba(17, 24, 39, 0.95)',
+        borderRadius: 28,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        gap: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    toolbarInnerMobile: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        gap: 2,
+        borderRadius: 20,
+    },
+    toolbarDesktop: {
+        top: 60, // Adjusted for desktop (was 80)
+        paddingVertical: 6,
+        paddingHorizontal: 6,
+        gap: 2,
     },
     toolBtn: {
+        flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 16,
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 20,
+    },
+    toolBtnDesktop: {
+        paddingHorizontal: 12,
         paddingVertical: 8,
-        borderRadius: 12,
+        gap: 4,
     },
     toolLabel: {
-        fontSize: 11,
+        fontSize: 12,
         color: '#9ca3af',
-        fontWeight: '500',
+        fontWeight: '600',
+    },
+    toolLabelDesktop: {
+        fontSize: 11,
+    },
+    navArrowBtn: {
+        padding: 6,
+        borderRadius: 8,
+    },
+    navContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    photoIndexText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
+        minWidth: 32,
+        textAlign: 'center',
+    },
+    toolbarDivider: {
+        width: 1,
+        height: 20,
+        backgroundColor: '#374151',
+        marginHorizontal: 8,
     },
 
     // History & Voice Notes Badges
@@ -964,6 +1428,11 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: '#2a2a35',
     },
+    actionButtonsRowMobile: {
+        paddingBottom: 60, // Significantly increased safe area for mobile
+        paddingHorizontal: 8,
+        gap: 8,
+    },
     addToFeedbackBtn: {
         flex: 1,
         flexDirection: 'row',
@@ -975,10 +1444,18 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         borderRadius: 8,
     },
+    btnMobile: {
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        gap: 4,
+    },
     addToFeedbackText: {
         color: '#fff',
         fontSize: 14,
         fontWeight: '600',
+    },
+    btnTextMobile: {
+        fontSize: 12,
     },
     sendNowBtn: {
         flexDirection: 'row',
@@ -1028,6 +1505,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     // Mobile navigation arrows (simple, no preview)
+    // Mobile navigation arrows (simple, no preview)
     mobileArrow: {
         position: 'absolute',
         top: '50%',
@@ -1041,18 +1519,18 @@ const styles = StyleSheet.create({
         zIndex: 10,
     },
     mobileArrowLeft: {
-        left: 12,
+        left: 4, // Moved closer to edge
     },
     mobileArrowRight: {
-        right: 12,
+        right: 4, // Moved closer to edge
     },
     // Side Preview (3D carousel effect - large side panels)
     sidePreview: {
         position: 'absolute',
-        left: '22%',
+        left: '5%',
         top: '15%',
         bottom: '15%',
-        width: 250,
+        width: 30,
         borderRadius: 8,
         overflow: 'hidden',
         transform: [{ perspective: 1000 }, { rotateY: '30deg' }],
@@ -1063,7 +1541,7 @@ const styles = StyleSheet.create({
     },
     sidePreviewRight: {
         left: 'auto',
-        right: '22%',
+        right: '5%',
         transform: [{ perspective: 1000 }, { rotateY: '-30deg' }],
     },
     sidePreviewImage: {
@@ -1102,14 +1580,19 @@ const styles = StyleSheet.create({
     comparePhotosRow: {
         flex: 1,
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'stretch', // Changed from center to stretch so children take full height
         justifyContent: 'center',
         gap: 12,
+        overflow: 'hidden', // Add overflow hidden here too
     },
     comparePhotoWrapper: {
         flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        maxWidth: '45%',
+        justifyContent: 'center',
+        width: '100%',
+        overflow: 'hidden',
     },
     compareLabel: {
         color: '#94a3b8',
@@ -1118,10 +1601,12 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         textTransform: 'uppercase',
         letterSpacing: 1,
+        flexShrink: 0,
+        textAlign: 'center', // Center text explicitly
     },
     comparePhoto: {
+        flex: 1,           // Use flex 1 instead of height 100% to fill remaining space
         width: '100%',
-        aspectRatio: 3 / 4,
         borderRadius: 12,
         backgroundColor: '#1a1a1f',
     },
@@ -1154,6 +1639,21 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 12,
         marginTop: 16,
+        // Default height for desktop/tablet
+    },
+    comparePhotosColumn: {
+        flexDirection: 'column',
+    },
+    comparePhotoWrapperMobile: {
+        maxWidth: '100%',
+        width: '100%',
+        flex: 1,
+    },
+    comparePhotoMobile: {
+        width: '100%',
+        height: '100%',
+        aspectRatio: undefined, // Let flex handle it
+        maxHeight: 200, // Limit maximum height on mobile to fit screen
     },
     comparePickerTitle: {
         color: '#94a3b8',
@@ -1182,5 +1682,64 @@ const styles = StyleSheet.create({
         color: '#64748b',
         fontSize: 10,
         marginTop: 4,
+    },
+
+    // Marketing
+    marketingMainContainer: {
+        flex: 1,
+        backgroundColor: '#0f0f13',
+    },
+    marketingPreviewContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    zoomToolbarContainer: {
+        width: '100%',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        backgroundColor: '#1e1e24',
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 8,
+    },
+    zoomToolbarRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 16,
+    },
+    zoomControlGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    zoomLabel: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    zoomButtonsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 20,
+        padding: 4,
+    },
+    zoomBtnSmall: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    zoomValueText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
+        minWidth: 40,
+        textAlign: 'center',
     },
 });

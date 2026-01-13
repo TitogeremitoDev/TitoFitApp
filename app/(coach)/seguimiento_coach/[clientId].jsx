@@ -12,6 +12,7 @@ import {
     TouchableOpacity,
     useWindowDimensions,
     Platform,
+    Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import PhotoGalleryTab from '../../../src/components/coach/PhotoGalleryTab';
 import CoachStudioModal from '../../../src/components/coach/CoachStudioModal';
+import ClientSidebar from '../../../src/components/coach/ClientSidebar';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -138,6 +140,14 @@ export default function ClientSeguimientoDetailScreen() {
     const [photoIndex, setPhotoIndex] = useState(0);  // Índice actual en el carrusel
     const [studioVisible, setStudioVisible] = useState(false);
 
+    // 🖥️ SIDEBAR: State for collapsible client list on wide screens
+    const [sidebarClients, setSidebarClients] = useState([]);
+    const [sidebarLoading, setSidebarLoading] = useState(true);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    // Responsive: show sidebar only on wide screens (>1024px)
+    const isWideScreen = windowWidth >= 1024;
+
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -213,6 +223,43 @@ export default function ClientSeguimientoDetailScreen() {
     const onRefresh = () => {
         setIsRefreshing(true);
         fetchClientHistory(true);
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🖥️ SIDEBAR: Fetch all clients for sidebar navigation
+    // ─────────────────────────────────────────────────────────────────────────
+    const fetchSidebarClients = useCallback(async () => {
+        if (!isWideScreen) return; // Only fetch if on wide screen
+
+        try {
+            setSidebarLoading(true);
+            const res = await fetch(`${API_URL}/api/monitoring/coach/clients-summary`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setSidebarClients(data.clients || []);
+            }
+        } catch (error) {
+            console.error('[Sidebar] Error fetching clients:', error);
+        } finally {
+            setSidebarLoading(false);
+        }
+    }, [token, API_URL, isWideScreen]);
+
+    useEffect(() => {
+        if (isWideScreen) {
+            fetchSidebarClients();
+        }
+    }, [isWideScreen, fetchSidebarClients]);
+
+    // Handle sidebar client selection
+    const handleSidebarClientSelect = (client) => {
+        router.push({
+            pathname: '/(coach)/seguimiento_coach/[clientId]',
+            params: { clientId: client._id, clientName: client.nombre }
+        });
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -895,235 +942,253 @@ export default function ClientSeguimientoDetailScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#1e293b" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
-            </View>
-
-            {/* 📊 VIEW MODE SELECTOR */}
-            <View style={styles.viewModeRow}>
-                <TouchableOpacity
-                    style={[styles.viewModeBtn, viewMode === 'data' && styles.viewModeBtnActive]}
-                    onPress={() => setViewMode('data')}
-                >
-                    <Ionicons
-                        name="list"
-                        size={18}
-                        color={viewMode === 'data' ? '#fff' : '#64748b'}
+            {/* Wrapper for sidebar + content on wide screens */}
+            <View style={styles.mainWrapper}>
+                {/* 🖥️ SIDEBAR: Show only on wide screens */}
+                {isWideScreen && (
+                    <ClientSidebar
+                        clients={sidebarClients}
+                        isLoading={sidebarLoading}
+                        currentClientId={clientId}
+                        onClientSelect={handleSidebarClientSelect}
+                        isCollapsed={sidebarCollapsed}
+                        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
                     />
-                    <Text style={[styles.viewModeText, viewMode === 'data' && styles.viewModeTextActive]}>
-                        Datos por día
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.viewModeBtn, viewMode === 'stats' && styles.viewModeBtnActive]}
-                    onPress={() => setViewMode('stats')}
-                >
-                    <Ionicons
-                        name="stats-chart"
-                        size={18}
-                        color={viewMode === 'stats' ? '#fff' : '#64748b'}
-                    />
-                    <Text style={[styles.viewModeText, viewMode === 'stats' && styles.viewModeTextActive]}>
-                        Gráficos
-                    </Text>
-                </TouchableOpacity>
-            </View>
+                )}
 
-            {/* CONTENIDO CONDICIONAL */}
-            {viewMode === 'stats' ? (
-                renderStatsView()
-            ) : (
-                <>
-                    {/* Tabs Diario/Semanal/Galería */}
-                    <View style={styles.tabsRow}>
+                {/* Main content area */}
+                <View style={styles.contentArea}>
+                    {/* Header */}
+                    <View style={styles.header}>
+                        <TouchableOpacity onPress={() => router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
+                            <Ionicons name="arrow-back" size={24} color="#1e293b" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
+                    </View>
+
+                    {/* 📊 VIEW MODE SELECTOR */}
+                    <View style={styles.viewModeRow}>
                         <TouchableOpacity
-                            style={[styles.tab, activeTab === 'daily' && styles.tabActive]}
-                            onPress={() => setActiveTab('daily')}
+                            style={[styles.viewModeBtn, viewMode === 'data' && styles.viewModeBtnActive]}
+                            onPress={() => setViewMode('data')}
                         >
                             <Ionicons
-                                name="calendar"
+                                name="list"
                                 size={18}
-                                color={activeTab === 'daily' ? '#0ea5e9' : '#64748b'}
+                                color={viewMode === 'data' ? '#fff' : '#64748b'}
                             />
-                            <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>
-                                Diario ({dailyRecords.length})
+                            <Text style={[styles.viewModeText, viewMode === 'data' && styles.viewModeTextActive]}>
+                                Datos por día
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.tab, activeTab === 'weekly' && styles.tabActive]}
-                            onPress={() => setActiveTab('weekly')}
+                            style={[styles.viewModeBtn, viewMode === 'stats' && styles.viewModeBtnActive]}
+                            onPress={() => setViewMode('stats')}
                         >
                             <Ionicons
-                                name="calendar-outline"
+                                name="stats-chart"
                                 size={18}
-                                color={activeTab === 'weekly' ? '#0ea5e9' : '#64748b'}
+                                color={viewMode === 'stats' ? '#fff' : '#64748b'}
                             />
-                            <Text style={[styles.tabText, activeTab === 'weekly' && styles.tabTextActive]}>
-                                Semanal ({weeklyRecords.length})
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.tab, activeTab === 'gallery' && styles.tabActive]}
-                            onPress={() => setActiveTab('gallery')}
-                        >
-                            <Ionicons
-                                name="images"
-                                size={18}
-                                color={activeTab === 'gallery' ? '#0ea5e9' : '#64748b'}
-                            />
-                            <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>
-                                📷 Galería
+                            <Text style={[styles.viewModeText, viewMode === 'stats' && styles.viewModeTextActive]}>
+                                Gráficos
                             </Text>
                         </TouchableOpacity>
                     </View>
 
-                    {/* Content - Gallery Tab */}
-                    {activeTab === 'gallery' ? (
-                        <View style={{ flex: 1 }}>
-                            <PhotoGalleryTab
-                                clientId={clientId}
-                                token={token}
-                                onPhotoPress={({ photos, initialIndex, selectedPhoto: photo }) => {
-                                    setPhotoGroup(photos || [photo]);
-                                    setPhotoIndex(initialIndex || 0);
-                                    setSelectedPhoto(photo);
-                                    setStudioVisible(true);
-                                    console.log('[Gallery] Photo group:', photos?.length || 1, 'photos, starting at index', initialIndex);
-                                }}
-                            />
-                        </View>
+                    {/* CONTENIDO CONDICIONAL */}
+                    {viewMode === 'stats' ? (
+                        renderStatsView()
                     ) : (
-                        /* Content - Daily/Weekly */
-                        <ScrollView
-                            contentContainerStyle={styles.scrollContent}
-                            refreshControl={
-                                <RefreshControl
-                                    refreshing={isRefreshing}
-                                    onRefresh={onRefresh}
-                                    colors={['#0ea5e9']}
-                                />
-                            }
-                        >
-                            {records.length === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
-                                    <Text style={styles.emptyTitle}>Sin registros</Text>
-                                    <Text style={styles.emptyText}>
-                                        {activeTab === 'daily'
-                                            ? 'Este cliente aún no ha registrado check-ins diarios.'
-                                            : 'Este cliente aún no ha registrado check-ins semanales.'}
+                        <>
+                            {/* Tabs Diario/Semanal/Galería */}
+                            <View style={styles.tabsRow}>
+                                <TouchableOpacity
+                                    style={[styles.tab, activeTab === 'daily' && styles.tabActive]}
+                                    onPress={() => setActiveTab('daily')}
+                                >
+                                    <Ionicons
+                                        name="calendar"
+                                        size={18}
+                                        color={activeTab === 'daily' ? '#0ea5e9' : '#64748b'}
+                                    />
+                                    <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>
+                                        Diario ({dailyRecords.length})
                                     </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.tab, activeTab === 'weekly' && styles.tabActive]}
+                                    onPress={() => setActiveTab('weekly')}
+                                >
+                                    <Ionicons
+                                        name="calendar-outline"
+                                        size={18}
+                                        color={activeTab === 'weekly' ? '#0ea5e9' : '#64748b'}
+                                    />
+                                    <Text style={[styles.tabText, activeTab === 'weekly' && styles.tabTextActive]}>
+                                        Semanal ({weeklyRecords.length})
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.tab, activeTab === 'gallery' && styles.tabActive]}
+                                    onPress={() => setActiveTab('gallery')}
+                                >
+                                    <Ionicons
+                                        name="images"
+                                        size={18}
+                                        color={activeTab === 'gallery' ? '#0ea5e9' : '#64748b'}
+                                    />
+                                    <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>
+                                        📷 Galería
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Content - Gallery Tab */}
+                            {activeTab === 'gallery' ? (
+                                <View style={{ flex: 1 }}>
+                                    <PhotoGalleryTab
+                                        clientId={clientId}
+                                        token={token}
+                                        onPhotoPress={({ photos, initialIndex, selectedPhoto: photo }) => {
+                                            setPhotoGroup(photos || [photo]);
+                                            setPhotoIndex(initialIndex || 0);
+                                            setSelectedPhoto(photo);
+                                            setStudioVisible(true);
+                                            console.log('[Gallery] Photo group:', photos?.length || 1, 'photos, starting at index', initialIndex);
+                                        }}
+                                    />
                                 </View>
                             ) : (
-                                <>
-                                    {/* Registros del mes actual (sueltos) */}
-                                    {activeTab === 'daily' ? (
-                                        <>
-                                            {groupedDailyRecords.currentMonthRecords.length > 0 && (
-                                                <View style={styles.monthSection}>
-                                                    <View style={styles.monthHeaderCurrent}>
-                                                        <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                        <Text style={styles.monthCount}>
-                                                            {groupedDailyRecords.currentMonthRecords.length} registros
-                                                        </Text>
-                                                    </View>
-                                                    {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
-                                                </View>
-                                            )}
-                                            {/* Meses anteriores (colapsados) */}
-                                            {groupedDailyRecords.historicalGroups.map((group) => (
-                                                <View key={`daily-${group.key}`} style={styles.monthSectionCollapsible}>
-                                                    <TouchableOpacity
-                                                        style={styles.monthHeaderCollapsible}
-                                                        onPress={() => toggleMonth(`daily-${group.key}`)}
-                                                    >
-                                                        <Ionicons
-                                                            name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                            size={18}
-                                                            color="#64748b"
-                                                        />
-                                                        <Text style={styles.monthLabelCollapsible}>
-                                                            📁 {group.label}
-                                                        </Text>
-                                                        <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                    </TouchableOpacity>
-                                                    {expandedMonths[`daily-${group.key}`] && (
-                                                        <View style={styles.monthRecords}>
-                                                            {group.records.map(renderDailyRecord)}
-                                                        </View>
-                                                    )}
-                                                </View>
-                                            ))}
-                                        </>
+                                /* Content - Daily/Weekly */
+                                <ScrollView
+                                    contentContainerStyle={styles.scrollContent}
+                                    refreshControl={
+                                        <RefreshControl
+                                            refreshing={isRefreshing}
+                                            onRefresh={onRefresh}
+                                            colors={['#0ea5e9']}
+                                        />
+                                    }
+                                >
+                                    {records.length === 0 ? (
+                                        <View style={styles.emptyContainer}>
+                                            <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
+                                            <Text style={styles.emptyTitle}>Sin registros</Text>
+                                            <Text style={styles.emptyText}>
+                                                {activeTab === 'daily'
+                                                    ? 'Este cliente aún no ha registrado check-ins diarios.'
+                                                    : 'Este cliente aún no ha registrado check-ins semanales.'}
+                                            </Text>
+                                        </View>
                                     ) : (
                                         <>
-                                            {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
-                                                <View style={styles.monthSection}>
-                                                    <View style={styles.monthHeaderCurrent}>
-                                                        <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                        <Text style={styles.monthCount}>
-                                                            {groupedWeeklyRecords.currentMonthRecords.length} registros
-                                                        </Text>
-                                                    </View>
-                                                    {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
-                                                </View>
-                                            )}
-                                            {/* Meses anteriores (colapsados) */}
-                                            {groupedWeeklyRecords.historicalGroups.map((group) => (
-                                                <View key={`weekly-${group.key}`} style={styles.monthSectionCollapsible}>
-                                                    <TouchableOpacity
-                                                        style={styles.monthHeaderCollapsible}
-                                                        onPress={() => toggleMonth(`weekly-${group.key}`)}
-                                                    >
-                                                        <Ionicons
-                                                            name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                            size={18}
-                                                            color="#64748b"
-                                                        />
-                                                        <Text style={styles.monthLabelCollapsible}>
-                                                            📁 {group.label}
-                                                        </Text>
-                                                        <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                    </TouchableOpacity>
-                                                    {expandedMonths[`weekly-${group.key}`] && (
-                                                        <View style={styles.monthRecords}>
-                                                            {group.records.map(renderWeeklyRecord)}
+                                            {/* Registros del mes actual (sueltos) */}
+                                            {activeTab === 'daily' ? (
+                                                <>
+                                                    {groupedDailyRecords.currentMonthRecords.length > 0 && (
+                                                        <View style={styles.monthSection}>
+                                                            <View style={styles.monthHeaderCurrent}>
+                                                                <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                                <Text style={styles.monthCount}>
+                                                                    {groupedDailyRecords.currentMonthRecords.length} registros
+                                                                </Text>
+                                                            </View>
+                                                            {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
                                                         </View>
                                                     )}
-                                                </View>
-                                            ))}
+                                                    {/* Meses anteriores (colapsados) */}
+                                                    {groupedDailyRecords.historicalGroups.map((group) => (
+                                                        <View key={`daily-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                            <TouchableOpacity
+                                                                style={styles.monthHeaderCollapsible}
+                                                                onPress={() => toggleMonth(`daily-${group.key}`)}
+                                                            >
+                                                                <Ionicons
+                                                                    name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                                    size={18}
+                                                                    color="#64748b"
+                                                                />
+                                                                <Text style={styles.monthLabelCollapsible}>
+                                                                    📁 {group.label}
+                                                                </Text>
+                                                                <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                            </TouchableOpacity>
+                                                            {expandedMonths[`daily-${group.key}`] && (
+                                                                <View style={styles.monthRecords}>
+                                                                    {group.records.map(renderDailyRecord)}
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
+                                                        <View style={styles.monthSection}>
+                                                            <View style={styles.monthHeaderCurrent}>
+                                                                <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                                <Text style={styles.monthCount}>
+                                                                    {groupedWeeklyRecords.currentMonthRecords.length} registros
+                                                                </Text>
+                                                            </View>
+                                                            {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
+                                                        </View>
+                                                    )}
+                                                    {/* Meses anteriores (colapsados) */}
+                                                    {groupedWeeklyRecords.historicalGroups.map((group) => (
+                                                        <View key={`weekly-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                            <TouchableOpacity
+                                                                style={styles.monthHeaderCollapsible}
+                                                                onPress={() => toggleMonth(`weekly-${group.key}`)}
+                                                            >
+                                                                <Ionicons
+                                                                    name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                                    size={18}
+                                                                    color="#64748b"
+                                                                />
+                                                                <Text style={styles.monthLabelCollapsible}>
+                                                                    📁 {group.label}
+                                                                </Text>
+                                                                <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                            </TouchableOpacity>
+                                                            {expandedMonths[`weekly-${group.key}`] && (
+                                                                <View style={styles.monthRecords}>
+                                                                    {group.records.map(renderWeeklyRecord)}
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    ))}
+                                                </>
+                                            )}
                                         </>
                                     )}
-                                </>
+                                </ScrollView>
                             )}
-                        </ScrollView>
+                        </>
                     )}
-                </>
-            )}
 
-            {/* Coach Studio Modal */}
-            <CoachStudioModal
-                visible={studioVisible}
-                onClose={() => {
-                    setStudioVisible(false);
-                    setSelectedPhoto(null);
-                    setPhotoGroup([]);
-                    setPhotoIndex(0);
-                }}
-                photo={selectedPhoto}
-                photos={photoGroup}
-                initialIndex={photoIndex}
-                onIndexChange={(idx) => {
-                    setPhotoIndex(idx);
-                    setSelectedPhoto(photoGroup[idx]);
-                }}
-                token={token}
-                clientId={clientId}
-            />
+                    {/* Coach Studio Modal */}
+                    <CoachStudioModal
+                        visible={studioVisible}
+                        onClose={() => {
+                            setStudioVisible(false);
+                            setSelectedPhoto(null);
+                            setPhotoGroup([]);
+                            setPhotoIndex(0);
+                        }}
+                        photo={selectedPhoto}
+                        photos={photoGroup}
+                        initialIndex={photoIndex}
+                        onIndexChange={(idx) => {
+                            setPhotoIndex(idx);
+                            setSelectedPhoto(photoGroup[idx]);
+                        }}
+                        token={token}
+                        clientId={clientId}
+                    />
+                </View>
+            </View>
         </SafeAreaView>
     );
 }
@@ -1136,6 +1201,14 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc',
+    },
+    // 🖥️ SIDEBAR LAYOUT
+    mainWrapper: {
+        flex: 1,
+        flexDirection: 'row',
+    },
+    contentArea: {
+        flex: 1,
     },
     header: {
         flexDirection: 'row',

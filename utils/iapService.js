@@ -1,30 +1,29 @@
 /**
  * iapService.js - In-App Purchase Service using expo-iap
- * Compatible con Expo SDK 53
+ * Compatible con Expo SDK 53 y expo-iap 3.3.2+
  * 
- * Documentación: https://github.com/hyochan/expo-iap
+ * IMPORTANTE: expo-iap usa fetchProducts(), NO getSubscriptions()
+ * Documentación: https://hyochan.github.io/expo-iap/
  */
 
 import { Platform } from 'react-native';
-import * as ExpoIAP from 'expo-iap';
+import {
+    initConnection,
+    endConnection,
+    fetchProducts,
+    requestPurchase,
+    getPurchaseHistory,
+    finishTransaction as finishTransactionNative,
+    acknowledgePurchaseAndroid,
+} from 'expo-iap';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRODUCT IDs - Deben coincidir EXACTAMENTE con Google Play Console
+// PRODUCT IDs - Solo los que EXISTEN en Google Play Console
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const PRODUCT_IDS = {
     PREMIUM_MENSUAL: 'premium_mensual',
     PREMIUM_ANUAL: 'premium_anual',
-    COACH_5_MENSUAL: 'coach_5_mensual',
-    COACH_5_ANUAL: 'coach_5_anual',
-    COACH_10_MENSUAL: 'coach_10_mensual',
-    COACH_10_ANUAL: 'coach_10_anual',
-    COACH_20_MENSUAL: 'coach_20_mensual',
-    COACH_20_ANUAL: 'coach_20_anual',
-    COACH_50_MENSUAL: 'coach_50_mensual',
-    COACH_50_ANUAL: 'coach_50_anual',
-    COACH_100_MENSUAL: 'coach_100_mensual',
-    COACH_100_ANUAL: 'coach_100_anual',
     COACH_UNLIMITED_MENSUAL: 'coach_unlimited_mensual',
     COACH_UNLIMITED_ANUAL: 'coach_unlimited_anual',
 };
@@ -32,7 +31,7 @@ export const PRODUCT_IDS = {
 export const ALL_SUBSCRIPTION_IDS = Object.values(PRODUCT_IDS);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FUNCIONES DE IAP usando expo-iap
+// FUNCIONES DE IAP usando expo-iap API correcta
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
@@ -45,8 +44,8 @@ export const initIAPConnection = async () => {
     }
 
     try {
-        await ExpoIAP.initConnection();
-        console.log('[IAP] Conexión iniciada');
+        const result = await initConnection();
+        console.log('[IAP] Conexión iniciada:', result);
         return true;
     } catch (error) {
         console.error('[IAP] Error iniciando conexión:', error);
@@ -61,7 +60,7 @@ export const endIAPConnection = async () => {
     if (Platform.OS === 'web') return;
 
     try {
-        await ExpoIAP.endConnection();
+        await endConnection();
         console.log('[IAP] Conexión cerrada');
     } catch (error) {
         console.error('[IAP] Error cerrando conexión:', error);
@@ -70,6 +69,7 @@ export const endIAPConnection = async () => {
 
 /**
  * Obtiene las suscripciones disponibles desde la tienda
+ * IMPORTANTE: expo-iap usa fetchProducts con type: 'subs'
  */
 export const getIAPSubscriptions = async (productIds = ALL_SUBSCRIPTION_IDS) => {
     if (Platform.OS === 'web') {
@@ -78,11 +78,25 @@ export const getIAPSubscriptions = async (productIds = ALL_SUBSCRIPTION_IDS) => 
     }
 
     try {
-        const subscriptions = await ExpoIAP.getSubscriptions(productIds);
-        console.log('[IAP] Suscripciones disponibles:', subscriptions?.length || 0);
-        return subscriptions || [];
+        console.log('[IAP] Solicitando suscripciones:', productIds);
+
+        // expo-iap usa fetchProducts con type: 'subs' para suscripciones
+        const products = await fetchProducts({
+            skus: productIds,
+            type: 'subs', // 'subs' para suscripciones, 'in-app' para productos únicos
+        });
+
+        console.log('[IAP] Productos encontrados:', products?.length || 0);
+        if (products?.length > 0) {
+            products.forEach((p, i) => {
+                console.log(`[IAP] Producto ${i}:`, p.id || p.productId, p.displayPrice || p.price);
+            });
+        }
+
+        return products || [];
     } catch (error) {
-        console.error('[IAP] Error obteniendo suscripciones:', error);
+        console.error('[IAP] Error obteniendo suscripciones:', error.message);
+        console.error('[IAP] Error code:', error.code);
         return [];
     }
 };
@@ -98,13 +112,20 @@ export const purchaseIAPSubscription = async (productId, offerToken = null) => {
     try {
         console.log('[IAP] Iniciando compra:', productId);
 
-        const purchase = await ExpoIAP.requestSubscription({
-            sku: productId,
-            ...(Platform.OS === 'android' && offerToken && {
-                subscriptionOffers: [{ sku: productId, offerToken }]
-            }),
-        });
+        // API de expo-iap v2.7.0+ con soporte para plataformas
+        const purchaseRequest = {
+            request: {
+                apple: {
+                    sku: productId,
+                },
+                google: {
+                    skus: [productId],
+                    ...(offerToken && { offerToken }),
+                },
+            },
+        };
 
+        const purchase = await requestPurchase(purchaseRequest);
         console.log('[IAP] Compra completada:', purchase);
         return purchase;
     } catch (error) {
@@ -120,7 +141,7 @@ export const getIAPPurchaseHistory = async () => {
     if (Platform.OS === 'web') return [];
 
     try {
-        const history = await ExpoIAP.getPurchaseHistory();
+        const history = await getPurchaseHistory();
         console.log('[IAP] Historial de compras:', history?.length || 0);
         return history || [];
     } catch (error) {
@@ -136,7 +157,7 @@ export const acknowledgeIAPPurchase = async (purchaseToken) => {
     if (Platform.OS !== 'android') return true;
 
     try {
-        await ExpoIAP.acknowledgePurchaseAndroid(purchaseToken);
+        await acknowledgePurchaseAndroid({ token: purchaseToken });
         console.log('[IAP] Compra acknowledged');
         return true;
     } catch (error) {
@@ -152,7 +173,7 @@ export const finishIAPTransaction = async (purchase, isConsumable = false) => {
     if (Platform.OS === 'web') return;
 
     try {
-        await ExpoIAP.finishTransaction({ purchase, isConsumable });
+        await finishTransactionNative({ purchase, isConsumable });
         console.log('[IAP] Transacción finalizada');
     } catch (error) {
         console.error('[IAP] Error finalizando transacción:', error);
@@ -161,10 +182,14 @@ export const finishIAPTransaction = async (purchase, isConsumable = false) => {
 
 /**
  * Mapea un plan de MongoDB a un Product ID de Google Play
+ * IMPORTANTE: Solo existen 4 productos en Google Play Console:
+ * - premium_mensual, premium_anual
+ * - coach_unlimited_mensual, coach_unlimited_anual
  */
 export const getGoogleProductIdFromPlan = (plan) => {
     if (!plan) return null;
 
+    // Si el plan tiene un googleProductId explícito, usarlo
     if (plan.googleProductId) {
         return plan.googleProductId;
     }
@@ -173,18 +198,15 @@ export const getGoogleProductIdFromPlan = (plan) => {
     const period = isAnual ? 'anual' : 'mensual';
 
     if (plan.isCoach) {
-        const clientRange = plan.clientRange || 10;
-        if (clientRange >= 9999 || clientRange > 100) {
-            return `coach_unlimited_${period}`;
-        }
-        return `coach_${clientRange}_${period}`;
+        // Todos los planes de coach usan coach_unlimited_*
+        return `coach_unlimited_${period}`;
     }
+
     return `premium_${period}`;
 };
 
 /**
  * Mapea un plan de MongoDB a un Product ID de Apple App Store
- * NOTA: Usamos sufijo _v3 porque los IDs anteriores quedaron en estado "zombie" en App Store Connect
  */
 export const getAppleProductIdFromPlan = (plan) => {
     if (!plan) return null;
@@ -194,11 +216,7 @@ export const getAppleProductIdFromPlan = (plan) => {
     const period = isAnual ? 'anual' : 'mensual';
 
     if (plan.isCoach) {
-        const clientRange = plan.clientRange || 10;
-        if (clientRange >= 9999 || clientRange > 100) {
-            return `coach_unlimited_${period}_v3`;
-        }
-        return `coach_${clientRange}_${period}_v3`;
+        return `coach_unlimited_${period}_v3`;
     }
     return `premium_${period}_v3`;
 };
@@ -216,6 +234,7 @@ const IAPService = {
     acknowledgePurchase: acknowledgeIAPPurchase,
     finishTransaction: finishIAPTransaction,
     getGoogleProductIdFromPlan,
+    getAppleProductIdFromPlan,
     PRODUCT_IDS,
     ALL_SUBSCRIPTION_IDS,
 };

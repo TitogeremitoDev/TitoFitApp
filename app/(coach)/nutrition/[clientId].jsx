@@ -13,6 +13,7 @@ import {
     ActivityIndicator,
     Modal,
     FlatList,
+    Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -484,24 +485,35 @@ export default function ClientNutritionEditor() {
 
     const deleteDayTarget = (index) => {
         if (dayTargets.length <= 1) {
-            Alert.alert('Mínimo requerido', 'Necesitas al menos un tipo de día');
+            if (Platform.OS === 'web') {
+                window.alert('Mínimo requerido: Necesitas al menos un tipo de día');
+            } else {
+                Alert.alert('Mínimo requerido', 'Necesitas al menos un tipo de día');
+            }
             return;
         }
-        Alert.alert(
-            'Eliminar tipo de día',
-            '¿Estás seguro?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: () => {
-                        const updated = dayTargets.filter((_, i) => i !== index);
-                        setDayTargets(updated);
+        if (Platform.OS === 'web') {
+            if (window.confirm('¿Estás seguro de eliminar este tipo de día?')) {
+                const updated = dayTargets.filter((_, i) => i !== index);
+                setDayTargets(updated);
+            }
+        } else {
+            Alert.alert(
+                'Eliminar tipo de día',
+                '¿Estás seguro?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Eliminar',
+                        style: 'destructive',
+                        onPress: () => {
+                            const updated = dayTargets.filter((_, i) => i !== index);
+                            setDayTargets(updated);
+                        }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     const updateWeekSchedule = (day, targetId) => {
@@ -534,7 +546,11 @@ export default function ClientNutritionEditor() {
         }
         setMode('custom');
         setShowTemplateModal(false);
-        Alert.alert('✅ Plan cargado', `Se ha aplicado el plan "${template.name}"`);
+        if (Platform.OS === 'web') {
+            window.alert(`✅ Plan cargado: Se ha aplicado el plan "${template.name}"`);
+        } else {
+            Alert.alert('✅ Plan cargado', `Se ha aplicado el plan "${template.name}"`);
+        }
     };
 
     // Open template modal
@@ -546,78 +562,105 @@ export default function ClientNutritionEditor() {
     // Save current plan as a template
     const saveAsTemplate = async () => {
         if (mode !== 'custom' || dayTargets.length === 0) {
-            Alert.alert('Sin datos', 'Necesitas tener un plan personalizado con al menos un tipo de día');
+            if (Platform.OS === 'web') {
+                window.alert('Sin datos: Necesitas tener un plan personalizado con al menos un tipo de día');
+            } else {
+                Alert.alert('Sin datos', 'Necesitas tener un plan personalizado con al menos un tipo de día');
+            }
             return;
         }
 
-        Alert.prompt(
-            'Guardar como Plan',
-            'Introduce un nombre para guardar este plan como reutilizable:',
-            async (templateName) => {
-                if (!templateName?.trim()) return;
+        // Función para procesar y guardar como template
+        const doSaveAsTemplate = async (templateName) => {
+            if (!templateName?.trim()) return;
 
-                try {
-                    setIsSavingAsTemplate(true);
+            try {
+                setIsSavingAsTemplate(true);
 
-                    // Process dayTargets
-                    const processedDayTargets = dayTargets.map((dt, idx) => {
-                        const processed = { ...dt };
-                        if (!processed.color) {
-                            processed.color = DAY_COLORS[idx % DAY_COLORS.length];
+                // Process dayTargets
+                const processedDayTargets = dayTargets.map((dt, idx) => {
+                    const processed = { ...dt };
+                    if (!processed.color) {
+                        processed.color = DAY_COLORS[idx % DAY_COLORS.length];
+                    }
+                    if (dt.macroMode === 'percent' && dt.kcal) {
+                        const kcal = parseFloat(dt.kcal) || 0;
+                        const pPct = parseFloat(dt.protein_pct) || 30;
+                        const cPct = parseFloat(dt.carbs_pct) || 45;
+                        const fPct = parseFloat(dt.fat_pct) || 25;
+                        processed.protein_g = Math.round((kcal * (pPct / 100)) / 4);
+                        processed.carbs_g = Math.round((kcal * (cPct / 100)) / 4);
+                        processed.fat_g = Math.round((kcal * (fPct / 100)) / 9);
+                    } else if (dt.macroMode === 'grams' || !dt.macroMode) {
+                        if (dt.protein_g || dt.carbs_g || dt.fat_g) {
+                            const p = parseFloat(dt.protein_g) || 0;
+                            const c = parseFloat(dt.carbs_g) || 0;
+                            const f = parseFloat(dt.fat_g) || 0;
+                            processed.kcal = Math.round(p * 4 + c * 4 + f * 9);
                         }
-                        if (dt.macroMode === 'percent' && dt.kcal) {
-                            const kcal = parseFloat(dt.kcal) || 0;
-                            const pPct = parseFloat(dt.protein_pct) || 30;
-                            const cPct = parseFloat(dt.carbs_pct) || 45;
-                            const fPct = parseFloat(dt.fat_pct) || 25;
-                            processed.protein_g = Math.round((kcal * (pPct / 100)) / 4);
-                            processed.carbs_g = Math.round((kcal * (cPct / 100)) / 4);
-                            processed.fat_g = Math.round((kcal * (fPct / 100)) / 9);
-                        } else if (dt.macroMode === 'grams' || !dt.macroMode) {
-                            if (dt.protein_g || dt.carbs_g || dt.fat_g) {
-                                const p = parseFloat(dt.protein_g) || 0;
-                                const c = parseFloat(dt.carbs_g) || 0;
-                                const f = parseFloat(dt.fat_g) || 0;
-                                processed.kcal = Math.round(p * 4 + c * 4 + f * 9);
-                            }
-                        }
-                        return processed;
-                    });
+                    }
+                    return processed;
+                });
 
-                    const body = {
-                        name: templateName.trim(),
-                        description: planDescription.trim() || `Plan basado en ${clientName || 'cliente'}`,
-                        customPlan: {
-                            dayTargets: processedDayTargets,
-                            weekSchedule,
-                        },
-                    };
+                const body = {
+                    name: templateName.trim(),
+                    description: planDescription.trim() || `Plan basado en ${clientName || 'cliente'}`,
+                    customPlan: {
+                        dayTargets: processedDayTargets,
+                        weekSchedule,
+                    },
+                };
 
-                    const res = await fetch(`${API_URL}/api/nutrition-plans/templates`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify(body),
-                    });
+                const res = await fetch(`${API_URL}/api/nutrition-plans/templates`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(body),
+                });
 
-                    const data = await res.json();
-                    if (data.success) {
+                const data = await res.json();
+                if (data.success) {
+                    if (Platform.OS === 'web') {
+                        window.alert('✅ Guardado: Plan guardado como reutilizable');
+                    } else {
                         Alert.alert('✅ Guardado', 'Plan guardado como reutilizable');
+                    }
+                } else {
+                    if (Platform.OS === 'web') {
+                        window.alert('Error: ' + (data.message || 'No se pudo guardar'));
                     } else {
                         Alert.alert('Error', data.message || 'No se pudo guardar');
                     }
-                } catch (error) {
-                    console.error('[Editor] Save as template error:', error);
-                    Alert.alert('Error', 'Error de conexión');
-                } finally {
-                    setIsSavingAsTemplate(false);
                 }
-            },
-            'plain-text',
-            planName || ''
-        );
+            } catch (error) {
+                console.error('[Editor] Save as template error:', error);
+                if (Platform.OS === 'web') {
+                    window.alert('Error: Error de conexión');
+                } else {
+                    Alert.alert('Error', 'Error de conexión');
+                }
+            } finally {
+                setIsSavingAsTemplate(false);
+            }
+        };
+
+        // En web usamos window.prompt, en móvil Alert.prompt
+        if (Platform.OS === 'web') {
+            const templateName = window.prompt('Guardar como Plan\n\nIntroduce un nombre para guardar este plan como reutilizable:', planName || '');
+            if (templateName) {
+                doSaveAsTemplate(templateName);
+            }
+        } else {
+            Alert.prompt(
+                'Guardar como Plan',
+                'Introduce un nombre para guardar este plan como reutilizable:',
+                (templateName) => doSaveAsTemplate(templateName),
+                'plain-text',
+                planName || ''
+            );
+        }
     };
 
     const handleSave = async (status = 'draft') => {
@@ -681,17 +724,31 @@ export default function ClientNutritionEditor() {
 
             const data = await res.json();
             if (data.success) {
-                Alert.alert(
-                    '✅ Guardado',
-                    status === 'active' ? 'Plan activado correctamente' : 'Borrador guardado',
-                    [{ text: 'OK', onPress: () => router.back() }]
-                );
+                const message = status === 'active' ? 'Plan activado correctamente' : 'Borrador guardado';
+                if (Platform.OS === 'web') {
+                    window.alert('✅ Guardado: ' + message);
+                    router.back();
+                } else {
+                    Alert.alert(
+                        '✅ Guardado',
+                        message,
+                        [{ text: 'OK', onPress: () => router.back() }]
+                    );
+                }
             } else {
-                Alert.alert('Error', data.message || 'No se pudo guardar');
+                if (Platform.OS === 'web') {
+                    window.alert('Error: ' + (data.message || 'No se pudo guardar'));
+                } else {
+                    Alert.alert('Error', data.message || 'No se pudo guardar');
+                }
             }
         } catch (error) {
             console.error('[Save] Error:', error);
-            Alert.alert('Error', 'Error de conexión');
+            if (Platform.OS === 'web') {
+                window.alert('Error: Error de conexión');
+            } else {
+                Alert.alert('Error', 'Error de conexión');
+            }
         } finally {
             setIsSaving(false);
         }

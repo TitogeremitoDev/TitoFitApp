@@ -78,8 +78,13 @@ export default function PerfilScreen() {
         itemsSynced: 0,
     });
 
-    // Estado para modal de error de código
-    const [codeErrorModal, setCodeErrorModal] = useState({ visible: false, message: '' });
+    // Estado para modal de error de código o vinculación
+    const [codeErrorModal, setCodeErrorModal] = useState({
+        visible: false,
+        message: '',
+        errorType: null, // 'TRAINER_AT_CAPACITY' | 'TRAINER_NOT_FOUND' | null
+        trainerName: ''
+    });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -219,11 +224,28 @@ export default function PerfilScreen() {
                 setTrainerCode('');
                 setShowSuccessModal(true);
             } else {
-                Alert.alert('Error', data.message || 'No se pudo vincular con el entrenador');
+                // Mostrar modal de error con mensaje del servidor
+                const errorCode = data.errorCode;
+                const trainerName = data.trainerName;
+
+                setCodeErrorModal({
+                    visible: true,
+                    message: data.message || 'No se pudo vincular con el entrenador',
+                    errorType: errorCode === 'TRAINER_AT_CAPACITY' || errorCode === 'TRAINER_NOT_ACCEPTING'
+                        ? 'TRAINER_AT_CAPACITY'
+                        : errorCode === 'TRAINER_NOT_FOUND' ? 'TRAINER_NOT_FOUND' : null,
+                    trainerName: trainerName || ''
+                });
             }
         } catch (error) {
             console.error('[Perfil] Error linking trainer:', error);
-            Alert.alert('Error', 'No se pudo completar la vinculación');
+            // Mostrar modal genérico de error
+            setCodeErrorModal({
+                visible: true,
+                message: 'No se pudo completar la vinculación. Verifica el código e inténtalo de nuevo.',
+                errorType: 'TRAINER_NOT_FOUND',
+                trainerName: ''
+            });
         } finally {
             setIsLinkingTrainer(false);
         }
@@ -866,20 +888,35 @@ export default function PerfilScreen() {
                 </View>
             </Modal >
 
-            {/* Code Error Modal */}
-            <Modal visible={codeErrorModal.visible} transparent animationType="fade" onRequestClose={() => setCodeErrorModal({ visible: false, message: '' })}>
+            {/* Code/Trainer Error Modal */}
+            <Modal visible={codeErrorModal.visible} transparent animationType="fade" onRequestClose={() => setCodeErrorModal({ visible: false, message: '', errorType: null, trainerName: '' })}>
                 <View style={styles.modalOverlay}>
-                    <View style={[styles.premiumSuccessCard, { borderColor: '#EF4444' }]}>
-                        <View style={{ marginBottom: 16 }}>
-                            <Ionicons name="close-circle" size={70} color="#EF4444" />
+                    <View style={[styles.premiumSuccessCard, { backgroundColor: '#1F2937', borderColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B' }]}>
+                        <View style={[
+                            { marginBottom: 16, width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+                            { backgroundColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#FEE2E2' : '#FEF3C7' }
+                        ]}>
+                            <Ionicons
+                                name={codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? 'people' : 'search'}
+                                size={40}
+                                color={codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B'}
+                            />
                         </View>
-                        <Text style={styles.premiumSuccessTitle}>❌ Código no válido</Text>
-                        <Text style={[styles.premiumSuccessSubtitle, { color: '#9CA3AF' }]}>
-                            {codeErrorModal.message}
+                        <Text style={styles.premiumSuccessTitle}>
+                            {codeErrorModal.errorType === 'TRAINER_AT_CAPACITY'
+                                ? `${codeErrorModal.trainerName || 'Tu entrenador'} está al máximo`
+                                : 'No encontramos a tu entrenador'
+                            }
+                        </Text>
+                        <Text style={[styles.premiumSuccessSubtitle, { color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 16 }]}>
+                            {codeErrorModal.errorType === 'TRAINER_AT_CAPACITY'
+                                ? `Habla con ${codeErrorModal.trainerName || 'tu entrenador'} para ver opciones disponibles.`
+                                : (codeErrorModal.message || 'Verifica que el código esté escrito correctamente.')
+                            }
                         </Text>
                         <TouchableOpacity
-                            style={[styles.premiumSuccessButton, { backgroundColor: '#EF4444', marginTop: 20 }]}
-                            onPress={() => setCodeErrorModal({ visible: false, message: '' })}
+                            style={[styles.premiumSuccessButton, { backgroundColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B', marginTop: 20 }]}
+                            onPress={() => setCodeErrorModal({ visible: false, message: '', errorType: null, trainerName: '' })}
                         >
                             <Text style={styles.premiumSuccessButtonText}>Entendido</Text>
                         </TouchableOpacity>

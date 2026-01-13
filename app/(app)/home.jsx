@@ -22,6 +22,8 @@ import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import ActionButton from '../../components/ActionButton';
 import SubscriptionRetentionModal from '../../components/SubscriptionRetentionModal';
+import RescueOfferModal from '../../components/RescueOfferModal';
+import { PaymentNotificationManager } from '../../src/components/payment';
 import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
@@ -40,15 +42,15 @@ const FRASES = [
 ];
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 
-const CAMBIOS_110 = [
-  '📹 Sistema de subida de video, audio e imágenes: comparte tu técnica y progreso con tu entrenador.',
-  '🎙️ Transcripción IA de audios: convierte tus notas de voz en texto automáticamente.',
-  '💬 Mejoras de feedback cliente-entrenador: comunicación más fluida y efectiva.',
-  '📊 Nuevo board para entrenadores: panel optimizado para gestión de clientes.',
-  '⚡ Bases de datos optimizadas: respuesta más rápida de los entrenadores.',
-  '📤 Sistema para facilitar compartir: comparte tu progreso en redes sociales fácilmente.',
+const CAMBIOS_111 = [
+  '📸 Feedback Visual: Nuevo sistema de carga y revisión de fotos de atletas.',
+  '💳 Facturación: Nueva página centralizada para gestión de cobros.',
+  '🧠 IA Retention: Alerta predictiva ante posible abandono de clientes.',
+  '🔔 Cobros "Soft": Nuevo sistema psicológico de aviso de impagos.',
+  '🎨 UX/UI Coach: Renovación total de la interfaz para entrenadores.',
+  '🛠️ Fix Marketing: Corrección del sistema de anuncios durante el entreno.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -77,6 +79,10 @@ export default function HomeScreen() {
 
   // Estado para feedbacks del entrenador sin leer
   const [unreadFeedbackReports, setUnreadFeedbackReports] = useState(0);
+
+  // Estado para el modal de rescate (coach congelado >10 días)
+  const [rescueOffer, setRescueOffer] = useState(null);
+  const [showRescueModal, setShowRescueModal] = useState(false);
 
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
@@ -148,6 +154,34 @@ export default function HomeScreen() {
     };
     fetchTrainer();
   }, [user?.tipoUsuario, user?.currentTrainerId, token]);
+
+  // Verificar oferta de rescate (coach congelado >10 días)
+  useEffect(() => {
+    const checkRescueOffer = async () => {
+      // Solo para clientes con entrenador asignado
+      if (!token || !user?.currentTrainerId) return;
+      if (user?.tipoUsuario !== 'CLIENTE') return;
+
+      try {
+        const response = await fetch(`${API_URL}/api/clients/rescue-offer`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (data.hasOffer) {
+          console.log('[Home] 🚨 Rescue offer available:', data);
+          setRescueOffer(data);
+          // Mostrar modal después de un pequeño delay para no ser intrusivo
+          setTimeout(() => {
+            setShowRescueModal(true);
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('[Home] Error checking rescue offer:', error);
+      }
+    };
+    checkRescueOffer();
+  }, [token, user?.currentTrainerId, user?.tipoUsuario]);
 
   // Obtener mensajes no leídos del chat y feedbacks (con jitter para desincronizar usuarios)
   useEffect(() => {
@@ -524,232 +558,241 @@ export default function HomeScreen() {
   );
 
   return (
-    <View style={[styles.root, !isWeb && { justifyContent: 'flex-start' }]}>
-      <StatusBar style="light" />
-      <LinearGradient
-        colors={['#0B1220', '#0D1B2A', '#111827']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.blob, styles.blobTop]} />
-      <View style={[styles.blob, styles.blobBottom]} />
-
-      {/* Botón Mode Select para Admin/Entrenador - Solo emoji de flechas */}
-      {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
-        <Link href="/mode-select" asChild>
-          <Pressable style={styles.modeSelectorButtonCompact}>
-            <LinearGradient
-              colors={['#3B82F6', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.modeSelectorGradientCompact}
-            >
-              <Text style={styles.modeSelectorEmoji}>🔄</Text>
-            </LinearGradient>
-          </Pressable>
-        </Link>
-      )}
-
-      {/* Botón de FAQs - A la izquierda de Subir de Nivel */}
-      {showPaymentButton && (
-        <Link href="/coach-help" asChild>
-          <Pressable style={styles.faqButton}>
-            <LinearGradient
-              colors={['#6B7280', '#4B5563']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.faqGradient}
-            >
-              <Text style={styles.faqEmoji}>❓</Text>
-            </LinearGradient>
-          </Pressable>
-        </Link>
-      )}
-
-      {/* Botón Payment - Solo corona */}
-      {showPaymentButton && (
-        <Link href="/payment" asChild>
-          <Pressable style={styles.paymentButtonCompact}>
-            <LinearGradient
-              colors={['#FFD700', '#FFA500', '#FF8C00']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.paymentGradientCompact}
-            >
-              <Text style={styles.paymentEmoji}>👑</Text>
-            </LinearGradient>
-          </Pressable>
-        </Link>
-      )}
-
-      {/* Tooltip promocional para FREEUSER */}
-      {showPromoTooltip && user?.tipoUsuario === 'FREEUSER' && (
-        <Pressable
-          style={styles.promoTooltipContainer}
-          onPress={() => setShowPromoTooltip(false)}
-        >
-          {/* Flecha apuntando al botón */}
-          <View style={styles.promoArrow} />
-          <View style={styles.promoTooltip}>
-            <Text style={styles.promoEmoji}>🚀✨</Text>
-            <Text style={styles.promoTitle}>¡Desbloquea tu potencial!</Text>
-            <Text style={styles.promoText}>
-              Rutinas ilimitadas • Videos HD • Sin límites
-            </Text>
-            {/* Botón de código VIP */}
-            <Pressable
-              style={styles.promoVipButton}
-              onPress={() => {
-                setShowPromoTooltip(false);
-                router.push('/payment');
-              }}
-            >
-              <Ionicons name="star" size={14} color="#000" />
-              <Text style={styles.promoVipButtonText}>¿TIENES CÓDIGO VIP? ENTRA AQUÍ</Text>
-            </Pressable>
-            <Text style={styles.promoSubtext}>
-              Toca fuera para cerrar
-            </Text>
-          </View>
-        </Pressable>
-      )}
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-      >
-        <SafeAreaView style={styles.contentContainer}>
-          {renderContent()}
-        </SafeAreaView>
-      </ScrollView>
-
-      <Modal
-        visible={showChangelog}
-        transparent
-        animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
-        onRequestClose={closeChangelog}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Pressable onPress={closeChangelog} style={styles.modalClose}>
-              <Ionicons name="close" size={22} color="#fff" />
-            </Pressable>
-            <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
-            <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
-            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-              {CAMBIOS_110.map((line, i) => (
-                <View key={i} style={styles.changeRow}>
-                  <Text style={styles.changeBullet}>•</Text>
-                  <Text style={styles.changeText}>{line}</Text>
-                </View>
-              ))}
-              <View style={styles.modalFooter}>
-                <Image
-                  source={require('../../assets/logo.png')}
-                  resizeMode="contain"
-                  style={styles.modalLogo}
-                />
-              </View>
-            </ScrollView>
-            <Pressable onPress={closeChangelog} style={styles.modalCta}>
-              <Text style={styles.modalCtaText}>ENTENDIDO</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showUpgradeModal}
-        onRequestClose={closeUpgradeModal}
-      >
-        <View style={styles.upgradeModalOverlay}>
-          <View style={styles.upgradeModalContent}>
-            <Pressable onPress={closeUpgradeModal} style={styles.upgradeModalClose}>
-              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
-            </Pressable>
-            <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
-            <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
-            <Text style={styles.upgradeModalText}>
-              Para ver esto sube de nivel
-            </Text>
-            <Pressable style={styles.upgradeButton} onPress={goToPayment}>
-              <Ionicons name="add-circle" size={24} color="#FFF" />
-              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
-            </Pressable>
-            <Pressable style={styles.upgradeCancelButton} onPress={closeUpgradeModal}>
-              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showPerfilUpgradeModal}
-        onRequestClose={closePerfilUpgradeModal}
-      >
-        <View style={styles.upgradeModalOverlay}>
-          <View style={styles.upgradeModalContent}>
-            <Pressable onPress={closePerfilUpgradeModal} style={styles.upgradeModalClose}>
-              <Ionicons name="close-circle" size={32} color="#9CA3AF" />
-            </Pressable>
-            <Ionicons name="rocket" size={64} color="#10B981" style={{ marginBottom: 20 }} />
-            <Text style={styles.upgradeModalTitle}>¡SUBE AL SIGUIENTE NIVEL!</Text>
-            <Text style={styles.upgradeModalText}>
-              Si quieres subir al siguiente nivel ven por aquí
-            </Text>
-            <Pressable style={styles.upgradeButton} onPress={goToPaymentFromPerfil}>
-              <Ionicons name="add-circle" size={24} color="#FFF" />
-              <Text style={styles.upgradeButtonText}>Ver Planes</Text>
-            </Pressable>
-            <Pressable style={styles.upgradeCancelButton} onPress={closePerfilUpgradeModal}>
-              <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal de retención de suscripción */}
-      <SubscriptionRetentionModal
-        visible={showRetentionModal}
-        onClose={() => setShowRetentionModal(false)}
-        onRenew={() => {
-          setShowRetentionModal(false);
-          router.push('/payment');
-        }}
-        daysRemaining={subscriptionData?.daysRemaining || 0}
-        userType={user?.tipoUsuario}
-        subscriptionStatus={subscriptionData?.status}
-      />
-
-      {/* FAB de Chat */}
-      <Pressable
-        style={styles.chatFab}
-        onPress={() => router.push('/chat')}
-      >
+    <PaymentNotificationManager>
+      <View style={[styles.root, !isWeb && { justifyContent: 'flex-start' }]}>
+        <StatusBar style="light" />
         <LinearGradient
-          colors={['#8B5CF6', '#6366F1']}
+          colors={['#0B1220', '#0D1B2A', '#111827']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.chatFabGradient}
-        >
-          <Ionicons name="chatbubbles" size={26} color="#FFF" />
-          {unreadChatCount > 0 && (
-            <View style={styles.chatFabBadge}>
-              <Text style={styles.chatFabBadgeText}>
-                {unreadChatCount > 99 ? '99+' : unreadChatCount}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.blob, styles.blobTop]} />
+        <View style={[styles.blob, styles.blobBottom]} />
+
+        {/* Botón Mode Select para Admin/Entrenador - Solo emoji de flechas */}
+        {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
+          <Link href="/mode-select" asChild>
+            <Pressable style={styles.modeSelectorButtonCompact}>
+              <LinearGradient
+                colors={['#3B82F6', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modeSelectorGradientCompact}
+              >
+                <Text style={styles.modeSelectorEmoji}>🔄</Text>
+              </LinearGradient>
+            </Pressable>
+          </Link>
+        )}
+
+        {/* Botón de FAQs - A la izquierda de Subir de Nivel */}
+        {showPaymentButton && (
+          <Link href="/coach-help" asChild>
+            <Pressable style={styles.faqButton}>
+              <LinearGradient
+                colors={['#6B7280', '#4B5563']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.faqGradient}
+              >
+                <Text style={styles.faqEmoji}>❓</Text>
+              </LinearGradient>
+            </Pressable>
+          </Link>
+        )}
+
+        {/* Botón Payment - Solo corona */}
+        {showPaymentButton && (
+          <Link href="/payment" asChild>
+            <Pressable style={styles.paymentButtonCompact}>
+              <LinearGradient
+                colors={['#FFD700', '#FFA500', '#FF8C00']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.paymentGradientCompact}
+              >
+                <Text style={styles.paymentEmoji}>👑</Text>
+              </LinearGradient>
+            </Pressable>
+          </Link>
+        )}
+
+        {/* Tooltip promocional para FREEUSER */}
+        {showPromoTooltip && user?.tipoUsuario === 'FREEUSER' && (
+          <Pressable
+            style={styles.promoTooltipContainer}
+            onPress={() => setShowPromoTooltip(false)}
+          >
+            {/* Flecha apuntando al botón */}
+            <View style={styles.promoArrow} />
+            <View style={styles.promoTooltip}>
+              <Text style={styles.promoEmoji}>🚀✨</Text>
+              <Text style={styles.promoTitle}>¡Desbloquea tu potencial!</Text>
+              <Text style={styles.promoText}>
+                Rutinas ilimitadas • Videos HD • Sin límites
+              </Text>
+              {/* Botón de código VIP */}
+              <Pressable
+                style={styles.promoVipButton}
+                onPress={() => {
+                  setShowPromoTooltip(false);
+                  router.push('/payment');
+                }}
+              >
+                <Ionicons name="star" size={14} color="#000" />
+                <Text style={styles.promoVipButtonText}>¿TIENES CÓDIGO VIP? ENTRA AQUÍ</Text>
+              </Pressable>
+              <Text style={styles.promoSubtext}>
+                Toca fuera para cerrar
               </Text>
             </View>
-          )}
-        </LinearGradient>
-      </Pressable>
-    </View>
+          </Pressable>
+        )}
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+        >
+          <SafeAreaView style={styles.contentContainer}>
+            {renderContent()}
+          </SafeAreaView>
+        </ScrollView>
+
+        <Modal
+          visible={showChangelog}
+          transparent
+          animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
+          onRequestClose={closeChangelog}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Pressable onPress={closeChangelog} style={styles.modalClose}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </Pressable>
+              <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
+              <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
+              <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
+                {CAMBIOS_111.map((line, i) => (
+                  <View key={i} style={styles.changeRow}>
+                    <Text style={styles.changeBullet}>•</Text>
+                    <Text style={styles.changeText}>{line}</Text>
+                  </View>
+                ))}
+                <View style={styles.modalFooter}>
+                  <Image
+                    source={require('../../assets/logo.png')}
+                    resizeMode="contain"
+                    style={styles.modalLogo}
+                  />
+                </View>
+              </ScrollView>
+              <Pressable onPress={closeChangelog} style={styles.modalCta}>
+                <Text style={styles.modalCtaText}>ENTENDIDO</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showUpgradeModal}
+          onRequestClose={closeUpgradeModal}
+        >
+          <View style={styles.upgradeModalOverlay}>
+            <View style={styles.upgradeModalContent}>
+              <Pressable onPress={closeUpgradeModal} style={styles.upgradeModalClose}>
+                <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+              </Pressable>
+              <Ionicons name="lock-closed" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+              <Text style={styles.upgradeModalTitle}>Sube de Nivel</Text>
+              <Text style={styles.upgradeModalText}>
+                Para ver esto sube de nivel
+              </Text>
+              <Pressable style={styles.upgradeButton} onPress={goToPayment}>
+                <Ionicons name="add-circle" size={24} color="#FFF" />
+                <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+              </Pressable>
+              <Pressable style={styles.upgradeCancelButton} onPress={closeUpgradeModal}>
+                <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showPerfilUpgradeModal}
+          onRequestClose={closePerfilUpgradeModal}
+        >
+          <View style={styles.upgradeModalOverlay}>
+            <View style={styles.upgradeModalContent}>
+              <Pressable onPress={closePerfilUpgradeModal} style={styles.upgradeModalClose}>
+                <Ionicons name="close-circle" size={32} color="#9CA3AF" />
+              </Pressable>
+              <Ionicons name="rocket" size={64} color="#10B981" style={{ marginBottom: 20 }} />
+              <Text style={styles.upgradeModalTitle}>¡SUBE AL SIGUIENTE NIVEL!</Text>
+              <Text style={styles.upgradeModalText}>
+                Si quieres subir al siguiente nivel ven por aquí
+              </Text>
+              <Pressable style={styles.upgradeButton} onPress={goToPaymentFromPerfil}>
+                <Ionicons name="add-circle" size={24} color="#FFF" />
+                <Text style={styles.upgradeButtonText}>Ver Planes</Text>
+              </Pressable>
+              <Pressable style={styles.upgradeCancelButton} onPress={closePerfilUpgradeModal}>
+                <Text style={styles.upgradeCancelText}>Tal vez más tarde</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de retención de suscripción */}
+        <SubscriptionRetentionModal
+          visible={showRetentionModal}
+          onClose={() => setShowRetentionModal(false)}
+          onRenew={() => {
+            setShowRetentionModal(false);
+            router.push('/payment');
+          }}
+          daysRemaining={subscriptionData?.daysRemaining || 0}
+          userType={user?.tipoUsuario}
+          subscriptionStatus={subscriptionData?.status}
+        />
+
+        {/* FAB de Chat */}
+        <Pressable
+          style={styles.chatFab}
+          onPress={() => router.push('/chat')}
+        >
+          <LinearGradient
+            colors={['#8B5CF6', '#6366F1']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.chatFabGradient}
+          >
+            <Ionicons name="chatbubbles" size={26} color="#FFF" />
+            {unreadChatCount > 0 && (
+              <View style={styles.chatFabBadge}>
+                <Text style={styles.chatFabBadgeText}>
+                  {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                </Text>
+              </View>
+            )}
+          </LinearGradient>
+        </Pressable>
+
+        {/* Modal de rescate para clientes cuyo coach está congelado >10 días */}
+        <RescueOfferModal
+          visible={showRescueModal}
+          rescueOffer={rescueOffer}
+          onClose={() => setShowRescueModal(false)}
+        />
+      </View>
+    </PaymentNotificationManager>
   );
 }
 

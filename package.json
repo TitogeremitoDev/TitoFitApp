@@ -1,7 +1,7 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
@@ -15,6 +15,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@ptomasroos/react-native-multi-slider": "^2.2.2",
     "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-native-community/datetimepicker": "^8.6.0",
     "@react-native-community/slider": "5.0.1",
     "@react-native-google-signin/google-signin": "^16.1.1",
     "@react-native-picker/picker": "2.11.1",
@@ -61,6 +62,7 @@
     "expo-web-browser": "~15.0.10",
     "firebase": "^11.9.1",
     "fuse.js": "^7.1.0",
+    "html2canvas": "^1.4.1",
     "moment": "^2.30.1",
     "papaparse": "^5.5.3",
     "react": "19.1.0",

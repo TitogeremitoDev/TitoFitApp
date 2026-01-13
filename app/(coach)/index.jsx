@@ -15,7 +15,9 @@ import {
     FlatList,
     TextInput,
     useWindowDimensions,
-    Animated
+    Animated,
+    Share,
+    Linking
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -79,7 +81,7 @@ const THEMED_BOXES = [
         headerBg: 'rgba(100, 116, 139, 0.08)',
         borderColor: '#94a3b8',
         items: [
-            { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6', webOnly: true },
+            { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6' },
             { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
             //{ icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7', webOnly: true },
             { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
@@ -247,6 +249,11 @@ export default function TrainerDashboard() {
     const [loadingClients, setLoadingClients] = useState(false);
     const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
 
+    // 🚀 Estados para Sistema de Invitación Atletas
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    const [showLimitModal, setShowLimitModal] = useState(false);
+    const [copyFeedback, setCopyFeedback] = useState(false);
+
     // Estado de acordeón: en móvil solo la primera abierta, en PC todas abiertas
     const [expandedBoxes, setExpandedBoxes] = useState(
         isMobile ? { athletes: true } : { athletes: true, studio: true, library: true, admin: true }
@@ -389,6 +396,108 @@ export default function TrainerDashboard() {
         }
     };
 
+    // 🚀 === SISTEMA DE INVITACIÓN DE ATLETAS ===
+
+    // Generar mensaje de invitación
+    const getInviteMessage = () => {
+        const code = trainerProfile?.trainerCode || 'TU-CODIGO';
+        const coachName = user?.nombre || 'tu entrenador';
+
+        return `Hola! Soy ${coachName} y quiero invitarte a entrenar conmigo en TotalGains.
+
+--- COMO EMPEZAR ---
+
+1. Descarga la app o entra desde la web:
+   - Web: https://totalgains.es/app/login
+   - iOS: https://apps.apple.com/app/totalgains
+   - Android: https://play.google.com/store/apps/details?id=com.totalgains
+
+2. Crea tu cuenta (es gratis)
+
+3. En la primera pantalla, selecciona "Soy Cliente/Atleta"
+
+4. Introduce mi codigo de entrenador: ${code}
+
+--- TE ESPERO! ---
+
+Cualquier duda me escribes. Vamos a por tus objetivos!`;
+    };
+
+
+    // Manejar invitación - diferente según slots disponibles
+    const handleInviteAthlete = () => {
+        if (currentClients >= maxClients) {
+            setShowLimitModal(true);
+        } else {
+            // En móvil: Share nativo | En web: Modal con opciones
+            if (Platform.OS === 'web') {
+                setShowInviteModal(true);
+            } else {
+                handleNativeShare();
+            }
+        }
+    };
+
+    // Share nativo para iOS/Android
+    const handleNativeShare = async () => {
+        const message = getInviteMessage();
+        try {
+            await Share.share({
+                message: message,
+                title: '¡Entrena conmigo! 💪'
+            });
+        } catch (error) {
+            console.error('Error sharing:', error);
+        }
+    };
+
+    // Compartir por WhatsApp (Web)
+    const handleWhatsAppShare = () => {
+        const message = getInviteMessage();
+        const encoded = encodeURIComponent(message);
+        const url = `https://wa.me/?text=${encoded}`;
+
+        if (Platform.OS === 'web') {
+            window.open(url, '_blank');
+        } else {
+            Linking.openURL(url);
+        }
+        setShowInviteModal(false);
+    };
+
+    // Compartir por Email (Web)
+    const handleEmailShare = () => {
+        const message = getInviteMessage();
+        const subject = encodeURIComponent('¡Entrena conmigo! 💪 - Tu Plan de Entrenamiento');
+        const body = encodeURIComponent(message);
+        const url = `mailto:?subject=${subject}&body=${body}`;
+
+        if (Platform.OS === 'web') {
+            window.open(url);
+        } else {
+            Linking.openURL(url);
+        }
+        setShowInviteModal(false);
+    };
+
+    // Copiar invitación al portapapeles
+    const handleCopyInvite = async () => {
+        const message = getInviteMessage();
+
+        if (Platform.OS === 'web' && navigator.clipboard) {
+            try {
+                await navigator.clipboard.writeText(message);
+                setCopyFeedback(true);
+                setTimeout(() => setCopyFeedback(false), 2000);
+            } catch (err) {
+                console.error('Error copying:', err);
+            }
+        } else {
+            // En móvil, usar el Share sheet si no hay clipboard
+            handleNativeShare();
+        }
+    };
+
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
@@ -468,32 +577,44 @@ export default function TrainerDashboard() {
                             </Text>
                         </View>
 
-                        {/* Barra de Progreso */}
-                        <View style={styles.progressContainer}>
+                        {/* Barra de Progreso - CLICKEABLE → Facturación */}
+                        <TouchableOpacity
+                            style={styles.progressContainer}
+                            onPress={() => router.push('/(app)/payment')}
+                            activeOpacity={0.7}
+                        >
                             <View style={styles.progressBar}>
                                 <View
                                     style={[
                                         styles.progressFill,
-                                        { width: `${Math.min((currentClients / maxClients) * 100, 100)}%` }
+                                        { width: `${Math.min((currentClients / maxClients) * 100, 100)}%` },
+                                        currentClients >= maxClients && { backgroundColor: '#f59e0b' }
                                     ]}
                                 />
                             </View>
-                            <Text style={styles.progressText}>
-                                {currentClients >= maxClients ? '¡Límite alcanzado!' : `${maxClients - currentClients} slots disponibles`}
-                            </Text>
-                        </View>
+                            <View style={styles.progressTextRow}>
+                                <Text style={styles.progressText}>
+                                    {currentClients >= maxClients ? '¡Límite alcanzado!' : `${maxClients - currentClients} slots disponibles`}
+                                </Text>
+                                <View style={styles.upgradeHint}>
+                                    <Ionicons name="flash" size={12} color="#f59e0b" />
+                                    <Text style={styles.upgradeHintText}>Gestionar</Text>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
 
                         {/* Botones de Acción */}
                         <View style={styles.actionsRow}>
-                            {/* Botón Principal: Añadir Cliente */}
+                            {/* Botón Principal: Invitar Atleta */}
                             <TouchableOpacity
                                 style={styles.addClientBtn}
-                                onPress={() => router.push('/(app)/payment')}
+                                onPress={handleInviteAthlete}
                                 activeOpacity={0.8}
                             >
-                                <Ionicons name="add" size={20} color="#fff" />
-                                <Text style={styles.addClientBtnText}>Añadir</Text>
+                                <Ionicons name="person-add" size={20} color="#fff" />
+                                <Text style={styles.addClientBtnText}>Invitar Atleta</Text>
                             </TouchableOpacity>
+
 
                             {/* Botones Secundarios */}
                             <TouchableOpacity
@@ -776,6 +897,127 @@ export default function TrainerDashboard() {
                 visible={broadcastModalVisible}
                 onClose={() => setBroadcastModalVisible(false)}
             />
+
+            {/* 🚀 Modal Invitar Atleta (Solo Web) */}
+            <Modal
+                visible={showInviteModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowInviteModal(false)}
+            >
+                <View style={styles.inviteModalOverlay}>
+                    <View style={styles.inviteModalContent}>
+                        {/* Header */}
+                        <View style={styles.inviteModalHeader}>
+                            <Text style={styles.inviteModalTitle}>📤 Invitar Atleta</Text>
+                            <TouchableOpacity
+                                onPress={() => setShowInviteModal(false)}
+                                style={styles.inviteModalClose}
+                            >
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Código del entrenador */}
+                        <View style={styles.inviteCodeBox}>
+                            <Text style={styles.inviteCodeLabel}>Tu código de entrenador</Text>
+                            <Text style={styles.inviteCodeValue}>
+                                {trainerProfile?.trainerCode || 'SIN-CÓDIGO'}
+                            </Text>
+                        </View>
+
+                        {/* Opciones de compartir */}
+                        <View style={styles.inviteOptions}>
+                            {/* WhatsApp */}
+                            <TouchableOpacity
+                                style={[styles.inviteOption, styles.inviteOptionWhatsApp]}
+                                onPress={handleWhatsAppShare}
+                            >
+                                <Ionicons name="logo-whatsapp" size={24} color="#fff" />
+                                <Text style={styles.inviteOptionText}>Enviar por WhatsApp</Text>
+                            </TouchableOpacity>
+
+                            {/* Email */}
+                            <TouchableOpacity
+                                style={[styles.inviteOption, styles.inviteOptionEmail]}
+                                onPress={handleEmailShare}
+                            >
+                                <Ionicons name="mail" size={24} color="#fff" />
+                                <Text style={styles.inviteOptionText}>Enviar por Email</Text>
+                            </TouchableOpacity>
+
+                            {/* Copiar */}
+                            <TouchableOpacity
+                                style={[
+                                    styles.inviteOption,
+                                    styles.inviteOptionCopy,
+                                    copyFeedback && styles.inviteOptionCopied
+                                ]}
+                                onPress={handleCopyInvite}
+                            >
+                                <Ionicons
+                                    name={copyFeedback ? "checkmark-circle" : "copy"}
+                                    size={24}
+                                    color={copyFeedback ? "#10b981" : "#3b82f6"}
+                                />
+                                <Text style={[
+                                    styles.inviteOptionTextCopy,
+                                    copyFeedback && { color: '#10b981' }
+                                ]}>
+                                    {copyFeedback ? '¡Copiado!' : 'Copiar invitación'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 🚫 Modal Límite Alcanzado */}
+            <Modal
+                visible={showLimitModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowLimitModal(false)}
+            >
+                <View style={styles.inviteModalOverlay}>
+                    <View style={styles.limitModalContent}>
+                        {/* Icono */}
+                        <View style={styles.limitModalIcon}>
+                            <Ionicons name="rocket" size={48} color="#f59e0b" />
+                        </View>
+
+                        {/* Título */}
+                        <Text style={styles.limitModalTitle}>¡Has alcanzado tu límite!</Text>
+
+                        {/* Mensaje */}
+                        <Text style={styles.limitModalSubtitle}>
+                            Tu equipo está a tope ({currentClients}/{maxClients}).{'\n'}
+                            Para invitar a tu próximo atleta, amplía tu capacidad.
+                        </Text>
+
+                        {/* Botones */}
+                        <View style={styles.limitModalButtons}>
+                            <TouchableOpacity
+                                style={styles.limitModalPrimaryBtn}
+                                onPress={() => {
+                                    setShowLimitModal(false);
+                                    router.push('/(app)/payment');
+                                }}
+                            >
+                                <Ionicons name="flash" size={20} color="#fff" />
+                                <Text style={styles.limitModalPrimaryText}>Mejorar mi Plan</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.limitModalSecondaryBtn}
+                                onPress={() => setShowLimitModal(false)}
+                            >
+                                <Text style={styles.limitModalSecondaryText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -1327,5 +1569,187 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#94a3b8',
         marginTop: 4
+    },
+    // 🚀 === ESTILOS SISTEMA DE INVITACIÓN ===
+    progressTextRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+    },
+    upgradeHint: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4
+    },
+    upgradeHintText: {
+        fontSize: 11,
+        color: '#f59e0b',
+        fontWeight: '600'
+    },
+    // Modal Invitar Atleta
+    inviteModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    inviteModalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 10
+    },
+    inviteModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20
+    },
+    inviteModalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    inviteModalClose: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    inviteCodeBox: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        marginBottom: 20,
+        borderWidth: 2,
+        borderColor: '#e2e8f0',
+        borderStyle: 'dashed'
+    },
+    inviteCodeLabel: {
+        fontSize: 12,
+        color: '#64748b',
+        marginBottom: 6
+    },
+    inviteCodeValue: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#3b82f6',
+        letterSpacing: 2
+    },
+    inviteOptions: {
+        gap: 12
+    },
+    inviteOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 20,
+        borderRadius: 12,
+        gap: 12
+    },
+    inviteOptionWhatsApp: {
+        backgroundColor: '#25D366'
+    },
+    inviteOptionEmail: {
+        backgroundColor: '#475569'
+    },
+    inviteOptionCopy: {
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#3b82f6'
+    },
+    inviteOptionCopied: {
+        borderColor: '#10b981',
+        backgroundColor: '#f0fdf4'
+    },
+    inviteOptionText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#fff'
+    },
+    inviteOptionTextCopy: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#3b82f6'
+    },
+    // Modal Límite Alcanzado
+    limitModalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 24,
+        padding: 32,
+        width: '100%',
+        maxWidth: 360,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 10
+    },
+    limitModalIcon: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#fef3c7',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20
+    },
+    limitModalTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#1e293b',
+        textAlign: 'center',
+        marginBottom: 12
+    },
+    limitModalSubtitle: {
+        fontSize: 15,
+        color: '#64748b',
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24
+    },
+    limitModalButtons: {
+        width: '100%',
+        gap: 12
+    },
+    limitModalPrimaryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f59e0b',
+        paddingVertical: 16,
+        borderRadius: 12,
+        gap: 8,
+        shadowColor: '#f59e0b',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4
+    },
+    limitModalPrimaryText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#fff'
+    },
+    limitModalSecondaryBtn: {
+        alignItems: 'center',
+        paddingVertical: 12
+    },
+    limitModalSecondaryText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#64748b'
     }
 });
