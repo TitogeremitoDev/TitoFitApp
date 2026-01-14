@@ -17,21 +17,317 @@ import {
     ActivityIndicator,
     Keyboard,
     Linking,
-    Image
+    Image,
+    Modal,
+    ScrollView,
+    Alert
 } from 'react-native';
+import Video from 'react-native-video';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useChatTheme } from '../../../context/ChatThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ChatAudioPlayer from '../../../src/components/chat/ChatAudioPlayer';
+import * as ImagePicker from 'expo-image-picker'; // 🆕 For gallery/camera
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEEDBACK PREVIEW MODAL (Improved v2)
+// ═══════════════════════════════════════════════════════════════════════════
+const FeedbackPreviewModal = ({ visible, onClose, data, loading, onRetry }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const insets = useSafeAreaInsets();
+
+    // Determinar qué tipo de media mostrar
+    const mediaType = data?.mediaType || 'video';
+    const hasNote = data?.athleteNote || data?.note;
+    const hasCoachResponse = data?.coachResponse?.text;
+
+    return (
+        <Modal
+            animationType="slide"
+            transparent={false}
+            visible={visible}
+            onRequestClose={onClose}
+            presentationStyle="fullScreen"
+        >
+            <View style={[styles.previewModalContainer, { paddingTop: insets.top }]}>
+                {/* Header */}
+                <View style={styles.previewModalHeader}>
+                    <TouchableOpacity onPress={onClose} style={styles.previewCloseBtn}>
+                        <Ionicons name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <View style={styles.previewHeaderCenter}>
+                        <Text style={styles.previewModalTitle} numberOfLines={1}>
+                            {loading ? 'Cargando...' : data?.exerciseName || 'Feedback'}
+                        </Text>
+                        {data?.setNumber && (
+                            <View style={styles.previewSerieBadge}>
+                                <Text style={styles.previewSerieBadgeText}>Serie {data.setNumber}</Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={{ width: 44 }} />
+                </View>
+
+                {/* Content */}
+                <ScrollView
+                    style={styles.previewScrollContent}
+                    contentContainerStyle={styles.previewScrollInner}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {loading ? (
+                        <View style={styles.previewLoading}>
+                            <ActivityIndicator size="large" color="#8b5cf6" />
+                            <Text style={styles.previewLoadingText}>Cargando contenido...</Text>
+                        </View>
+                    ) : data ? (
+                        <>
+                            {/* ═══ Video Display ═══ */}
+                            {mediaType === 'video' && data.mediaUrl && (
+                                <View style={styles.previewMediaContainer}>
+                                    <Video
+                                        source={{ uri: data.mediaUrl }}
+                                        style={styles.previewVideoFull}
+                                        controls={true}
+                                        resizeMode="contain"
+                                        ignoreSilentSwitch="ignore"
+                                        paused={false}
+                                        repeat={false}
+                                    />
+                                </View>
+                            )}
+
+                            {/* ═══ Photo Display ═══ */}
+                            {mediaType === 'photo' && data.mediaUrl && (
+                                <View style={styles.previewMediaContainer}>
+                                    <Image
+                                        source={{ uri: data.mediaUrl }}
+                                        style={styles.previewImageFull}
+                                        resizeMode="contain"
+                                    />
+                                </View>
+                            )}
+
+                            {/* ═══ Audio Player (Inline) ═══ */}
+                            {mediaType === 'audio' && (
+                                <View style={styles.audioPlayerSection}>
+                                    <View style={styles.audioPlayerCard}>
+                                        {/* Waveform Icon */}
+                                        <View style={styles.audioWaveformIcon}>
+                                            <Ionicons name="mic" size={28} color="#fff" />
+                                        </View>
+
+                                        {/* Player Controls */}
+                                        <View style={styles.audioPlayerControls}>
+                                            <Text style={styles.audioPlayerTitle}>Audio del atleta</Text>
+
+                                            {/* Progress Bar Placeholder */}
+                                            <View style={styles.audioProgressContainer}>
+                                                <View style={styles.audioProgressBar}>
+                                                    <View style={[styles.audioProgressFill, { width: '0%' }]} />
+                                                </View>
+                                                <Text style={styles.audioTimeText}>
+                                                    0:00 / {data.duration ? `${Math.floor((data.duration / 1000) / 60)}:${String(Math.floor((data.duration / 1000) % 60)).padStart(2, '0')}` : '-:--'}
+                                                </Text>
+                                            </View>
+
+                                            {/* Control Buttons Row */}
+                                            <View style={styles.audioControlsRow}>
+                                                {/* Play Button - opens in external player */}
+                                                <TouchableOpacity
+                                                    style={styles.audioPlayPauseBtn}
+                                                    onPress={() => data.mediaUrl && Linking.openURL(data.mediaUrl)}
+                                                >
+                                                    <Ionicons name="play" size={20} color="#fff" />
+                                                    <Text style={styles.audioPlayBtnText}>Reproducir</Text>
+                                                </TouchableOpacity>
+
+                                                {/* Speed Indicator */}
+                                                <View style={styles.audioSpeedBtn}>
+                                                    <Text style={styles.audioSpeedText}>1x</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+
+                                    {/* AI Transcription Toggle */}
+                                    {(data.transcription || data.summary) && (
+                                        <View style={styles.transcriptionSection}>
+                                            <View style={styles.transcriptionHeader}>
+                                                <Ionicons name="sparkles" size={18} color="#8b5cf6" />
+                                                <Text style={styles.transcriptionLabel}>Transcripción IA</Text>
+                                            </View>
+
+                                            {data.summary && (
+                                                <View style={styles.transcriptionSummary}>
+                                                    <Text style={styles.transcriptionSummaryLabel}>RESUMEN</Text>
+                                                    <Text style={styles.transcriptionSummaryText}>{data.summary}</Text>
+                                                </View>
+                                            )}
+
+                                            {data.transcription && (
+                                                <View style={styles.transcriptionFull}>
+                                                    <Text style={styles.transcriptionFullLabel}>TRANSCRIPCIÓN</Text>
+                                                    <Text style={styles.transcriptionFullText}>{data.transcription}</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                    )}
+
+                                    {/* Pending Transcription */}
+                                    {data.transcriptionStatus === 'pending' && (
+                                        <View style={styles.transcriptionPending}>
+                                            <ActivityIndicator size="small" color="#8b5cf6" />
+                                            <Text style={styles.transcriptionPendingText}>
+                                                Transcribiendo audio con IA...
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* ═══ Athlete Note ═══ */}
+                            {hasNote && (
+                                <View style={styles.previewNoteCard}>
+                                    <View style={styles.previewNoteHeader}>
+                                        <Ionicons name="chatbubble-ellipses" size={18} color="#10b981" />
+                                        <Text style={styles.previewNoteLabel}>Nota del atleta</Text>
+                                    </View>
+                                    <Text style={styles.previewNoteText}>"{hasNote}"</Text>
+                                </View>
+                            )}
+
+                            {/* ═══ Coach Response (if exists) ═══ */}
+                            {hasCoachResponse && (
+                                <View style={styles.previewCoachCard}>
+                                    <View style={styles.previewNoteHeader}>
+                                        <Ionicons name="person" size={18} color="#4361ee" />
+                                        <Text style={[styles.previewNoteLabel, { color: '#4361ee' }]}>Respuesta del coach</Text>
+                                    </View>
+                                    <Text style={styles.previewNoteText}>{hasCoachResponse}</Text>
+                                </View>
+                            )}
+
+                            {/* ═══ Metadata ═══ */}
+                            <View style={styles.previewMetadata}>
+                                <View style={styles.previewMetaRow}>
+                                    <Ionicons name="time-outline" size={16} color="#64748b" />
+                                    <Text style={styles.previewMetaText}>
+                                        {data.createdAt ? new Date(data.createdAt).toLocaleDateString('es-ES', {
+                                            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                        }) : 'Fecha no disponible'}
+                                    </Text>
+                                </View>
+                                <View style={styles.previewMetaRow}>
+                                    <Ionicons
+                                        name={mediaType === 'video' ? 'videocam' : mediaType === 'photo' ? 'image' : 'mic'}
+                                        size={16}
+                                        color="#64748b"
+                                    />
+                                    <Text style={styles.previewMetaText}>
+                                        {mediaType === 'video' ? 'Video' : mediaType === 'photo' ? 'Foto' : 'Audio'}
+                                    </Text>
+                                </View>
+                            </View>
+                        </>
+                    ) : (
+                        <View style={styles.previewError}>
+                            <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+                            <Text style={styles.previewErrorText}>No se pudo cargar el contenido</Text>
+                            {onRetry && (
+                                <TouchableOpacity style={styles.previewRetryBtn} onPress={onRetry}>
+                                    <Ionicons name="refresh" size={20} color="#fff" />
+                                    <Text style={styles.previewRetryText}>Reintentar</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+                </ScrollView>
+
+                {/* Footer - Close Button */}
+                <View style={[styles.previewFooter, { paddingBottom: insets.bottom + 16 }]}>
+                    <TouchableOpacity style={styles.previewCloseFullBtn} onPress={onClose}>
+                        <Text style={styles.previewCloseFullText}>Cerrar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHAT MEDIA IMAGE (fetches signed URL then displays)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ChatMediaImage = ({ mediaKey, token, style }) => {
+    const [imageUrl, setImageUrl] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    useEffect(() => {
+        const fetchSignedUrl = async () => {
+            try {
+                const res = await fetch(`${API_URL}/api/chat/media-url`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ key: mediaKey })
+                });
+                const data = await res.json();
+                if (data.success && data.url) {
+                    setImageUrl(data.url);
+                } else {
+                    setError(true);
+                }
+            } catch (err) {
+                console.error('[ChatMediaImage] Error:', err);
+                setError(true);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (mediaKey && token) {
+            fetchSignedUrl();
+        }
+    }, [mediaKey, token]);
+
+    if (loading) {
+        return (
+            <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#e2e8f0' }]}>
+                <ActivityIndicator size="small" color="#8b5cf6" />
+            </View>
+        );
+    }
+
+    if (error || !imageUrl) {
+        return (
+            <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="image-outline" size={32} color="#ef4444" />
+            </View>
+        );
+    }
+
+    return (
+        <Image
+            source={{ uri: imageUrl }}
+            style={style}
+            resizeMode="cover"
+        />
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MESSAGE BUBBLE
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize }) => {
+const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize, onPreviewPress, token, onMediaPress }) => {
+    const router = useRouter();
     const getTypeColor = (type) => {
         const colors = {
             entreno: '#8b5cf6',
@@ -84,39 +380,107 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 </Text>
             )}
 
-            {/* 📹 Video Feedback Response - Quote-style Card con metadata */}
-            {(isVideoResponse || message.metadata?.isVideoFeedbackResponse) && !isOwn && (
-                <View style={styles.originalMediaCard}>
-                    {/* Contenedor izquierda: Texto */}
-                    <View style={styles.originalMediaHeader}>
-                        <Text style={styles.originalMediaLabel}>
-                            Respondiendo a {message.metadata?.exerciseName || 'tu video'}
-                        </Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Ionicons
-                                name={
-                                    message.metadata?.originalMediaType === 'video' ? 'videocam' :
-                                        message.metadata?.originalMediaType === 'photo' ? 'image' : 'mic'
-                                }
-                                size={12}
-                                color="#64748b"
-                                style={{ marginRight: 4 }}
-                            />
-                            <Text style={styles.originalMediaSubtext}>
-                                Serie {message.metadata?.setNumber || 1}
-                            </Text>
+            {/* 📹 Video/Photo Feedback Response - Opens Modal */}
+            {(isVideoResponse || message.metadata?.isVideoFeedbackResponse) &&
+                message.metadata?.originalMediaType !== 'audio' && (
+                    <TouchableOpacity
+                        style={styles.feedbackQuoteCard}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                            console.log('[Chat] Quote pressed:', message.metadata);
+                            const refId = message.referenceId || message.metadata?.referenceId || message.metadata?.feedbackId;
+                            if (onPreviewPress && refId) {
+                                onPreviewPress(refId);
+                            } else {
+                                console.warn('[Chat] No preview handler or reference ID');
+                            }
+                        }}
+                    >
+                        {/* Preview Thumbnail / Fallback Icon */}
+                        <View style={styles.feedbackQuotePreview}>
+                            {message.metadata?.originalThumbnail ? (
+                                <Image
+                                    source={{ uri: message.metadata.originalThumbnail }}
+                                    style={styles.feedbackQuoteThumbnail}
+                                    resizeMode="cover"
+                                />
+                            ) : (
+                                <View style={styles.feedbackQuoteIconBg}>
+                                    <Ionicons
+                                        name={
+                                            message.metadata?.originalMediaType === 'video' ? 'videocam' :
+                                                message.metadata?.originalMediaType === 'photo' ? 'image' : 'document-text'
+                                        }
+                                        size={24}
+                                        color="#fff"
+                                    />
+                                </View>
+                            )}
+                            {/* Play overlay for video */}
+                            {message.metadata?.originalMediaType === 'video' && (
+                                <View style={styles.feedbackQuotePlayOverlay}>
+                                    <Ionicons name="play" size={16} color="#fff" />
+                                </View>
+                            )}
                         </View>
-                    </View>
 
-                    {/* Contenedor derecha: Thumbnail */}
-                    {message.metadata?.originalThumbnail && (
-                        <Image
-                            source={{ uri: message.metadata.originalThumbnail }}
-                            style={styles.originalMediaThumbnail}
-                            resizeMode="cover"
+                        {/* Info Text */}
+                        <View style={styles.feedbackQuoteInfo}>
+                            <Text style={styles.feedbackQuoteTitle} numberOfLines={1}>
+                                {message.metadata?.exerciseName || 'Feedback'}
+                            </Text>
+                            <View style={styles.feedbackQuoteMeta}>
+                                <Text style={styles.feedbackQuoteSubtext}>
+                                    Serie {message.metadata?.setNumber || 1}
+                                </Text>
+                                <View style={styles.feedbackQuoteDot} />
+                                <Text style={styles.feedbackQuoteTap}>Ver contenido</Text>
+                            </View>
+                        </View>
+
+                        <Ionicons name="chevron-forward" size={18} color="#4361ee" />
+                    </TouchableOpacity>
+                )}
+
+            {/* 🎙️ Audio Feedback - WhatsApp-style Inline Player */}
+            {(isVideoResponse || message.metadata?.isVideoFeedbackResponse) &&
+                message.metadata?.originalMediaType === 'audio' && (
+                    <ChatAudioPlayer
+                        feedbackId={message.referenceId || message.metadata?.referenceId || message.metadata?.feedbackId}
+                        exerciseName={message.metadata?.exerciseName}
+                        setNumber={message.metadata?.setNumber}
+                    />
+                )}
+
+            {/* 🆕 Inline Media Attachment (WhatsApp-style) */}
+            {message.mediaUrl && message.mediaType && (
+                <TouchableOpacity
+                    style={styles.chatMediaContainer}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                        if (onMediaPress) {
+                            onMediaPress({
+                                mediaUrl: message.mediaUrl,
+                                mediaType: message.mediaType,
+                                token
+                            });
+                        }
+                    }}
+                >
+                    {message.mediaType === 'image' && (
+                        <ChatMediaImage
+                            mediaKey={message.mediaUrl}
+                            token={token}
+                            style={styles.chatMediaImage}
                         />
                     )}
-                </View>
+                    {message.mediaType === 'video' && (
+                        <View style={styles.chatMediaVideo}>
+                            <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
+                            <Text style={styles.chatMediaVideoLabel}>Video</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
             )}
 
             {/* Type badge for trainer chat (not for video_feedback_response) */}
@@ -182,6 +546,10 @@ export default function ConversationScreen() {
     const [messageType, setMessageType] = useState('general');
     const [selectedCategory, setSelectedCategory] = useState('all');
 
+    // 🆕 Media Attachment States
+    const [attachment, setAttachment] = useState(null); // { uri, type: 'image'|'video', fileName }
+    const [uploading, setUploading] = useState(false);
+
     const isTrainer = isTrainerChat === 'true';
     const isGroup = type === 'group';
 
@@ -199,6 +567,172 @@ export default function ConversationScreen() {
     const filteredMessages = selectedCategory === 'all'
         ? messages
         : messages.filter(m => m.type === selectedCategory);
+
+    // 🆕 Preview Logic
+    const [previewModalVisible, setPreviewModalVisible] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
+
+    // 🆕 Fullscreen Media Modal (images/videos)
+    const [mediaModalVisible, setMediaModalVisible] = useState(false);
+    const [mediaModalData, setMediaModalData] = useState(null); // { mediaUrl, mediaType, signedUrl }
+
+    const handleMediaPress = async (data) => {
+        try {
+            // Fetch signed URL
+            const res = await fetch(`${API_URL}/api/chat/media-url`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${data.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ key: data.mediaUrl })
+            });
+            const result = await res.json();
+            if (result.success) {
+                setMediaModalData({
+                    mediaUrl: data.mediaUrl,
+                    mediaType: data.mediaType,
+                    signedUrl: result.url
+                });
+                setMediaModalVisible(true);
+            }
+        } catch (err) {
+            console.error('[Chat] Error opening media:', err);
+        }
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🆕 MEDIA PICKER FUNCTIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Pick from gallery (+ button)
+    const pickFromGallery = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 0.8,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets[0]) {
+                const asset = result.assets[0];
+                setAttachment({
+                    uri: asset.uri,
+                    type: asset.type === 'video' ? 'video' : 'image',
+                    fileName: asset.fileName || `${Date.now()}.${asset.type === 'video' ? 'mp4' : 'jpg'}`,
+                    width: asset.width,
+                    height: asset.height,
+                    duration: asset.duration
+                });
+            }
+        } catch (error) {
+            console.error('[Chat] Gallery picker error:', error);
+            Alert.alert('Error', 'No se pudo abrir la galería');
+        }
+    };
+
+    // Launch camera directly (📷 button)
+    const launchCamera = async () => {
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso requerido', 'Necesitamos acceso a la cámara');
+                return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                quality: 0.8,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets[0]) {
+                const asset = result.assets[0];
+                setAttachment({
+                    uri: asset.uri,
+                    type: asset.type === 'video' ? 'video' : 'image',
+                    fileName: asset.fileName || `${Date.now()}.${asset.type === 'video' ? 'mp4' : 'jpg'}`,
+                    width: asset.width,
+                    height: asset.height,
+                    duration: asset.duration
+                });
+            }
+        } catch (error) {
+            console.error('[Chat] Camera error:', error);
+            Alert.alert('Error', 'No se pudo abrir la cámara');
+        }
+    };
+
+    // Upload media to R2 and get key
+    const uploadMedia = async (mediaUri, mediaType, fileName) => {
+        try {
+            // 1. Get presigned upload URL
+            const urlRes = await fetch(`${API_URL}/api/chat/upload-url`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    fileName,
+                    contentType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+                    conversationId
+                })
+            });
+
+            const urlData = await urlRes.json();
+            if (!urlData.success) throw new Error(urlData.message);
+
+            // 2. Upload file to R2
+            const fileResponse = await fetch(mediaUri);
+            const blob = await fileResponse.blob();
+
+            await fetch(urlData.uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: {
+                    'Content-Type': mediaType === 'video' ? 'video/mp4' : 'image/jpeg'
+                }
+            });
+
+            return urlData.key;
+        } catch (error) {
+            console.error('[Chat] Upload error:', error);
+            throw error;
+        }
+    };
+
+    // Clear attachment
+    const clearAttachment = () => {
+        setAttachment(null);
+    };
+
+    const handlePreviewFeedback = async (feedbackId) => {
+        if (!feedbackId) return;
+        try {
+            setLoadingPreview(true);
+            setPreviewModalVisible(true);
+            setPreviewData(null);
+
+            console.log('[Chat] Loading preview for:', feedbackId);
+            const response = await fetch(`${API_URL}/api/video-feedback/${feedbackId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                setPreviewData(data);
+            } else {
+                console.error('[Preview] Error:', data.error);
+                // Could retry or show error
+            }
+        } catch (error) {
+            console.error('[Preview] Request error:', error);
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD MESSAGES
@@ -339,12 +873,36 @@ export default function ConversationScreen() {
     // ─────────────────────────────────────────────────────────────────────────
 
     const handleSend = async () => {
-        if (!newMessage.trim() || sending) return;
+        // Allow send if there's text OR attachment
+        if ((!newMessage.trim() && !attachment) || sending) return;
 
         Keyboard.dismiss();
         setSending(true);
 
         try {
+            let mediaUrl = null;
+            let mediaType = null;
+            let fileName = null;
+            let duration = null;
+
+            // Upload attachment first if present
+            if (attachment) {
+                setUploading(true);
+                try {
+                    mediaUrl = await uploadMedia(attachment.uri, attachment.type, attachment.fileName);
+                    mediaType = attachment.type;
+                    fileName = attachment.fileName;
+                    duration = attachment.duration || null;
+                } catch (uploadError) {
+                    console.error('[Chat] Upload failed:', uploadError);
+                    Alert.alert('Error', 'No se pudo subir el archivo');
+                    setSending(false);
+                    setUploading(false);
+                    return;
+                }
+                setUploading(false);
+            }
+
             const res = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
                 method: 'POST',
                 headers: {
@@ -352,8 +910,12 @@ export default function ConversationScreen() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    message: newMessage.trim(),
-                    type: isTrainer ? messageType : 'general'
+                    message: newMessage.trim() || '',
+                    type: isTrainer ? messageType : 'general',
+                    mediaUrl,
+                    mediaType,
+                    fileName,
+                    duration
                 })
             });
 
@@ -363,12 +925,14 @@ export default function ConversationScreen() {
                 setMessages(prev => [...prev, data.message]);
                 setNewMessage('');
                 setMessageType('general');
-                // Con inverted=true, el nuevo mensaje aparece automáticamente arriba
+                setAttachment(null); // Clear attachment
             }
         } catch (error) {
             console.error('[ConversationScreen] Error sending:', error);
+            Alert.alert('Error', 'No se pudo enviar el mensaje');
         } finally {
             setSending(false);
+            setUploading(false);
         }
     };
 
@@ -433,6 +997,9 @@ export default function ConversationScreen() {
                                 theme={chatTheme}
                                 isDark={isDark}
                                 fontSize={fontSizeValue}
+                                onPreviewPress={handlePreviewFeedback}
+                                token={token}
+                                onMediaPress={handleMediaPress}
                             />
                         )}
                         contentContainerStyle={styles.messagesList}
@@ -491,11 +1058,41 @@ export default function ConversationScreen() {
                     </View>
                 )}
 
+                {/* 🆕 Attachment Preview */}
+                {attachment && (
+                    <View style={[styles.attachmentPreview, { backgroundColor: chatTheme.cardBackground }]}>
+                        {attachment.type === 'image' ? (
+                            <Image source={{ uri: attachment.uri }} style={styles.attachmentThumb} />
+                        ) : (
+                            <View style={[styles.attachmentThumb, styles.videoThumb]}>
+                                <Ionicons name="videocam" size={24} color="#fff" />
+                            </View>
+                        )}
+                        <Text style={[styles.attachmentName, { color: chatTheme.text }]} numberOfLines={1}>
+                            {attachment.fileName}
+                        </Text>
+                        <TouchableOpacity onPress={clearAttachment} style={styles.attachmentRemove}>
+                            <Ionicons name="close-circle" size={24} color="#ef4444" />
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* WhatsApp-style Input Bar */}
                 <View style={[styles.inputContainer, {
                     backgroundColor: chatTheme.cardBackground,
                     borderTopColor: chatTheme.border,
                     paddingBottom: Math.max(insets.bottom, 12)
                 }]}>
+                    {/* [+] Gallery Button */}
+                    <TouchableOpacity
+                        style={styles.mediaBtn}
+                        onPress={pickFromGallery}
+                        disabled={sending}
+                    >
+                        <Ionicons name="add" size={26} color={chatTheme.primary} />
+                    </TouchableOpacity>
+
+                    {/* Text Input */}
                     <TextInput
                         style={[styles.input, {
                             backgroundColor: chatTheme.inputBackground,
@@ -513,27 +1110,94 @@ export default function ConversationScreen() {
                         returnKeyType="default"
                         textAlignVertical="center"
                         onKeyPress={(e) => {
-                            // Solo en web: enviar con Enter (sin Shift para permitir saltos de línea)
                             if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
                                 e.preventDefault();
                                 handleSend();
                             }
                         }}
                     />
-                    <TouchableOpacity
-                        style={[styles.sendBtn, { backgroundColor: chatTheme.primary }, !newMessage.trim() && styles.sendBtnDisabled]}
-                        onPress={handleSend}
-                        disabled={sending || !newMessage.trim()}
-                    >
-                        {sending ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <Ionicons name="send" size={20} color="#fff" />
-                        )}
-                    </TouchableOpacity>
+
+                    {/* Right buttons: Camera + Mic (no text) OR Send (with text/attachment) */}
+                    {(newMessage.trim() || attachment) ? (
+                        /* SEND BUTTON */
+                        <TouchableOpacity
+                            style={[styles.sendBtn, { backgroundColor: chatTheme.primary }]}
+                            onPress={handleSend}
+                            disabled={sending || uploading}
+                        >
+                            {(sending || uploading) ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Ionicons name="send" size={20} color="#fff" />
+                            )}
+                        </TouchableOpacity>
+                    ) : (
+                        /* MEDIA BUTTONS (Camera + Mic placeholder) */
+                        <View style={styles.mediaButtonsRow}>
+                            <TouchableOpacity
+                                style={styles.mediaBtn}
+                                onPress={launchCamera}
+                                disabled={sending}
+                            >
+                                <Ionicons name="camera-outline" size={24} color={chatTheme.primary} />
+                            </TouchableOpacity>
+                            {/* Mic button placeholder - will be AudioRecorderButton later */}
+                            <TouchableOpacity
+                                style={styles.mediaBtn}
+                                disabled={true}
+                            >
+                                <Ionicons name="mic-outline" size={24} color={chatTheme.textTertiary} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+
+            {/* 🆕 Preview Modal */}
+            <FeedbackPreviewModal
+                visible={previewModalVisible}
+                onClose={() => setPreviewModalVisible(false)}
+                data={previewData}
+                loading={loadingPreview}
+                onRetry={() => previewData?._id && handlePreviewFeedback(previewData._id)}
+            />
+
+            {/* 🆕 Fullscreen Media Modal (Images/Videos) */}
+            <Modal
+                visible={mediaModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setMediaModalVisible(false)}
+            >
+                <View style={styles.fullscreenMediaModal}>
+                    {/* Close Button */}
+                    <TouchableOpacity
+                        style={styles.fullscreenCloseBtn}
+                        onPress={() => setMediaModalVisible(false)}
+                    >
+                        <Ionicons name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+
+                    {/* Media Content */}
+                    {mediaModalData?.mediaType === 'image' && mediaModalData?.signedUrl && (
+                        <Image
+                            source={{ uri: mediaModalData.signedUrl }}
+                            style={styles.fullscreenImage}
+                            resizeMode="contain"
+                        />
+                    )}
+                    {mediaModalData?.mediaType === 'video' && mediaModalData?.signedUrl && (
+                        <Video
+                            source={{ uri: mediaModalData.signedUrl }}
+                            style={styles.fullscreenVideo}
+                            controls={true}
+                            resizeMode="contain"
+                            repeat={false}
+                        />
+                    )}
+                </View>
+            </Modal>
+        </SafeAreaView >
     );
 }
 
@@ -545,6 +1209,369 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc'
+    },
+
+    // 🆕 Preview Modal Styles (Fullscreen v2)
+    previewModalContainer: {
+        flex: 1,
+        backgroundColor: '#0a0a14'
+    },
+    previewModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#1a1a2e'
+    },
+    previewCloseBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#1a1a2e',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    previewHeaderCenter: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 6
+    },
+    previewModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#fff'
+    },
+    previewSerieBadge: {
+        backgroundColor: '#8b5cf6',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12
+    },
+    previewSerieBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600'
+    },
+    previewScrollContent: {
+        flex: 1
+    },
+    previewScrollInner: {
+        paddingBottom: 20
+    },
+    previewLoading: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 80
+    },
+    previewLoadingText: {
+        color: '#888',
+        marginTop: 12,
+        fontSize: 14
+    },
+    previewMediaContainer: {
+        width: '100%',
+        backgroundColor: '#000',
+        aspectRatio: 9 / 16,
+        maxHeight: 500
+    },
+    previewVideoFull: {
+        width: '100%',
+        height: '100%'
+    },
+    previewImageFull: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#000'
+    },
+    previewAudioContainer: {
+        margin: 16,
+        backgroundColor: '#1a1a2e',
+        borderRadius: 16,
+        padding: 16,
+        gap: 12
+    },
+    previewAudioPlayer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16
+    },
+    previewAudioPlayBtn: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    previewAudioInfo: {
+        flex: 1
+    },
+    previewAudioTitle: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600'
+    },
+    previewAudioSubtitle: {
+        color: '#888',
+        fontSize: 13,
+        marginTop: 4
+    },
+    previewAudioOpenBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#333'
+    },
+    previewAudioOpenText: {
+        color: '#8b5cf6',
+        fontSize: 14
+    },
+    previewNoteCard: {
+        margin: 16,
+        marginTop: 8,
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#10b981'
+    },
+    previewNoteHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8
+    },
+    previewNoteLabel: {
+        color: '#10b981',
+        fontSize: 13,
+        fontWeight: '600'
+    },
+    previewNoteText: {
+        color: '#e0e0e0',
+        fontSize: 15,
+        fontStyle: 'italic',
+        lineHeight: 22
+    },
+    previewCoachCard: {
+        margin: 16,
+        marginTop: 0,
+        backgroundColor: 'rgba(67, 97, 238, 0.1)',
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#4361ee'
+    },
+    previewMetadata: {
+        marginHorizontal: 16,
+        marginTop: 8,
+        padding: 12,
+        backgroundColor: '#1a1a2e',
+        borderRadius: 8,
+        gap: 8
+    },
+    previewMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    previewMetaText: {
+        color: '#888',
+        fontSize: 13
+    },
+    previewError: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 60,
+        gap: 12
+    },
+    previewErrorText: {
+        color: '#ef4444',
+        fontSize: 16
+    },
+    previewRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#8b5cf6',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 10,
+        marginTop: 8
+    },
+    previewRetryText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600'
+    },
+
+    // Audio Player Styles
+    audioPlayerSection: {
+        padding: 16
+    },
+    audioPlayerCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#1a1a2e',
+        borderRadius: 16,
+        padding: 16,
+        gap: 16
+    },
+    audioWaveformIcon: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    audioPlayerControls: {
+        flex: 1
+    },
+    audioPlayerTitle: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '600',
+        marginBottom: 8
+    },
+    audioProgressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 10
+    },
+    audioProgressBar: {
+        flex: 1,
+        height: 4,
+        backgroundColor: '#333',
+        borderRadius: 2
+    },
+    audioProgressFill: {
+        height: '100%',
+        backgroundColor: '#8b5cf6',
+        borderRadius: 2
+    },
+    audioTimeText: {
+        color: '#888',
+        fontSize: 11,
+        minWidth: 60
+    },
+    audioControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10
+    },
+    audioPlayPauseBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#8b5cf6',
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 8
+    },
+    audioPlayBtnText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '600'
+    },
+    audioSpeedBtn: {
+        backgroundColor: '#333',
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 6
+    },
+    audioSpeedText: {
+        color: '#8b5cf6',
+        fontSize: 12,
+        fontWeight: '600'
+    },
+
+    // Transcription Styles
+    transcriptionSection: {
+        backgroundColor: '#1a1a2e',
+        borderRadius: 12,
+        marginTop: 12,
+        padding: 16
+    },
+    transcriptionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12
+    },
+    transcriptionLabel: {
+        color: '#8b5cf6',
+        fontSize: 14,
+        fontWeight: '600'
+    },
+    transcriptionSummary: {
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 8
+    },
+    transcriptionSummaryLabel: {
+        color: '#8b5cf6',
+        fontSize: 10,
+        fontWeight: '700',
+        marginBottom: 6
+    },
+    transcriptionSummaryText: {
+        color: '#e0e0e0',
+        fontSize: 14,
+        lineHeight: 20
+    },
+    transcriptionFull: {
+        paddingTop: 8
+    },
+    transcriptionFullLabel: {
+        color: '#888',
+        fontSize: 10,
+        fontWeight: '600',
+        marginBottom: 6
+    },
+    transcriptionFullText: {
+        color: '#ccc',
+        fontSize: 13,
+        lineHeight: 20
+    },
+    transcriptionPending: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        borderRadius: 8,
+        padding: 14,
+        marginTop: 12
+    },
+    transcriptionPendingText: {
+        color: '#8b5cf6',
+        fontSize: 13
+    },
+
+    previewFooter: {
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#1a1a2e'
+    },
+    previewCloseFullBtn: {
+        backgroundColor: '#1a1a2e',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center'
+    },
+    previewCloseFullText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600'
     },
     keyboardAvoidingContainer: {
         flex: 1
@@ -741,6 +1768,96 @@ const styles = StyleSheet.create({
         backgroundColor: '#cbd5e1'
     },
 
+    // 🆕 WhatsApp-style Media Buttons
+    mediaBtn: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    mediaButtonsRow: {
+        flexDirection: 'row',
+        alignItems: 'center'
+    },
+
+    // 🆕 Attachment Preview
+    attachmentPreview: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0'
+    },
+    attachmentThumb: {
+        width: 48,
+        height: 48,
+        borderRadius: 8,
+        marginRight: 12
+    },
+    videoThumb: {
+        backgroundColor: '#4361ee',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    attachmentName: {
+        flex: 1,
+        fontSize: 14
+    },
+    attachmentRemove: {
+        padding: 4
+    },
+
+    // 🆕 Inline Chat Media (WhatsApp-style)
+    chatMediaContainer: {
+        marginBottom: 8,
+        borderRadius: 12,
+        overflow: 'hidden',
+        maxWidth: 250
+    },
+    chatMediaImage: {
+        width: 250,
+        height: 200,
+        borderRadius: 12
+    },
+    chatMediaVideo: {
+        width: 250,
+        height: 150,
+        backgroundColor: '#1e293b',
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    chatMediaVideoLabel: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 12,
+        marginTop: 4
+    },
+
+    // 🆕 Fullscreen Media Modal
+    fullscreenMediaModal: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    fullscreenCloseBtn: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        zIndex: 10,
+        padding: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 20
+    },
+    fullscreenImage: {
+        width: '100%',
+        height: '80%'
+    },
+    fullscreenVideo: {
+        width: '100%',
+        height: '80%'
+    },
+
     // Video Feedback Response Card (Legacy)
     videoResponseCard: {
         backgroundColor: '#4361ee10',
@@ -761,36 +1878,171 @@ const styles = StyleSheet.create({
         fontWeight: '600'
     },
 
-    // 🆕 Original Media Quote Card (Enhanced)
-    originalMediaCard: {
-        backgroundColor: '#f0f4ff',
-        borderLeftWidth: 4,
-        borderLeftColor: '#4361ee',
+    // 🆕 Enhanced Feedback Quote Card
+    feedbackQuoteCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8faff',
+        borderWidth: 1,
+        borderColor: '#dbeafe',
         borderRadius: 8,
-        padding: 8,
-        marginBottom: 8,
+        padding: 6,
+        marginBottom: 6,
+        gap: 8
+    },
+    feedbackQuotePreview: {
+        width: 40,
+        height: 40,
+        borderRadius: 8,
+        overflow: 'hidden',
+        backgroundColor: '#4361ee',
+        position: 'relative'
+    },
+    feedbackQuoteThumbnail: {
+        width: '100%',
+        height: '100%'
+    },
+    feedbackQuoteIconBg: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#4361ee',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    feedbackQuotePlayOverlay: {
+        position: 'absolute',
+        bottom: 2,
+        right: 2,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: 8,
+        width: 16,
+        height: 16,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    feedbackQuoteInfo: {
+        flex: 1
+    },
+    feedbackQuoteTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#1e293b',
+        marginBottom: 2
+    },
+    feedbackQuoteMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4
+    },
+    feedbackQuoteSubtext: {
+        fontSize: 10,
+        color: '#64748b'
+    },
+    feedbackQuoteDot: {
+        width: 2,
+        height: 2,
+        borderRadius: 1,
+        backgroundColor: '#94a3b8'
+    },
+    feedbackQuoteTap: {
+        fontSize: 12,
+        color: '#4361ee',
+        fontWeight: '500'
+    },
+
+    // Inline Chat Audio Player
+    inlineChatAudioCard: {
+        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 8
+    },
+    inlineChatAudioHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
+        marginBottom: 10
     },
-    originalMediaHeader: {
-        flex: 1,
+    inlineChatAudioIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
     },
-    originalMediaLabel: {
-        fontSize: 12,
-        color: '#4361ee',
+    inlineChatAudioInfo: {
+        flex: 1
+    },
+    inlineChatAudioTitle: {
+        fontSize: 13,
         fontWeight: '600',
-        marginBottom: 2,
+        color: '#1e293b'
     },
-    originalMediaSubtext: {
+    inlineChatAudioSubtext: {
+        fontSize: 11,
+        color: '#64748b'
+    },
+    inlineChatAudioProgress: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 10
+    },
+    inlineChatAudioProgressBar: {
+        flex: 1,
+        height: 4,
+        backgroundColor: 'rgba(139, 92, 246, 0.3)',
+        borderRadius: 2
+    },
+    inlineChatAudioProgressFill: {
+        height: '100%',
+        backgroundColor: '#8b5cf6',
+        borderRadius: 2
+    },
+    inlineChatAudioTime: {
         fontSize: 11,
         color: '#64748b',
+        minWidth: 30
     },
-    originalMediaThumbnail: {
-        width: 44,
-        height: 44,
+    inlineChatAudioControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    inlineChatAudioPlayBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    inlineChatAudioSpeedBtn: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+        borderRadius: 6
+    },
+    inlineChatAudioSpeedText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#8b5cf6'
+    },
+    inlineChatAudioAiBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
         borderRadius: 6,
-        backgroundColor: '#e2e8f0',
+        marginLeft: 'auto'
+    },
+    inlineChatAudioAiText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#8b5cf6'
     },
 
     // YouTube Link Card

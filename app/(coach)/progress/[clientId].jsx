@@ -87,7 +87,7 @@ const barChartConfig = {
 
 export default function ClientProgressDetail() {
     const router = useRouter();
-    const { clientId, clientName } = useLocalSearchParams();
+    const { clientId, clientName, feedbackId } = useLocalSearchParams();
     const { token } = useAuth();
 
     // 🖥️ Responsive layout - split view on large screens
@@ -246,6 +246,18 @@ export default function ClientProgressDetail() {
         ));
         setVideoModalVisible(false);
     };
+
+    // 🆕 Auto-open feedback from deep link
+    useEffect(() => {
+        if (feedbackId && videoFeedbacks.length > 0 && !videoModalVisible) {
+            const feedback = videoFeedbacks.find(f => f._id === feedbackId);
+            if (feedback) {
+                console.log('[ClientProgress] Auto-opening feedback from param:', feedbackId);
+                setSelectedFeedback(feedback);
+                setVideoModalVisible(true);
+            }
+        }
+    }, [feedbackId, videoFeedbacks]);
 
     // 🆕 Mostrar Toast no intrusivo
     const showToast = (config) => {

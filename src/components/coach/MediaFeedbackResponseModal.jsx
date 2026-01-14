@@ -330,6 +330,26 @@ export default function VideoFeedbackResponseModal({
                 ? parseInt(feedback.serieKey.split('|')[3], 10) + 1
                 : feedback?.setNumber || 1;
 
+            const payload = {
+                clientId: feedback.athleteId,
+                message: fullMessage,
+                type: 'entreno', // 🆕 Cambiado a 'entreno' para sección musculación
+                referenceId: feedback._id,
+                referenceType: 'VideoFeedback',
+                isCoach: true,
+                // 🆕 Metadata para mostrar contexto original en chat
+                metadata: {
+                    isVideoFeedbackResponse: true,
+                    originalMediaType: feedback?.mediaType || 'video',
+                    originalR2Key: feedback?.r2Key || null,
+                    originalThumbnail: feedback?.thumbnailUrl || null,
+                    exerciseName: feedback?.exerciseName || 'Ejercicio',
+                    setNumber: setNumber
+                }
+            };
+
+            console.log('[Modal] Sending chat response payload:', JSON.stringify(payload, null, 2));
+
             // Enviar al chat con tipo 'entreno' (sección musculación)
             const response = await fetch(`${API_URL}/api/chat`, {
                 method: 'POST',
@@ -337,23 +357,7 @@ export default function VideoFeedbackResponseModal({
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    clientId: feedback.athleteId,
-                    message: fullMessage,
-                    type: 'entreno', // 🆕 Cambiado a 'entreno' para sección musculación
-                    referenceId: feedback._id,
-                    referenceType: 'VideoFeedback',
-                    isCoach: true,
-                    // 🆕 Metadata para mostrar contexto original en chat
-                    metadata: {
-                        isVideoFeedbackResponse: true,
-                        originalMediaType: feedback?.mediaType || 'video',
-                        originalR2Key: feedback?.r2Key || null,
-                        originalThumbnail: feedback?.thumbnailUrl || null,
-                        exerciseName: feedback?.exerciseName || 'Ejercicio',
-                        setNumber: setNumber
-                    }
-                })
+                body: JSON.stringify(payload)
             });
 
             const data = await response.json();

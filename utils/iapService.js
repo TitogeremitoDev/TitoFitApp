@@ -103,6 +103,8 @@ export const getIAPSubscriptions = async (productIds = ALL_SUBSCRIPTION_IDS) => 
 
 /**
  * Inicia el flujo de compra para una suscripción
+ * IMPORTANTE: Debe incluir type: 'subs' para que expo-iap devuelva jwsRepresentationIos
+ * MEJORADO: Maneja la respuesta si llega como Array o como Objeto
  */
 export const purchaseIAPSubscription = async (productId, offerToken = null) => {
     if (Platform.OS === 'web') {
@@ -110,9 +112,9 @@ export const purchaseIAPSubscription = async (productId, offerToken = null) => {
     }
 
     try {
-        console.log('[IAP] Iniciando compra:', productId);
+        console.log('[IAP] Iniciando compra de suscripción:', productId);
 
-        // API de expo-iap v2.7.0+ con soporte para plataformas
+        // API de expo-iap: type: 'subs' es CRÍTICO para obtener jwsRepresentationIos en iOS
         const purchaseRequest = {
             request: {
                 apple: {
@@ -120,15 +122,49 @@ export const purchaseIAPSubscription = async (productId, offerToken = null) => {
                 },
                 google: {
                     skus: [productId],
-                    ...(offerToken && { offerToken }),
+                    subscriptionOffers: offerToken ? [{ sku: productId, offerToken }] : undefined,
                 },
             },
+            type: 'subs', // ← CRÍTICO: Sin esto, no se devuelve jwsRepresentationIos
         };
 
-        const purchase = await requestPurchase(purchaseRequest);
-        console.log('[IAP] Compra completada:', purchase);
-        return purchase;
+        console.log('[IAP] Enviando requestPurchase con type: subs');
+        const result = await requestPurchase(purchaseRequest);
+
+        // NORMALIZACIÓN: Convertimos Array -> Objeto único
+        // Si expo-iap devuelve un array (pasa en algunas versiones), cogemos el primero
+        let purchase;
+        if (Array.isArray(result)) {
+            if (result.length === 0) {
+                throw new Error('Compra cancelada o array vacío');
+            }
+            purchase = result[0];
+            console.log('[IAP] Resultado era Array, normalizado a Objeto');
+        } else {
+            purchase = result;
+        }
+
+        // Log detallado para debug
+        console.log('[IAP] Compra completada (Normalizada):', {
+            transactionId: purchase?.transactionId,
+            productId: purchase?.productId,
+            hasJws: !!purchase?.jwsRepresentationIos,
+            hasReceipt: !!purchase?.transactionReceipt,
+        });
+
+        return purchase; // Siempre devolvemos un OBJETO
     } catch (error) {
+        // Normalizar error de cancelación para que payment.jsx lo detecte fácilmente
+        const errorMsg = error?.message?.toLowerCase() || '';
+        const errorCode = error?.code || '';
+
+        if (errorMsg.includes('cancel') || errorCode === 'E_USER_CANCELLED' || errorCode === 'user-cancelled') {
+            console.log('[IAP] Compra cancelada por usuario');
+            const cancelError = new Error('User canceled');
+            cancelError.code = 'E_USER_CANCELLED';
+            throw cancelError;
+        }
+
         console.error('[IAP] Error en compra:', error);
         throw error;
     }
