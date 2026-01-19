@@ -26,6 +26,7 @@ import { useRouter } from 'expo-router';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
 import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
+import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials';
 
 // Configuración de las cajas temáticas
 const THEMED_BOXES = [
@@ -409,8 +410,8 @@ export default function TrainerDashboard() {
 
 1. Descarga la app o entra desde la web:
    - Web: https://totalgains.es/app/login
-   - iOS: https://apps.apple.com/app/totalgains
-   - Android: https://play.google.com/store/apps/details?id=com.totalgains
+   - iOS: https://apps.apple.com/app/id6756856683
+   - Android: https://play.google.com/store/apps/details?id=com.german92.titofitapp
 
 2. Crea tu cuenta (es gratis)
 
@@ -828,16 +829,12 @@ Cualquier duda me escribes. Vamos a por tus objetivos!`;
                                         activeOpacity={0.7}
                                     >
                                         <View style={styles.clientCardLeft}>
-                                            <View style={[
-                                                styles.clientAvatar,
-                                                hasUnread && styles.clientAvatarUnread
-                                            ]}>
-                                                <Text style={[
-                                                    styles.clientAvatarText,
-                                                    hasUnread && { color: '#fff' }
-                                                ]}>
-                                                    {item.nombre?.charAt(0)?.toUpperCase() || '?'}
-                                                </Text>
+                                            <View style={{ position: 'relative', marginRight: 12 }}>
+                                                <AvatarWithInitials
+                                                    avatarUrl={item.avatarUrl}
+                                                    name={item.nombre}
+                                                    size={48}
+                                                />
                                                 <View style={[
                                                     styles.statusDot,
                                                     { backgroundColor: statusColor }
@@ -889,6 +886,7 @@ Cualquier duda me escribes. Vamos a por tus objetivos!`;
                 onClose={closeClientChat}
                 clientId={selectedClient?._id}
                 clientName={selectedClient?.nombre}
+                clientAvatarUrl={selectedClient?.avatarUrl}
                 isCoach={true}
             />
 

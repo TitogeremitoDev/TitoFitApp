@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import SyncProgressModal from '../../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -66,7 +68,7 @@ const TIER_LABELS = {
 
 export default function AjustesScreen() {
   const router = useRouter();
-  const { theme, themeMode, currentThemeId, setThemeId } = useTheme();
+  const { theme, themeMode, currentThemeId, setThemeId, enableCoachTheme, coachThemeEnabled } = useTheme();
   const { user, logout, refreshUser, token } = useAuth();
   const { serverPoints } = useAchievements();
 
@@ -117,10 +119,19 @@ export default function AjustesScreen() {
   const [showLeaveTrainerModal, setShowLeaveTrainerModal] = useState(false);
   const [leavingTrainer, setLeavingTrainer] = useState(false);
 
+  // Coach branding theme
+  const { branding: coachBranding, loading: loadingCoachBranding } = useCoachBranding();
 
   // Determinar si el usuario es premium/cliente/entrenador/admin
   const isPremiumUser = ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMIN'].includes(user?.tipoUsuario);
   const isAdmin = user?.tipoUsuario === 'ADMIN';
+
+  // Verificar si el usuario tiene acceso al tema del entrenador
+  const hasCoachTheme = !!coachBranding && (
+    user?.tipoUsuario === 'CLIENTE' ||
+    user?.tipoUsuario === 'ENTRENADOR' ||
+    !!user?.currentTrainerId
+  );
 
   // Cargar temas desbloqueados al inicio (local para FREEUSER, cloud para premium)
   useEffect(() => {
@@ -452,6 +463,14 @@ export default function AjustesScreen() {
     // BÁSICOS
     // ═══════════════════════════════════════════════════════════════
     { section: 'Básicos' },
+    // Tema del Entrenador (Dinámico)
+    ...(hasCoachTheme ? [{
+      mode: 'coach_theme',
+      title: '🎨 Tema del Entrenador',
+      subtitle: user?.tipoUsuario === 'ENTRENADOR' ? 'Tu identidad visual' : 'Tema de tu entrenador',
+      icon: 'color-palette',
+      isCoachTheme: true // marker
+    }] : []),
     {
       mode: 'auto',
       title: '🔄 Automático',
@@ -544,6 +563,12 @@ export default function AjustesScreen() {
   ];
 
   const handleThemeChange = async (mode) => {
+    // Si se selecciona el tema del entrenador, O si es automático y hay tema de entrenador disponible
+    if (mode === 'coach_theme' || (mode === 'auto' && hasCoachTheme)) {
+      await enableCoachTheme();
+      return;
+    }
+
     // Mapeamos los modos básicos a sus IDs de tema correspondientes
     const modeToThemeId = {
       'auto': 'default_light', // Por ahora auto = light (el sistema lo manejará internamente si lo necesitamos)
@@ -782,6 +807,8 @@ export default function AjustesScreen() {
               Personaliza cómo se ve la aplicación
             </Text>
 
+
+
             {/* Opciones de Tema */}
             {(() => {
               let currentSection = null;
@@ -903,7 +930,10 @@ export default function AjustesScreen() {
                   'dark': 'default_dark',
                 };
                 const expectedId = modeToId[option.mode] || option.mode;
-                const isSelected = currentThemeId === expectedId;
+                // Determinar si está seleccionado
+                const isSelected = option.mode === 'coach_theme'
+                  ? coachThemeEnabled
+                  : (!coachThemeEnabled && currentThemeId === (modeToId[option.mode] || option.mode));
 
                 // Datos del tier
                 const tier = THEME_TIERS[option.mode];
@@ -2373,5 +2403,22 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  // Coach Theme Toggle
+  coachThemeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  coachThemeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
   },
 });
