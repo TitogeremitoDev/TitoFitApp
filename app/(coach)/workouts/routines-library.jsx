@@ -23,6 +23,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AssignRoutineModal from './assign-modal';
 import AIImportModal from './AIImportModal';
 import CoachHeader from '../components/CoachHeader';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import Papa from 'papaparse';
@@ -636,7 +637,13 @@ export default function RoutinesLibraryScreen() {
                                 {clientsWithRoutine.map((client) => (
                                     <View key={client._id} style={styles.clientItem}>
                                         <View style={styles.clientItemLeft}>
-                                            <Ionicons name="person-circle-outline" size={20} color="#64748b" />
+                                            <View style={{ marginRight: 8 }}>
+                                                <AvatarWithInitials
+                                                    avatarUrl={client.avatarUrl}
+                                                    name={client.nombre}
+                                                    size={30}
+                                                />
+                                            </View>
                                             <View style={styles.clientItemInfo}>
                                                 <Text style={styles.clientItemName}>{client.nombre}</Text>
                                                 <Text style={styles.clientItemEmail}>{client.email}</Text>

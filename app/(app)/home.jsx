@@ -21,10 +21,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import ActionButton from '../../components/ActionButton';
+import BrandBackground from '../../components/BrandBackground';
 import SubscriptionRetentionModal from '../../components/SubscriptionRetentionModal';
 import RescueOfferModal from '../../components/RescueOfferModal';
 import { PaymentNotificationManager } from '../../src/components/payment';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -42,15 +44,13 @@ const FRASES = [
 ];
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.3';
 
-const CAMBIOS_111 = [
-  '📸 Feedback Visual: Nuevo sistema de carga y revisión de fotos de atletas.',
-  '💳 Facturación: Nueva página centralizada para gestión de cobros.',
-  '🧠 IA Retention: Alerta predictiva ante posible abandono de clientes.',
-  '🔔 Cobros "Soft": Nuevo sistema psicológico de aviso de impagos.',
-  '🎨 UX/UI Coach: Renovación total de la interfaz para entrenadores.',
-  '🛠️ Fix Marketing: Corrección del sistema de anuncios durante el entreno.',
+const CAMBIOS_112 = [
+  '💳 Google Pay: Solucionado problema con pagos fuera de la app.',
+  '💬 Chat Multimedia: Ahora puedes enviar fotos y videos.',
+  '📈 Feedbacks: Mejoras visuales y corrección de bugs.',
+  '✨ UI/UX: Nueva interfaz más limpia para todos.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -59,6 +59,7 @@ const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la
 export default function HomeScreen() {
   const router = useRouter();
   const { user, token, refreshUser } = useAuth();
+  const { theme, isDark } = useTheme();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -395,69 +396,81 @@ export default function HomeScreen() {
 
   const renderContent = () => (
     <>
-      <View style={[styles.card, { marginTop: topMargin }, !isWeb && {
-        width: '100%',
-        maxWidth: 500,
-        alignSelf: 'center',
-        paddingVertical: isVerySmallHeight ? 12 : (isSmallHeight ? 16 : 24),
-      }]}>
+      <View style={[
+        styles.card,
+        {
+          marginTop: topMargin,
+          // Glassmorphism dinámico
+          backgroundColor: glassCardBg,
+          borderColor: glassCardBorder,
+        },
+        !isWeb ? {
+          width: '100%',
+          maxWidth: 500,
+          alignSelf: 'center',
+          paddingVertical: isVerySmallHeight ? 12 : (isSmallHeight ? 16 : 24),
+        } : null
+      ]}>
         {/* Logo: mostrar logo según la jerarquía:
             1. Si tiene entrenador asignado → logo del entrenador
             2. Si es ENTRENADOR sin entrenador propio → su propio logo de trainerProfile
             3. Fallback → logo de TotalGains
         */}
-        {currentTrainer?.profile?.logoUrl ? (
-          <Image
-            source={{ uri: currentTrainer.profile.logoUrl }}
-            resizeMode="contain"
-            style={[styles.logo, styles.logoVIP, !isWeb && {
-              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
-            }]}
-          />
-        ) : user?.trainerProfile?.logoUrl && !user?.currentTrainerId ? (
-          // Entrenador sin otro entrenador: mostrar su propio logo
-          <Image
-            source={{ uri: user.trainerProfile.logoUrl }}
-            resizeMode="contain"
-            style={[styles.logo, styles.logoVIP, !isWeb && {
-              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
-            }]}
-          />
-        ) : (
-          <Image
-            source={require('../../assets/logo.png')}
-            resizeMode="contain"
-            style={[styles.logo, isPremiumUser && styles.logoVIP, !isWeb && {
-              width: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              height: isVerySmallHeight ? width * 0.22 : width * 0.28,
-              maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
-              marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
-            }]}
-          />
-        )}
+        {/* Contenedor del logo */}
+        <View style={styles.logoContainer}>
+          {currentTrainer?.profile?.logoUrl ? (
+            <Image
+              source={{ uri: currentTrainer.profile.logoUrl }}
+              resizeMode="contain"
+              style={[styles.logo, styles.logoVIP, !isWeb ? {
+                width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+              } : null]}
+            />
+          ) : user?.trainerProfile?.logoUrl && !user?.currentTrainerId ? (
+            // Entrenador sin otro entrenador: mostrar su propio logo
+            <Image
+              source={{ uri: user.trainerProfile.logoUrl }}
+              resizeMode="contain"
+              style={[styles.logo, styles.logoVIP, !isWeb ? {
+                width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+              } : null]}
+            />
+          ) : (
+            <Image
+              source={require('../../assets/logo.png')}
+              resizeMode="contain"
+              style={[styles.logo, isPremiumUser ? styles.logoVIP : null, !isWeb ? {
+                width: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                height: isVerySmallHeight ? width * 0.22 : width * 0.28,
+                maxHeight: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                maxWidth: isVerySmallHeight ? 70 : (isSmallHeight ? 90 : 130),
+                marginBottom: isVerySmallHeight ? 6 : (isSmallHeight ? 8 : 12)
+              } : null]}
+            />
+          )}
+        </View>
         {/* Título: mostrar nombre según la jerarquía:
             1. Si tiene entrenador asignado → nombre del entrenador
             2. Si es ENTRENADOR sin entrenador propio → su brandName
             3. Fallback → TotalGains
         */}
-        <Text style={[styles.title, isSmallHeight && { fontSize: 20 }]}>
+        <Text style={[styles.title, { color: theme.text }, isSmallHeight ? { fontSize: 20 } : null]}>
           {currentTrainer?.profile?.brandName || currentTrainer?.nombre ||
             (user?.trainerProfile?.brandName && !user?.currentTrainerId ? user.trainerProfile.brandName : 'TotalGains')}
         </Text>
-        <Text style={[styles.subtitle, isSmallHeight && { marginBottom: 12 }]}>Tu progreso, bien medido.</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }, isSmallHeight ? { marginBottom: 12 } : null]}>Tu progreso, bien medido.</Text>
 
-        {/* Botón Principal siempre destacado */}
+        {/* Botón Principal */}
         <Link href="/entreno" asChild>
-          <ActionButton title="Empezar entreno" icon="barbell-outline" compact={isSmallHeight} />
+          <ActionButton title="Empezar entreno" icon="barbell-outline" variant="secondary" compact={isSmallHeight} />
         </Link>
         <View style={{ height: isSmallHeight ? 10 : 12 }} />
 
@@ -479,7 +492,7 @@ export default function HomeScreen() {
                   compact={true}
                   style={[
                     { height: 50, justifyContent: 'center' },
-                    unreadFeedbackReports > 0 && styles.seguimientoBtnGolden
+                    unreadFeedbackReports > 0 ? styles.seguimientoBtnGolden : null
                   ]}
                 />
               </Link>
@@ -551,24 +564,36 @@ export default function HomeScreen() {
         </Link>
       </View>
 
-      <View style={[styles.bannerContainer, isSmallHeight && { marginTop: 10, paddingVertical: 12 }]}>
+      <View style={[
+        styles.bannerContainer,
+        { backgroundColor: bannerBg },
+        isSmallHeight ? { marginTop: 10, paddingVertical: 12 } : null
+      ]}>
         <Text style={styles.bannerText}>{fraseActual}</Text>
       </View>
     </>
   );
 
+  // Colores dinámicos para glassmorphism
+  const glassCardBg = isDark
+    ? 'rgba(30, 41, 59, 0.85)'
+    : 'rgba(255, 255, 255, 0.92)';
+  const glassCardBorder = isDark
+    ? 'rgba(255, 255, 255, 0.10)'
+    : 'rgba(255, 255, 255, 0.60)';
+  const bannerBg = isDark ? '#1E293B' : '#0F172A';
+
   return (
     <PaymentNotificationManager>
-      <View style={[styles.root, !isWeb && { justifyContent: 'flex-start' }]}>
-        <StatusBar style="light" />
-        <LinearGradient
-          colors={['#0B1220', '#0D1B2A', '#111827']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+      <View style={[styles.root, !isWeb ? { justifyContent: 'flex-start' } : null]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        {/* Fondo dinámico con blobs del color del tema */}
+        <BrandBackground
+          primaryColor={theme.primary}
+          accentColor={theme.premium || theme.accentBorder || '#10B981'}
+          isDark={isDark}
+          backgroundColor={theme.background}
         />
-        <View style={[styles.blob, styles.blobTop]} />
-        <View style={[styles.blob, styles.blobBottom]} />
 
         {/* Botón Mode Select para Admin/Entrenador - Solo emoji de flechas */}
         {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
@@ -675,7 +700,7 @@ export default function HomeScreen() {
               <Text style={styles.modalTitle}>Novedades {APP_VERSION}</Text>
               <Text style={styles.modalSubtitle}>{SUBTITULO_CHANGELOG}</Text>
               <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 10 }}>
-                {CAMBIOS_111.map((line, i) => (
+                {CAMBIOS_112.map((line, i) => (
                   <View key={i} style={styles.changeRow}>
                     <Text style={styles.changeBullet}>•</Text>
                     <Text style={styles.changeText}>{line}</Text>
@@ -1070,14 +1095,13 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     padding: 22,
-    borderRadius: 24,
-    backgroundColor: CARD_BG,
+    borderRadius: 32,
+    // backgroundColor y borderColor se aplican dinámicamente
     borderWidth: 1,
-    borderColor: BORDER,
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
   logo: {
@@ -1085,11 +1109,11 @@ const styles = StyleSheet.create({
     height: 140,
     marginBottom: 12,
     borderRadius: 20,
-    shadowColor: '#f7ecd8',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   logoVIP: {
     // Sombra dorada difuminada profesional (glow effect)
@@ -1102,7 +1126,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.9,
     shadowRadius: 25,
     elevation: 20,
-    // Sin borde para look más limpio
   },
   title: { color: '#E5E7EB', fontSize: 22, fontWeight: '800', letterSpacing: 0.5 },
   subtitle: { color: '#9CA3AF', marginTop: 2, marginBottom: 16 },
@@ -1112,9 +1135,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(31, 41, 55, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(75, 85, 99, 0.6)',
+    // backgroundColor se aplica dinámicamente
     borderRadius: 12,
     shadowColor: '#000',
     shadowOpacity: 0.2,

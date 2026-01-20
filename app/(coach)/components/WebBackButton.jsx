@@ -19,7 +19,7 @@ export default function WebBackButton({ title = 'Volver', style = {} }) {
     return (
         <TouchableOpacity
             style={[styles.container, style]}
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')}
         >
             <Ionicons name="arrow-back" size={20} color="#64748b" />
             <Text style={styles.text}>{title}</Text>
@@ -39,7 +39,7 @@ export function WebHeader({ title, subtitle }) {
         <View style={styles.headerContainer}>
             <TouchableOpacity
                 style={styles.backBtn}
-                onPress={() => router.back()}
+                onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')}
             >
                 <Ionicons name="arrow-back" size={22} color="#1e293b" />
             </TouchableOpacity>

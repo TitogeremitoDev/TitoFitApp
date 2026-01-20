@@ -17,12 +17,14 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
+    TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
 import { RPE_COLORS, RPE_LABELS } from '../../../src/utils/calculateKPIs';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 
 export default function ProgressDashboard() {
     const router = useRouter();
@@ -31,6 +33,10 @@ export default function ProgressDashboard() {
     const [clientsProgress, setClientsProgress] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Search and Sort state
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'sessions'
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -207,7 +213,13 @@ export default function ProgressDashboard() {
                 {/* Header */}
                 <View style={styles.cardHeader}>
                     <View style={styles.clientInfo}>
-                        <Ionicons name="person-circle" size={42} color="#3b82f6" />
+                        <View style={{ marginRight: 10 }}>
+                            <AvatarWithInitials
+                                avatarUrl={client.avatarUrl}
+                                name={client.nombre}
+                                size={42}
+                            />
+                        </View>
                         <View style={styles.clientDetails}>
                             <Text style={styles.clientName}>{client.nombre}</Text>
                             <Text style={styles.clientEmail}>{client.email}</Text>
@@ -312,6 +324,31 @@ export default function ProgressDashboard() {
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // Filter and sort clients (MUST be before any early return)
+    const filteredClients = React.useMemo(() => {
+        let result = [...clients];
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(c =>
+                c.nombre?.toLowerCase().includes(q) ||
+                c.email?.toLowerCase().includes(q)
+            );
+        }
+        switch (sortBy) {
+            case 'name':
+                result.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                break;
+            case 'sessions':
+                result.sort((a, b) => (clientsProgress[b._id]?.sesionesSemana || 0) - (clientsProgress[a._id]?.sesionesSemana || 0));
+                break;
+            case 'recent':
+            default:
+                result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
+        return result;
+    }, [clients, clientsProgress, searchQuery, sortBy]);
+
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
@@ -339,8 +376,47 @@ export default function ProgressDashboard() {
                 badge={`${clients.length} clientes`}
             />
 
+            {/* Search and Sort Bar */}
+            <View style={styles.searchSortBar}>
+                <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={18} color="#94a3b8" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar cliente..."
+                        placeholderTextColor="#94a3b8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+                <View style={styles.sortButtons}>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'recent' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('recent')}
+                    >
+                        <Ionicons name="time-outline" size={16} color={sortBy === 'recent' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'name' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('name')}
+                    >
+                        <Ionicons name="text-outline" size={16} color={sortBy === 'name' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'sessions' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('sessions')}
+                    >
+                        <Ionicons name="barbell-outline" size={16} color={sortBy === 'sessions' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
             <FlatList
-                data={clients}
+                data={filteredClients}
                 keyExtractor={(item) => item._id}
                 renderItem={renderClientCard}
                 ListEmptyComponent={renderEmpty}
@@ -361,6 +437,44 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc',
+    },
+    // Search and Sort
+    searchSortBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 10,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        height: 38,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#1e293b',
+    },
+    sortButtons: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    sortBtn: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
+    },
+    sortBtnActive: {
+        backgroundColor: '#ef4444',
     },
     list: {
         padding: 16,

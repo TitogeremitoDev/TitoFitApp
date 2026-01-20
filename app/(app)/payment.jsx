@@ -357,6 +357,30 @@ export default function PaymentScreen() {
     cargarPlanes();
   }, [user]); // Recargar si cambia el usuario
 
+  // Efecto para seleccionar el plan correcto cuando cambia el tipo de usuario
+  useEffect(() => {
+    if (!planes || planes.length === 0) return;
+
+    const targetDuration = billingCycle === 'monthly' ? 1 : 12;
+
+    if (userType === 'coach') {
+      // Para entrenadores: seleccionar coach_5 por defecto (el más básico)
+      const coachPlan = planes.find(p =>
+        p.isCoach &&
+        p.clientRange === 5 &&
+        p.duracionMeses === targetDuration
+      );
+      if (coachPlan) setSelectedPlan(coachPlan);
+    } else {
+      // Para atletas: seleccionar premium_mensual por defecto
+      const athletePlan = planes.find(p =>
+        !p.isCoach &&
+        p.duracionMeses === targetDuration
+      );
+      if (athletePlan) setSelectedPlan(athletePlan);
+    }
+  }, [userType, planes]);
+
   // Efecto para actualizar el plan seleccionado si cambia el ciclo de facturación (solo coach)
   useEffect(() => {
     if (userType === 'coach' && selectedPlan) {
@@ -709,9 +733,7 @@ export default function PaymentScreen() {
           <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/home')} style={styles.backButton}>
             <Ionicons name="chevron-back" size={24} color="#FFF" />
           </Pressable>
-          <Pressable onPress={onRefresh} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={20} color="#FFF" />
-          </Pressable>
+          <View style={{ width: 40 }} />
         </View>
 
         {/* 🏆 TÍTULO PREMIUM LLAMATIVO dentro del header */}
@@ -825,9 +847,9 @@ export default function PaymentScreen() {
               const isCorrectCycle = billingCycle === 'monthly' ? p.duracionMeses === 1 : p.duracionMeses === 12;
               // Solo mostrar planes <= 20 clientes (STARTER, PRO, UNLIMITED)
               if (p.clientRange > 20) return false;
-              // Android: ocultar UNLIMITED ANUAL (Google Play no permite precio tan alto)
-              if (Platform.OS === 'android' && p.clientRange === 20 && p.duracionMeses === 12) return false;
-              // Apple/Play restrictions...
+              // Android e iOS: ocultar UNLIMITED ANUAL (las tiendas no permiten precio tan alto ~1999€)
+              if ((Platform.OS === 'android' || Platform.OS === 'ios') && p.clientRange === 20 && p.duracionMeses === 12) return false;
+              // Filtrar por ciclo de facturación
               return p.isCoach && isCorrectCycle;
             } else {
               // Athlete: Show all
@@ -905,12 +927,14 @@ export default function PaymentScreen() {
                         {plan.moneda === 'EUR' ? '€' : '$'}
                       </Text>
                       <Text style={[styles.priceValRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
-                        {Math.floor(plan.precioActual)}
+                        {Platform.OS === 'ios' ? Math.round(plan.precioActual) : Math.floor(plan.precioActual)}
                       </Text>
-                      <Text style={[styles.priceDecimalsRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
-                        {/* Get decimals if any, else .00 */}
-                        {(plan.precioActual % 1).toFixed(2).substring(1)}
-                      </Text>
+                      {/* En iOS no mostrar decimales (Apple no permite .90) */}
+                      {Platform.OS !== 'ios' && (
+                        <Text style={[styles.priceDecimalsRef, cardType === 'pro' ? { color: '#000' } : { color: '#7C3AED' }]}>
+                          {(plan.precioActual % 1).toFixed(2).substring(1)}
+                        </Text>
+                      )}
                       <Text style={[styles.perMonthRef, cardType === 'pro' ? { color: '#1F2937' } : { color: '#9CA3AF' }]}>
                         /mes
                       </Text>
@@ -1095,7 +1119,7 @@ export default function PaymentScreen() {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>TOTAL A PAGAR</Text>
             <Text style={styles.totalVal}>
-              {selectedPlan?.moneda === 'EUR' ? '€' : '$'}{total.toFixed(2)}
+              {selectedPlan?.moneda === 'EUR' ? '€' : '$'}{Platform.OS === 'ios' ? Math.round(total) : total.toFixed(2)}
             </Text>
           </View>
           <Text style={styles.taxIncludedText}>Impuestos incluidos</Text>
@@ -1584,7 +1608,7 @@ export default function PaymentScreen() {
             <Text style={styles.legalLink}>Consulta nuestros Términos y Condiciones aquí</Text>
           </Pressable>
           {Platform.OS === 'ios' && (
-            <Pressable onPress={() => Linking.openURL('https://totalgains.es/terms')}>
+            <Pressable onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}>
               <Text style={styles.legalLink}>Terminos y condiciones de apple</Text>
             </Pressable>
           )}

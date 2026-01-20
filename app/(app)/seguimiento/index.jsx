@@ -603,9 +603,12 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     // HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
-    const updateDiario = (key, value) => setDiario(prev => ({ ...prev, [key]: value }));
-    const updateSemanal = (key, value) => setSemanal(prev => ({ ...prev, [key]: value }));
-    const updateMinimalData = (key, value) => setMinimalData(prev => ({ ...prev, [key]: value }));
+    // Helper para normalizar separador decimal (coma -> punto)
+    const normalizeDecimal = (val) => typeof val === 'string' ? val.replace(/,/g, '.') : val;
+
+    const updateDiario = (key, value) => setDiario(prev => ({ ...prev, [key]: normalizeDecimal(value) }));
+    const updateSemanal = (key, value) => setSemanal(prev => ({ ...prev, [key]: normalizeDecimal(value) }));
+    const updateMinimalData = (key, value) => setMinimalData(prev => ({ ...prev, [key]: normalizeDecimal(value) }));
 
     // Verificar si es usuario premium (no FREEUSER)
     const isPremium = useMemo(() => {
@@ -2332,10 +2335,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.1)',
         color: '#FFF',
         paddingHorizontal: 14,
-        paddingVertical: 8,
+        paddingVertical: 12,
         borderRadius: 8,
         fontSize: 16,
         minWidth: 70,
+        minHeight: 44, // iOS área táctil mínima
         textAlign: 'center',
     },
     inputSuffix: {
@@ -2531,11 +2535,12 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.1)',
         color: '#FFF',
         paddingHorizontal: 12,
-        paddingVertical: 8,
+        paddingVertical: 12,
         borderRadius: 8,
         fontSize: 16,
         textAlign: 'center',
         maxWidth: '80%',
+        minHeight: 44, // iOS área táctil mínima
     },
     measureSuffix: {
         color: '#6B7280',
@@ -2630,12 +2635,13 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.1)',
         color: '#FFF',
         paddingHorizontal: 8,
-        paddingVertical: 10,
+        paddingVertical: 12,
         borderRadius: 8,
         fontSize: 16,
         fontWeight: '600',
         textAlign: 'center',
         borderWidth: 2,
+        minHeight: 44, // iOS área táctil mínima
     },
     compactMacroLabel: {
         color: '#9CA3AF',
@@ -3023,10 +3029,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.1)',
         color: '#FFF',
         paddingHorizontal: 16,
-        paddingVertical: 10,
+        paddingVertical: 12,
         borderRadius: 8,
         fontSize: 18,
         minWidth: 80,
+        minHeight: 44, // iOS área táctil mínima
         textAlign: 'center',
         fontWeight: '600',
     },
@@ -3125,10 +3132,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.1)',
         color: '#FFF',
         paddingHorizontal: 12,
-        paddingVertical: 8,
+        paddingVertical: 12,
         borderRadius: 8,
         fontSize: 16,
         minWidth: 70,
+        minHeight: 44, // iOS área táctil mínima
         textAlign: 'center',
         fontWeight: '600',
         borderWidth: 2,

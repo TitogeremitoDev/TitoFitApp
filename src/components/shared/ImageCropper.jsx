@@ -19,9 +19,18 @@ import Slider from '@react-native-community/slider';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CROP_SIZE = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.8;
 
-export const ImageCropper = ({ visible, imageUri, onCancel, onCrop }) => {
+/**
+ * ImageCropper - Supports both circular (profile) and rectangular (logo) cropping
+ * @param {boolean} visible - Show/hide modal
+ * @param {string} imageUri - Image to crop
+ * @param {function} onCancel - Cancel callback
+ * @param {function} onCrop - Crop complete callback with cropped URI
+ * @param {'circle' | 'rectangle'} shape - Crop shape (default: 'circle')
+ */
+export const ImageCropper = ({ visible, imageUri, onCancel, onCrop, shape = 'circle' }) => {
     const [scale, setScale] = useState(1);
     const [isProcessing, setIsProcessing] = useState(false);
+    const isRectangle = shape === 'rectangle';
 
     // Animated values for smooth interaction
     const pan = useRef(new Animated.ValueXY()).current;
@@ -264,7 +273,7 @@ export const ImageCropper = ({ visible, imageUri, onCancel, onCrop }) => {
 
                 {/* Overlay Mask (Inverse) - Just visual borders */}
                 <View style={styles.maskContainer} pointerEvents="none">
-                    <View style={[styles.maskFrame, { width: CROP_SIZE, height: CROP_SIZE, borderRadius: CROP_SIZE / 2 }]} />
+                    <View style={[styles.maskFrame, { width: CROP_SIZE, height: CROP_SIZE, borderRadius: isRectangle ? 12 : CROP_SIZE / 2 }]} />
                 </View>
 
                 <View style={styles.controls}>

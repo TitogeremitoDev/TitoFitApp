@@ -303,10 +303,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#0B1220',
         marginBottom: 12,
         paddingHorizontal: 10,
-        height: 46,
+        minHeight: 50, // iOS área táctil mínima
     },
     inputIcon: { marginRight: 8 },
-    input: { flex: 1, color: '#E5E7EB' },
+    input: { flex: 1, color: '#E5E7EB', paddingVertical: 14 },
     primaryBtn: {
         height: 48,
         borderRadius: 12,

@@ -10,6 +10,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { FeedbackDraftProvider } from '../context/FeedbackDraftContext';
+import { CoachBrandingProvider } from '../context/CoachBrandingContext';
+import { AlertProvider } from '../src/hooks/useAlert';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 
@@ -100,7 +102,7 @@ function RootLayoutNav() {
                   text: 'Actualizar ahora',
                   onPress: () => {
                     // Abrir la App Store (reemplaza con tu App Store URL real)
-                    const appStoreUrl = 'https://apps.apple.com/app/totalgains/id6740066506';
+                    const appStoreUrl = 'https://apps.apple.com/app/id6756856683';
                     Linking.openURL(appStoreUrl);
                   },
                 },
@@ -267,18 +269,22 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <FeedbackDraftProvider>
-          <StripeProvider
-            publishableKey={publishableKey}
-            merchantIdentifier="merchant.com.totalgains"
-          >
-            <ThemedRootView>
-              <RootLayoutNav />
-            </ThemedRootView>
-          </StripeProvider>
-        </FeedbackDraftProvider>
-      </ThemeProvider>
+      <CoachBrandingProvider>
+        <AlertProvider>
+          <ThemeProvider>
+            <FeedbackDraftProvider>
+              <StripeProvider
+                publishableKey={publishableKey}
+                merchantIdentifier="merchant.com.totalgains"
+              >
+                <ThemedRootView>
+                  <RootLayoutNav />
+                </ThemedRootView>
+              </StripeProvider>
+            </FeedbackDraftProvider>
+          </ThemeProvider>
+        </AlertProvider>
+      </CoachBrandingProvider>
     </AuthProvider>
   );
 }

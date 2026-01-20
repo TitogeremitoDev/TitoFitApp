@@ -110,6 +110,29 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                 </View>
 
+                {/* Sección de Personalización */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Personalización</Text>
+
+                    {/* Botón Branding con IA */}
+                    <TouchableOpacity
+                        style={styles.settingCard}
+                        onPress={() => router.push('/(coach)/branding')}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[styles.settingIcon, { backgroundColor: '#8b5cf615' }]}>
+                            <Ionicons name="color-palette" size={24} color="#8b5cf6" />
+                        </View>
+                        <View style={styles.settingInfo}>
+                            <Text style={styles.settingTitle}>Branding con IA ✨</Text>
+                            <Text style={styles.settingDescription}>
+                                Genera tu identidad visual desde tu logo
+                            </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={22} color="#64748b" />
+                    </TouchableOpacity>
+                </View>
+
                 {/* Sección de Configuración General */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Configuración General</Text>
@@ -158,7 +181,7 @@ export default function SettingsScreen() {
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>TotalGain Coach Panel</Text>
-                    <Text style={styles.footerVersion}>v1.1.0</Text>
+                    <Text style={styles.footerVersion}>v1.1.3</Text>
                 </View>
             </ScrollView>
         </SafeAreaView>

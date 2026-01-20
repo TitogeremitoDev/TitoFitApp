@@ -542,7 +542,7 @@ export default function TemplateEditorScreen() {
                 Alert.alert(
                     '✅ Guardado',
                     isEditing ? 'Plan actualizado' : 'Plan creado',
-                    [{ text: 'OK', onPress: () => router.back() }]
+                    [{ text: 'OK', onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)') }]
                 );
             } else {
                 Alert.alert('Error', data.message || 'No se pudo guardar');
@@ -570,7 +570,7 @@ export default function TemplateEditorScreen() {
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={22} color="#1e293b" />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>

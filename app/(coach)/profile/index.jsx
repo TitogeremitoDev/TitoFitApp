@@ -11,12 +11,18 @@ import {
     Alert,
     ActivityIndicator,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Image,
+    Modal,
+    Pressable
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+import * as ImagePicker from 'expo-image-picker';
+import { ImageCropper } from '../../../src/components/shared/ImageCropper';
+import { coachLogoService } from '../../../src/services/coachLogoService';
 
 const SPECIALTIES_LIST = [
     'Hipertrofia',
@@ -48,6 +54,13 @@ export default function ProfileScreen() {
     const [specialties, setSpecialties] = useState([]);
     const [customSpecialty, setCustomSpecialty] = useState('');
     const [bizumPhone, setBizumPhone] = useState('');
+
+    // Logo upload states
+    const [logoSource, setLogoSource] = useState('url'); // 'url' | 'upload'
+    const [croppingImage, setCroppingImage] = useState(null);
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const [tempLogoUri, setTempLogoUri] = useState(null);
+    const [showPhotoOptions, setShowPhotoOptions] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -133,6 +146,102 @@ export default function ProfileScreen() {
         }
     };
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LOGO UPLOAD HANDLERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const handlePickImage = async () => {
+        setShowPhotoOptions(false);
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso necesario', 'Se necesita acceso a la galería para subir una foto.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false,
+                quality: 1,
+            });
+
+            if (!result.canceled) {
+                setCroppingImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('[Profile] Error picking image:', error);
+            Alert.alert('Error', 'No se pudo seleccionar la imagen');
+        }
+    };
+
+    const handleTakePhoto = async () => {
+        setShowPhotoOptions(false);
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso necesario', 'Se necesita acceso a la cámara para tomar fotos.');
+                return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+                allowsEditing: false,
+                quality: 1,
+            });
+
+            if (!result.canceled) {
+                setCroppingImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('[Profile] Error taking photo:', error);
+            Alert.alert('Error', 'No se pudo tomar la foto');
+        }
+    };
+
+    const handleCropComplete = async (croppedUri) => {
+        setCroppingImage(null);
+        setIsUploadingLogo(true);
+        setTempLogoUri(croppedUri); // Optimistic UI
+
+        try {
+            const newLogoUrl = await coachLogoService.uploadLogo(croppedUri, token);
+            console.log('[Profile] Logo uploaded successfully:', newLogoUrl);
+            setLogoUrl(newLogoUrl);
+            setTempLogoUri(null);
+        } catch (error) {
+            console.error('[Profile] Logo upload failed:', error);
+            Alert.alert('Error al subir', error.message || 'Falló la subida de la imagen. Inténtalo de nuevo.');
+            setTempLogoUri(null);
+        } finally {
+            setIsUploadingLogo(false);
+        }
+    };
+
+    const handleDeleteLogo = async () => {
+        Alert.alert(
+            'Eliminar logo',
+            '¿Estás seguro de que quieres eliminar tu logo?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setIsUploadingLogo(true);
+                        try {
+                            await coachLogoService.deleteLogo(token);
+                            setLogoUrl('');
+                            setTempLogoUri(null);
+                        } catch (error) {
+                            Alert.alert('Error', 'No se pudo eliminar el logo');
+                        } finally {
+                            setIsUploadingLogo(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -179,8 +288,8 @@ export default function ProfileScreen() {
                 })
             });
 
-            // 3. Update Logo (only if changed/present)
-            if (logoUrl) {
+            // 3. Update Logo via URL (only if using URL mode and has a URL)
+            if (logoSource === 'url' && logoUrl) {
                 await fetch(`${API_URL}/api/trainers/profile/logo`, {
                     method: 'POST',
                     headers: {
@@ -279,16 +388,79 @@ export default function ProfileScreen() {
                             <Text style={styles.helperText}>Este código será usado por tus clientes para vincularse.</Text>
                         </View>
 
+                        {/* Logo Section with Toggle */}
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>URL del Logo (Imagen)</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={logoUrl}
-                                onChangeText={setLogoUrl}
-                                placeholder="https://..."
-                                placeholderTextColor="#94a3b8"
-                                autoCapitalize="none"
-                            />
+                            <Text style={styles.label}>Logo de tu marca</Text>
+
+                            {/* Toggle: URL vs Upload */}
+                            <View style={styles.logoToggleContainer}>
+                                <TouchableOpacity
+                                    style={[styles.logoToggleBtn, logoSource === 'url' && styles.logoToggleBtnActive]}
+                                    onPress={() => setLogoSource('url')}
+                                >
+                                    <Ionicons name="link" size={16} color={logoSource === 'url' ? '#fff' : '#64748b'} />
+                                    <Text style={[styles.logoToggleText, logoSource === 'url' && styles.logoToggleTextActive]}>URL</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.logoToggleBtn, logoSource === 'upload' && styles.logoToggleBtnActive]}
+                                    onPress={() => setLogoSource('upload')}
+                                >
+                                    <Ionicons name="cloud-upload" size={16} color={logoSource === 'upload' ? '#fff' : '#64748b'} />
+                                    <Text style={[styles.logoToggleText, logoSource === 'upload' && styles.logoToggleTextActive]}>Subir</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {logoSource === 'url' ? (
+                                /* URL Input */
+                                <TextInput
+                                    style={styles.input}
+                                    value={logoUrl}
+                                    onChangeText={setLogoUrl}
+                                    placeholder="https://..."
+                                    placeholderTextColor="#94a3b8"
+                                    autoCapitalize="none"
+                                />
+                            ) : (
+                                /* Upload Section */
+                                <View style={styles.logoUploadSection}>
+                                    {/* Preview */}
+                                    <TouchableOpacity
+                                        style={styles.logoPreviewContainer}
+                                        onPress={() => setShowPhotoOptions(true)}
+                                        disabled={isUploadingLogo}
+                                    >
+                                        {isUploadingLogo ? (
+                                            <ActivityIndicator size="large" color="#3b82f6" />
+                                        ) : (tempLogoUri || logoUrl) ? (
+                                            <Image
+                                                source={{ uri: tempLogoUri || logoUrl }}
+                                                style={styles.logoPreview}
+                                                resizeMode="contain"
+                                            />
+                                        ) : (
+                                            <View style={styles.logoPlaceholder}>
+                                                <Ionicons name="image" size={40} color="#94a3b8" />
+                                                <Text style={styles.logoPlaceholderText}>Toca para añadir logo</Text>
+                                            </View>
+                                        )}
+                                        <View style={styles.logoEditBadge}>
+                                            <Ionicons name="camera" size={16} color="#fff" />
+                                        </View>
+                                    </TouchableOpacity>
+
+                                    {(tempLogoUri || logoUrl) && (
+                                        <TouchableOpacity
+                                            style={styles.deleteLogoBtn}
+                                            onPress={handleDeleteLogo}
+                                        >
+                                            <Ionicons name="trash" size={16} color="#ef4444" />
+                                            <Text style={styles.deleteLogoBtnText}>Eliminar</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
+
+                            <Text style={styles.helperText}>Este logo aparecerá visible para todos tus clientes.</Text>
                         </View>
 
                         <View style={styles.inputGroup}>
@@ -434,6 +606,48 @@ export default function ProfileScreen() {
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* Photo Options Modal */}
+            <Modal
+                visible={showPhotoOptions}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowPhotoOptions(false)}
+            >
+                <Pressable
+                    style={styles.modalOverlay}
+                    onPress={() => setShowPhotoOptions(false)}
+                >
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Añadir Logo</Text>
+
+                        <TouchableOpacity style={styles.modalOption} onPress={handlePickImage}>
+                            <Ionicons name="images" size={24} color="#3b82f6" />
+                            <Text style={styles.modalOptionText}>Elegir de Galería</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.modalOption} onPress={handleTakePhoto}>
+                            <Ionicons name="camera" size={24} color="#3b82f6" />
+                            <Text style={styles.modalOptionText}>Tomar Foto</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.modalOption, styles.modalCancelOption]}
+                            onPress={() => setShowPhotoOptions(false)}
+                        >
+                            <Text style={styles.modalCancelText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Image Cropper Modal */}
+            <ImageCropper
+                visible={!!croppingImage}
+                imageUri={croppingImage}
+                onCancel={() => setCroppingImage(null)}
+                onCrop={handleCropComplete}
+            />
         </SafeAreaView >
     );
 }
@@ -622,5 +836,136 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: '600',
         fontSize: 14,
-    }
+    },
+    // Logo Toggle Styles
+    logoToggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 12,
+    },
+    logoToggleBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        borderRadius: 8,
+        gap: 6,
+    },
+    logoToggleBtnActive: {
+        backgroundColor: '#3b82f6',
+    },
+    logoToggleText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    logoToggleTextActive: {
+        color: '#fff',
+    },
+    // Logo Upload Styles
+    logoUploadSection: {
+        alignItems: 'center',
+        gap: 12,
+    },
+    logoPreviewContainer: {
+        width: 150,
+        height: 150,
+        borderRadius: 16,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 2,
+        borderColor: '#e2e8f0',
+        borderStyle: 'dashed',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    logoPreview: {
+        width: '100%',
+        height: '100%',
+    },
+    logoPlaceholder: {
+        alignItems: 'center',
+        gap: 8,
+    },
+    logoPlaceholderText: {
+        fontSize: 12,
+        color: '#94a3b8',
+        textAlign: 'center',
+    },
+    logoEditBadge: {
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        backgroundColor: '#3b82f6',
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
+    },
+    deleteLogoBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    },
+    deleteLogoBtnText: {
+        fontSize: 14,
+        color: '#ef4444',
+        fontWeight: '500',
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalCard: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 24,
+        width: '100%',
+        maxWidth: 350,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e293b',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    modalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    modalOptionText: {
+        fontSize: 16,
+        color: '#1e293b',
+        fontWeight: '500',
+    },
+    modalCancelOption: {
+        justifyContent: 'center',
+        borderBottomWidth: 0,
+        marginTop: 8,
+    },
+    modalCancelText: {
+        fontSize: 16,
+        color: '#64748b',
+        fontWeight: '600',
+    },
 });

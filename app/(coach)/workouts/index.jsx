@@ -12,6 +12,7 @@ import {
     TouchableOpacity,
     Alert,
     Platform,
+    TextInput,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,10 @@ export default function WorkoutsClientsScreen() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [assignModalVisible, setAssignModalVisible] = useState(false);
     const [selectedClient, setSelectedClient] = useState(null);
+
+    // Search and Sort state
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('name'); // 'name', 'hasRoutine'
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -417,6 +422,28 @@ export default function WorkoutsClientsScreen() {
         </View>
     );
 
+    // Filter and sort clients (MUST be before any early return)
+    const filteredClients = React.useMemo(() => {
+        let result = [...clients];
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(c => c.nombre?.toLowerCase().includes(q));
+        }
+        switch (sortBy) {
+            case 'hasRoutine':
+                result.sort((a, b) => {
+                    const aHas = getClientRoutineSummary(a).hasRoutine ? 1 : 0;
+                    const bHas = getClientRoutineSummary(b).hasRoutine ? 1 : 0;
+                    return bHas - aHas;
+                });
+                break;
+            case 'name':
+            default:
+                result.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        }
+        return result;
+    }, [clients, currentRoutines, routines, searchQuery, sortBy]);
+
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
@@ -446,6 +473,39 @@ export default function WorkoutsClientsScreen() {
                 iconColor="#f59e0b"
             />
 
+            {/* Search and Sort Bar */}
+            <View style={styles.searchSortBar}>
+                <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={18} color="#94a3b8" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar cliente..."
+                        placeholderTextColor="#94a3b8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+                <View style={styles.sortButtons}>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'name' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('name')}
+                    >
+                        <Ionicons name="text-outline" size={16} color={sortBy === 'name' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'hasRoutine' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('hasRoutine')}
+                    >
+                        <Ionicons name="fitness-outline" size={16} color={sortBy === 'hasRoutine' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
             {/* Mis Rutinas Button */}
             <TouchableOpacity
                 style={styles.libraryBtn}
@@ -462,7 +522,7 @@ export default function WorkoutsClientsScreen() {
             </TouchableOpacity>
 
             <FlatList
-                data={clients}
+                data={filteredClients}
                 keyExtractor={(item) => item._id}
                 renderItem={renderClientCard}
                 ListEmptyComponent={renderEmpty}
@@ -504,6 +564,44 @@ const styles = StyleSheet.create({
         marginTop: 12,
         fontSize: 16,
         color: '#64748b',
+    },
+    // Search and Sort
+    searchSortBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 10,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        height: 38,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#1e293b',
+    },
+    sortButtons: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    sortBtn: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
+    },
+    sortBtnActive: {
+        backgroundColor: '#f59e0b',
     },
     list: {
         padding: 16,

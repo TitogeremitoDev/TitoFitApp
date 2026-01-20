@@ -1,27 +1,36 @@
-/* ClientSidebar.jsx - Collapsible client list sidebar for wide screens */
+/* ClientSidebar.jsx - Enhanced collapsible sidebar with search, sorting, hover tooltips */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    Pressable,
     Image,
+    TextInput,
     ActivityIndicator,
+    Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HELPERS
+// STATUS HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const getDailyBadgeColor = (days) => {
-    if (days === null) return '#94a3b8'; // Gray - no data
-    if (days <= 1) return '#10b981'; // Green - today/yesterday
-    if (days <= 3) return '#f59e0b'; // Yellow - 2-3 days
-    return '#ef4444'; // Red - 4+ days
+const STATUS_CONFIG = {
+    critical: { emoji: '🔴', color: '#ef4444', bgColor: '#fef2f2' },
+    warning: { emoji: '🟠', color: '#f59e0b', bgColor: '#fffbeb' },
+    active: { emoji: '🟢', color: '#10b981', bgColor: '#ecfdf5' },
 };
+
+// Sort options
+const SORT_OPTIONS = [
+    { key: 'urgency', icon: 'alert-circle', label: 'Urgencia' },
+    { key: 'date', icon: 'calendar', label: 'Fecha' },
+    { key: 'name', icon: 'text', label: 'Nombre' },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENT SIDEBAR COMPONENT
@@ -34,24 +43,145 @@ export default function ClientSidebar({
     onClientSelect,
     isCollapsed,
     onToggleCollapse,
+    context = 'seguimiento',
 }) {
-    // Sort clients: unread notes first, then by daysSinceDaily
-    const sortedClients = [...(clients || [])].sort((a, b) => {
-        // Priority 1: Unread notes first
-        if ((a.unreadNotesCount || 0) > 0 && !(b.unreadNotesCount || 0)) return -1;
-        if (!(a.unreadNotesCount || 0) && (b.unreadNotesCount || 0) > 0) return 1;
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('urgency'); // 'urgency' | 'date' | 'name'
+    const [hoveredClientId, setHoveredClientId] = useState(null);
 
-        // Priority 2: Unviewed records first
-        const aUnviewed = !a.dailyViewed || !a.weeklyViewed;
-        const bUnviewed = !b.dailyViewed || !b.weeklyViewed;
-        if (aUnviewed && !bUnviewed) return -1;
-        if (!aUnviewed && bUnviewed) return 1;
+    // Filter and sort clients
+    const sortedClients = useMemo(() => {
+        if (!clients || clients.length === 0) return [];
 
-        // Priority 3: Days since last daily
-        const aDays = a.daysSinceDaily ?? 999;
-        const bDays = b.daysSinceDaily ?? 999;
-        return aDays - bDays;
-    });
+        // Filter by search
+        let filtered = clients;
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase().trim();
+            filtered = clients.filter(client =>
+                client.nombre?.toLowerCase().includes(query)
+            );
+        }
+
+        // Sort
+        const sorted = [...filtered];
+        switch (sortBy) {
+            case 'name':
+                sorted.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                break;
+            case 'date':
+                sorted.sort((a, b) => {
+                    const dateA = a.lastUpdate ? new Date(a.lastUpdate) : new Date(0);
+                    const dateB = b.lastUpdate ? new Date(b.lastUpdate) : new Date(0);
+                    return dateB - dateA; // Most recent first
+                });
+                break;
+            case 'urgency':
+            default:
+                sorted.sort((a, b) => (b.urgencyScore || 0) - (a.urgencyScore || 0));
+                break;
+        }
+
+        return sorted;
+    }, [clients, searchQuery, sortBy]);
+
+    // Group clients by status when sorted by urgency
+    const { criticalClients, warningClients, activeClients } = useMemo(() => {
+        if (sortBy !== 'urgency') {
+            return { criticalClients: [], warningClients: [], activeClients: sortedClients };
+        }
+
+        const critical = [];
+        const warning = [];
+        const active = [];
+
+        sortedClients.forEach(client => {
+            if (client.status === 'critical') {
+                critical.push(client);
+            } else if (client.status === 'warning') {
+                warning.push(client);
+            } else {
+                active.push(client);
+            }
+        });
+
+        return { criticalClients: critical, warningClients: warning, activeClients: active };
+    }, [sortedClients, sortBy]);
+
+    const renderClientItem = (client) => {
+        const isActive = client._id === currentClientId;
+        const isHovered = hoveredClientId === client._id;
+        const statusConfig = STATUS_CONFIG[client.status] || STATUS_CONFIG.active;
+
+        return (
+            <Pressable
+                key={client._id}
+                style={[{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    gap: 8,
+                    position: 'relative',
+                    cursor: Platform.OS === 'web' ? 'pointer' : undefined,
+                },
+                isActive && styles.clientItemActive,
+                isCollapsed && styles.clientItemCollapsed,
+                isHovered && styles.clientItemHovered,
+                ]}
+                onPress={() => onClientSelect(client)}
+                onHoverIn={() => setHoveredClientId(client._id)}
+                onHoverOut={() => setHoveredClientId(null)}
+            >
+                {/* Avatar with status indicator */}
+                <View style={styles.avatarWrapper}>
+                    {client.avatarUrl ? (
+                        <Image
+                            source={{ uri: client.avatarUrl }}
+                            style={[styles.avatar, isActive && styles.avatarActive]}
+                        />
+                    ) : (
+                        <View style={[styles.avatarPlaceholder, isActive && styles.avatarActive]}>
+                            <Ionicons
+                                name="person"
+                                size={isCollapsed ? 18 : 20}
+                                color="#94a3b8"
+                            />
+                        </View>
+                    )}
+
+                    {/* Status dot */}
+                    <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
+                </View>
+
+                {/* Client info (hidden when collapsed) */}
+                {!isCollapsed && (
+                    <View style={styles.clientInfo}>
+                        <Text
+                            style={[styles.clientName, isActive && styles.clientNameActive]}
+                            numberOfLines={1}
+                        >
+                            {client.nombre?.split(' ')[0] || 'Cliente'}
+                        </Text>
+                        <Text
+                            style={[styles.statusLabel, { color: statusConfig.color }]}
+                            numberOfLines={1}
+                        >
+                            {client.statusLabel || ''}
+                        </Text>
+                    </View>
+                )}
+
+                {/* Hover tooltip (web only) */}
+                {Platform.OS === 'web' && isHovered && !isCollapsed && client.statusLabel && (
+                    <View style={styles.tooltip}>
+                        <Text style={styles.tooltipText}>
+                            {client.nombre}: {client.statusLabel}
+                        </Text>
+                    </View>
+                )}
+            </Pressable>
+        );
+    };
 
     if (isLoading) {
         return (
@@ -82,114 +212,109 @@ export default function ClientSidebar({
                 </TouchableOpacity>
             </View>
 
+            {/* Search + Sort Row (hidden when collapsed) */}
+            {!isCollapsed && (
+                <View style={styles.controlsContainer}>
+                    {/* Search input */}
+                    <View style={styles.searchContainer}>
+                        <Ionicons name="search" size={14} color="#94a3b8" />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Buscar..."
+                            placeholderTextColor="#94a3b8"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
+                                <Ionicons name="close-circle" size={14} color="#94a3b8" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Sort buttons */}
+                    <View style={styles.sortContainer}>
+                        {SORT_OPTIONS.map(opt => (
+                            <TouchableOpacity
+                                key={opt.key}
+                                style={[
+                                    styles.sortBtn,
+                                    sortBy === opt.key && styles.sortBtnActive
+                                ]}
+                                onPress={() => setSortBy(opt.key)}
+                            >
+                                <Ionicons
+                                    name={opt.icon}
+                                    size={14}
+                                    color={sortBy === opt.key ? '#0ea5e9' : '#94a3b8'}
+                                />
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+            )}
+
             {/* Client list */}
             <ScrollView
                 style={styles.clientList}
                 showsVerticalScrollIndicator={false}
             >
-                {sortedClients.map((client) => {
-                    const isActive = client._id === currentClientId;
-                    const hasUnreadNotes = (client.unreadNotesCount || 0) > 0;
-                    const hasUnviewed = !client.dailyViewed || !client.weeklyViewed;
-                    const dailyColor = getDailyBadgeColor(client.daysSinceDaily);
-
-                    return (
-                        <TouchableOpacity
-                            key={client._id}
-                            style={[
-                                styles.clientItem,
-                                isActive && styles.clientItemActive,
-                                isCollapsed && styles.clientItemCollapsed,
-                            ]}
-                            onPress={() => onClientSelect(client)}
-                            activeOpacity={0.7}
-                        >
-                            {/* Avatar with badges */}
-                            <View style={styles.avatarWrapper}>
-                                {client.profilePhoto ? (
-                                    <Image
-                                        source={{ uri: client.profilePhoto }}
-                                        style={[
-                                            styles.avatar,
-                                            isActive && styles.avatarActive,
-                                        ]}
-                                    />
-                                ) : (
-                                    <View style={[
-                                        styles.avatarPlaceholder,
-                                        isActive && styles.avatarActive,
-                                    ]}>
-                                        <Ionicons
-                                            name="person"
-                                            size={isCollapsed ? 18 : 20}
-                                            color="#94a3b8"
-                                        />
+                {sortBy === 'urgency' ? (
+                    <>
+                        {/* CRITICAL Section */}
+                        {criticalClients.length > 0 && (
+                            <>
+                                {!isCollapsed && (
+                                    <View style={styles.sectionHeader}>
+                                        <Text style={styles.sectionTitle}>⚠️ Atención</Text>
                                     </View>
                                 )}
+                                {criticalClients.map(renderClientItem)}
+                            </>
+                        )}
 
-                                {/* Unread notes badge (red dot) */}
-                                {hasUnreadNotes && (
-                                    <View style={styles.unreadDot}>
-                                        {!isCollapsed && (
-                                            <Text style={styles.unreadDotText}>
-                                                {client.unreadNotesCount}
-                                            </Text>
-                                        )}
-                                    </View>
+                        {/* WARNING Section */}
+                        {warningClients.length > 0 && (
+                            <>
+                                {!isCollapsed && criticalClients.length > 0 && (
+                                    <View style={styles.sectionDivider} />
                                 )}
+                                {warningClients.map(renderClientItem)}
+                            </>
+                        )}
 
-                                {/* Status indicator */}
-                                {!hasUnreadNotes && (
-                                    <View style={[
-                                        styles.statusDot,
-                                        { backgroundColor: dailyColor }
-                                    ]} />
+                        {/* ACTIVE Section */}
+                        {activeClients.length > 0 && (
+                            <>
+                                {!isCollapsed && (criticalClients.length > 0 || warningClients.length > 0) && (
+                                    <View style={styles.sectionDivider} />
                                 )}
-                            </View>
+                                {activeClients.map(renderClientItem)}
+                            </>
+                        )}
+                    </>
+                ) : (
+                    // Simple list for name/date sorting
+                    sortedClients.map(renderClientItem)
+                )}
 
-                            {/* Client info (hidden when collapsed) */}
-                            {!isCollapsed && (
-                                <View style={styles.clientInfo}>
-                                    <Text
-                                        style={[
-                                            styles.clientName,
-                                            isActive && styles.clientNameActive,
-                                        ]}
-                                        numberOfLines={1}
-                                    >
-                                        {client.nombre?.split(' ')[0] || 'Cliente'}
-                                    </Text>
-
-                                    {/* Mini stats row */}
-                                    <View style={styles.miniStats}>
-                                        {client.avgWeight7d && (
-                                            <Text style={styles.miniStat}>
-                                                {client.avgWeight7d}kg
-                                            </Text>
-                                        )}
-                                        {client.daysSinceDaily !== null && (
-                                            <Text style={[
-                                                styles.miniStat,
-                                                { color: dailyColor }
-                                            ]}>
-                                                {client.daysSinceDaily === 0 ? 'Hoy' :
-                                                    client.daysSinceDaily === 1 ? 'Ayer' :
-                                                        `${client.daysSinceDaily}d`}
-                                            </Text>
-                                        )}
-                                    </View>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    );
-                })}
+                {/* Empty state */}
+                {sortedClients.length === 0 && (
+                    <View style={styles.emptyState}>
+                        <Text style={styles.emptyText}>
+                            {searchQuery ? 'Sin resultados' : 'Sin clientes'}
+                        </Text>
+                    </View>
+                )}
             </ScrollView>
 
             {/* Footer with count */}
             {!isCollapsed && (
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>
-                        {clients?.length || 0} clientes
+                        {sortedClients.length} de {clients?.length || 0}
                     </Text>
                 </View>
             )}
@@ -203,9 +328,9 @@ export default function ClientSidebar({
 
 const styles = StyleSheet.create({
     container: {
-        width: '15%',
+        width: 200,
+        minWidth: 200,
         maxWidth: 200,
-        minWidth: 180,
         backgroundColor: '#fff',
         borderRightWidth: 1,
         borderRightColor: '#e2e8f0',
@@ -248,6 +373,69 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 
+    // Controls (Search + Sort)
+    controlsContainer: {
+        paddingHorizontal: 8,
+        paddingTop: 8,
+        paddingBottom: 4,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        gap: 4,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 12,
+        color: '#1e293b',
+        padding: 0,
+        minWidth: 0,
+    },
+    clearBtn: {
+        padding: 2,
+    },
+    sortContainer: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginTop: 6,
+        gap: 4,
+    },
+    sortBtn: {
+        width: 26,
+        height: 26,
+        borderRadius: 6,
+        backgroundColor: '#f8fafc',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sortBtnActive: {
+        backgroundColor: '#0ea5e915',
+    },
+
+    // Section headers
+    sectionHeader: {
+        paddingHorizontal: 12,
+        paddingTop: 10,
+        paddingBottom: 4,
+    },
+    sectionTitle: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#ef4444',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    sectionDivider: {
+        height: 1,
+        backgroundColor: '#f1f5f9',
+        marginVertical: 6,
+        marginHorizontal: 12,
+    },
+
     // Client list
     clientList: {
         flex: 1,
@@ -255,11 +443,10 @@ const styles = StyleSheet.create({
     clientItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f8fafc',
-        gap: 10,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        gap: 8,
+        position: 'relative',
     },
     clientItemActive: {
         backgroundColor: '#0ea5e910',
@@ -270,15 +457,18 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 0,
     },
+    clientItemHovered: {
+        backgroundColor: '#f8fafc',
+    },
 
     // Avatar
     avatarWrapper: {
         position: 'relative',
     },
     avatar: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         borderWidth: 2,
         borderColor: '#e2e8f0',
     },
@@ -286,38 +476,19 @@ const styles = StyleSheet.create({
         borderColor: '#0ea5e9',
     },
     avatarPlaceholder: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         backgroundColor: '#f1f5f9',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 2,
         borderColor: '#e2e8f0',
     },
-    unreadDot: {
-        position: 'absolute',
-        top: -4,
-        right: -4,
-        minWidth: 16,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: '#ef4444',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: '#fff',
-        paddingHorizontal: 3,
-    },
-    unreadDotText: {
-        fontSize: 9,
-        fontWeight: '700',
-        color: '#fff',
-    },
     statusDot: {
         position: 'absolute',
-        bottom: 0,
-        right: 0,
+        bottom: -1,
+        right: -1,
         width: 10,
         height: 10,
         borderRadius: 5,
@@ -331,33 +502,59 @@ const styles = StyleSheet.create({
         minWidth: 0,
     },
     clientName: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
         color: '#1e293b',
     },
     clientNameActive: {
         color: '#0ea5e9',
     },
-    miniStats: {
-        flexDirection: 'row',
-        gap: 8,
-        marginTop: 2,
-    },
-    miniStat: {
-        fontSize: 11,
-        color: '#94a3b8',
+    statusLabel: {
+        fontSize: 10,
         fontWeight: '500',
+        marginTop: 1,
+    },
+
+    // Tooltip (web only)
+    tooltip: {
+        position: 'absolute',
+        left: '100%',
+        top: '50%',
+        transform: [{ translateY: -12 }],
+        backgroundColor: '#1e293b',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 6,
+        marginLeft: 8,
+        zIndex: 1000,
+        maxWidth: 200,
+        ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' } : {}),
+    },
+    tooltipText: {
+        fontSize: 11,
+        color: '#fff',
+        fontWeight: '500',
+    },
+
+    // Empty state
+    emptyState: {
+        paddingVertical: 24,
+        alignItems: 'center',
+    },
+    emptyText: {
+        fontSize: 12,
+        color: '#94a3b8',
     },
 
     // Footer
     footer: {
         paddingHorizontal: 12,
-        paddingVertical: 10,
+        paddingVertical: 8,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
     },
     footerText: {
-        fontSize: 11,
+        fontSize: 10,
         color: '#94a3b8',
         textAlign: 'center',
     },

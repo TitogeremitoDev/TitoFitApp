@@ -104,6 +104,72 @@ const ProgressRing = ({ percentage, color, size = 70 }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SPARKLINE COMPONENT (CSS Flexbox - lightweight)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const Sparkline = ({ data = [], height = 32, color = '#3b82f6', highlightLast = true }) => {
+    if (!data || data.length === 0) return null;
+    const maxValue = Math.max(...data.filter(v => v > 0), 1);
+
+    return (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 2 }}>
+            {data.slice(-7).map((value, index, arr) => {
+                const barHeight = maxValue > 0 ? (value / maxValue) * 100 : 0;
+                const isLast = highlightLast && index === arr.length - 1;
+                return (
+                    <View
+                        key={index}
+                        style={{
+                            width: 6,
+                            height: `${Math.max(barHeight, 8)}%`,
+                            backgroundColor: isLast ? color : `${color}50`,
+                            borderRadius: 2,
+                        }}
+                    />
+                );
+            })}
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DOT INDICATOR COMPONENT (Energy/Mood visualization)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const DotIndicator = ({ value = 0, maxValue = 5, activeColor = '#3b82f6' }) => {
+    return (
+        <View style={{ flexDirection: 'row', gap: 3 }}>
+            {Array.from({ length: maxValue }).map((_, i) => (
+                <View
+                    key={i}
+                    style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: i < value ? activeColor : '#e2e8f0',
+                    }}
+                />
+            ))}
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATUS BADGE HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+
+const getStatusBadge = (record) => {
+    // Determine status based on record data
+    if (record.haIdoBien === 'no' || record.animo <= 2 || record.energia <= 2) {
+        return { text: 'INCIDENCIAS', color: '#ef4444', bgColor: '#fef2f2' };
+    }
+    if (record.haIdoBien === 'medio' || record.animo === 3 || record.energia === 3) {
+        return { text: 'MEDIA', color: '#f59e0b', bgColor: '#fffbeb' };
+    }
+    return { text: 'TODO OK', color: '#10b981', bgColor: '#ecfdf5' };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -139,6 +205,14 @@ export default function ClientSeguimientoDetailScreen() {
     const [photoGroup, setPhotoGroup] = useState([]); // Grupo de fotos del mismo día
     const [photoIndex, setPhotoIndex] = useState(0);  // Índice actual en el carrusel
     const [studioVisible, setStudioVisible] = useState(false);
+
+    // 🆕 NEW: Single expanded row for accordion behavior
+    const [expandedRowId, setExpandedRowId] = useState(null);
+
+    // Toggle row expansion (one at a time)
+    const toggleRowExpansion = (id) => {
+        setExpandedRowId(prev => prev === id ? null : id);
+    };
 
     // 🖥️ SIDEBAR: State for collapsible client list on wide screens
     const [sidebarClients, setSidebarClients] = useState([]);
@@ -233,7 +307,7 @@ export default function ClientSeguimientoDetailScreen() {
 
         try {
             setSidebarLoading(true);
-            const res = await fetch(`${API_URL}/api/monitoring/coach/clients-summary`, {
+            const res = await fetch(`${API_URL}/api/monitoring/coach/sidebar-status?context=seguimiento`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -459,98 +533,233 @@ export default function ClientSeguimientoDetailScreen() {
     };
 
     // ─────────────────────────────────────────────────────────────────────────
-    // RENDER DAILY RECORD
+    // 📊 MONTHLY SUMMARY STATS (for Este mes RESUMEN card)
     // ─────────────────────────────────────────────────────────────────────────
-    const renderDailyRecord = (record) => (
-        <View key={record._id} style={styles.recordCard}>
-            <View style={styles.recordHeader}>
-                <Text style={styles.recordDate}>{formatDate(record.date)}</Text>
-                {record.coachViewedAt && (
-                    <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-                )}
+    const monthlySummary = useMemo(() => {
+        const currentRecords = groupedDailyRecords.currentMonthRecords;
+        if (currentRecords.length === 0) return null;
+
+        // Get last 7 days of data for sparklines
+        const last7 = currentRecords.slice(0, 7);
+
+        // Average weight
+        const weightRecords = currentRecords.filter(r => r.peso && r.peso > 0);
+        const avgWeight = weightRecords.length > 0
+            ? (weightRecords.reduce((sum, r) => sum + r.peso, 0) / weightRecords.length).toFixed(1)
+            : null;
+        const weightData = last7.map(r => r.peso || 0).reverse();
+
+        // Average steps
+        const stepsRecords = currentRecords.filter(r => r.pasos && r.pasos > 0);
+        const avgSteps = stepsRecords.length > 0
+            ? Math.round(stepsRecords.reduce((sum, r) => sum + r.pasos, 0) / stepsRecords.length)
+            : null;
+        const stepsData = last7.map(r => r.pasos || 0).reverse();
+
+        // Adherence (based on haIdoBien responses)
+        const adherenceRecords = currentRecords.filter(r => r.haIdoBien);
+        const goodCount = adherenceRecords.filter(r => r.haIdoBien === 'si').length;
+        const adherencePercent = adherenceRecords.length > 0
+            ? Math.round((goodCount / adherenceRecords.length) * 100)
+            : null;
+        const adherenceData = last7.map(r => {
+            if (r.haIdoBien === 'si') return 100;
+            if (r.haIdoBien === 'medio') return 50;
+            if (r.haIdoBien === 'no') return 20;
+            return 0;
+        }).reverse();
+
+        return { avgWeight, weightData, avgSteps, stepsData, adherencePercent, adherenceData };
+    }, [groupedDailyRecords.currentMonthRecords]);
+
+    // Render monthly summary card
+    const renderMonthlySummary = () => {
+        if (!monthlySummary) return null;
+
+        return (
+            <View style={styles.summaryCard}>
+                <View style={styles.summaryHeader}>
+                    <Ionicons name="calendar" size={16} color="#0ea5e9" />
+                    <Text style={styles.summaryTitle}>Este mes</Text>
+                    <View style={styles.summaryBadge}>
+                        <Text style={styles.summaryBadgeText}>RESUMEN</Text>
+                    </View>
+                </View>
+                <View style={styles.summaryGrid}>
+                    {/* Average Weight */}
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>PESO PROMEDIO</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                            <Text style={styles.summaryValue}>
+                                {monthlySummary.avgWeight || '--'}
+                                <Text style={styles.summaryUnit}> KG</Text>
+                            </Text>
+                            <Sparkline data={monthlySummary.weightData} color="#3b82f6" height={28} />
+                        </View>
+                    </View>
+
+                    {/* Average Steps */}
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>PASOS DIARIOS</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                            <Text style={styles.summaryValue}>
+                                {monthlySummary.avgSteps ? `${(monthlySummary.avgSteps / 1000).toFixed(1)}k` : '--'}
+                            </Text>
+                            <Sparkline data={monthlySummary.stepsData} color="#10b981" height={28} />
+                        </View>
+                    </View>
+
+                    {/* Adherence */}
+                    <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>ADHERENCIA</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                            <Text style={styles.summaryValue}>
+                                {monthlySummary.adherencePercent ?? '--'}
+                                <Text style={styles.summaryUnit}>%</Text>
+                            </Text>
+                            <Sparkline data={monthlySummary.adherenceData} color="#8b5cf6" height={28} />
+                        </View>
+                    </View>
+                </View>
             </View>
+        );
+    };
 
-            <View style={styles.recordGrid}>
-                {record.peso && (
-                    <View style={styles.recordItem}>
-                        <Ionicons name="scale-outline" size={18} color="#64748b" />
-                        <Text style={styles.recordValue}>{record.peso} kg</Text>
-                        <Text style={styles.recordLabel}>Peso</Text>
+    // ─────────────────────────────────────────────────────────────────────────
+    // RENDER DAILY RECORD - NEW COMPACT ROW DESIGN
+    // ─────────────────────────────────────────────────────────────────────────
+    const renderDailyRecord = (record) => {
+        const isExpanded = expandedRowId === record._id;
+        const status = getStatusBadge(record);
+        const recordDate = new Date(record.date);
+        const dayNum = recordDate.getDate();
+        const monthName = recordDate.toLocaleDateString('es-ES', { month: 'short' }).toUpperCase();
+
+        return (
+            <View key={record._id} style={styles.compactCard}>
+                {/* Compact Row - Always visible */}
+                <TouchableOpacity
+                    style={styles.compactRow}
+                    onPress={() => toggleRowExpansion(record._id)}
+                    activeOpacity={0.7}
+                >
+                    {/* Status indicator line */}
+                    <View style={[styles.statusLine, { backgroundColor: status.color }]} />
+
+                    {/* Date + Weight */}
+                    <View style={styles.dateWeightCol}>
+                        <Text style={styles.dateSmall}>{dayNum} {monthName}</Text>
+                        <Text style={styles.weightBig}>{record.peso || '--'}kg</Text>
                     </View>
-                )}
 
-                {record.sueno && (
-                    <View style={styles.recordItem}>
-                        <Ionicons name="bed-outline" size={18} color="#64748b" />
-                        <Text style={styles.recordValue}>{record.sueno}h</Text>
-                        <Text style={styles.recordLabel}>Sueño</Text>
-                    </View>
-                )}
-
-                {record.animo && (
-                    <View style={styles.recordItem}>
-                        <Text style={styles.moodEmoji}>{MOOD_EMOJIS[record.animo]}</Text>
-                        <Text style={styles.recordLabel}>Ánimo</Text>
-                    </View>
-                )}
-
-                {record.energia && (
-                    <View style={styles.recordItem}>
-                        <Ionicons name="flash" size={18} color="#f59e0b" />
-                        <Text style={styles.recordValue}>{record.energia}/5</Text>
-                        <Text style={styles.recordLabel}>Energía</Text>
-                    </View>
-                )}
-
-                {record.hambre && (
-                    <View style={styles.recordItem}>
-                        <Ionicons name="restaurant-outline" size={18} color="#64748b" />
-                        <Text style={styles.recordValue}>{record.hambre}/5</Text>
-                        <Text style={styles.recordLabel}>Hambre</Text>
-                    </View>
-                )}
-
-                {record.pasos && (
-                    <View style={styles.recordItem}>
-                        <Ionicons name="footsteps-outline" size={18} color="#64748b" />
-                        <Text style={styles.recordValue}>{record.pasos.toLocaleString()}</Text>
-                        <Text style={styles.recordLabel}>Pasos</Text>
-                    </View>
-                )}
-            </View>
-
-            {record.haIdoBien && (
-                <View style={styles.haIdoBienRow}>
-                    <Text style={styles.haIdoBienLabel}>¿Ha ido bien?</Text>
-                    <View style={[
-                        styles.haIdoBienBadge,
-                        {
-                            backgroundColor: record.haIdoBien === 'si' ? '#10b98120' :
-                                record.haIdoBien === 'medio' ? '#f59e0b20' : '#ef444420'
-                        }
-                    ]}>
-                        <Text style={[
-                            styles.haIdoBienText,
-                            {
-                                color: record.haIdoBien === 'si' ? '#10b981' :
-                                    record.haIdoBien === 'medio' ? '#f59e0b' : '#ef4444'
-                            }
-                        ]}>
-                            {record.haIdoBien === 'si' ? '✅ Sí' :
-                                record.haIdoBien === 'medio' ? '🤔 Medio' : '❌ No'}
+                    {/* Steps */}
+                    <View style={styles.metricCol}>
+                        <Ionicons name="footsteps" size={14} color="#64748b" />
+                        <Text style={styles.metricValue}>
+                            {record.pasos ? `${(record.pasos / 1000).toFixed(1)}k` : '--'}
                         </Text>
                     </View>
-                </View>
-            )}
 
-            {record.nota && (
-                <View style={styles.notaContainer}>
-                    <Text style={styles.notaLabel}>Nota:</Text>
-                    <Text style={styles.notaText}>{record.nota}</Text>
-                </View>
-            )}
-        </View>
-    );
+                    {/* Sleep */}
+                    <View style={styles.metricCol}>
+                        <Ionicons name="moon" size={14} color="#64748b" />
+                        <Text style={styles.metricValue}>{record.sueno ? `${record.sueno}h` : '--'}</Text>
+                    </View>
+
+                    {/* Energy dots */}
+                    <View style={styles.dotsCol}>
+                        <Ionicons name="flash" size={12} color="#f59e0b" />
+                        <DotIndicator value={record.energia || 0} maxValue={5} activeColor="#f59e0b" />
+                    </View>
+
+                    {/* Mood dots */}
+                    <View style={styles.dotsCol}>
+                        <Text style={{ fontSize: 12 }}>🎭</Text>
+                        <DotIndicator value={record.animo || 0} maxValue={5} activeColor="#8b5cf6" />
+                    </View>
+
+                    {/* Status badge */}
+                    <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+                        <View style={[styles.statusDot, { backgroundColor: status.color }]} />
+                        <Text style={[styles.statusText, { color: status.color }]}>{status.text}</Text>
+                    </View>
+
+                    {/* Notes icon */}
+                    {record.nota && (
+                        <TouchableOpacity style={styles.notesIconBtn}>
+                            <Ionicons name="document-text" size={18} color="#8b5cf6" />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Expand arrow */}
+                    <Ionicons
+                        name={isExpanded ? "chevron-up" : "chevron-down"}
+                        size={18}
+                        color="#94a3b8"
+                    />
+                </TouchableOpacity>
+
+                {/* Expanded Details */}
+                {isExpanded && (
+                    <View style={styles.expandedSection}>
+                        <View style={styles.expandedGrid}>
+                            {record.hambre && (
+                                <View style={styles.expandedItem}>
+                                    <Ionicons name="restaurant-outline" size={16} color="#64748b" />
+                                    <Text style={styles.expandedValue}>{record.hambre}/5</Text>
+                                    <Text style={styles.expandedLabel}>Hambre</Text>
+                                </View>
+                            )}
+                            {record.animo && (
+                                <View style={styles.expandedItem}>
+                                    <Text style={styles.moodEmoji}>{MOOD_EMOJIS[record.animo]}</Text>
+                                    <Text style={styles.expandedLabel}>Ánimo</Text>
+                                </View>
+                            )}
+                            {record.energia && (
+                                <View style={styles.expandedItem}>
+                                    <Ionicons name="flash" size={16} color="#f59e0b" />
+                                    <Text style={styles.expandedValue}>{record.energia}/5</Text>
+                                    <Text style={styles.expandedLabel}>Energía</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {record.haIdoBien && (
+                            <View style={styles.haIdoBienRow}>
+                                <Text style={styles.haIdoBienLabel}>¿Ha ido bien?</Text>
+                                <View style={[
+                                    styles.haIdoBienBadge,
+                                    {
+                                        backgroundColor: record.haIdoBien === 'si' ? '#10b98120' :
+                                            record.haIdoBien === 'medio' ? '#f59e0b20' : '#ef444420'
+                                    }
+                                ]}>
+                                    <Text style={[
+                                        styles.haIdoBienText,
+                                        {
+                                            color: record.haIdoBien === 'si' ? '#10b981' :
+                                                record.haIdoBien === 'medio' ? '#f59e0b' : '#ef4444'
+                                        }
+                                    ]}>
+                                        {record.haIdoBien === 'si' ? '✅ Sí' :
+                                            record.haIdoBien === 'medio' ? '🤔 Medio' : '❌ No'}
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
+
+                        {record.nota && (
+                            <View style={styles.notaContainer}>
+                                <Text style={styles.notaLabel}>📝 Nota del cliente:</Text>
+                                <Text style={styles.notaText}>{record.nota}</Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+            </View>
+        );
+    };
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER WEEKLY RECORD
@@ -925,7 +1134,7 @@ export default function ClientSeguimientoDetailScreen() {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                    <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
                         <Ionicons name="arrow-back" size={24} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
@@ -953,6 +1162,7 @@ export default function ClientSeguimientoDetailScreen() {
                         onClientSelect={handleSidebarClientSelect}
                         isCollapsed={sidebarCollapsed}
                         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        context="seguimiento"
                     />
                 )}
 
@@ -964,6 +1174,18 @@ export default function ClientSeguimientoDetailScreen() {
                             <Ionicons name="arrow-back" size={24} color="#1e293b" />
                         </TouchableOpacity>
                         <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
+                        <View style={{ flex: 1 }} />
+                        {/* Chat Button */}
+                        <TouchableOpacity
+                            style={styles.chatBtn}
+                            onPress={() => router.push({
+                                pathname: '/(coach)/chat',
+                                params: { clientId, clientName }
+                            })}
+                        >
+                            <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+                            <Text style={styles.chatBtnText}>Chat</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {/* 📊 VIEW MODE SELECTOR */}
@@ -1086,6 +1308,9 @@ export default function ClientSeguimientoDetailScreen() {
                                             {/* Registros del mes actual (sueltos) */}
                                             {activeTab === 'daily' ? (
                                                 <>
+                                                    {/* Monthly Summary Card */}
+                                                    {renderMonthlySummary()}
+
                                                     {groupedDailyRecords.currentMonthRecords.length > 0 && (
                                                         <View style={styles.monthSection}>
                                                             <View style={styles.monthHeaderCurrent}>
@@ -1227,6 +1452,20 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: '700',
         color: '#1e293b',
+    },
+    chatBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#0ea5e9',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 6,
+    },
+    chatBtnText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '600',
     },
     loadingContainer: {
         flex: 1,
@@ -1658,5 +1897,183 @@ const styles = StyleSheet.create({
     monthRecords: {
         marginTop: 12,
         paddingLeft: 4,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMPACT ROW DESIGN (New accordion-style daily records)
+    // ═══════════════════════════════════════════════════════════════════════════
+    compactCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        overflow: 'hidden',
+    },
+    compactRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        gap: 8,
+    },
+    statusLine: {
+        width: 4,
+        height: 40,
+        borderRadius: 2,
+        marginRight: 4,
+    },
+    dateWeightCol: {
+        minWidth: 65,
+    },
+    dateSmall: {
+        fontSize: 10,
+        color: '#94a3b8',
+        fontWeight: '500',
+    },
+    weightBig: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    metricCol: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        minWidth: 50,
+    },
+    metricValue: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    dotsCol: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    statusDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+    statusText: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    notesIconBtn: {
+        padding: 4,
+    },
+    expandedSection: {
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: '#fafafa',
+    },
+    expandedGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 16,
+        marginBottom: 8,
+    },
+    expandedItem: {
+        alignItems: 'center',
+        minWidth: 60,
+    },
+    expandedValue: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+        marginTop: 4,
+    },
+    expandedLabel: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 2,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MONTHLY SUMMARY CARD
+    // ═══════════════════════════════════════════════════════════════════════════
+    summaryCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    summaryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        gap: 8,
+    },
+    summaryTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    summaryBadge: {
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    summaryBadgeText: {
+        fontSize: 10,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    summaryGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+    },
+    summaryItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    summaryLabel: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginBottom: 4,
+        fontWeight: '500',
+    },
+    summaryValue: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#1e293b',
+    },
+    summaryUnit: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WEEK HEADER
+    // ═══════════════════════════════════════════════════════════════════════════
+    weekHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 4,
+        marginTop: 8,
+        marginBottom: 4,
+    },
+    weekTitle: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#64748b',
+        letterSpacing: 0.5,
     },
 });

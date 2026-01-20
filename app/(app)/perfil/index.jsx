@@ -15,6 +15,10 @@ import { useTheme } from '../../../context/ThemeContext';
 import { useAchievements } from '../../../context/AchievementsContext';
 import SyncProgressModal from '../../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
+import * as ImagePicker from 'expo-image-picker';
+import { avatarService } from '../../../src/services/avatarService';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
+import { ImageCropper } from '../../../src/components/shared/ImageCropper';
 
 const AVATARS = [
     // Avatares Gratuitos
@@ -45,6 +49,11 @@ export default function PerfilScreen() {
 
     const [showAvatarModal, setShowAvatarModal] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
+
+    // Avatar upload states
+    const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+    const [tempAvatarUri, setTempAvatarUri] = useState(null); // Para optimistic UI
 
     // Trainer code states
     const [trainerCode, setTrainerCode] = useState('');
@@ -129,10 +138,25 @@ export default function PerfilScreen() {
 
     // 🔄 Detectar cambios en tipoUsuario para depuración y actualización de UI
     useEffect(() => {
-        console.log('[Perfil] 👀 tipoUsuario cambió a:', user?.tipoUsuario);
-    }, [user?.tipoUsuario]);
+        console.log('[Perfil] 👀 Datos de usuario actualizados:', {
+            tipo: user?.tipoUsuario,
+            avatarUrl: user?.avatarUrl,
+            hasSelectedAvatar: !!selectedAvatar
+        });
+
+        // Re-check avatar state when user updates
+        loadSavedAvatar();
+    }, [user?.tipoUsuario, user?.avatarUrl]);
 
     const loadSavedAvatar = async () => {
+        // Si el usuario ya tiene foto real, NO cargar emoji guardado
+        if (user?.avatarUrl) {
+            console.log('[Perfil] Usuario tiene avatarUrl, limpiando emoji guardado...');
+            await AsyncStorage.removeItem('user_avatar');
+            setSelectedAvatar(null);
+            return;
+        }
+
         try {
             const savedAvatarId = await AsyncStorage.getItem('user_avatar');
             if (savedAvatarId) {
@@ -157,6 +181,115 @@ export default function PerfilScreen() {
         } catch (error) {
             console.error('[Perfil] Error saving avatar:', error);
         }
+    };
+
+    // 📸 MANEJO DE FOTO DE PERFIL
+    // 📸 MANEJO DE FOTO DE PERFIL
+    const [croppingImage, setCroppingImage] = useState(null); // State for custom cropper
+
+    const handlePickImage = async () => {
+        setShowPhotoOptions(false);
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso necesario', 'Se necesita acceso a la galería para subir una foto.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false, // Disable native editing to use Custom Cropper
+                quality: 1, // Get full quality for cropping
+            });
+
+            if (!result.canceled) {
+                // Open Custom Cropper
+                setCroppingImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('[Perfil] Error picking image:', error);
+            Alert.alert('Error', 'No se pudo seleccionar la imagen');
+        }
+    };
+
+    const handleTakePhoto = async () => {
+        setShowPhotoOptions(false);
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso necesario', 'Se necesita acceso a la cámara para tomar fotos.');
+                return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+                allowsEditing: false, // Disable native editing
+                quality: 1,
+            });
+
+            if (!result.canceled) {
+                // Open Custom Cropper
+                setCroppingImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('[Perfil] Error taking photo:', error);
+            Alert.alert('Error', 'No se pudo tomar la foto');
+        }
+    };
+
+    const handleCropComplete = async (croppedUri) => {
+        setCroppingImage(null);
+        // Upload immediately after cropping
+        await processAndUploadAvatar(croppedUri);
+    };
+
+
+    const processAndUploadAvatar = async (uri) => {
+        setIsUploadingAvatar(true);
+        setTempAvatarUri(uri); // Show immediately (Optimistic UI)
+
+        try {
+            const newAvatarUrl = await avatarService.uploadAvatar(uri, token);
+            console.log('[Perfil] Avatar uploaded successfully:', newAvatarUrl);
+            await refreshUser(); // Update context with new URL
+            // Clear fallback emoji avatar from local storage as we now have a photo
+            await AsyncStorage.removeItem('user_avatar');
+            setSelectedAvatar(null);
+        } catch (error) {
+            console.error('[Perfil] Upload failed:', error);
+            console.error('[Perfil] Upload failed:', error);
+            Alert.alert('Error al subir', error.message || 'Falló la subida de la imagen. Inténtalo de nuevo.');
+            setTempAvatarUri(null); // Revert optimistic update
+            setTempAvatarUri(null); // Revert optimistic update
+        } finally {
+            setIsUploadingAvatar(false);
+        }
+    };
+
+    const handleDeleteAvatar = async () => {
+        setShowPhotoOptions(false);
+        Alert.alert(
+            'Eliminar foto',
+            '¿Estás seguro de que quieres eliminar tu foto de perfil?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setIsUploadingAvatar(true);
+                        try {
+                            await avatarService.deleteAvatar(token);
+                            await refreshUser();
+                            setTempAvatarUri(null);
+                        } catch (error) {
+                            Alert.alert('Error', 'No se pudo eliminar la foto');
+                        } finally {
+                            setIsUploadingAvatar(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const fetchCurrentTrainer = async () => {
@@ -443,24 +576,16 @@ export default function PerfilScreen() {
 
                 {/* Header Section */}
                 <View style={styles.header}>
-                    <TouchableOpacity
-                        onPress={() => setShowAvatarModal(true)}
-                        style={[
-                            styles.avatarContainer,
-                            { borderColor: theme.primary },
-                            isPremiumUser && styles.avatarContainerVIP
-                        ]}
-                    >
-                        <Text style={styles.avatarEmoji}>{selectedAvatar.emoji}</Text>
-                        <View style={[styles.editIconBadge, { backgroundColor: isPremiumUser ? '#FFD700' : theme.primary }]}>
-                            <Ionicons name="pencil" size={12} color={isPremiumUser ? '#000' : '#fff'} />
-                        </View>
-                        {isPremiumUser && (
-                            <View style={styles.vipBadge}>
-                                <Ionicons name="star" size={12} color="#FFD700" />
-                            </View>
-                        )}
-                    </TouchableOpacity>
+                    <AvatarWithInitials
+                        avatarUrl={tempAvatarUri || user?.avatarUrl}
+                        name={user?.nombre || user?.username || 'Usuario'}
+                        emoji={selectedAvatar?.emoji}
+                        isPremium={isPremiumUser}
+                        size={100}
+                        showEditIcon={true}
+                        isLoading={isUploadingAvatar}
+                        onPress={() => setShowPhotoOptions(true)}
+                    />
 
                     <View style={styles.userInfo}>
                         <Text style={[styles.name, { color: theme.text }]}>{user?.nombre || 'Usuario'}</Text>
@@ -555,34 +680,41 @@ export default function PerfilScreen() {
                                     </View>
                                 </View>
                             ) : (
-                                <View style={styles.trainerInputRow}>
-                                    <TextInput
-                                        style={[styles.trainerInput, {
-                                            backgroundColor: theme.backgroundSecondary,
-                                            color: theme.text,
-                                            borderColor: theme.border
-                                        }]}
-                                        value={trainerCode}
-                                        onChangeText={setTrainerCode}
-                                        placeholder="Vincular Entrenador"
-                                        placeholderTextColor={theme.textSecondary}
-                                        autoCapitalize="characters"
-                                        editable={!isLinkingTrainer}
-                                    />
-                                    <TouchableOpacity
-                                        style={[styles.linkButton, {
-                                            backgroundColor: theme.primary,
-                                            opacity: isLinkingTrainer ? 0.6 : 1
-                                        }]}
-                                        onPress={handleLinkTrainer}
-                                        disabled={isLinkingTrainer}
-                                    >
-                                        {isLinkingTrainer ? (
-                                            <ActivityIndicator size="small" color="#fff" />
-                                        ) : (
-                                            <Ionicons name="link" size={20} color="#fff" />
-                                        )}
-                                    </TouchableOpacity>
+                                <View>
+                                    <View style={styles.trainerInputRow}>
+                                        <TextInput
+                                            style={[styles.trainerInput, {
+                                                backgroundColor: theme.backgroundSecondary,
+                                                color: theme.text,
+                                                borderColor: theme.border
+                                            }]}
+                                            value={trainerCode}
+                                            onChangeText={setTrainerCode}
+                                            placeholder="Vincular Entrenador"
+                                            placeholderTextColor={theme.textSecondary}
+                                            autoCapitalize="characters"
+                                            editable={!isLinkingTrainer}
+                                        />
+                                        <TouchableOpacity
+                                            style={[styles.linkButton, {
+                                                backgroundColor: theme.primary,
+                                                opacity: isLinkingTrainer ? 0.6 : 1
+                                            }]}
+                                            onPress={handleLinkTrainer}
+                                            disabled={isLinkingTrainer}
+                                        >
+                                            {isLinkingTrainer ? (
+                                                <ActivityIndicator size="small" color="#fff" />
+                                            ) : (
+                                                <Ionicons name="link" size={20} color="#fff" />
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                    {Platform.OS === 'ios' && (
+                                        <Text style={[{ fontSize: 11, color: theme.textSecondary, marginTop: 4, textAlign: 'center' }]}>
+                                            Este código es para enlazarte con tu entrenador, no es un pago externo.
+                                        </Text>
+                                    )}
                                 </View>
                             )}
                         </View>
@@ -648,11 +780,11 @@ export default function PerfilScreen() {
 
             {/* Avatar Selector Modal */}
             <Modal visible={showAvatarModal} transparent animationType="fade" onRequestClose={() => setShowAvatarModal(false)}>
-                <View style={styles.modalOverlay}>
+                <View style={[styles.modalOverlay, { paddingBottom: 100 }]}>
                     <View style={[styles.modalCard, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
                         <Text style={[styles.modalTitle, { color: theme.text }]}>Elige tu Avatar</Text>
 
-                        <ScrollView style={{ maxHeight: 400, width: '100%' }}>
+                        <ScrollView style={{ maxHeight: 300, width: '100%' }}>
                             <View style={styles.avatarGrid}>
                                 {AVATARS
                                     .filter(avatar => {
@@ -666,7 +798,7 @@ export default function PerfilScreen() {
                                             key={avatar.id}
                                             style={[
                                                 styles.avatarOption,
-                                                selectedAvatar.id === avatar.id && {
+                                                selectedAvatar?.id === avatar.id && {
                                                     borderColor: theme.primary,
                                                     backgroundColor: theme.primaryLight
                                                 },
@@ -698,6 +830,55 @@ export default function PerfilScreen() {
                     </View>
                 </View>
             </Modal >
+
+            {/* Photo Action Sheet */}
+            <Modal
+                visible={showPhotoOptions}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowPhotoOptions(false)}
+            >
+                <View style={[styles.modalOverlay, { justifyContent: 'flex-end', paddingBottom: 150 }]}>
+                    <View style={[styles.actionSheetContainer, isDark && styles.actionSheetContainerDark]}>
+                        <View style={styles.actionSheetHandle} />
+                        <Text style={[styles.actionSheetTitle, { color: theme.text }]}>Foto de Perfil</Text>
+
+                        <TouchableOpacity style={styles.actionSheetButton} onPress={handleTakePhoto}>
+                            <View style={[styles.actionIconBox, { backgroundColor: '#e0f2fe' }]}>
+                                <Ionicons name="camera" size={20} color="#0284c7" />
+                            </View>
+                            <Text style={[styles.actionSheetText, { color: theme.text }]}>Tomar foto</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.actionSheetButton} onPress={handlePickImage}>
+                            <View style={[styles.actionIconBox, { backgroundColor: '#f0fdf4' }]}>
+                                <Ionicons name="images" size={20} color="#16a34a" />
+                            </View>
+                            <Text style={[styles.actionSheetText, { color: theme.text }]}>Elegir de galería</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.actionSheetButton} onPress={() => { setShowPhotoOptions(false); setShowAvatarModal(true); }}>
+                            <View style={[styles.actionIconBox, { backgroundColor: '#fef3c7' }]}>
+                                <Text style={{ fontSize: 20 }}>🦁</Text>
+                            </View>
+                            <Text style={[styles.actionSheetText, { color: theme.text }]}>Elegir Avatar (Emoji)</Text>
+                        </TouchableOpacity>
+
+                        {user?.avatarUrl && (
+                            <TouchableOpacity style={styles.actionSheetButton} onPress={handleDeleteAvatar}>
+                                <View style={[styles.actionIconBox, { backgroundColor: '#fee2e2' }]}>
+                                    <Ionicons name="trash" size={20} color="#dc2626" />
+                                </View>
+                                <Text style={[styles.actionSheetText, { color: '#ef4444' }]}>Eliminar foto</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity style={[styles.actionSheetButton, styles.cancelButton]} onPress={() => setShowPhotoOptions(false)}>
+                            <Text style={styles.cancelButtonText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Success Modal */}
             < Modal visible={showSuccessModal} transparent animationType="fade" onRequestClose={handleCloseSuccessModal} >
@@ -750,6 +931,16 @@ export default function PerfilScreen() {
                     </View>
                 </View>
             </Modal >
+
+            {/* Custom Image Cropper */}
+            {croppingImage && (
+                <ImageCropper
+                    visible={!!croppingImage}
+                    imageUri={croppingImage}
+                    onCancel={() => setCroppingImage(null)}
+                    onCrop={handleCropComplete}
+                />
+            )}
 
             {/* Premium Code Modal */}
             < Modal visible={showPremiumCodeModal} transparent animationType="fade" onRequestClose={() => setShowPremiumCodeModal(false)}>
@@ -1036,7 +1227,7 @@ export default function PerfilScreen() {
 const styles = StyleSheet.create({
     root: {
         flex: 1,
-        paddingTop: Platform.OS === 'android' ? 36 : 0,
+        paddingTop: Platform.OS === 'android' ? 20 : 0,
     },
     scrollContainer: {
         alignItems: 'center',
@@ -1066,7 +1257,7 @@ const styles = StyleSheet.create({
 
     header: {
         alignItems: 'center',
-        paddingTop: 30,
+        paddingTop: 10,
         paddingBottom: 10,
         width: '100%',
     },
@@ -1357,6 +1548,7 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 1,
         alignItems: 'center',
+        maxHeight: '85%',
     },
     modalTitle: {
         fontSize: 20,
@@ -1590,6 +1782,202 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         textAlign: 'center',
         marginBottom: 20,
+    },
+    // AVATAR Styles
+    avatarContainer: {
+        marginBottom: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Legacy emoji styles
+    emojiContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        position: 'relative',
+    },
+    emoji: {
+        fontSize: 50,
+    },
+    editIconContainer: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        backgroundColor: '#3b82f6',
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
+    },
+    avatarPlaceholderWrapper: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    userName: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1e293b',
+        marginBottom: 4,
+    },
+    userNameDark: {
+        color: '#f8fafc',
+    },
+    userLevel: {
+        fontSize: 14,
+        color: '#64748b',
+        fontWeight: '600',
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    userLevelDark: {
+        color: '#94a3b8',
+        backgroundColor: '#334155',
+    },
+
+    // ACTIONSHEET STYLES
+    actionSheetContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 20,
+        width: '100%',
+        paddingBottom: Platform.OS === 'ios' ? 50 : 30, // Increased padding to raise content
+    },
+    actionSheetContainerDark: {
+        backgroundColor: '#1e293b',
+    },
+    actionSheetHandle: {
+        width: 40,
+        height: 4,
+        backgroundColor: '#e2e8f0',
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginBottom: 20,
+    },
+    actionSheetTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#0f172a',
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    actionSheetButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    actionIconBox: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    actionSheetText: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#334155',
+    },
+    cancelButton: {
+        marginTop: 10,
+        borderBottomWidth: 0,
+        justifyContent: 'center',
+    },
+    cancelButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+
+    // Legacy Avatar Modal Styles (retained)
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        height: '70%',
+    },
+    modalContainerDark: {
+        backgroundColor: '#1e293b',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    closeButton: {
+        padding: 4,
+    },
+    avatarsGrid: {
+        paddingBottom: 20,
+    },
+    avatarItem: {
+        flex: 1,
+        aspectRatio: 1,
+        margin: 8,
+        borderRadius: 16,
+        backgroundColor: '#f8fafc',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    avatarItemDark: {
+        backgroundColor: '#334155',
+    },
+    selectedAvatarItem: {
+        borderColor: '#3b82f6',
+        backgroundColor: '#eff6ff',
+    },
+    avatarEmoji: {
+        fontSize: 32,
+    },
+    avatarName: {
+        marginTop: 4,
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    avatarNameDark: {
+        color: '#94a3b8',
+    },
+    premiumBadge: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
+    },
+    lockOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255,255,255,0.6)',
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     premiumCodeButtons: {
         flexDirection: 'row',

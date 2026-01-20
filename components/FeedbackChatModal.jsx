@@ -25,6 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AvatarWithInitials from '../src/components/shared/AvatarWithInitials';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -80,7 +81,7 @@ const DateSeparator = ({ date }) => (
 // MESSAGE BUBBLE COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MessageBubble = ({ message, isMine, showAvatar, isFirst, isLast }) => {
+const MessageBubble = ({ message, isMine, showAvatar, isFirst, isLast, avatarUrl, name }) => {
     const typeInfo = getTypeIcon(message.type);
 
     // Determinar estado del mensaje
@@ -103,7 +104,11 @@ const MessageBubble = ({ message, isMine, showAvatar, isFirst, isLast }) => {
         ]}>
             {!isMine && showAvatar && (
                 <View style={styles.avatarContainer}>
-                    <Ionicons name="person-circle" size={32} color="#3b82f6" />
+                    <AvatarWithInitials
+                        avatarUrl={avatarUrl}
+                        name={name}
+                        size={32}
+                    />
                 </View>
             )}
             {!isMine && !showAvatar && <View style={styles.avatarSpacer} />}
@@ -169,6 +174,7 @@ export default function FeedbackChatModal({
     onClose,
     clientId,
     clientName,
+    clientAvatarUrl,
     trainerId,  // Nuevo: ID del entrenador (para clientes que envían mensajes)
     isCoach = false
 }) {
@@ -566,6 +572,8 @@ export default function FeedbackChatModal({
                 showAvatar={item.showAvatar}
                 isFirst={item.isFirst}
                 isLast={item.isLast}
+                avatarUrl={!isMine && isCoach ? clientAvatarUrl : null}
+                name={!isMine && isCoach ? clientName : 'U'}
             />
         );
     };

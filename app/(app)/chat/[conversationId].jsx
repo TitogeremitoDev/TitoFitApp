@@ -20,7 +20,8 @@ import {
     Image,
     Modal,
     ScrollView,
-    Alert
+    Alert,
+    BackHandler
 } from 'react-native';
 import Video from 'react-native-video';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
@@ -770,6 +771,18 @@ export default function ConversationScreen() {
         loadMessages();
     }, [loadMessages]);
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // ANDROID BACK HANDLER - Navigate back to chat list instead of exiting
+    // ─────────────────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            router.replace('/(app)/chat');
+            return true; // Prevents default back behavior
+        });
+
+        return () => backHandler.remove();
+    }, [router]);
+
     // Con inverted=true, el scroll al último mensaje es automático
     // No se necesita scrollToEnd manual
 
@@ -946,7 +959,7 @@ export default function ConversationScreen() {
 
             {/* Header */}
             <View style={[styles.header, { backgroundColor: chatTheme.cardBackground, borderBottomColor: chatTheme.border }]}>
-                <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/(app)/chat')}>
                     <Ionicons name="arrow-back" size={24} color={chatTheme.text} />
                 </TouchableOpacity>
 

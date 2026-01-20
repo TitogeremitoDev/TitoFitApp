@@ -218,9 +218,12 @@ export const finishIAPTransaction = async (purchase, isConsumable = false) => {
 
 /**
  * Mapea un plan de MongoDB a un Product ID de Google Play
- * IMPORTANTE: Solo existen 4 productos en Google Play Console:
- * - premium_mensual, premium_anual
- * - coach_unlimited_mensual, coach_unlimited_anual
+ * IMPORTANTE: Los productos de coach usan clientRange para determinar el tier:
+ * - premium_mensual, premium_anual (usuarios normales)
+ * - coach_5_mensual, coach_5_anual (hasta 25 atletas)
+ * - coach_10_mensual, coach_10_anual (hasta 100 atletas)
+ * - coach_20_mensual, coach_20_anual (hasta 20+ atletas)
+ * - coach_unlimited_mensual, coach_unlimited_anual (ilimitado, legacy)
  */
 export const getGoogleProductIdFromPlan = (plan) => {
     if (!plan) return null;
@@ -234,8 +237,16 @@ export const getGoogleProductIdFromPlan = (plan) => {
     const period = isAnual ? 'anual' : 'mensual';
 
     if (plan.isCoach) {
-        // Todos los planes de coach usan coach_unlimited_*
-        return `coach_unlimited_${period}`;
+        // Usar clientRange para determinar el product ID correcto
+        const clientRange = plan.clientRange || 10;
+
+        // Si es unlimited (>100 clientes) usar coach_unlimited
+        if (clientRange >= 9999 || clientRange > 100) {
+            return `coach_unlimited_${period}`;
+        }
+
+        // Mapear a coach_5, coach_10, coach_20 según clientRange
+        return `coach_${clientRange}_${period}`;
     }
 
     return `premium_${period}`;
@@ -243,6 +254,8 @@ export const getGoogleProductIdFromPlan = (plan) => {
 
 /**
  * Mapea un plan de MongoDB a un Product ID de Apple App Store
+ * Usa el mismo sistema que Android pero con sufijo _v3
+ * Plans: coach_5 (STARTER), coach_10 (PRO), coach_20 (UNLIMITED)
  */
 export const getAppleProductIdFromPlan = (plan) => {
     if (!plan) return null;
@@ -252,7 +265,16 @@ export const getAppleProductIdFromPlan = (plan) => {
     const period = isAnual ? 'anual' : 'mensual';
 
     if (plan.isCoach) {
-        return `coach_unlimited_${period}_v3`;
+        // Usar clientRange para determinar el product ID (5, 10, 20)
+        const clientRange = plan.clientRange || 10;
+
+        // Si es unlimited (>100 clientes) usar coach_20 (que es nuestro "unlimited")
+        if (clientRange >= 9999 || clientRange > 100) {
+            return `coach_20_${period}_v3`;
+        }
+
+        // Mapear a coach_5, coach_10, coach_20 según clientRange
+        return `coach_${clientRange}_${period}_v3`;
     }
     return `premium_${period}_v3`;
 };

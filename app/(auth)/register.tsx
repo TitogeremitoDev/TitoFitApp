@@ -226,10 +226,10 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: '#374151', borderRadius: 10,
-    backgroundColor: '#0B1220', marginBottom: 8, paddingHorizontal: 10, height: 46,
+    backgroundColor: '#0B1220', marginBottom: 8, paddingHorizontal: 10, minHeight: 50,
   },
   inputIcon: { marginRight: 8 },
-  input: { flex: 1, color: '#E5E7EB' },
+  input: { flex: 1, color: '#E5E7EB', paddingVertical: 14 },
   eyeBtn: { padding: 6, marginLeft: 4 },
   hint: { fontSize: 12, marginBottom: 6, color: '#9CA3AF' },
   primaryBtn: {

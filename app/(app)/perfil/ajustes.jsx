@@ -68,9 +68,12 @@ const TIER_LABELS = {
 
 export default function AjustesScreen() {
   const router = useRouter();
-  const { theme, themeMode, currentThemeId, setThemeId, enableCoachTheme, coachThemeEnabled } = useTheme();
+  const { theme, themeMode, currentThemeId, setThemeId, enableCoachTheme, coachThemeEnabled, fontSelection, setFontSelection } = useTheme();
   const { user, logout, refreshUser, token } = useAuth();
   const { serverPoints } = useAchievements();
+
+  // Hook de branding del coach
+  const { branding, hasCoachBranding: hasCoachTheme, clientPreference, setClientPreference } = useCoachBranding();
 
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [loadingSub, setLoadingSub] = useState(true);
@@ -120,18 +123,9 @@ export default function AjustesScreen() {
   const [leavingTrainer, setLeavingTrainer] = useState(false);
 
   // Coach branding theme
-  const { branding: coachBranding, loading: loadingCoachBranding } = useCoachBranding();
-
   // Determinar si el usuario es premium/cliente/entrenador/admin
   const isPremiumUser = ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMIN'].includes(user?.tipoUsuario);
   const isAdmin = user?.tipoUsuario === 'ADMIN';
-
-  // Verificar si el usuario tiene acceso al tema del entrenador
-  const hasCoachTheme = !!coachBranding && (
-    user?.tipoUsuario === 'CLIENTE' ||
-    user?.tipoUsuario === 'ENTRENADOR' ||
-    !!user?.currentTrainerId
-  );
 
   // Cargar temas desbloqueados al inicio (local para FREEUSER, cloud para premium)
   useEffect(() => {
@@ -463,13 +457,27 @@ export default function AjustesScreen() {
     // BÁSICOS
     // ═══════════════════════════════════════════════════════════════
     { section: 'Básicos' },
-    // Tema del Entrenador (Dinámico)
-    ...(hasCoachTheme ? [{
+    // Tema del Entrenador (Siempre visible para roles relevantes)
+    // Si hay branding y temas activos, mostramos todos los disponibles
+    ...(branding?.activeThemes?.length > 0 && (user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'ENTRENADOR' || user?.tipoUsuario === 'ADMIN' || user?.tipoUsuario === 'ADMINISTRADOR') ?
+      branding.activeThemes.map(theme => ({
+        mode: `coach_theme_${theme.id}`,
+        title: `🎨 ${branding.brandName || 'Coach'} - ${theme.displayName}`,
+        subtitle: hasCoachTheme && clientPreference === theme.id ? 'Activo actualmente' : (coachThemeEnabled && clientPreference === theme.id ? 'Seleccionado' : 'Toca para aplicar'),
+        icon: 'color-palette',
+        isCoachTheme: true,
+        variantId: theme.id,
+        disabled: false
+      })) : []),
+
+    // Fallback: Si no hay activeThemes pero hay hasCoachTheme (legacy o error de carga), mostrar genérico
+    ...((!branding?.activeThemes?.length && (user?.tipoUsuario === 'CLIENTE' || user?.tipoUsuario === 'ENTRENADOR' || user?.tipoUsuario === 'ADMIN' || user?.tipoUsuario === 'ADMINISTRADOR')) ? [{
       mode: 'coach_theme',
       title: '🎨 Tema del Entrenador',
-      subtitle: user?.tipoUsuario === 'ENTRENADOR' ? 'Tu identidad visual' : 'Tema de tu entrenador',
+      subtitle: hasCoachTheme ? 'Tu identidad visual' : 'No configurado',
       icon: 'color-palette',
-      isCoachTheme: true // marker
+      isCoachTheme: true,
+      disabled: !hasCoachTheme
     }] : []),
     {
       mode: 'auto',
@@ -563,7 +571,15 @@ export default function AjustesScreen() {
   ];
 
   const handleThemeChange = async (mode) => {
-    // Si se selecciona el tema del entrenador, O si es automático y hay tema de entrenador disponible
+    // Caso 1: Tema específico del coach (formato: coach_theme_VARIANTID)
+    if (mode.startsWith('coach_theme_')) {
+      const variantId = mode.replace('coach_theme_', '');
+      await setClientPreference(variantId);
+      await enableCoachTheme();
+      return;
+    }
+
+    // Caso 2: Legacy o fallback "coach_theme" (usar default)
     if (mode === 'coach_theme' || (mode === 'auto' && hasCoachTheme)) {
       await enableCoachTheme();
       return;
@@ -789,7 +805,7 @@ export default function AjustesScreen() {
           <View style={[styles.sectionHeader, { marginTop: 30, backgroundColor: theme.sectionHeader }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <Ionicons name="color-palette-outline" size={20} color={theme.text} />
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text, fontFamily: theme.fontFamily }]}>
                 Apariencia
               </Text>
             </View>
@@ -803,7 +819,7 @@ export default function AjustesScreen() {
           </View>
 
           <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
-            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+            <Text style={[styles.sectionDescription, { color: theme.textSecondary, fontFamily: theme.fontFamily }]}>
               Personaliza cómo se ve la aplicación
             </Text>
 
@@ -931,9 +947,15 @@ export default function AjustesScreen() {
                 };
                 const expectedId = modeToId[option.mode] || option.mode;
                 // Determinar si está seleccionado
-                const isSelected = option.mode === 'coach_theme'
-                  ? coachThemeEnabled
-                  : (!coachThemeEnabled && currentThemeId === (modeToId[option.mode] || option.mode));
+                let isSelected;
+                if (option.isCoachTheme) {
+                  // Para temas del coach, debe estar habilitado el modo coach
+                  // Y si es una variante específica, debe coincidir con la preferencia del cliente
+                  isSelected = coachThemeEnabled && (option.variantId ? clientPreference === option.variantId : true);
+                } else {
+                  // Para temas estándar, NO debe estar habilitado el modo coach
+                  isSelected = !coachThemeEnabled && currentThemeId === (modeToId[option.mode] || option.mode);
+                }
 
                 // Datos del tier
                 const tier = THEME_TIERS[option.mode];
@@ -999,7 +1021,7 @@ export default function AjustesScreen() {
                           <Text
                             style={[
                               styles.themeOptionTitle,
-                              { color: theme.text },
+                              { color: theme.text, fontFamily: theme.fontFamily },
                               isSelected && { color: theme.primary },
                             ]}
                           >
@@ -1015,7 +1037,7 @@ export default function AjustesScreen() {
                         <Text
                           style={[
                             styles.themeOptionSubtitle,
-                            { color: theme.textSecondary },
+                            { color: theme.textSecondary, fontFamily: theme.fontFamily },
                           ]}
                         >
                           {option.subtitle}
@@ -1090,6 +1112,52 @@ export default function AjustesScreen() {
               });
             })()}
 
+            {/* Selector de Tipografía */}
+            <View style={{ marginTop: 24, marginBottom: 8, paddingHorizontal: 4 }}>
+              <Text style={[styles.sectionTitle, { color: theme.text, fontSize: 16, fontFamily: theme.fontFamily }]}>
+                Tipografía
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              {[
+                { id: 'default', label: 'Predeterminada', icon: 'text' },
+                { id: 'serif', label: 'Elegante', icon: 'book-outline', fontFamily: 'serif' },
+                { id: 'monospace', label: 'Técnica', icon: 'code-slash-outline', fontFamily: 'monospace' },
+              ].map((font) => {
+                const isSelected = fontSelection === font.id;
+                return (
+                  <TouchableOpacity
+                    key={font.id}
+                    onPress={() => setFontSelection(font.id)}
+                    style={{
+                      flex: 1,
+                      backgroundColor: isSelected ? `${theme.primary}15` : theme.background,
+                      borderRadius: 12,
+                      paddingVertical: 12,
+                      alignItems: 'center',
+                      borderWidth: 1,
+                      borderColor: isSelected ? theme.primary : theme.border,
+                    }}
+                  >
+                    <Ionicons
+                      name={font.icon}
+                      size={20}
+                      color={isSelected ? theme.primary : theme.textSecondary}
+                      style={{ marginBottom: 6 }}
+                    />
+                    <Text style={{
+                      color: isSelected ? theme.primary : theme.textSecondary,
+                      fontWeight: isSelected ? '700' : '400',
+                      fontSize: 12,
+                      fontFamily: font.fontFamily // Preview de la fuente
+                    }}>
+                      {font.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             {/* Coming Soon Placeholder */}
             <View style={styles.comingSoonContainer}>
               <Ionicons name="sparkles" size={24} color={theme.textSecondary} />
@@ -1944,8 +2012,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
+    minHeight: 56, // iOS área táctil
   },
   themeOptionLast: {
     borderBottomWidth: 0,
@@ -2021,8 +2090,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 12,
     paddingHorizontal: 16,
+    minHeight: 56, // iOS área táctil
   },
   settingItemLeft: {
     flexDirection: 'row',
@@ -2145,7 +2215,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   input: {
-    height: 44,
+    height: 50, // iOS área táctil
   },
   modalRow: {
     flexDirection: 'row',

@@ -2,8 +2,8 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.1.1",
-    "runtimeVersion": "1.1.1",
+    "version": "1.1.3",
+    "runtimeVersion": "1.1.3",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -23,6 +23,7 @@
       "isTabletOnly": false,
       "requireFullScreen": false,
       "bundleIdentifier": "com.german92.titofitapp",
+      "buildNumber": "30",
       "usesAppleSignIn": true,
       "icon": "./assets/images/icon-ios.png",
       "infoPlist": {
@@ -36,7 +37,15 @@
         "NSCameraUsageDescription": "TotalGains necesita acceso a la cámara para grabar videos de tu técnica de entrenamiento, tomar fotos de tu progreso físico y actualizar tu foto de perfil.",
         "NSMicrophoneUsageDescription": "TotalGains necesita acceso al micrófono para grabar notas de voz y audio en tus videos de técnica para enviar a tu entrenador.",
         "NSPhotoLibraryUsageDescription": "TotalGains necesita acceso a tu galería de fotos para que puedas subir imágenes de tu progreso o cambiar tu foto de perfil.",
-        "NSPhotoLibraryAddUsageDescription": "TotalGains necesita permiso para guardar fotos de tu progreso en tu galería."
+        "NSPhotoLibraryAddUsageDescription": "TotalGains necesita permiso para guardar fotos de tu progreso en tu galería.",
+        "NSLocationWhenInUseUsageDescription": "TotalGains puede usar tu ubicación para personalizar tu experiencia de entrenamiento.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.915310517535-l8aclvjo3hqmh6frmb7otpge2ufqnaes"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -132,7 +141,7 @@
       [
         "expo-updates",
         {
-          "runtimeVersion": "1.1.1"
+          "runtimeVersion": "1.1.3"
         }
       ],
       "expo-iap",
@@ -147,7 +156,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": false,
+          "photosPermission": "TotalGains necesita acceso a tu galería de fotos para que puedas subir imágenes de tu progreso o cambiar tu foto de perfil.",
           "savePhotosPermission": "TotalGains necesita permiso para guardar tus videos y fotos de progreso en la galería.",
           "isAccessMediaLocationEnabled": false
         }

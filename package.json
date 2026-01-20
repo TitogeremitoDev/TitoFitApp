@@ -1,7 +1,7 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
@@ -11,6 +11,11 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@expo-google-fonts/lato": "^0.4.1",
+    "@expo-google-fonts/montserrat": "^0.4.2",
+    "@expo-google-fonts/oswald": "^0.4.2",
+    "@expo-google-fonts/playfair-display": "^0.4.2",
+    "@expo-google-fonts/roboto": "^0.4.2",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@ptomasroos/react-native-multi-slider": "^2.2.2",
@@ -43,6 +48,7 @@
     "expo-haptics": "~15.0.8",
     "expo-iap": "^3.3.2",
     "expo-image": "~3.0.11",
+    "expo-image-manipulator": "~13.1.7",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.11",

@@ -12,11 +12,13 @@ import {
     RefreshControl,
     Image,
     useWindowDimensions,
+    TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -77,6 +79,10 @@ export default function CoachSeguimientoScreen() {
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Search and Sort state
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'daily'
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -141,14 +147,11 @@ export default function CoachSeguimientoScreen() {
                 <View style={styles.cardHeader}>
                     <View style={styles.clientInfo}>
                         <View style={styles.avatarContainer}>
-                            {client.profilePhoto ? (
-                                <Image
-                                    source={{ uri: client.profilePhoto }}
-                                    style={styles.avatarImage}
-                                />
-                            ) : (
-                                <Ionicons name="person-circle" size={48} color="#0ea5e9" />
-                            )}
+                            <AvatarWithInitials
+                                avatarUrl={client.profilePhoto}
+                                name={client.nombre}
+                                size={48}
+                            />
                             {hasUnviewed && <View style={styles.unviewedDot} />}
                         </View>
                         <View style={styles.clientDetails}>
@@ -268,6 +271,31 @@ export default function CoachSeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
+
+    // Filter and sort clients (MUST be before any early return)
+    const filteredClients = React.useMemo(() => {
+        let result = [...clients];
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(c =>
+                c.nombre?.toLowerCase().includes(q) ||
+                c.email?.toLowerCase().includes(q)
+            );
+        }
+        switch (sortBy) {
+            case 'name':
+                result.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                break;
+            case 'daily':
+                result.sort((a, b) => (b.daysSinceDaily ?? 999) - (a.daysSinceDaily ?? 999));
+                break;
+            case 'recent':
+            default:
+                break;
+        }
+        return result;
+    }, [clients, searchQuery, sortBy]);
+
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
@@ -297,8 +325,47 @@ export default function CoachSeguimientoScreen() {
                 onBackPress={() => router.push('/(coach)')}
             />
 
+            {/* Search and Sort Bar */}
+            <View style={styles.searchSortBar}>
+                <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={18} color="#94a3b8" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar cliente..."
+                        placeholderTextColor="#94a3b8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+                <View style={styles.sortButtons}>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'recent' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('recent')}
+                    >
+                        <Ionicons name="time-outline" size={16} color={sortBy === 'recent' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'name' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('name')}
+                    >
+                        <Ionicons name="text-outline" size={16} color={sortBy === 'name' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.sortBtn, sortBy === 'daily' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('daily')}
+                    >
+                        <Ionicons name="alert-circle-outline" size={16} color={sortBy === 'daily' ? '#fff' : '#64748b'} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
             <FlatList
-                data={clients}
+                data={filteredClients}
                 keyExtractor={(item) => item._id}
                 renderItem={renderClientCard}
                 ListEmptyComponent={renderEmpty}
@@ -323,6 +390,44 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc',
+    },
+    // Search and Sort
+    searchSortBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 10,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        height: 38,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#1e293b',
+    },
+    sortButtons: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    sortBtn: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
+    },
+    sortBtnActive: {
+        backgroundColor: '#0ea5e9',
     },
     list: {
         padding: 16,

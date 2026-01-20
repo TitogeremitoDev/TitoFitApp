@@ -750,7 +750,8 @@ const styles = StyleSheet.create({
     input: {
         fontSize: 16,
         borderBottomWidth: 1,
-        paddingVertical: 8,
+        paddingVertical: 12,
+        minHeight: 44, // iOS área táctil
     },
     textArea: {
         fontSize: 15,
@@ -800,9 +801,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     sliderBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
@@ -836,10 +837,11 @@ const styles = StyleSheet.create({
     radioOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 10,
+        padding: 12,
         borderRadius: 8,
         borderWidth: 1,
         marginBottom: 6,
+        minHeight: 48, // iOS área táctil
     },
     radioCircle: {
         width: 20,

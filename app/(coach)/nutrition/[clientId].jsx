@@ -1,6 +1,6 @@
 /* app/(coach)/nutrition/[clientId].jsx - Editor de Plan Nutricional */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -14,6 +14,7 @@ import {
     Modal,
     FlatList,
     Platform,
+    useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,8 @@ import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition, ACTIVITY_FACTORS } from '../../../src/utils/nutritionCalculator';
+import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import WeeklyMealPlanner from './components/WeeklyMealPlanner';
 
 const DAYS_OF_WEEK = [
     { key: 'monday', label: 'Lunes', short: 'L' },
@@ -386,7 +389,7 @@ export default function ClientNutritionEditor() {
     const [isSaving, setIsSaving] = useState(false);
     const [isSavingAsTemplate, setIsSavingAsTemplate] = useState(false);
     const [clientData, setClientData] = useState(null);
-    const [mode, setMode] = useState('auto'); // 'auto' | 'custom'
+    const [mode, setMode] = useState('auto'); // 'auto' | 'custom' | 'mealplan'
     const [planName, setPlanName] = useState('');
     const [planDescription, setPlanDescription] = useState('');
     const [dayTargets, setDayTargets] = useState([]);
@@ -395,12 +398,57 @@ export default function ClientNutritionEditor() {
         friday: null, saturday: null, sunday: null
     });
 
+    // 🍽️ Meal Plan state (for 'mealplan' mode)
+    const [mealPlan, setMealPlan] = useState(null);
+
     // Template loading
     const [templates, setTemplates] = useState([]);
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [loadingTemplates, setLoadingTemplates] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+    // 🖥️ Responsive layout
+    const { width: windowWidth } = useWindowDimensions();
+    const isWideScreen = windowWidth >= 1024;
+
+    // 🖥️ SIDEBAR: States for collapsible client list
+    const [sidebarClients, setSidebarClients] = useState([]);
+    const [sidebarLoading, setSidebarLoading] = useState(true);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    // Fetch sidebar clients
+    const fetchSidebarClients = useCallback(async () => {
+        if (!isWideScreen) return;
+        try {
+            setSidebarLoading(true);
+            const res = await fetch(`${API_URL}/api/monitoring/coach/sidebar-status?context=nutrition`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSidebarClients(data.clients || []);
+            }
+        } catch (error) {
+            console.error('[Sidebar Nutrition] Error:', error);
+        } finally {
+            setSidebarLoading(false);
+        }
+    }, [token, API_URL, isWideScreen]);
+
+    useEffect(() => {
+        if (isWideScreen) {
+            fetchSidebarClients();
+        }
+    }, [isWideScreen, fetchSidebarClients]);
+
+    // Handle sidebar client selection
+    const handleSidebarClientSelect = (client) => {
+        router.push({
+            pathname: '/(coach)/nutrition/[clientId]',
+            params: { clientId: client._id, clientName: client.nombre }
+        });
+    };
 
     useEffect(() => {
         fetchClientData();
@@ -432,6 +480,10 @@ export default function ClientNutritionEditor() {
                         if (planData.plan.customPlan) {
                             setDayTargets(planData.plan.customPlan.dayTargets || []);
                             setWeekSchedule(planData.plan.customPlan.weekSchedule || {});
+                        }
+                        // Load mealPlan data for 'mealplan' mode
+                        if (planData.plan.mealPlan) {
+                            setMealPlan(planData.plan.mealPlan);
                         }
                     }
                 }
@@ -711,6 +763,7 @@ export default function ClientNutritionEditor() {
                     dayTargets: processedDayTargets,
                     weekSchedule,
                 } : null,
+                mealPlan: mode === 'mealplan' ? mealPlan : null,
             };
 
             const res = await fetch(`${API_URL}/api/nutrition-plans`, {
@@ -727,12 +780,12 @@ export default function ClientNutritionEditor() {
                 const message = status === 'active' ? 'Plan activado correctamente' : 'Borrador guardado';
                 if (Platform.OS === 'web') {
                     window.alert('✅ Guardado: ' + message);
-                    router.back();
+                    router.canGoBack() ? router.back() : router.replace('/(coach)');
                 } else {
                     Alert.alert(
                         '✅ Guardado',
                         message,
-                        [{ text: 'OK', onPress: () => router.back() }]
+                        [{ text: 'OK', onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)') }]
                     );
                 }
             } else {
@@ -769,7 +822,7 @@ export default function ClientNutritionEditor() {
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={22} color="#1e293b" />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
@@ -779,198 +832,237 @@ export default function ClientNutritionEditor() {
                 <View style={styles.headerRight} />
             </View>
 
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                {/* Mode Selector */}
-                <View style={styles.modeSelector}>
-                    <TouchableOpacity
-                        style={[styles.modeBtn, mode === 'auto' && styles.modeBtnActive]}
-                        onPress={() => setMode('auto')}
-                    >
-                        <Ionicons
-                            name="calculator"
-                            size={20}
-                            color={mode === 'auto' ? '#fff' : '#64748b'}
-                        />
-                        <Text style={[styles.modeBtnText, mode === 'auto' && styles.modeBtnTextActive]}>
-                            Auto (Fórmula)
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.modeBtn, mode === 'custom' && styles.modeBtnActive]}
-                        onPress={() => {
-                            setMode('custom');
-                            if (dayTargets.length === 0) addDayTarget();
-                        }}
-                    >
-                        <Ionicons
-                            name="create"
-                            size={20}
-                            color={mode === 'custom' ? '#fff' : '#64748b'}
-                        />
-                        <Text style={[styles.modeBtnText, mode === 'custom' && styles.modeBtnTextActive]}>
-                            Personalizado
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* AUTO MODE - Preview */}
-                {mode === 'auto' && (
-                    <View style={styles.autoPreview}>
-                        <Text style={styles.sectionTitle}>🔢 Cálculo Automático</Text>
-                        <Text style={styles.sectionSubtitle}>
-                            Basado en los datos del cliente (BMR × AF + objetivo)
-                        </Text>
-
-                        {autoNutrition ? (
-                            <View style={styles.autoCard}>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Objetivo</Text>
-                                    <Text style={[styles.autoValue, {
-                                        color: autoNutrition.isVolumen ? '#3b82f6' : '#ef4444'
-                                    }]}>
-                                        {autoNutrition.objetivo}
-                                    </Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Kcal (entreno)</Text>
-                                    <Text style={styles.autoValueBig}>{autoNutrition.training.kcal}</Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Proteína</Text>
-                                    <Text style={styles.autoValue}>{autoNutrition.training.protein}g</Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Carbs</Text>
-                                    <Text style={styles.autoValue}>{autoNutrition.training.carbs}g</Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Grasas</Text>
-                                    <Text style={styles.autoValue}>{autoNutrition.training.fat}g</Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Agua (entreno)</Text>
-                                    <Text style={styles.autoValue}>{autoNutrition.training.water.liters}L</Text>
-                                </View>
-                                <View style={styles.autoRow}>
-                                    <Text style={styles.autoLabel}>Pasos</Text>
-                                    <Text style={styles.autoValue}>{autoNutrition.steps.text}</Text>
-                                </View>
-                            </View>
-                        ) : (
-                            <View style={styles.noDataCard}>
-                                <Ionicons name="alert-circle-outline" size={40} color="#f59e0b" />
-                                <Text style={styles.noDataText}>
-                                    El cliente no tiene datos completos (edad, peso, altura, género)
-                                </Text>
-                            </View>
-                        )}
-                    </View>
+            {/* 🖥️ Main layout with Sidebar + Content */}
+            <View style={styles.mainLayoutWrapper}>
+                {/* Sidebar - only on wide screens */}
+                {isWideScreen && (
+                    <ClientSidebar
+                        clients={sidebarClients}
+                        isLoading={sidebarLoading}
+                        currentClientId={clientId}
+                        onClientSelect={handleSidebarClientSelect}
+                        isCollapsed={sidebarCollapsed}
+                        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        context="nutrition"
+                    />
                 )}
 
-                {/* CUSTOM MODE */}
-                {mode === 'custom' && (
-                    <>
-                        {/* Plan Name & Description */}
-                        <View style={styles.planInfoSection}>
-                            <Text style={styles.sectionTitle}>📝 Información del Plan</Text>
-                            <TextInput
-                                style={styles.planNameInput}
-                                value={planName}
-                                onChangeText={setPlanName}
-                                placeholder="Nombre del plan (ej: Dieta definición Juan)"
-                                placeholderTextColor="#94a3b8"
+                <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+                    {/* Mode Selector */}
+                    <View style={styles.modeSelector}>
+                        <TouchableOpacity
+                            style={[styles.modeBtn, mode === 'auto' && styles.modeBtnActive]}
+                            onPress={() => setMode('auto')}
+                        >
+                            <Ionicons
+                                name="calculator"
+                                size={20}
+                                color={mode === 'auto' ? '#fff' : '#64748b'}
                             />
-                            <TextInput
-                                style={styles.planDescInput}
-                                value={planDescription}
-                                onChangeText={setPlanDescription}
-                                placeholder="Descripción opcional..."
-                                placeholderTextColor="#94a3b8"
-                                multiline
+                            <Text style={[styles.modeBtnText, mode === 'auto' && styles.modeBtnTextActive]}>
+                                Auto (Fórmula)
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.modeBtn, mode === 'custom' && styles.modeBtnActive]}
+                            onPress={() => {
+                                setMode('custom');
+                                if (dayTargets.length === 0) addDayTarget();
+                            }}
+                        >
+                            <Ionicons
+                                name="create"
+                                size={20}
+                                color={mode === 'custom' ? '#fff' : '#64748b'}
                             />
-                        </View>
+                            <Text style={[styles.modeBtnText, mode === 'custom' && styles.modeBtnTextActive]}>
+                                Personalizado
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.modeBtn, mode === 'mealplan' && styles.modeBtnActive]}
+                            onPress={() => setMode('mealplan')}
+                        >
+                            <Ionicons
+                                name="restaurant"
+                                size={20}
+                                color={mode === 'mealplan' ? '#fff' : '#64748b'}
+                            />
+                            <Text style={[styles.modeBtnText, mode === 'mealplan' && styles.modeBtnTextActive]}>
+                                Plan de Comidas
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
 
-                        {/* Action Buttons Row */}
-                        <View style={styles.templateActionsRow}>
-                            <TouchableOpacity
-                                style={styles.loadTemplateBtn}
-                                onPress={openTemplateModal}
-                            >
-                                <Ionicons name="download-outline" size={18} color="#8b5cf6" />
-                                <Text style={styles.loadTemplateBtnText}>Cargar Plan</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.saveAsTemplateBtn}
-                                onPress={saveAsTemplate}
-                                disabled={isSavingAsTemplate}
-                            >
-                                {isSavingAsTemplate ? (
-                                    <ActivityIndicator size="small" color="#22c55e" />
-                                ) : (
-                                    <>
-                                        <Ionicons name="bookmark-outline" size={18} color="#22c55e" />
-                                        <Text style={styles.saveAsTemplateBtnText}>Guardar como Plan</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-                        </View>
+                    {/* AUTO MODE - Preview */}
+                    {mode === 'auto' && (
+                        <View style={styles.autoPreview}>
+                            <Text style={styles.sectionTitle}>🔢 Cálculo Automático</Text>
+                            <Text style={styles.sectionSubtitle}>
+                                Basado en los datos del cliente (BMR × AF + objetivo)
+                            </Text>
 
-                        <View style={styles.customSection}>
-                            <View style={styles.sectionHeader}>
-                                <Text style={styles.sectionTitle}>📋 Tipos de Día</Text>
-                                <TouchableOpacity style={styles.addBtn} onPress={addDayTarget}>
-                                    <Ionicons name="add" size={20} color="#22c55e" />
-                                    <Text style={styles.addBtnText}>Añadir</Text>
+                            {autoNutrition ? (
+                                <View style={styles.autoCard}>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Objetivo</Text>
+                                        <Text style={[styles.autoValue, {
+                                            color: autoNutrition.isVolumen ? '#3b82f6' : '#ef4444'
+                                        }]}>
+                                            {autoNutrition.objetivo}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Kcal (entreno)</Text>
+                                        <Text style={styles.autoValueBig}>{autoNutrition.training.kcal}</Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Proteína</Text>
+                                        <Text style={styles.autoValue}>{autoNutrition.training.protein}g</Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Carbs</Text>
+                                        <Text style={styles.autoValue}>{autoNutrition.training.carbs}g</Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Grasas</Text>
+                                        <Text style={styles.autoValue}>{autoNutrition.training.fat}g</Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Agua (entreno)</Text>
+                                        <Text style={styles.autoValue}>{autoNutrition.training.water.liters}L</Text>
+                                    </View>
+                                    <View style={styles.autoRow}>
+                                        <Text style={styles.autoLabel}>Pasos</Text>
+                                        <Text style={styles.autoValue}>{autoNutrition.steps.text}</Text>
+                                    </View>
+                                </View>
+                            ) : (
+                                <View style={styles.noDataCard}>
+                                    <Ionicons name="alert-circle-outline" size={40} color="#f59e0b" />
+                                    <Text style={styles.noDataText}>
+                                        El cliente no tiene datos completos (edad, peso, altura, género)
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+                    )}
+
+                    {/* CUSTOM MODE */}
+                    {mode === 'custom' && (
+                        <>
+                            {/* Plan Name & Description */}
+                            <View style={styles.planInfoSection}>
+                                <Text style={styles.sectionTitle}>📝 Información del Plan</Text>
+                                <TextInput
+                                    style={styles.planNameInput}
+                                    value={planName}
+                                    onChangeText={setPlanName}
+                                    placeholder="Nombre del plan (ej: Dieta definición Juan)"
+                                    placeholderTextColor="#94a3b8"
+                                />
+                                <TextInput
+                                    style={styles.planDescInput}
+                                    value={planDescription}
+                                    onChangeText={setPlanDescription}
+                                    placeholder="Descripción opcional..."
+                                    placeholderTextColor="#94a3b8"
+                                    multiline
+                                />
+                            </View>
+
+                            {/* Action Buttons Row */}
+                            <View style={styles.templateActionsRow}>
+                                <TouchableOpacity
+                                    style={styles.loadTemplateBtn}
+                                    onPress={openTemplateModal}
+                                >
+                                    <Ionicons name="download-outline" size={18} color="#8b5cf6" />
+                                    <Text style={styles.loadTemplateBtnText}>Cargar Plan</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.saveAsTemplateBtn}
+                                    onPress={saveAsTemplate}
+                                    disabled={isSavingAsTemplate}
+                                >
+                                    {isSavingAsTemplate ? (
+                                        <ActivityIndicator size="small" color="#22c55e" />
+                                    ) : (
+                                        <>
+                                            <Ionicons name="bookmark-outline" size={18} color="#22c55e" />
+                                            <Text style={styles.saveAsTemplateBtnText}>Guardar como Plan</Text>
+                                        </>
+                                    )}
                                 </TouchableOpacity>
                             </View>
 
-                            {dayTargets.map((dt, idx) => (
-                                <DayTargetCard
-                                    key={dt.id}
-                                    dayTarget={dt}
-                                    index={idx}
-                                    onUpdate={updateDayTarget}
-                                    onDelete={deleteDayTarget}
+                            <View style={styles.customSection}>
+                                <View style={styles.sectionHeader}>
+                                    <Text style={styles.sectionTitle}>📋 Tipos de Día</Text>
+                                    <TouchableOpacity style={styles.addBtn} onPress={addDayTarget}>
+                                        <Ionicons name="add" size={20} color="#22c55e" />
+                                        <Text style={styles.addBtnText}>Añadir</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {dayTargets.map((dt, idx) => (
+                                    <DayTargetCard
+                                        key={dt.id}
+                                        dayTarget={dt}
+                                        index={idx}
+                                        onUpdate={updateDayTarget}
+                                        onDelete={deleteDayTarget}
+                                    />
+                                ))}
+                            </View>
+
+                            {dayTargets.length > 0 && (
+                                <WeekSchedulePicker
+                                    weekSchedule={weekSchedule}
+                                    dayTargets={dayTargets}
+                                    onChange={updateWeekSchedule}
                                 />
-                            ))}
-                        </View>
+                            )}
+                        </>
+                    )}
 
-                        {dayTargets.length > 0 && (
-                            <WeekSchedulePicker
-                                weekSchedule={weekSchedule}
-                                dayTargets={dayTargets}
-                                onChange={updateWeekSchedule}
+                    {/* MEALPLAN MODE - Weekly Meal Planner */}
+                    {mode === 'mealplan' && (
+                        <View style={styles.mealPlanContainer}>
+                            <WeeklyMealPlanner
+                                initialData={mealPlan}
+                                onDataChange={(data) => setMealPlan(data)}
                             />
-                        )}
-                    </>
-                )}
+                        </View>
+                    )}
 
-                {/* Action Buttons */}
-                <View style={styles.actionButtons}>
-                    <TouchableOpacity
-                        style={styles.draftBtn}
-                        onPress={() => handleSave('draft')}
-                        disabled={isSaving}
-                    >
-                        <Ionicons name="save-outline" size={20} color="#64748b" />
-                        <Text style={styles.draftBtnText}>Guardar Borrador</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.activateBtn}
-                        onPress={() => handleSave('active')}
-                        disabled={isSaving}
-                    >
-                        {isSaving ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <>
-                                <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                                <Text style={styles.activateBtnText}>Activar Plan</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
+                    {/* Action Buttons */}
+                    <View style={styles.actionButtons}>
+                        <TouchableOpacity
+                            style={styles.draftBtn}
+                            onPress={() => handleSave('draft')}
+                            disabled={isSaving}
+                        >
+                            <Ionicons name="save-outline" size={20} color="#64748b" />
+                            <Text style={styles.draftBtnText}>Guardar Borrador</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.activateBtn}
+                            onPress={() => handleSave('active')}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                                    <Text style={styles.activateBtnText}>Activar Plan</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </View>
 
             {/* Template Selection Modal */}
             <Modal
@@ -1040,6 +1132,10 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8fafc',
+    },
+    mainLayoutWrapper: {
+        flex: 1,
+        flexDirection: 'row',
     },
     loadingContainer: {
         flex: 1,
@@ -1656,5 +1752,13 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#94a3b8',
         marginTop: 2,
+    },
+
+    // MealPlan mode container
+    mealPlanContainer: {
+        flex: 1,
+        marginHorizontal: -16,
+        marginTop: -16,
+        minHeight: 500,
     },
 });

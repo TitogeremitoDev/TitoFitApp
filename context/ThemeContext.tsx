@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCoachBranding } from './CoachBrandingContext';
 
 // expo-navigation-bar es opcional - solo funciona en Android native builds
 let NavigationBar: typeof import('expo-navigation-bar') | null = null;
@@ -231,6 +232,19 @@ function adjustOpacity(color: string, opacity: number): string {
   return color;
 }
 
+function isDarkColor(color: string): boolean {
+  if (!color.startsWith('#')) return false;
+
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Calculate brightness (YIQ formula)
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq < 128;
+}
+
 // --- CATALOGO DE TEMAS ---
 
 // 0. Default Light
@@ -339,18 +353,24 @@ const THEME_OBJECTS: Record<ThemeId, Theme> = THEMES_LIST.reduce((acc, def) => {
   return acc;
 }, {} as Record<ThemeId, Theme>);
 
+// Tipo de selección de fuente
+export type FontSelectionType = 'default' | 'serif' | 'monospace';
+const FONT_SELECTION_KEY = 'totalgains_font_selection';
+
 type ThemeContextType = {
   theme: Theme;
   isDark: boolean;
-  themeMode: ThemeMode; // Mantenemos para compatibilidad con 'auto'
+  themeMode: ThemeMode;
   currentThemeId: ThemeId;
-  //   setThemeMode: (mode: ThemeMode) => Promise<void>; // Deprecated but kept for backward compat if needed logic mapping
   setThemeId: (id: ThemeId) => Promise<void>;
+  enableCoachTheme: () => Promise<void>;
+  coachThemeEnabled: boolean;
   availableThemes: ThemeInfo[];
+  fontSelection: FontSelectionType;
+  setFontSelection: (font: FontSelectionType) => Promise<void>;
 };
 
 const THEME_STORAGE_KEY = 'app_theme_id';
-// const THEME_MODE_KEY = 'app_theme_mode'; // Vamos a migrar a usar ID principalmente
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: THEME_OBJECTS.default_light,
@@ -358,27 +378,72 @@ const ThemeContext = createContext<ThemeContextType>({
   themeMode: 'light',
   currentThemeId: 'default_light',
   setThemeId: async () => { },
+  enableCoachTheme: async () => { },
+  coachThemeEnabled: false,
   availableThemes: AVAILABLE_THEMES,
+  fontSelection: 'default',
+  setFontSelection: async () => { },
 });
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const systemColorScheme = useColorScheme();
-  // Usar el tema del sistema por defecto para evitar problemas de visibilidad
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(
     systemColorScheme === 'dark' ? 'default_dark' : 'default_light'
   );
 
-  // Derivados
-  const themeDef = THEMES_LIST.find(t => t.id === currentThemeId) || defaultLightDef;
-  const theme = THEME_OBJECTS[currentThemeId] || THEME_OBJECTS.default_light;
+  // Coach branding integration
+  const { branding: coachBranding, hasCoachBranding, activeTheme } = useCoachBranding();
+  const [coachThemeEnabled, setCoachThemeEnabled] = useState(true);
+
+  // Font Selection State
+  const [fontSelection, setFontSelectionState] = useState<FontSelectionType>('default');
+
+  // Obtener los colores efectivos del branding
+  const brandingColors = activeTheme?.colors || coachBranding?.colors;
+
+  // Derivados del tema base
+  const shouldUseCoachTheme = hasCoachBranding && coachThemeEnabled && !!brandingColors;
+
+  const isCoachThemeDark = shouldUseCoachTheme && brandingColors?.background
+    ? isDarkColor(brandingColors.background)
+    : false;
+
+  const effectiveThemeId = shouldUseCoachTheme
+    ? (isCoachThemeDark ? 'default_dark' : 'default_light')
+    : currentThemeId;
+
+  const themeDef = THEMES_LIST.find(t => t.id === effectiveThemeId) || defaultLightDef;
+  const baseTheme = THEME_OBJECTS[effectiveThemeId] || THEME_OBJECTS.default_light;
   const isDark = themeDef.isDark;
 
-  // Compatibilidad con el concepto 'themeMode'. 
-  // Si estamos en un tema custom, el 'mode' es fijo según el tema.
-  // Si estamos en default_light/dark, podríamos querer comportamiento AUTO.
-  // POR SIMPLICIDAD: Vamos a tratar 'auto' seleccionando default_light o default_dark según sistema.
-  // Pero el estado principal será 'currentThemeId'.
-  const themeMode: ThemeMode = currentThemeId === 'default_light' ? 'light' : (currentThemeId === 'default_dark' ? 'dark' : (isDark ? 'dark' : 'light'));
+  // Determinar la fuente efectiva
+  // Prioridad: 1. Selección de usuario (si no es default) > 2. Tema Coach (si existe) > 3. Tema Base
+  let effectiveFontFamily = themeDef.fontFamily;
+
+  if (fontSelection === 'serif') effectiveFontFamily = 'serif';
+  else if (fontSelection === 'monospace') effectiveFontFamily = 'monospace';
+  // Si es 'default', usamos la del tema (que puede ser custom font definida en themeDef o System)
+
+  // Aplicar branding del coach si está activo
+  const theme: Theme = (shouldUseCoachTheme && brandingColors)
+    ? {
+      ...baseTheme,
+      primary: brandingColors.primary || baseTheme.primary,
+      background: brandingColors.background || baseTheme.background,
+      backgroundSecondary: adjustColor(brandingColors.background || baseTheme.background, -5),
+      cardBackground: brandingColors.surface || baseTheme.cardBackground,
+      text: brandingColors.text || baseTheme.text,
+      textSecondary: adjustOpacity(brandingColors.text || baseTheme.text, 0.7),
+      primaryBorder: adjustOpacity(brandingColors.primary || baseTheme.primary, 0.3),
+      accentBorder: adjustOpacity(brandingColors.secondary || baseTheme.primary, 0.3),
+      fontFamily: effectiveFontFamily, // Override con la lógica de fuentes
+    }
+    : {
+      ...baseTheme,
+      fontFamily: effectiveFontFamily // Override en tema base también
+    };
+
+  const themeMode: ThemeMode = effectiveThemeId === 'default_light' ? 'light' : (effectiveThemeId === 'default_dark' ? 'dark' : (isDark ? 'dark' : 'light'));
 
   useEffect(() => {
     const loadTheme = async () => {
@@ -387,14 +452,23 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         if (savedId && THEME_OBJECTS[savedId as ThemeId]) {
           setCurrentThemeId(savedId as ThemeId);
         } else {
-          // Si no hay ID guardado, chequear si había modo guardado antiguo
           const savedMode = await AsyncStorage.getItem('app_theme_mode');
           if (savedMode === 'dark') setCurrentThemeId('default_dark');
           else if (savedMode === 'light') setCurrentThemeId('default_light');
           else if (savedMode === 'auto') {
-            // Auto init logic
             setCurrentThemeId(systemColorScheme === 'dark' ? 'default_dark' : 'default_light');
           }
+        }
+
+        const coachThemePref = await AsyncStorage.getItem('totalgains_coach_theme_enabled');
+        if (coachThemePref !== null) {
+          setCoachThemeEnabled(JSON.parse(coachThemePref));
+        }
+
+        // Cargar selección de fuente
+        const savedFont = await AsyncStorage.getItem(FONT_SELECTION_KEY);
+        if (savedFont && ['default', 'serif', 'monospace'].includes(savedFont)) {
+          setFontSelectionState(savedFont as FontSelectionType);
         }
       } catch (error) {
         console.warn('Error loading theme:', error);
@@ -408,36 +482,43 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
     const updateNavigationBar = async () => {
-      // Solo en Android y si el módulo está disponible
       if (Platform.OS !== 'android' || !NavigationBar) return;
-
       try {
-        // Usar el color de fondo del tema para la barra de navegación
         await NavigationBar.setBackgroundColorAsync(theme.background);
-
-        // Ajustar el estilo de los botones (iconos) según si el tema es claro u oscuro
         await NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark');
-
-        console.log(`[ThemeContext] Navigation bar updated: ${theme.background}, style: ${isDark ? 'light' : 'dark'}`);
       } catch (error) {
         console.warn('[ThemeContext] Error updating navigation bar:', error);
       }
     };
-
     updateNavigationBar();
   }, [theme.background, isDark]);
 
-  // Listener para cambios de sistema SI el usuario está usando temas default (o un modo "auto" explícito si lo tuviéramos)
-  // Por ahora, para simplificar, si el usuario elige un tema, se queda con ese.
-  // Podríamos agregar un "Tema ID = 'auto'" virtual que despache a default_light/dark.
-  // Para este requerimiento, el usuario elige temas específicos.
-
   const setThemeId = async (id: ThemeId) => {
     try {
+      setCoachThemeEnabled(false);
+      await AsyncStorage.setItem('totalgains_coach_theme_enabled', 'false');
       await AsyncStorage.setItem(THEME_STORAGE_KEY, id);
       setCurrentThemeId(id);
     } catch (error) {
       console.warn('Error saving theme:', error);
+    }
+  };
+
+  const enableCoachTheme = async () => {
+    try {
+      setCoachThemeEnabled(true);
+      await AsyncStorage.setItem('totalgains_coach_theme_enabled', 'true');
+    } catch (error) {
+      console.warn('Error enabling coach theme:', error);
+    }
+  };
+
+  const setFontSelection = async (font: FontSelectionType) => {
+    try {
+      setFontSelectionState(font);
+      await AsyncStorage.setItem(FONT_SELECTION_KEY, font);
+    } catch (error) {
+      console.warn('Error saving font selection:', error);
     }
   };
 
@@ -448,7 +529,11 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       themeMode,
       currentThemeId,
       setThemeId,
-      availableThemes: AVAILABLE_THEMES
+      enableCoachTheme,
+      coachThemeEnabled,
+      availableThemes: AVAILABLE_THEMES,
+      fontSelection,
+      setFontSelection
     }}>
       {children}
     </ThemeContext.Provider>

@@ -3544,9 +3544,11 @@ export default function Entreno() {
   };
 
   const setSerieDato = async (serieKey, campo, val) => {
+    // Convertir coma a punto para compatibilidad con separador decimal europeo
+    const normalizedVal = typeof val === 'string' ? val.replace(/,/g, '.') : val;
     const nextProg = {
       ...prog,
-      [serieKey]: { ...(prog[serieKey] || {}), [campo]: val },
+      [serieKey]: { ...(prog[serieKey] || {}), [campo]: normalizedVal },
     };
     setProg(nextProg);
     // 🚪 Marcar que hay cambios sin guardar

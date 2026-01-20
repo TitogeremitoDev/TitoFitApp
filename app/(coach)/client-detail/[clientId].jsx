@@ -513,7 +513,7 @@ export default function ClientDetailScreen() {
             <SafeAreaView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
                 <View style={styles.header}>
-                    <Pressable onPress={() => router.back()} style={styles.backButton}>
+                    <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="#1e293b" />
                     </Pressable>
                     <Text style={styles.headerTitle}>Cargando...</Text>
@@ -531,7 +531,7 @@ export default function ClientDetailScreen() {
 
             {/* Header */}
             <View style={styles.header}>
-                <Pressable onPress={() => router.back()} style={styles.backButton}>
+                <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#1e293b" />
                 </Pressable>
                 <View style={{ flex: 1 }}>

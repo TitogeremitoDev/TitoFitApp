@@ -28,6 +28,7 @@ export type User = {
   referralPremiumDays?: number;
   referredUsersCount?: number;
   // ⭐ AGREGAR ESTE CAMPO:
+  avatarUrl?: string; // URL de la foto de perfil
   info_user?: {
     edad?: number;
     peso?: number;
@@ -285,6 +286,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             // 🛑 CRITICAL: Add subscription fields for frozen/over-quota check
             subscriptionStatus: data.subscriptionStatus,
             overQuota: data.overQuota,
+            avatarUrl: data.avatarUrl, // Persist avatarUrl
           };
 
           // Persistir y actualizar estado

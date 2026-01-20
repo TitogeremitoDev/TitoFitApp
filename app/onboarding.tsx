@@ -9,6 +9,7 @@ import {
     Alert,
     ActivityIndicator,
     Modal,
+    Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAlert } from '../src/hooks/useAlert';
 
 // Simple Slider Component
 const SimpleSlider = ({ value, onValueChange, min, max, labels }: any) => {
@@ -85,6 +87,9 @@ export default function Onboarding() {
         message?: string;
     }>({ visible: false, errorCode: null });
 
+    // Hook universal para alertas (funciona en web y móvil)
+    const { showAlert } = useAlert();
+
     const [formData, setFormData] = useState({
         edad: '',
         peso: '',
@@ -124,7 +129,7 @@ export default function Onboarding() {
     const handleNext = () => {
         if (currentStep === 1) {
             if (!formData.edad || !formData.peso || !formData.altura || !formData.objetivos || !formData.genero) {
-                Alert.alert('Campos requeridos', 'Por favor completa todos los campos');
+                showAlert('Campos requeridos', 'Por favor completa todos los campos');
                 return;
             }
         }
@@ -165,7 +170,7 @@ export default function Onboarding() {
             router.replace('/home');
         } catch (error) {
             console.error('Error guardando datos:', error);
-            Alert.alert('Error', 'No se pudieron guardar tus datos. Inténtalo de nuevo.');
+            showAlert('Error', 'No se pudieron guardar tus datos. Inténtalo de nuevo.');
         } finally {
             setLoading(false);
         }
@@ -260,11 +265,11 @@ export default function Onboarding() {
             }
 
             // Ninguno funcionó
-            Alert.alert('Código no válido', 'Este código no existe o ya ha sido usado. Puedes continuar sin código.');
+            showAlert('Código no válido', 'Este código no existe o ya ha sido usado. Puedes continuar sin código.');
 
         } catch (error) {
             console.error('[Onboarding] Error redeeming code:', error);
-            Alert.alert('Error', 'No se pudo verificar el código. Puedes continuar sin él.');
+            showAlert('Error', 'No se pudo verificar el código. Puedes continuar sin él.');
         } finally {
             setIsRedeemingCode(false);
         }
@@ -290,7 +295,7 @@ export default function Onboarding() {
 
                 // Mostrar mensaje de bienvenida (no bloqueante)
                 setTimeout(() => {
-                    Alert.alert(
+                    showAlert(
                         '¡Bienvenido, Entrenador!',
                         'Tu prueba de 14 días ha sido activada. Si al terminar tienes menos de 3 clientes, mantienes el acceso GRATIS para siempre.'
                     );
@@ -299,7 +304,7 @@ export default function Onboarding() {
         } catch (error: any) {
             console.error('[Onboarding] Error activando trial:', error);
             const message = error.response?.data?.message || 'No se pudo activar el trial. Inténtalo de nuevo.';
-            Alert.alert('Error', message);
+            showAlert('Error', message);
         } finally {
             setIsActivatingTrial(false);
         }
@@ -308,7 +313,7 @@ export default function Onboarding() {
     // Handler: Vincular con entrenador
     const handleLinkWithTrainer = async () => {
         if (!trainerCode.trim()) {
-            Alert.alert('Código requerido', 'Por favor introduce el código de tu entrenador');
+            showAlert('Código requerido', 'Por favor introduce el código de tu entrenador');
             return;
         }
 
@@ -377,16 +382,18 @@ export default function Onboarding() {
             if (response.data.success) {
                 console.log('[Onboarding] ✅ Código de coach canjeado');
                 await refreshUser();
-                Alert.alert(
+
+                // Navegar con showAlert (funciona en web y móvil)
+                showAlert(
                     '¡Código canjeado!',
                     response.data.message || 'Tu cuenta de entrenador ha sido activada.',
-                    [{ text: 'Empezar', onPress: () => router.replace('/(coach)/profile') }]
+                    [{ text: 'Empezar', onPress: () => router.replace('/(coach)') }]
                 );
             }
         } catch (error: any) {
             console.error('[Onboarding] Error canjeando código coach:', error);
             const message = error.response?.data?.message || 'Código no válido o ya ha sido usado.';
-            Alert.alert('Error', message);
+            showAlert('Error', message);
         } finally {
             setIsRedeemingCoachCode(false);
         }
@@ -410,7 +417,7 @@ export default function Onboarding() {
             if (response.data.success) {
                 console.log('[Onboarding] ✅ Código premium canjeado');
                 await refreshUser();
-                Alert.alert(
+                showAlert(
                     '¡Código canjeado!',
                     response.data.message || 'Tu cuenta ha sido mejorada.',
                     [{ text: 'Continuar', onPress: () => setCurrentStep(1) }]
@@ -419,7 +426,7 @@ export default function Onboarding() {
         } catch (error: any) {
             console.error('[Onboarding] Error canjeando código free:', error);
             // Si falla el código, permitir continuar de todas formas
-            Alert.alert(
+            showAlert(
                 'Código no válido',
                 'El código no existe o ya ha sido usado. Puedes continuar sin él.',
                 [
@@ -441,7 +448,7 @@ export default function Onboarding() {
                 <ScrollView
                     style={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 40 }}
+                    contentContainerStyle={{ paddingBottom: 200 }}
                 >
                     <View style={styles.roleSelectorContent}>
                         {/* Header */}
@@ -646,7 +653,7 @@ export default function Onboarding() {
                                                 )}
                                             </TouchableOpacity>
                                             <Text style={[styles.clientMicrocopy, { color: '#475569' }]}>
-                                                Tu entrenador te dará un código único para vincularte. Después completarás tu perfil para que pueda crear tu plan.
+                                                Tu entrenador te dará un código único para vincularte. Este código es solo para enlazarte con tu entrenador, no es un servicio de pago externo.
                                             </Text>
                                         </>
                                     )}
@@ -809,7 +816,7 @@ export default function Onboarding() {
                     <Text style={[styles.progressText, { color: theme.textSecondary }]}>Paso 1 de 6</Text>
                 </View>
 
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Vamos a ajustar la app a ti</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Solo 3 cosas rápidas</Text>
 
@@ -936,7 +943,7 @@ export default function Onboarding() {
                     <Text style={[styles.progressText, { color: theme.textSecondary }]}>Paso 2 de 6</Text>
                 </View>
 
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Tu nivel y compromiso</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Sin presión, solo para ajustarte mejor</Text>
 
@@ -1044,7 +1051,7 @@ export default function Onboarding() {
                     <Text style={[styles.progressText, { color: theme.textSecondary }]}>Paso 3 de 6</Text>
                 </View>
 
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Tu estilo de entreno y dieta</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Unas pocas más y ya está</Text>
 
@@ -1204,7 +1211,7 @@ export default function Onboarding() {
                     <Text style={[styles.progressText, { color: theme.textSecondary }]}>Paso 4 de 6</Text>
                 </View>
 
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Salud y hábitos</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>
                         Esto es importante para cuidarte, no para juzgarte
@@ -1405,8 +1412,11 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     scrollContent: {
+        // Sin flex: 1 para que no se expanda
+    },
+    scrollContentContainer: {
         padding: 20,
-        paddingBottom: 40,
+        paddingBottom: 20,
     },
     welcomeContent: {
         flex: 1,
@@ -1495,35 +1505,36 @@ const styles = StyleSheet.create({
         textDecorationLine: 'underline',
     },
     screenTitle: {
-        fontSize: 24,
+        fontSize: 22,
         fontWeight: 'bold',
-        marginBottom: 8,
+        marginBottom: 6,
         textAlign: 'center',
     },
     screenSubtitle: {
-        fontSize: 15,
-        marginBottom: 24,
+        fontSize: 14,
+        marginBottom: 18,
         textAlign: 'center',
     },
     section: {
-        marginBottom: 5,
+        marginBottom: 8,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
     },
     fieldLabel: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
-        marginBottom: 12,
+        marginBottom: 8,
     },
     numericInput: {
         borderWidth: 1,
         borderRadius: 10,
-        paddingVertical: 16,
+        paddingVertical: 12,
         paddingHorizontal: 16,
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '600',
         textAlign: 'center',
+        minHeight: 48,
     },
     textInput: {
         borderWidth: 1,
@@ -1531,16 +1542,17 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 16,
         fontSize: 15,
+        minHeight: 48,
     },
     inputHint: {
-        fontSize: 13,
+        fontSize: 12,
         textAlign: 'center',
-        marginTop: 6,
+        marginTop: 4,
     },
     chipGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 1,
+        gap: 8,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1548,13 +1560,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 10,
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         borderRadius: 20,
-        borderWidth: 2,
-        marginBottom: 8,
+        borderWidth: 1.5,
+        marginBottom: 4,
+        minHeight: 40,
     },
     chipText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '500',
     },
     sliderContainer: {
@@ -1567,9 +1580,9 @@ const styles = StyleSheet.create({
         gap: 20,
     },
     sliderBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1608,6 +1621,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         gap: 8,
         borderWidth: 2,
+        marginBottom: 40,
     },
     footerButtonPrimary: {
         borderWidth: 0,
@@ -1644,15 +1658,16 @@ const styles = StyleSheet.create({
         flex: 1,
         borderRadius: 10,
         paddingHorizontal: 14,
-        paddingVertical: 12,
+        paddingVertical: 14,
         fontSize: 15,
         fontWeight: '600',
         letterSpacing: 1,
         borderWidth: 1,
+        minHeight: 50, // iOS área táctil
     },
     invitationButton: {
-        width: 44,
-        height: 44,
+        width: 50,
+        height: 50,
         borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
@@ -1788,15 +1803,16 @@ const styles = StyleSheet.create({
         flex: 1,
         borderRadius: 10,
         paddingHorizontal: 14,
-        paddingVertical: 10,
+        paddingVertical: 14,
         fontSize: 14,
         fontWeight: '600',
         letterSpacing: 1,
         borderWidth: 1,
+        minHeight: 50, // iOS área táctil
     },
     promoCodeButton: {
-        width: 40,
-        height: 40,
+        width: 50,
+        height: 50,
         borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
@@ -1824,12 +1840,13 @@ const styles = StyleSheet.create({
     trainerCodeInput: {
         borderRadius: 12,
         paddingHorizontal: 16,
-        paddingVertical: 14,
+        paddingVertical: 16,
         fontSize: 16,
         fontWeight: '600',
         letterSpacing: 2,
         borderWidth: 1,
         textAlign: 'center',
+        minHeight: 56, // iOS área táctil
     },
     linkTrainerButton: {
         flexDirection: 'row',

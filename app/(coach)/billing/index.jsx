@@ -12,6 +12,7 @@ import MiniFinancialCalendar from './components/MiniFinancialCalendar';
 import ChurnIndicator from './components/ChurnIndicator';
 import UndoToast from './components/UndoToast';
 import StatusTooltip from './components/StatusTooltip';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 
 // Frequency translation helper
 const FREQ_LABELS = {
@@ -363,13 +364,11 @@ export default function BillingScreen() {
             {filteredTransactions.map((t) => (
                 <View key={t._id} style={styles.tableRow}>
                     <View style={[styles.cell, { flex: 2, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
-                        {t.clientId?.avatarUrl ? (
-                            <Image source={{ uri: t.clientId.avatarUrl }} style={styles.tableAvatar} />
-                        ) : (
-                            <View style={[styles.tableAvatar, { backgroundColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center' }]}>
-                                <Ionicons name="person" size={16} color="#fff" />
-                            </View>
-                        )}
+                        <AvatarWithInitials
+                            avatarUrl={t.clientId?.avatarUrl}
+                            name={t.clientId?.nombre || 'Cliente'}
+                            size={32}
+                        />
                         <View>
                             <Text style={styles.tableName}>{t.clientId?.nombre || 'Cliente'}</Text>
                             <Text style={styles.tableEmail}>{t.clientId?.email || ''}</Text>
@@ -451,13 +450,11 @@ export default function BillingScreen() {
                             {/* Nombre + Avatar with ChurnIndicator */}
                             <View style={[styles.subsCell, styles.colNombre, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
                                 <View style={{ position: 'relative' }}>
-                                    {client.avatarUrl ? (
-                                        <Image source={{ uri: client.avatarUrl }} style={styles.subsAvatar} />
-                                    ) : (
-                                        <View style={[styles.subsAvatar, { backgroundColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center' }]}>
-                                            <Ionicons name="person" size={16} color="#fff" />
-                                        </View>
-                                    )}
+                                    <AvatarWithInitials
+                                        avatarUrl={client.avatarUrl}
+                                        name={client.nombre}
+                                        size={40}
+                                    />
                                     {/* Churn Risk Indicator */}
                                     {churnRisks[client._id]?.riskLevel && churnRisks[client._id].riskLevel !== 'none' && (
                                         <ChurnIndicator riskLevel={churnRisks[client._id].riskLevel} size={12} />
@@ -563,15 +560,11 @@ export default function BillingScreen() {
                                 <View style={styles.cardHeader}>
                                     <View style={styles.cardHeaderLeft}>
                                         <View style={{ position: 'relative' }}>
-                                            {client.avatarUrl ? (
-                                                <Image source={{ uri: client.avatarUrl }} style={styles.cardAvatar} />
-                                            ) : (
-                                                <View style={styles.cardAvatarPlaceholder}>
-                                                    <Text style={styles.cardAvatarText}>
-                                                        {client.nombre?.charAt(0)?.toUpperCase() || '?'}
-                                                    </Text>
-                                                </View>
-                                            )}
+                                            <AvatarWithInitials
+                                                avatarUrl={client.avatarUrl}
+                                                name={client.nombre}
+                                                size={44}
+                                            />
                                             {/* Churn Risk Indicator */}
                                             {churnRisks[client._id]?.riskLevel && churnRisks[client._id].riskLevel !== 'none' && (
                                                 <ChurnIndicator riskLevel={churnRisks[client._id].riskLevel} size={14} />
@@ -643,13 +636,11 @@ export default function BillingScreen() {
                             /* Sin Plan */
                             <View style={styles.cardHeader}>
                                 <View style={styles.cardHeaderLeft}>
-                                    {client.avatarUrl ? (
-                                        <Image source={{ uri: client.avatarUrl }} style={styles.cardAvatar} />
-                                    ) : (
-                                        <View style={[styles.cardAvatarPlaceholder, { backgroundColor: '#e2e8f0' }]}>
-                                            <Ionicons name="person" size={18} color="#94a3b8" />
-                                        </View>
-                                    )}
+                                    <AvatarWithInitials
+                                        avatarUrl={client.avatarUrl}
+                                        name={client.nombre}
+                                        size={44}
+                                    />
                                     <View>
                                         <Text style={[styles.cardPlanName, { color: '#94a3b8' }]}>Sin Plan Activo</Text>
                                         <Text style={styles.cardClientName}>{client.nombre}</Text>

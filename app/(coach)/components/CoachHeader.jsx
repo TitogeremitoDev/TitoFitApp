@@ -37,7 +37,7 @@ export default function CoachHeader({
         if (onBackPress) {
             onBackPress();
         } else {
-            router.back();
+            router.canGoBack() ? router.back() : router.replace('/(coach)');
         }
     };
 

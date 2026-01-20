@@ -400,7 +400,7 @@ export default function FeedbacksScreen() {
                 <View style={styles.headerTop}>
                     <TouchableOpacity
                         style={styles.backBtn}
-                        onPress={() => router.back()}
+                        onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')}
                     >
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>

@@ -989,7 +989,7 @@ export default function CreateRoutineScreen() {
         }
 
         Alert.alert('Éxito', 'Rutina guardada localmente');
-        router.back();
+        router.canGoBack() ? router.back() : router.replace('/(coach)');
       } else if (editingCurrentRoutineId) {
         // 🆕 Mostrar modal de confirmación para elegir reiniciar o mantener datos
         const daysArray = [];
@@ -1052,7 +1052,7 @@ export default function CreateRoutineScreen() {
 
           if (retryData.success) {
             Alert.alert('Éxito', 'Rutina creada como nueva en la nube');
-            router.back();
+            router.canGoBack() ? router.back() : router.replace('/(coach)');
             return;
           } else {
             Alert.alert('Error', retryData.message || 'Error al guardar');
@@ -1064,7 +1064,7 @@ export default function CreateRoutineScreen() {
 
         if (data.success) {
           Alert.alert('Éxito', 'Rutina guardada en la nube');
-          router.back();
+          router.canGoBack() ? router.back() : router.replace('/(coach)');
         } else {
           Alert.alert('Error', data.message || 'Error al guardar');
         }
@@ -1107,7 +1107,7 @@ export default function CreateRoutineScreen() {
           ? `Rutina de ${clientName} actualizada. Datos de entrenamientos reiniciados.`
           : `Rutina de ${clientName} actualizada. Datos de entrenamientos anteriores conservados.`;
         Alert.alert('Éxito', message);
-        router.back();
+        router.canGoBack() ? router.back() : router.replace('/(coach)');
       } else {
         Alert.alert('Error', data.message || 'Error al actualizar la rutina del cliente');
       }

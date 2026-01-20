@@ -53,13 +53,13 @@ export default function ActionButton({
   const compactStyle = compact ? styles.btnCompact : null;
 
   const textStyle = isPrimary
-    ? [styles.btnPrimaryTxt, { color: theme.primaryText }]
-    : [styles.btnSecondaryTxt, { color: theme.text }, compact && styles.btnCompactTxt];
+    ? [styles.btnPrimaryTxt, { color: theme.primaryText || '#FFFFFF' }]
+    : [styles.btnSecondaryTxt, { color: theme.text }, compact ? styles.btnCompactTxt : null];
 
-  const iconColor = isPrimary ? theme.primaryText : theme.text;
+  const iconColor = isPrimary ? (theme.primaryText || '#FFFFFF') : theme.text;
 
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, compact && { width: '100%' }]}>
+    <Animated.View style={[{ transform: [{ scale }] }, compact ? { width: '100%' } : null]}>
       <Pressable
         {...pressableProps} // Pasa el onPress (de Link o normal)
         onPressIn={() => animate(0.98)}

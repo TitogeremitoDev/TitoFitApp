@@ -85,7 +85,8 @@ const THEMED_BOXES = [
             { icon: 'card', name: 'Facturación', route: '/(coach)/billing', color: '#14b8a6' },
             { icon: 'people-circle', name: 'Comunidad', route: '/(coach)/community', color: '#06b6d4', webOnly: true },
             //{ icon: 'bar-chart', name: 'Analytics', route: '/(coach)/analytics', color: '#a855f7', webOnly: true },
-            { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' }
+            { icon: 'settings', name: 'Configuración', route: '/(coach)/settings', color: '#64748b' },
+            { icon: 'color-palette', name: 'Branding', route: '/(coach)/branding', color: '#8b5cf6' }
 
         ]
     }

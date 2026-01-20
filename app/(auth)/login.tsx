@@ -158,6 +158,8 @@ export default function LoginScreen() {
   const ANDROID_INTERNAL = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_INTERNAL;
   const ANDROID_PROD = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID_PROD;
   const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  // iOS Client ID específico (diferente del Web Client ID)
+  const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '915310517535-l8aclvjo3hqmh6frmb7otpge2ufqnaes.apps.googleusercontent.com';
 
   const androidClientId =
     APP_ENV === 'prod'
@@ -200,7 +202,7 @@ export default function LoginScreen() {
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     androidClientId: Platform.OS === 'android' ? androidClientId : undefined,
-    iosClientId: Platform.OS === 'ios' ? WEB_CLIENT_ID : undefined,
+    iosClientId: Platform.OS === 'ios' ? IOS_CLIENT_ID : undefined,
     webClientId: WEB_CLIENT_ID,
     scopes: ['openid', 'profile', 'email'],
     redirectUri: getRedirectUri(),
@@ -253,15 +255,16 @@ export default function LoginScreen() {
   // ════════════════════════════════════════════════════════════════════════
 
   const handleGoogleLogin = async () => {
-    // En Web, usar expo-auth-session
-    if (Platform.OS === 'web') {
+    // En Web e iOS, usar expo-auth-session
+    if (Platform.OS === 'web' || Platform.OS === 'ios') {
       if (!request) {
         Alert.alert('No listo', 'La petición de Google aún no está inicializada. Intenta de nuevo.');
         return;
       }
 
       if (__DEV__) {
-        console.log('[Login] Iniciando Google Login (Web)...');
+        console.log(`[Login] Iniciando Google Login (${Platform.OS === 'web' ? 'Web' : 'iOS'})...`);
+        console.log('[Login] iOS Client ID:', IOS_CLIENT_ID);
       }
 
       try {
@@ -279,9 +282,9 @@ export default function LoginScreen() {
       return;
     }
 
-    // En Android/iOS, usar el SDK nativo de Google Sign-In
+    // En Android, usar el SDK nativo de Google Sign-In
     if (__DEV__) {
-      console.log('[Login] Iniciando Google Login (Nativo)...');
+      console.log('[Login] Iniciando Google Login (Android Nativo)...');
       console.log('[Login] Platform:', Platform.OS);
     }
 
@@ -477,8 +480,13 @@ export default function LoginScreen() {
         return;
       }
 
+      const fullName = credential.fullName ? {
+        givenName: credential.fullName.givenName ?? undefined,
+        familyName: credential.fullName.familyName ?? undefined
+      } : null;
+
       // Enviar al backend
-      await loginWithApple(credential.identityToken, credential.fullName);
+      await loginWithApple(credential.identityToken, fullName);
 
       if (__DEV__) {
         console.log('[Login] Login con Apple completado exitosamente');
@@ -702,10 +710,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     marginBottom: 12,
     paddingHorizontal: 10,
-    height: 46,
+    minHeight: 50, // iOS requiere mínimo 44pt para área táctil
   },
   inputIcon: { marginRight: 8 },
-  input: { flex: 1, color: '#E5E7EB' },
+  input: { flex: 1, color: '#E5E7EB', paddingVertical: 14 }, // Padding vertical para mejor área táctil en iOS
   eyeBtn: { padding: 6, marginLeft: 4 },
   primaryBtn: {
     height: 48,

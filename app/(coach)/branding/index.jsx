@@ -15,28 +15,59 @@ import {
     Alert,
     Dimensions,
     Platform,
-    Modal
+    Modal,
+    TextInput,
+    Image,
+    useWindowDimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageCropper } from '../../../src/components/shared/ImageCropper';
+import { coachLogoService } from '../../../src/services/coachLogoService';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 import PhonePreview from './PhonePreview';
 
-const { width } = Dimensions.get('window');
-const isLargeScreen = width > 900;
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export default function BrandingScreen() {
     const router = useRouter();
     const { token, user } = useAuth();
+    const { refresh: refreshBranding } = useCoachBranding();
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width > 720;
 
     // Estados
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
     const [brandingData, setBrandingData] = useState(null);
-    const [selectedVariantId, setSelectedVariantId] = useState(null);
+    const [selectedVariantId, setSelectedVariantId] = useState(null); // Para preview
+    const [selectedFont, setSelectedFont] = useState(null);
     const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+
+    // ═══════ Estados para Multi-Theme Selection ═══════
+    const [activeVariants, setActiveVariants] = useState([]); // IDs de temas activos (1-3)
+    const [defaultVariant, setDefaultVariant] = useState(null); // ID del tema por defecto
+
+    // ═══════ Estados para Logo OFICIAL del Entrenador (se guarda en perfil) ═══════
+    const [officialLogoSource, setOfficialLogoSource] = useState('url'); // 'url' | 'upload'
+    const [officialLogoUrl, setOfficialLogoUrl] = useState('');
+    const [croppingOfficialLogo, setCroppingOfficialLogo] = useState(null);
+    const [tempOfficialLogoUri, setTempOfficialLogoUri] = useState(null);
+    const [showOfficialPhotoOptions, setShowOfficialPhotoOptions] = useState(false);
+    const [isUploadingOfficial, setIsUploadingOfficial] = useState(false);
+
+    // ═══════ Estados para Imagen de Análisis IA (solo para generar temas) ═══════
+    const [iaImageSource, setIaImageSource] = useState('url'); // 'url' | 'upload'
+    const [iaImageUrl, setIaImageUrl] = useState('');
+    const [croppingIaImage, setCroppingIaImage] = useState(null);
+    const [tempIaImageUri, setTempIaImageUri] = useState(null);
+    const [showIaPhotoOptions, setShowIaPhotoOptions] = useState(false);
+    const [isUploadingIa, setIsUploadingIa] = useState(false);
+
+
     const [alertModal, setAlertModal] = useState({ visible: false, title: '', message: '', type: 'info' });
 
     // Función para mostrar alertas cross-platform
@@ -58,7 +89,13 @@ export default function BrandingScreen() {
 
             if (data.success && data.branding) {
                 setSelectedVariantId(data.branding.variantId);
+                setSelectedFont(data.branding.fontFamily || 'System');
             }
+            // Cargar logo oficial actual del usuario si existe
+            if (user?.trainerProfile?.logoUrl) {
+                setOfficialLogoUrl(user.trainerProfile.logoUrl);
+            }
+
         } catch (error) {
             console.error('[Branding] Error loading:', error);
         } finally {
@@ -66,59 +103,214 @@ export default function BrandingScreen() {
         }
     };
 
-    const handlePickLogo = async () => {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MULTI-THEME SELECTION HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const toggleVariantActive = (variantId) => {
+        setActiveVariants(prev => {
+            if (prev.includes(variantId)) {
+                // Desactivar - pero debe quedar al menos 1 activo
+                if (prev.length <= 1) {
+                    return prev; // No permitir desactivar el último
+                }
+                // Si estamos desactivando el default, cambiar el default
+                if (defaultVariant === variantId) {
+                    const remaining = prev.filter(id => id !== variantId);
+                    setDefaultVariant(remaining[0]);
+                }
+                return prev.filter(id => id !== variantId);
+            } else {
+                // Activar
+                return [...prev, variantId];
+            }
+        });
+    };
+
+    const setAsDefault = (variantId) => {
+        // Primero asegurar que esté activo
+        if (!activeVariants.includes(variantId)) {
+            setActiveVariants(prev => [...prev, variantId]);
+        }
+        setDefaultVariant(variantId);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // OFFICIAL LOGO HANDLERS (para perfil del entrenador - rectangular)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const handlePickOfficialLogo = async () => {
+        setShowOfficialPhotoOptions(false);
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-                showAlert('Permiso necesario', 'Se necesita acceso a la galería para subir tu logo.', 'warning');
+                showAlert('Permiso necesario', 'Se necesita acceso a la galería.', 'warning');
                 return;
             }
-
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images'],
                 allowsEditing: false,
-                quality: 0.8,
+                quality: 1,
             });
-
             if (!result.canceled) {
-                handleGenerateBranding(result.assets[0].uri);
+                setCroppingOfficialLogo(result.assets[0].uri);
             }
         } catch (error) {
-            console.error('[Branding] Error picking image:', error);
+            console.error('[Branding] Error picking official logo:', error);
             showAlert('Error', 'No se pudo seleccionar la imagen', 'error');
         }
     };
 
-    const handleGenerateBranding = async (imageUri) => {
+    const handleOfficialCropComplete = async (croppedUri) => {
+        setCroppingOfficialLogo(null);
+        setIsUploadingOfficial(true);
+        setTempOfficialLogoUri(croppedUri);
+
+        try {
+            const newLogoUrl = await coachLogoService.uploadLogo(croppedUri, token);
+            console.log('[Branding] Official logo uploaded:', newLogoUrl);
+            setOfficialLogoUrl(newLogoUrl);
+            setTempOfficialLogoUri(null);
+            showAlert('¡Logo guardado!', 'Tu logo oficial ha sido actualizado.', 'success');
+        } catch (error) {
+            console.error('[Branding] Official logo upload failed:', error);
+            showAlert('Error', error.message || 'Falló la subida del logo.', 'error');
+            setTempOfficialLogoUri(null);
+        } finally {
+            setIsUploadingOfficial(false);
+        }
+    };
+
+    const handleSaveOfficialLogo = async () => {
+        if (!officialLogoUrl) {
+            showAlert('Error', 'Debes ingresar una URL o subir una imagen.', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/api/trainers/profile/logo`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ logoUrl: officialLogoUrl })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showAlert('Guardado', 'Tu logo oficial se ha actualizado correctamente.', 'success');
+            } else {
+                throw new Error(data.message || 'Error al guardar');
+            }
+        } catch (error) {
+            console.error('[Branding] Save logo error:', error);
+            showAlert('Error', 'No se pudo guardar el logo.', 'error');
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // IA IMAGE HANDLERS (solo para análisis de IA - no afecta perfil)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const handlePickIaImage = async () => {
+        setShowIaPhotoOptions(false);
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                showAlert('Permiso necesario', 'Se necesita acceso a la galería.', 'warning');
+                return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false,
+                quality: 1,
+            });
+            if (!result.canceled) {
+                setCroppingIaImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('[Branding] Error picking IA image:', error);
+            showAlert('Error', 'No se pudo seleccionar la imagen', 'error');
+        }
+    };
+
+    const handleIaCropComplete = async (croppedUri) => {
+        setCroppingIaImage(null);
+        // Para la imagen IA, NO la subimos al perfil
+        // Solo guardamos la URI local para usarla en handleGenerateBranding
+        setIaImageUrl(croppedUri);
+        setTempIaImageUri(null);
+        // La imagen se subirá como FormData cuando el usuario pulse "Generar"
+    };
+
+    const handleGenerateBranding = async (sourceUrl) => {
         setGenerating(true);
 
         try {
-            const formData = new FormData();
-            const isWeb = typeof window !== 'undefined' && window.document;
+            // Usar imagen de IA si se proporcionó, sino la URL manual
+            const uriToFetch = sourceUrl || iaImageUrl;
+            console.log('Generating branding from:', uriToFetch);
 
-            if (isWeb) {
-                const response = await fetch(imageUri);
-                const blob = await response.blob();
-                formData.append('logo', blob, `logo_${Date.now()}.jpg`);
+            if (!uriToFetch) {
+                showAlert('Error', 'No hay una imagen seleccionada para generar el branding.', 'warning');
+                setGenerating(false);
+                return;
+            }
+
+            let response;
+
+            // Lógica bifurcada: URL Remota vs Archivo Local
+            if (uriToFetch.startsWith('http')) {
+                // CASO A: URL REMOTA (Backend descarga para evitar CORS)
+                console.log('[Branding] Sending URL to backend:', uriToFetch);
+                response = await fetch(`${API_URL}/api/coach/branding/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ logoUrl: uriToFetch })
+                });
+
             } else {
-                formData.append('logo', {
-                    uri: imageUri,
-                    name: `logo_${Date.now()}.jpg`,
-                    type: 'image/jpeg'
+                // CASO B: ARCHIVO LOCAL (FormData multipart)
+                const formData = new FormData();
+
+                if (Platform.OS === 'web') {
+                    // En Web necesitamos un Blob/File real
+                    const res = await fetch(uriToFetch);
+                    const blob = await res.blob();
+                    const file = new File([blob], 'logo.png', { type: 'image/png' });
+                    formData.append('logo', file);
+                } else {
+                    // En Native funciona con { uri, name, type }
+                    formData.append('logo', {
+                        uri: uriToFetch,
+                        name: `logo_${Date.now()}.jpg`,
+                        type: 'image/jpeg'
+                    });
+                }
+
+                console.log('[Branding] Sending file to backend');
+                response = await fetch(`${API_URL}/api/coach/branding/generate`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: formData
                 });
             }
 
-            const apiResponse = await fetch(`${API_URL}/api/coach/branding/generate`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData
-            });
-
-            const data = await apiResponse.json();
+            const data = await response.json();
 
             if (data.success) {
                 setBrandingData(data);
                 setSelectedVariantId(data.options[0]?.id || 'dark');
+                setSelectedFont(data.suggestedFont || 'System');
+                // Inicializar multi-theme: todos activos, el primero como default
+                const allVariantIds = data.options.map(opt => opt.id);
+                setActiveVariants(allVariantIds);
+                setDefaultVariant(allVariantIds[0] || 'dark');
             } else {
                 throw new Error(data.message || 'Error generando branding');
             }
@@ -132,6 +324,19 @@ export default function BrandingScreen() {
 
     const handleConfirmActivate = async () => {
         setConfirmModalVisible(false);
+
+        // Validar que hay al menos 1 tema activo
+        if (activeVariants.length === 0) {
+            showAlert('Error', 'Debes activar al menos 1 tema', 'warning');
+            return;
+        }
+
+        // Validar que el default está entre los activos
+        if (!activeVariants.includes(defaultVariant)) {
+            showAlert('Error', 'El tema por defecto debe estar activo', 'warning');
+            return;
+        }
+
         try {
             const response = await fetch(`${API_URL}/api/coach/branding/select`, {
                 method: 'POST',
@@ -139,15 +344,26 @@ export default function BrandingScreen() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`
                 },
-                body: JSON.stringify({ variantId: selectedVariantId })
+                body: JSON.stringify({
+                    activeVariantIds: activeVariants,
+                    defaultVariantId: defaultVariant,
+                    fontOverride: selectedFont
+                })
             });
 
             const data = await response.json();
             if (data.success) {
-                showAlert('¡Activado!', 'Tus clientes verán ahora tu branding personalizado.', 'success');
+                await refreshBranding();
+                const msg = activeVariants.length > 1
+                    ? `Tus clientes podrán elegir entre ${activeVariants.length} temas.`
+                    : 'Tu tema ha sido activado.';
+                showAlert('¡Activado!', msg, 'success');
+            } else {
+                throw new Error(data.message || 'Error al activar');
             }
         } catch (error) {
-            showAlert('Error', 'No se pudo activar el branding', 'error');
+            console.error('[Branding] Error activating:', error);
+            showAlert('Error', error.message || 'No se pudo activar el branding', 'error');
         }
     };
 
@@ -157,6 +373,7 @@ export default function BrandingScreen() {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` }
             });
+            await refreshBranding(); // Actualizar contexto global
             setSelectedVariantId(null);
             setBrandingData(null);
             showAlert('Desactivado', 'Los clientes verán el tema por defecto.', 'info');
@@ -166,9 +383,30 @@ export default function BrandingScreen() {
     };
 
     // Tema seleccionado actual para preview
-    const selectedTheme = brandingData?.options?.find(opt => opt.id === selectedVariantId)
+    // Helper para contraste simple (blanco/negro)
+    const getContrastColor = (hexColor) => {
+        // Convertir hex a RGB
+        const r = parseInt(hexColor.substr(1, 2), 16);
+        const g = parseInt(hexColor.substr(3, 2), 16);
+        const b = parseInt(hexColor.substr(5, 2), 16);
+        // Calcular luminancia (fórmula estándar)
+        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+        return (yiq >= 128) ? '#1e293b' : '#ffffff';
+    };
+
+    // Tema seleccionado actual para preview
+    const rawTheme = brandingData?.options?.find(opt => opt.id === selectedVariantId)
         || brandingData?.options?.[0]
         || { colors: { primary: '#3b82f6', secondary: '#1e293b', background: '#f8fafc', surface: '#ffffff', text: '#1e293b' } };
+
+    // Inyectar primaryText calculado
+    const selectedTheme = {
+        ...rawTheme,
+        colors: {
+            ...rawTheme.colors,
+            primaryText: getContrastColor(rawTheme.colors.primary || '#3b82f6')
+        }
+    };
 
     if (loading) {
         return (
@@ -212,21 +450,172 @@ export default function BrandingScreen() {
                 ]}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Si no hay branding, mostrar upload */}
+                {/* Si no hay branding, mostrar UI inicial refinada */}
                 {!brandingData && !generating && (
-                    <View style={styles.uploadSection}>
-                        <View style={styles.heroIcon}>
-                            <Ionicons name="color-palette" size={48} color="#3b82f6" />
+                    <View style={styles.initialStateContainer}>
+
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        {/* SECCIÓN 1: LOGO OFICIAL DEL ENTRENADOR (se guarda en perfil) */}
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        <View style={styles.sectionCard}>
+                            <View style={styles.sectionHeaderRow}>
+                                <View style={[styles.sectionIconContainer, { backgroundColor: '#10b981' }]}>
+                                    <Ionicons name="business" size={24} color="#fff" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.sectionTitle}>1. Logo Oficial (Perfil)</Text>
+                                    <Text style={styles.sectionDescription}>Este logo lo verán tus clientes. Se guarda en tu perfil.</Text>
+                                </View>
+                            </View>
+
+                            {/* Toggle URL/Upload */}
+                            <View style={styles.segmentedControl}>
+                                <TouchableOpacity
+                                    style={[styles.segmentBtn, officialLogoSource === 'url' && styles.segmentBtnActive]}
+                                    onPress={() => setOfficialLogoSource('url')}
+                                >
+                                    <Text style={[styles.segmentText, officialLogoSource === 'url' && styles.segmentTextActive]}>Enlace URL</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.segmentBtn, officialLogoSource === 'upload' && styles.segmentBtnActive]}
+                                    onPress={() => setOfficialLogoSource('upload')}
+                                >
+                                    <Text style={[styles.segmentText, officialLogoSource === 'upload' && styles.segmentTextActive]}>Subir Imagen</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={styles.inputArea}>
+                                {officialLogoSource === 'url' ? (
+                                    <View style={styles.urlInputContainer}>
+                                        <Ionicons name="link-outline" size={20} color="#94a3b8" />
+                                        <TextInput
+                                            style={styles.textInput}
+                                            value={officialLogoUrl}
+                                            onChangeText={setOfficialLogoUrl}
+                                            placeholder="https://ejemplo.com/mi-logo.png"
+                                            placeholderTextColor="#cbd5e1"
+                                            autoCapitalize="none"
+                                        />
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity
+                                        style={styles.uploadBox}
+                                        onPress={() => setShowOfficialPhotoOptions(true)}
+                                    >
+                                        {tempOfficialLogoUri || officialLogoUrl ? (
+                                            <Image source={{ uri: tempOfficialLogoUri || officialLogoUrl }} style={styles.uploadedPreview} resizeMode="contain" />
+                                        ) : (
+                                            <View style={styles.uploadPlaceholder}>
+                                                <Ionicons name="business-outline" size={32} color="#10b981" />
+                                                <Text style={styles.uploadPlaceholderText}>Toca para subir logo oficial</Text>
+                                            </View>
+                                        )}
+                                        {isUploadingOfficial && (
+                                            <View style={styles.uploadingOverlay}>
+                                                <ActivityIndicator color="#fff" />
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            {/* Botón Guardar Logo Manualmente */}
+                            <TouchableOpacity
+                                style={[styles.generateButton, { marginTop: 16, backgroundColor: '#10b981' }]}
+                                onPress={handleSaveOfficialLogo}
+                            >
+                                <View style={styles.generateButtonGradient}>
+                                    <Ionicons name="save-outline" size={20} color="#fff" />
+                                    <Text style={styles.generateButtonText}>Guardar Logo</Text>
+                                </View>
+                            </TouchableOpacity>
                         </View>
-                        <Text style={styles.heroTitle}>Identidad Visual para tus Clientes</Text>
-                        <Text style={styles.heroSubtitle}>
-                            Sube tu logo y la IA creará un tema personalizado que tus clientes verán en su app.
-                        </Text>
-                        <TouchableOpacity style={styles.uploadCard} onPress={handlePickLogo}>
-                            <Ionicons name="cloud-upload" size={40} color="#3b82f6" />
-                            <Text style={styles.uploadTitle}>Subir Logo</Text>
-                            <Text style={styles.uploadSubtitle}>JPG, PNG o WebP • Máximo 5MB</Text>
-                        </TouchableOpacity>
+
+                        <View style={styles.connectorLine} />
+
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        {/* SECCIÓN 2: IMAGEN PARA IA + GENERAR (todo en un solo card) */}
+                        {/* ═══════════════════════════════════════════════════════════════ */}
+                        <View style={styles.sectionCard}>
+                            <View style={styles.sectionHeaderRow}>
+                                <View style={[styles.sectionIconContainer, { backgroundColor: '#8b5cf6' }]}>
+                                    <Ionicons name="sparkles" size={24} color="#fff" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.sectionTitle}>2. Generar Temas con IA</Text>
+                                    <Text style={styles.sectionDescription}>Sube una imagen y la IA creará 3 variantes de tema únicas.</Text>
+                                </View>
+                            </View>
+
+                            {/* Selector URL/Upload para IA */}
+                            <View style={styles.segmentedControl}>
+                                <TouchableOpacity
+                                    style={[styles.segmentBtn, iaImageSource === 'url' && styles.segmentBtnActive]}
+                                    onPress={() => setIaImageSource('url')}
+                                >
+                                    <Text style={[styles.segmentText, iaImageSource === 'url' && styles.segmentTextActive]}>Enlace URL</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.segmentBtn, iaImageSource === 'upload' && styles.segmentBtnActive]}
+                                    onPress={() => setIaImageSource('upload')}
+                                >
+                                    <Text style={[styles.segmentText, iaImageSource === 'upload' && styles.segmentTextActive]}>Subir Imagen</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={styles.inputArea}>
+                                {iaImageSource === 'url' ? (
+                                    <View style={styles.urlInputContainer}>
+                                        <Ionicons name="link-outline" size={20} color="#94a3b8" />
+                                        <TextInput
+                                            style={styles.textInput}
+                                            value={iaImageUrl}
+                                            onChangeText={setIaImageUrl}
+                                            placeholder="https://ejemplo.com/imagen.png"
+                                            placeholderTextColor="#cbd5e1"
+                                            autoCapitalize="none"
+                                        />
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity
+                                        style={styles.uploadBox}
+                                        onPress={() => setShowIaPhotoOptions(true)}
+                                    >
+                                        {iaImageUrl ? (
+                                            <Image source={{ uri: iaImageUrl }} style={styles.uploadedPreview} resizeMode="contain" />
+                                        ) : (
+                                            <View style={styles.uploadPlaceholder}>
+                                                <Ionicons name="color-palette-outline" size={32} color="#8b5cf6" />
+                                                <Text style={styles.uploadPlaceholderText}>Toca para seleccionar imagen</Text>
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            {/* Botón Generar - dentro del mismo card */}
+                            <TouchableOpacity
+                                style={[styles.generateButton, { marginTop: 16 }, !iaImageUrl && styles.generateButtonDisabled]}
+                                onPress={() => iaImageUrl && handleGenerateBranding(iaImageUrl)}
+                                disabled={!iaImageUrl}
+                            >
+                                <LinearGradient
+                                    colors={!iaImageUrl ? ['#e2e8f0', '#e2e8f0'] : ['#8b5cf6', '#7c3aed']}
+                                    style={styles.generateButtonGradient}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                >
+                                    <Ionicons name="color-wand" size={24} color={!iaImageUrl ? '#94a3b8' : '#fff'} />
+                                    <Text style={[styles.generateButtonText, !iaImageUrl && { color: '#94a3b8' }]}>
+                                        Generar Branding con IA
+                                    </Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                            <Text style={styles.aiDisclaimer}>
+                                La IA analizará colores y formas para crear 3 propuestas únicas.
+                            </Text>
+                        </View>
+
                     </View>
                 )}
 
@@ -237,39 +626,110 @@ export default function BrandingScreen() {
                         <View style={[styles.selectorColumn, isLargeScreen && styles.selectorColumnLarge]}>
                             <Text style={styles.sectionTitle}>Elige tu Variante</Text>
                             <Text style={styles.sectionSubtitle}>
-                                Fuente: <Text style={styles.bold}>{brandingData.suggestedFont}</Text> •
                                 Mood: <Text style={styles.bold}>{brandingData.mood}</Text>
                             </Text>
 
-                            {brandingData.options.map((option) => (
-                                <TouchableOpacity
-                                    key={option.id}
-                                    style={[
-                                        styles.variantOption,
-                                        selectedVariantId === option.id && [
-                                            styles.variantOptionSelected,
-                                            { borderColor: option.colors.primary }
-                                        ]
-                                    ]}
-                                    onPress={() => setSelectedVariantId(option.id)}
-                                >
-                                    <View style={styles.variantInfo}>
-                                        <Text style={styles.variantName}>{option.variantName}</Text>
-                                        <View style={styles.colorDots}>
-                                            <View style={[styles.colorDot, { backgroundColor: option.colors.background, borderWidth: 1, borderColor: '#e2e8f0' }]} />
-                                            <View style={[styles.colorDot, { backgroundColor: option.colors.primary }]} />
-                                            <View style={[styles.colorDot, { backgroundColor: option.colors.secondary }]} />
-                                        </View>
-                                    </View>
-                                    {selectedVariantId === option.id && (
-                                        <View style={[styles.previewBadge, { backgroundColor: option.colors.primary + '20' }]}>
-                                            <Text style={[styles.previewBadgeText, { color: option.colors.primary }]}>
-                                                Previsualizando
+                            {/* Selector de Fuente */}
+                            <View style={{ marginBottom: 24 }}>
+                                <Text style={[styles.sectionTitle, { fontSize: 14, marginBottom: 8 }]}>Tipografía</Text>
+                                <View style={{ flexDirection: 'row', gap: 8 }}>
+                                    {['System', 'Montserrat-Bold', 'PlayfairDisplay-Bold', 'Oswald-Bold', 'Roboto-Bold'].map(font => (
+                                        <TouchableOpacity
+                                            key={font}
+                                            onPress={() => setSelectedFont(font)}
+                                            style={{
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 8,
+                                                borderRadius: 8,
+                                                backgroundColor: selectedFont === font ? '#3b82f6' : '#fff',
+                                                borderWidth: 1,
+                                                borderColor: selectedFont === font ? '#3b82f6' : '#e2e8f0',
+                                            }}
+                                        >
+                                            <Text style={{
+                                                color: selectedFont === font ? '#fff' : '#64748b',
+                                                fontSize: 12,
+                                                fontWeight: '600',
+                                                fontFamily: font === 'System' ? undefined : font
+                                            }}>
+                                                {font === 'System' ? 'Default' : font.split('-')[0]}
                                             </Text>
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                            ))}
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+
+                            {/* Instrucciones para multi-theme */}
+                            <View style={{ marginBottom: 16, padding: 12, backgroundColor: '#f0f9ff', borderRadius: 12, borderWidth: 1, borderColor: '#bae6fd' }}>
+                                <Text style={{ fontSize: 13, color: '#0369a1', lineHeight: 18 }}>
+                                    <Text style={{ fontWeight: '700' }}>✓ Activo:</Text> Tus clientes podrán elegir este tema{'\n'}
+                                    <Text style={{ fontWeight: '700' }}>★ Default:</Text> Tema que verán por defecto
+                                </Text>
+                            </View>
+
+                            {brandingData.options.map((option) => {
+                                const isActive = activeVariants.includes(option.id);
+                                const isDefault = defaultVariant === option.id;
+                                const isPreviewing = selectedVariantId === option.id;
+
+                                return (
+                                    <View
+                                        key={option.id}
+                                        style={[
+                                            styles.variantOption,
+                                            isPreviewing && [styles.variantOptionSelected, { borderColor: option.colors.primary }],
+                                            !isActive && { opacity: 0.5 }
+                                        ]}
+                                    >
+                                        {/* Checkbox de activación */}
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.themeCheckbox,
+                                                isActive && { backgroundColor: '#10b981', borderColor: '#10b981' }
+                                            ]}
+                                            onPress={() => toggleVariantActive(option.id)}
+                                        >
+                                            {isActive && <Ionicons name="checkmark" size={14} color="#fff" />}
+                                        </TouchableOpacity>
+
+                                        {/* Info del tema (toca para preview) */}
+                                        <TouchableOpacity
+                                            style={{ flex: 1 }}
+                                            onPress={() => setSelectedVariantId(option.id)}
+                                        >
+                                            <View style={styles.variantInfo}>
+                                                <Text style={styles.variantName}>{option.variantName}</Text>
+                                                <View style={styles.colorDots}>
+                                                    <View style={[styles.colorDot, { backgroundColor: option.colors.background, borderWidth: 1, borderColor: '#e2e8f0' }]} />
+                                                    <View style={[styles.colorDot, { backgroundColor: option.colors.primary }]} />
+                                                    <View style={[styles.colorDot, { backgroundColor: option.colors.secondary }]} />
+                                                </View>
+                                            </View>
+                                        </TouchableOpacity>
+
+                                        {/* Botón de default (estrella) */}
+                                        <TouchableOpacity
+                                            style={styles.defaultStarBtn}
+                                            onPress={() => setAsDefault(option.id)}
+                                        >
+                                            <Ionicons
+                                                name={isDefault ? "star" : "star-outline"}
+                                                size={22}
+                                                color={isDefault ? "#f59e0b" : "#cbd5e1"}
+                                            />
+                                        </TouchableOpacity>
+
+                                        {/* Badge de preview */}
+                                        {isPreviewing && (
+                                            <View style={[styles.previewBadge, { backgroundColor: option.colors.primary + '20' }]}>
+                                                <Text style={[styles.previewBadgeText, { color: option.colors.primary }]}>
+                                                    Vista previa
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                );
+                            })}
 
                             {/* Botón Confirmar */}
                             <TouchableOpacity
@@ -284,11 +744,14 @@ export default function BrandingScreen() {
                             </Text>
 
                             {/* Regenerar / Desactivar */}
+                            {/* Regenerar / Desactivar */}
                             <View style={styles.actionsRow}>
-                                <TouchableOpacity style={styles.secondaryAction} onPress={handlePickLogo}>
+                                <TouchableOpacity style={styles.secondaryAction} onPress={() => {
+                                    setBrandingData(null); // Resetear para volver a subir/elegir logo
+                                }}>
                                     <Ionicons name="refresh" size={18} color="#64748b" />
                                     <Text style={styles.secondaryActionText}>
-                                        Regenerar ({brandingData.regenerationsRemaining} restantes)
+                                        Cambiar Logo / Regenerar ({brandingData.regenerationsRemaining} restantes)
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.dangerAction} onPress={handleDeactivate}>
@@ -303,13 +766,14 @@ export default function BrandingScreen() {
                             <Text style={styles.previewLabel}>VISTA PREVIA EN VIVO</Text>
                             <PhonePreview
                                 theme={selectedTheme}
-                                fontName={brandingData.suggestedFont}
+                                fontName={selectedFont || brandingData.suggestedFont}
                                 logoUrl={user?.trainerProfile?.logoUrl}
                             />
                         </View>
                     </View>
                 )}
             </ScrollView>
+
 
             {/* Modal de Confirmación */}
             <Modal
@@ -407,6 +871,83 @@ export default function BrandingScreen() {
                     </View>
                 </View>
             </Modal>
+            {/* Photo Options Modal - LOGO OFICIAL */}
+            <Modal
+                visible={showOfficialPhotoOptions}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowOfficialPhotoOptions(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowOfficialPhotoOptions(false)}
+                >
+                    <View style={styles.menuModalCard}>
+                        <Text style={styles.menuModalTitle}>Logo Oficial</Text>
+
+                        <TouchableOpacity style={styles.menuModalOption} onPress={handlePickOfficialLogo}>
+                            <Ionicons name="images" size={24} color="#10b981" />
+                            <Text style={styles.menuModalOptionText}>Elegir de Galería</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.menuModalOption, styles.menuModalCancelOption]}
+                            onPress={() => setShowOfficialPhotoOptions(false)}
+                        >
+                            <Text style={styles.menuModalCancelText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Photo Options Modal - IMAGEN IA */}
+            <Modal
+                visible={showIaPhotoOptions}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowIaPhotoOptions(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowIaPhotoOptions(false)}
+                >
+                    <View style={styles.menuModalCard}>
+                        <Text style={styles.menuModalTitle}>Imagen para IA</Text>
+
+                        <TouchableOpacity style={styles.menuModalOption} onPress={handlePickIaImage}>
+                            <Ionicons name="images" size={24} color="#3b82f6" />
+                            <Text style={styles.menuModalOptionText}>Elegir de Galería</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.menuModalOption, styles.menuModalCancelOption]}
+                            onPress={() => setShowIaPhotoOptions(false)}
+                        >
+                            <Text style={styles.menuModalCancelText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Image Cropper Modal - LOGO OFICIAL (rectangular) */}
+            <ImageCropper
+                visible={!!croppingOfficialLogo}
+                imageUri={croppingOfficialLogo}
+                onCancel={() => setCroppingOfficialLogo(null)}
+                onCrop={handleOfficialCropComplete}
+                shape="rectangle"
+            />
+
+            {/* Image Cropper Modal - IMAGEN IA (circular) */}
+            <ImageCropper
+                visible={!!croppingIaImage}
+                imageUri={croppingIaImage}
+                onCancel={() => setCroppingIaImage(null)}
+                onCrop={handleIaCropComplete}
+                shape="circle"
+            />
         </SafeAreaView>
     );
 }
@@ -481,56 +1022,170 @@ const styles = StyleSheet.create({
         marginTop: 8,
         maxWidth: 280,
     },
-    // Upload Section
-    uploadSection: {
-        alignItems: 'center',
-        paddingVertical: 40,
+    // Layout Refinado
+    initialStateContainer: {
+        width: '100%',
+        maxWidth: 500,
+        alignSelf: 'center',
+        gap: 0,
     },
-    heroIcon: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        justifyContent: 'center',
+    sectionCard: {
+        backgroundColor: '#fff',
+        borderRadius: 24,
+        padding: 24,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#64748b',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 2,
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 16,
         marginBottom: 24,
     },
-    heroTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#1e293b',
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    heroSubtitle: {
-        fontSize: 15,
-        color: '#64748b',
-        textAlign: 'center',
-        lineHeight: 22,
-        maxWidth: 400,
-        marginBottom: 32,
-    },
-    uploadCard: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 40,
+    sectionIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#e2e8f0',
-        borderStyle: 'dashed',
-        width: '100%',
-        maxWidth: 400,
+        justifyContent: 'center',
     },
-    uploadTitle: {
+    sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
         color: '#1e293b',
-        marginTop: 16,
     },
-    uploadSubtitle: {
+    sectionDescription: {
         fontSize: 13,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    // Segmented Control
+    segmentedControl: {
+        flexDirection: 'row',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 20,
+    },
+    segmentBtn: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 10,
+    },
+    segmentBtnActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    segmentText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    segmentTextActive: {
+        color: '#3b82f6',
+    },
+    // Input Area
+    inputArea: {
+        minHeight: 80,
+    },
+    urlInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        gap: 12,
+    },
+    textInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1e293b',
+        outline: 'none',
+        height: '100%',
+    },
+    uploadBox: {
+        borderWidth: 2,
+        borderColor: '#cbd5e1',
+        borderStyle: 'dashed',
+        borderRadius: 16,
+        backgroundColor: '#f8fafc',
+        height: 120,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+    },
+    uploadPlaceholder: {
+        alignItems: 'center',
+        gap: 8,
+    },
+    uploadPlaceholderText: {
+        fontSize: 13,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    uploadedPreview: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Connector
+    connectorLine: {
+        height: 40,
+        width: 2,
+        backgroundColor: '#e2e8f0',
+        alignSelf: 'center',
+        marginVertical: 4,
+    },
+    // AI Actions
+    aiActionContainer: {
+        alignItems: 'center',
+    },
+    generateButton: {
+        width: '100%',
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginTop: 8,
+    },
+    generateButtonDisabled: {
+        opacity: 0.8,
+    },
+    generateButtonGradient: {
+        paddingVertical: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+    },
+    generateButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    aiDisclaimer: {
+        fontSize: 12,
         color: '#94a3b8',
-        marginTop: 4,
+        textAlign: 'center',
+        marginTop: 16,
+        fontStyle: 'italic',
     },
     // Main 2-Column Layout
     mainLayout: {
@@ -538,7 +1193,7 @@ const styles = StyleSheet.create({
     },
     mainLayoutLarge: {
         flexDirection: 'row',
-        gap: 48,
+        gap: 32,
     },
     // Selector Column
     selectorColumn: {
@@ -581,6 +1236,20 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 3,
+    },
+    themeCheckbox: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#cbd5e1',
+        marginRight: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    defaultStarBtn: {
+        padding: 8,
+        marginLeft: 8,
     },
     variantInfo: {},
     variantName: {
@@ -792,5 +1461,49 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: '#fff',
+    },
+    // Menu Modal (Photo Options)
+    menuModalCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        minWidth: 280,
+        maxWidth: 340,
+    },
+    menuModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+        textAlign: 'center',
+        marginBottom: 16,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+    },
+    menuModalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 12,
+        gap: 14,
+        borderRadius: 10,
+    },
+    menuModalOptionText: {
+        fontSize: 16,
+        color: '#1e293b',
+        fontWeight: '500',
+    },
+    menuModalCancelOption: {
+        marginTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        paddingTop: 16,
+        justifyContent: 'center',
+    },
+    menuModalCancelText: {
+        fontSize: 16,
+        color: '#ef4444',
+        fontWeight: '600',
+        textAlign: 'center',
     },
 });
