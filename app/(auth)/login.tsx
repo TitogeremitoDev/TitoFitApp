@@ -169,17 +169,20 @@ export default function LoginScreen() {
         : ANDROID_DEV;
 
   // ════════════════════════════════════════════════════════════════════════
-  // INICIALIZACIÓN DE GOOGLE SIGN-IN NATIVO (Android/iOS)
+  // INICIALIZACIÓN DE GOOGLE SIGN-IN NATIVO (Solo Android)
+  // iOS usa expo-auth-session, no necesita el SDK nativo
   // ════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
-    if (Platform.OS !== 'web' && WEB_CLIENT_ID) {
+    // Solo Android necesita el SDK nativo de Google Sign-In
+    // iOS usa expo-auth-session que no requiere esta configuración
+    if (Platform.OS === 'android' && WEB_CLIENT_ID) {
       GoogleSignin.configure({
         webClientId: WEB_CLIENT_ID,
         offlineAccess: true,
         scopes: ['profile', 'email'],
       });
-      console.log('[Login] GoogleSignin configurado con webClientId:', WEB_CLIENT_ID);
+      console.log('[Login] GoogleSignin configurado para Android con webClientId:', WEB_CLIENT_ID);
     }
   }, []);
 

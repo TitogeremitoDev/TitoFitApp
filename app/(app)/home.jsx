@@ -85,6 +85,9 @@ export default function HomeScreen() {
   const [rescueOffer, setRescueOffer] = useState(null);
   const [showRescueModal, setShowRescueModal] = useState(false);
 
+  // Ref para evitar que el changelog se verifique múltiples veces durante re-mounts
+  const changelogCheckedRef = useRef(false);
+
   useEffect(() => {
     const randomIndex = Math.floor(Math.random() * FRASES.length);
     setFraseActual(FRASES[randomIndex]);
@@ -222,12 +225,18 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Verificar changelog
+  // Verificar changelog - solo una vez por sesión de montaje
   useEffect(() => {
+    // Evitar verificaciones duplicadas durante re-mounts
+    if (changelogCheckedRef.current) return;
+    changelogCheckedRef.current = true;
+
     (async () => {
       try {
         const lastSeen = await AsyncStorage.getItem('last_seen_version');
         if (lastSeen !== APP_VERSION) {
+          // Guardar inmediatamente para evitar race conditions
+          await AsyncStorage.setItem('last_seen_version', APP_VERSION);
           setShowChangelog(true);
         }
       } catch { }
@@ -339,11 +348,9 @@ export default function HomeScreen() {
     checkRetentionModal();
   }, [subscriptionData]);
 
-  const closeChangelog = async () => {
+  const closeChangelog = () => {
     setShowChangelog(false);
-    try {
-      await AsyncStorage.setItem('last_seen_version', APP_VERSION);
-    } catch { }
+    // La versión ya se guarda al mostrar el modal para evitar loops
   };
 
   const handlePerfilPress = () => {
@@ -393,6 +400,14 @@ export default function HomeScreen() {
   // Aumentados para dar más espacio a los botones de Cambiar Modo y Subir de Nivel
   const topMargin = isWeb ? 100 : (Platform.OS === 'ios' ? 120 : 105);
 
+  // Colores dinámicos para glassmorphism
+  const glassCardBg = isDark
+    ? 'rgba(30, 41, 59, 0.85)'
+    : 'rgba(255, 255, 255, 0.92)';
+  const glassCardBorder = isDark
+    ? 'rgba(255, 255, 255, 0.10)'
+    : 'rgba(255, 255, 255, 0.60)';
+  const bannerBg = isDark ? '#1E293B' : '#0F172A';
 
   const renderContent = () => (
     <>
@@ -573,15 +588,6 @@ export default function HomeScreen() {
       </View>
     </>
   );
-
-  // Colores dinámicos para glassmorphism
-  const glassCardBg = isDark
-    ? 'rgba(30, 41, 59, 0.85)'
-    : 'rgba(255, 255, 255, 0.92)';
-  const glassCardBorder = isDark
-    ? 'rgba(255, 255, 255, 0.10)'
-    : 'rgba(255, 255, 255, 0.60)';
-  const bannerBg = isDark ? '#1E293B' : '#0F172A';
 
   return (
     <PaymentNotificationManager>
