@@ -41,6 +41,7 @@ export default function MealCard({
     onRemoveOption,
     onDuplicateOption,
     onEditOptionName,
+    onBulkRename, // NEW
 }) {
     const mealConfig = MEAL_ICONS[meal.name] || { icon: 'restaurant', color: '#64748b' };
     const optionsCount = meal.options?.length || 0;
@@ -60,6 +61,22 @@ export default function MealCard({
                         <Text style={styles.optionsBadgeText}>
                             {optionsCount} {optionsCount === 1 ? 'opción' : 'opciones'}
                         </Text>
+                    </View>
+
+                    {/* NEW: Bulk Rename Tools */}
+                    <View style={{ flexDirection: 'row', gap: 6, marginLeft: 12 }}>
+                        <TouchableOpacity
+                            style={styles.bulkToolBtn}
+                            onPress={() => onBulkRename?.('weekly')}
+                        >
+                            <Text style={styles.bulkToolText}>📅 Semanal</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.bulkToolBtn}
+                            onPress={() => onBulkRename?.('numeric')}
+                        >
+                            <Text style={styles.bulkToolText}>🔢 Numérico</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -136,10 +153,15 @@ function OptionCard({
             {/* Option Header */}
             <View style={[styles.optionHeader, { borderLeftColor: templateColor }]}>
                 <View style={styles.optionTitleRow}>
-                    <Text style={styles.optionNumber}>OPCIÓN {index + 1}</Text>
-                    <Text style={styles.optionName} numberOfLines={1}>
-                        {option.name || `Opción ${index + 1}`}
-                    </Text>
+                    {/* NEW: Editable Title */}
+                    <TextInput
+                        style={styles.optionNameInput}
+                        value={option.name}
+                        onChangeText={onEditName}
+                        placeholder={`Opción ${index + 1}`}
+                        placeholderTextColor="#94a3b8"
+                        numberOfLines={1}
+                    />
                 </View>
 
                 {/* Action buttons */}
@@ -332,6 +354,25 @@ const styles = StyleSheet.create({
         color: '#1e293b',
         letterSpacing: 0.5,
     },
+    // New Bulk Tool Button
+    bulkToolBtn: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 4,
+        paddingVertical: 4,
+        paddingHorizontal: 6,
+        alignItems: 'center',
+        ...Platform.select({
+            default: { elevation: 1 },
+            web: { boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }
+        })
+    },
+    bulkToolText: {
+        fontSize: 10,
+        color: '#64748b',
+        fontWeight: '600',
+    },
     optionsBadge: {
         backgroundColor: '#e2e8f0',
         paddingHorizontal: 10,
@@ -393,11 +434,13 @@ const styles = StyleSheet.create({
     optionTitleRow: {
         flex: 1,
     },
-    optionNumber: {
-        fontSize: 10,
+    optionNameInput: {
+        fontSize: 14,
         fontWeight: '700',
-        color: '#94a3b8',
-        letterSpacing: 0.5,
+        color: '#1e293b',
+        padding: 0, // Tight fit
+        borderBottomWidth: 1,
+        borderBottomColor: 'transparent', // Or '#e2e8f0' to hint editability
     },
     optionName: {
         fontSize: 14,
