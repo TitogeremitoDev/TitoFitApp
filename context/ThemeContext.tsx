@@ -164,7 +164,7 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
     borderLight,
 
     primary: primary,
-    primaryText: isDark ? '#ffffff' : '#ffffff', // Usually white on primary
+    primaryText: isDarkColor(primary) ? '#ffffff' : '#111827', // Dynamic contrast
 
     // Standard semantic colors - keeping them relatively consistent for predictability
     success: '#10b981',
@@ -424,16 +424,93 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   else if (fontSelection === 'monospace') effectiveFontFamily = 'monospace';
   // Si es 'default', usamos la del tema (que puede ser custom font definida en themeDef o System)
 
+  // ═══════════════════════════════════════════════════════════════
+  // CALCULAR textSecondary CON CONTRASTE ADECUADO PARA COACH THEMES
+  // ═══════════════════════════════════════════════════════════════
+  const calculateTextSecondary = (textColor: string, bgColor: string): string => {
+    const bgIsDark = isDarkColor(bgColor);
+
+    if (bgIsDark) {
+      // Fondo oscuro → texto secundario más claro con opacidad
+      return adjustOpacity(textColor, 0.7);
+    } else {
+      // Fondo claro → necesitamos un gris oscuro para contraste
+      // En lugar de reducir opacidad (que haría el texto invisible),
+      // usamos un gris oscuro fijo que garantiza legibilidad
+      return '#4b5563'; // Tailwind gray-600, excelente contraste en fondos claros
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  // CALCULAR TEXT COLOR CON CONTRASTE GARANTIZADO
+  // Si el fondo es claro pero el texto definido es también claro,
+  // forzamos un texto oscuro para garantizar legibilidad
+  // ═══════════════════════════════════════════════════════════════
+  const calculateTextColor = (textColor: string, bgColor: string): string => {
+    const bgIsDark = isDarkColor(bgColor);
+    const textIsDark = isDarkColor(textColor || '#000000');
+
+    if (!bgIsDark && !textIsDark) {
+      // ⚠️ Fondo claro + Texto claro = MAL CONTRASTE
+      // Forzar texto oscuro
+      return '#111827'; // Tailwind gray-900
+    }
+
+    if (bgIsDark && textIsDark) {
+      // ⚠️ Fondo oscuro + Texto oscuro = MAL CONTRASTE  
+      // Forzar texto claro
+      return '#f1f5f9'; // Tailwind slate-100
+    }
+
+    // Contraste OK
+    return textColor;
+  };
+  // ═══════════════════════════════════════════════════════════════
+  // 🔍 DEBUG: Log para ver qué colores tiene el coach
+  // ═══════════════════════════════════════════════════════════════
+  if (shouldUseCoachTheme && brandingColors) {
+    console.log('[ThemeContext] 🎨 Coach Theme Colors:', {
+      background: brandingColors.background,
+      text: brandingColors.text,
+      isCoachThemeDark,
+      bgBrightness: brandingColors.background ? (() => {
+        const hex = brandingColors.background.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return ((r * 299) + (g * 587) + (b * 114)) / 1000;
+      })() : 'N/A'
+    });
+  }
+
   // Aplicar branding del coach si está activo
+  // ⚠️ SIMPLIFICADO: Para temas claros del coach, forzamos colores oscuros
   const theme: Theme = (shouldUseCoachTheme && brandingColors)
     ? {
       ...baseTheme,
       primary: brandingColors.primary || baseTheme.primary,
+      primaryText: isDarkColor(brandingColors.primary || baseTheme.primary) ? '#ffffff' : '#111827', // Fix: Ensure contrast logic applies to coach theme
       background: brandingColors.background || baseTheme.background,
-      backgroundSecondary: adjustColor(brandingColors.background || baseTheme.background, -5),
-      cardBackground: brandingColors.surface || baseTheme.cardBackground,
-      text: brandingColors.text || baseTheme.text,
-      textSecondary: adjustOpacity(brandingColors.text || baseTheme.text, 0.7),
+      backgroundSecondary: isCoachThemeDark
+        ? adjustColor(brandingColors.background || baseTheme.background, 10)
+        : '#ffffff',
+      cardBackground: isCoachThemeDark
+        ? (brandingColors.surface || baseTheme.cardBackground)
+        : '#ffffff',
+      // ⚠️ FORZAR COLORES DE TEXTO SEGUROS
+      text: isCoachThemeDark
+        ? (brandingColors.text || '#f1f5f9')  // Modo oscuro: texto claro
+        : '#111827',                           // Modo claro: SIEMPRE texto oscuro
+      textSecondary: isCoachThemeDark
+        ? 'rgba(255,255,255,0.7)'              // Modo oscuro: blanco con opacidad
+        : '#4b5563',                           // Modo claro: SIEMPRE gris oscuro
+      textTertiary: isCoachThemeDark ? 'rgba(255,255,255,0.5)' : '#6b7280',
+      inputBackground: isCoachThemeDark
+        ? adjustColor(brandingColors.background || baseTheme.background, 15)
+        : '#ffffff',
+      inputBorder: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#d1d5db',
+      placeholder: isCoachThemeDark ? 'rgba(255,255,255,0.4)' : '#9ca3af',
+      border: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb',
       primaryBorder: adjustOpacity(brandingColors.primary || baseTheme.primary, 0.3),
       accentBorder: adjustOpacity(brandingColors.secondary || baseTheme.primary, 0.3),
       fontFamily: effectiveFontFamily, // Override con la lógica de fuentes

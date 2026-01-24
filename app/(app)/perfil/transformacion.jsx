@@ -40,28 +40,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 // CHART CONFIGURATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const chartConfig = {
-    backgroundColor: '#111827',
-    backgroundGradientFrom: '#0D1B2A',
-    backgroundGradientTo: '#111827',
-    decimalPlaces: 1,
-    color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(209, 213, 219, ${opacity})`,
-    propsForDots: { r: '4', strokeWidth: '2', stroke: '#3B82F6' },
-    fillShadowGradient: '#3b82f6',
-    fillShadowGradientOpacity: 0.3,
-    propsForBackgroundLines: {
-        strokeDasharray: '',
-        stroke: '#1f2937',
-        strokeWidth: 1,
-    },
-};
-
-const barChartConfig = {
-    ...chartConfig,
-    color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
-    fillShadowGradient: '#8b5cf6',
-};
+// Chart configs moved inside component for dynamic theming
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MOOD EMOJIS
@@ -80,15 +59,16 @@ const MOOD_EMOJIS = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const MacroPieChart = ({ label, emoji, percentage, color }) => {
+    const { theme } = useTheme();
     const displayPercentage = Math.min(100, Math.max(0, percentage));
     const circumference = 2 * Math.PI * 35;
     const strokeDasharray = `${(displayPercentage / 100) * circumference} ${circumference}`;
 
     // Color based on deviation from 100%
     const getStatusColor = (pct) => {
-        if (pct >= 90 && pct <= 105) return '#10B981'; // Green - on target
-        if (pct >= 80 && pct <= 115) return '#F59E0B'; // Orange - slightly off
-        return '#EF4444'; // Red - far off
+        if (pct >= 90 && pct <= 105) return theme.success || '#10B981'; // Green - on target
+        if (pct >= 80 && pct <= 115) return '#F59E0B'; // Orange - slightly off (Keep standard warning color or use theme ?)
+        return '#EF4444'; // Red - far off (theme.error)
     };
 
     const statusColor = getStatusColor(percentage);
@@ -98,13 +78,13 @@ const MacroPieChart = ({ label, emoji, percentage, color }) => {
         percentage >= 80 && percentage <= 115 ? '⚠️' : '❌';
 
     return (
-        <View style={styles.pieChartItem}>
-            <Text style={styles.pieChartEmoji}>{emoji}</Text>
-            <View style={styles.pieChartCircleContainer}>
-                <View style={styles.pieChartCircle}>
-                    <View style={[styles.pieChartBg, { borderColor: '#374151' }]} />
+        <View style={helperStyles.pieChartItem}>
+            <Text style={helperStyles.pieChartEmoji}>{emoji}</Text>
+            <View style={helperStyles.pieChartCircleContainer}>
+                <View style={helperStyles.pieChartCircle}>
+                    <View style={[helperStyles.pieChartBg, { borderColor: theme.border }]} />
                     <View style={[
-                        styles.pieChartProgress,
+                        helperStyles.pieChartProgress,
                         {
                             borderColor: statusColor,
                             transform: [{ rotate: '-90deg' }],
@@ -113,11 +93,11 @@ const MacroPieChart = ({ label, emoji, percentage, color }) => {
                             borderBottomColor: displayPercentage > 50 ? statusColor : 'transparent',
                         }
                     ]} />
-                    <Text style={styles.pieChartPercentage}>{Math.round(percentage)}%</Text>
+                    <Text style={helperStyles.pieChartPercentage}>{Math.round(percentage)}%</Text>
                 </View>
             </View>
-            <Text style={styles.pieChartLabel}>{label}</Text>
-            <Text style={[styles.pieChartStatus, { color: statusColor }]}>
+            <Text style={helperStyles.pieChartLabel}>{label}</Text>
+            <Text style={[helperStyles.pieChartStatus, { color: statusColor }]}>
                 {statusEmoji} {statusText}
             </Text>
         </View>
@@ -126,26 +106,27 @@ const MacroPieChart = ({ label, emoji, percentage, color }) => {
 
 // Simple progress ring using SVG-like approach with Views
 const ProgressRing = ({ percentage, color, size = 70 }) => {
+    const { theme } = useTheme();
     const strokeWidth = 8;
     const radius = (size - strokeWidth) / 2;
     const normalizedPercentage = Math.min(100, Math.max(0, percentage));
 
     return (
-        <View style={[styles.progressRing, { width: size, height: size }]}>
+        <View style={[helperStyles.progressRing, { width: size, height: size }]}>
             {/* Background circle */}
             <View style={[
-                styles.progressRingBg,
+                helperStyles.progressRingBg,
                 {
                     width: size,
                     height: size,
                     borderRadius: size / 2,
                     borderWidth: strokeWidth,
-                    borderColor: '#374151',
+                    borderColor: theme.border,
                 }
             ]} />
             {/* Progress indicator using a simple fill approach */}
             <View style={[
-                styles.progressRingFill,
+                helperStyles.progressRingFill,
                 {
                     width: size - strokeWidth * 2,
                     height: size - strokeWidth * 2,
@@ -153,7 +134,7 @@ const ProgressRing = ({ percentage, color, size = 70 }) => {
                     backgroundColor: `${color}20`,
                 }
             ]}>
-                <Text style={[styles.progressRingText, { color }]}>
+                <Text style={[helperStyles.progressRingText, { color }]}>
                     {Math.round(normalizedPercentage)}%
                 </Text>
             </View>
@@ -176,8 +157,48 @@ export default function TransformacionScreen() {
     const isLargeScreen = windowWidth > 768;
     const isSmallScreen = windowWidth < 400;
     const contentWidth = isWeb && isLargeScreen ? Math.min(windowWidth * 0.9, 1200) : windowWidth;
-    const chartPadding = isSmallScreen ? 16 : 32;
+    // Fix overflow: Card has marginHorizontal: 8 (total 16) + padding: 16 (total 32)
+    // Plus container paddingHorizontal: 8 (total 16). Total spacing = 64.
+    const chartPadding = isSmallScreen ? 48 : 64;
     const chartWidth = contentWidth - chartPadding;
+
+    // Helper for colors
+    const hexToRgb = (hex) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : { r: 156, g: 163, b: 175 }; // Default gray
+    };
+
+    // Dynamic Chart Config
+    const chartConfig = useMemo(() => {
+        const textRgb = hexToRgb(theme.textSecondary || '#9ca3af');
+
+        return {
+            backgroundColor: theme.cardBackground || '#1f2937',
+            backgroundGradientFrom: theme.cardBackground || '#1f2937',
+            backgroundGradientTo: theme.cardBackground || '#1f2937',
+            decimalPlaces: 1,
+            color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(${textRgb.r}, ${textRgb.g}, ${textRgb.b}, ${opacity})`,
+            propsForDots: { r: '4', strokeWidth: '2', stroke: theme.primary || '#3b82f6' },
+            fillShadowGradient: theme.primary || '#3b82f6',
+            fillShadowGradientOpacity: 0.3,
+            propsForBackgroundLines: {
+                strokeDasharray: '',
+                stroke: theme.border || '#374151',
+                strokeWidth: 1,
+            },
+        };
+    }, [theme]);
+
+    const barChartConfig = useMemo(() => ({
+        ...chartConfig,
+        color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+        fillShadowGradient: '#8b5cf6',
+    }), [chartConfig]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // STATES
@@ -573,14 +594,498 @@ export default function TransformacionScreen() {
     }, [hungerAdherenceData]);
 
     // ─────────────────────────────────────────────────────────────────────────
+    // DYNAMIC STYLES
+    // ─────────────────────────────────────────────────────────────────────────
+    const styles = useMemo(() => StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: theme.background,
+        },
+        center: {
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        loadingText: {
+            color: theme.textSecondary,
+            marginTop: 12,
+            fontSize: 16,
+        },
+        responsiveContainer: {
+            paddingHorizontal: 8,
+        },
+        headerButton: {
+            padding: 8,
+        },
+
+        // Target Section
+        targetSection: {
+            backgroundColor: theme.cardBackground,
+            borderRadius: 16,
+            padding: 16,
+            marginTop: 16,
+            marginHorizontal: 8,
+            borderWidth: 1,
+            borderColor: theme.border,
+        },
+        targetHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 12,
+        },
+        targetIcon: {
+            fontSize: 24,
+            marginRight: 8,
+        },
+        targetTitle: {
+            color: theme.text,
+            fontSize: 14,
+            fontWeight: '700',
+            letterSpacing: 1,
+            flex: 1,
+        },
+        editButton: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 6,
+            paddingHorizontal: 12,
+            borderRadius: 8,
+            backgroundColor: theme.primary + '20',
+        },
+        editButtonText: {
+            color: theme.primary,
+            fontSize: 14,
+            fontWeight: '600',
+            marginLeft: 4,
+        },
+        targetContent: {
+            alignItems: 'center',
+        },
+        targetWeight: {
+            color: theme.text,
+            fontSize: 48,
+            fontWeight: '800',
+        },
+        targetStats: {
+            alignItems: 'center',
+            marginTop: 8,
+        },
+        currentWeightLabel: {
+            color: theme.textSecondary,
+            fontSize: 14,
+        },
+        currentWeightValue: {
+            color: theme.text,
+            fontWeight: '600',
+        },
+        diffText: {
+            color: theme.success || '#10B981',
+            fontSize: 14,
+            fontWeight: '600',
+            marginTop: 4,
+        },
+        progressBarContainer: {
+            width: '100%',
+            marginTop: 16,
+            alignItems: 'center',
+        },
+        progressBarBg: {
+            width: '100%',
+            height: 8,
+            backgroundColor: theme.border,
+            borderRadius: 4,
+            overflow: 'hidden',
+        },
+        progressBarFill: {
+            height: '100%',
+            backgroundColor: theme.success || '#10B981',
+            borderRadius: 4,
+        },
+        progressText: {
+            color: theme.textSecondary,
+            fontSize: 12,
+            marginTop: 6,
+        },
+        noTargetText: {
+            color: theme.textSecondary,
+            fontSize: 14,
+            textAlign: 'center',
+            paddingVertical: 16,
+        },
+
+        // Chart Sections
+        chartSection: {
+            backgroundColor: theme.cardBackground,
+            borderRadius: 16,
+            padding: 16,
+            marginTop: 16,
+            marginHorizontal: 8,
+            borderWidth: 1,
+            borderColor: theme.border,
+        },
+        sectionHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 16,
+        },
+        sectionIcon: {
+            fontSize: 20,
+            marginRight: 8,
+        },
+        sectionTitle: {
+            color: theme.text,
+            fontSize: 16,
+            fontWeight: '700',
+            flex: 1,
+        },
+        avgBadge: {
+            backgroundColor: '#fbbf2420',
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 12,
+        },
+        avgBadgeText: {
+            color: '#fbbf24',
+            fontSize: 12,
+            fontWeight: '600',
+        },
+        chartWrapper: {
+            alignItems: 'center',
+        },
+        chart: {
+            borderRadius: 12,
+            marginVertical: 8,
+        },
+        // Target weight line overlay styles
+        targetLineOverlay: {
+            position: 'absolute',
+            flexDirection: 'row',
+            alignItems: 'center',
+            zIndex: 10,
+        },
+        targetLine: {
+            flex: 1,
+            height: 2,
+            backgroundColor: '#EF4444',
+            borderStyle: 'dashed',
+        },
+        targetLineBadge: {
+            backgroundColor: '#EF444420',
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: '#EF4444',
+            marginLeft: 4,
+        },
+        targetLineBadgeText: {
+            color: '#EF4444',
+            fontSize: 10,
+            fontWeight: '700',
+        },
+        targetLineInfo: {
+            width: '100%',
+            paddingHorizontal: 16,
+            marginTop: 8,
+        },
+        targetLineLegend: {
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        targetLineDash: {
+            width: 20,
+            height: 2,
+            backgroundColor: '#EF4444',
+            marginRight: 8,
+            borderStyle: 'dashed',
+        },
+        targetLineLegendText: {
+            color: theme.textSecondary,
+            fontSize: 12,
+        },
+        noDataContainer: {
+            alignItems: 'center',
+            paddingVertical: 32,
+        },
+        noDataText: {
+            color: theme.textSecondary,
+            fontSize: 14,
+            textAlign: 'center',
+            marginTop: 12,
+        },
+
+        // Pie Charts Grid
+        pieChartsGrid: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-around',
+        },
+        pieChartCard: {
+            alignItems: 'center',
+            padding: 12,
+            width: '45%',
+            marginBottom: 12,
+        },
+        pieCardEmoji: {
+            fontSize: 24,
+            marginBottom: 8,
+        },
+        pieCardLabel: {
+            color: theme.textSecondary,
+            fontSize: 12,
+            marginTop: 8,
+        },
+
+        // Progress Ring
+        progressRing: {
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        progressRingBg: {
+            position: 'absolute',
+        },
+        progressRingFill: {
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        progressRingText: {
+            fontSize: 14,
+            fontWeight: '700',
+        },
+
+        // Sleep Legend
+        sleepLegend: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: 8,
+        },
+        sleepLegendDot: {
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            marginRight: 6,
+        },
+        sleepLegendText: {
+            color: theme.textSecondary,
+            fontSize: 12,
+        },
+
+        // Correlation Chart
+        correlationContainer: {
+            paddingVertical: 8,
+        },
+        correlationGrid: {
+            flexDirection: 'row',
+            justifyContent: 'space-around',
+            alignItems: 'flex-end',
+            height: 120,
+            marginBottom: 16,
+        },
+        correlationPoint: {
+            alignItems: 'center',
+        },
+        correlationHunger: {
+            color: theme.textSecondary,
+            fontSize: 10,
+            marginBottom: 4,
+        },
+        correlationBar: {
+            width: 24,
+            borderRadius: 4,
+            minHeight: 8,
+        },
+        correlationAdherence: {
+            color: theme.text,
+            fontSize: 10,
+            marginTop: 4,
+            fontWeight: '600',
+        },
+        insightBox: {
+            backgroundColor: theme.border, // or cardBackground
+            borderRadius: 8,
+            padding: 12,
+        },
+        insightText: {
+            color: theme.text,
+            fontSize: 13,
+            lineHeight: 18,
+        },
+
+        // Modals
+        modalOverlay: {
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 24,
+        },
+        modalContent: {
+            backgroundColor: theme.cardBackground,
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 400,
+            borderWidth: 1,
+            borderColor: theme.border,
+        },
+        modalTitle: {
+            color: theme.text,
+            fontSize: 20,
+            fontWeight: '700',
+            textAlign: 'center',
+        },
+        modalSubtitle: {
+            color: theme.textSecondary,
+            fontSize: 14,
+            textAlign: 'center',
+            marginTop: 8,
+            marginBottom: 20,
+        },
+        modalInputRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: theme.background,
+            borderRadius: 12,
+            paddingHorizontal: 16,
+            marginBottom: 20,
+        },
+        modalInput: {
+            flex: 1,
+            color: theme.text,
+            fontSize: 24,
+            fontWeight: '700',
+            paddingVertical: 16,
+            textAlign: 'center',
+        },
+        modalInputSuffix: {
+            color: theme.textSecondary,
+            fontSize: 18,
+            marginLeft: 8,
+        },
+        modalButtons: {
+            flexDirection: 'row',
+            gap: 12,
+        },
+        modalCancelBtn: {
+            flex: 1,
+            paddingVertical: 14,
+            borderRadius: 12,
+            backgroundColor: theme.border,
+            alignItems: 'center',
+        },
+        modalCancelText: {
+            color: theme.text,
+            fontSize: 16,
+            fontWeight: '600',
+        },
+        modalSaveBtn: {
+            flex: 1,
+            paddingVertical: 14,
+            borderRadius: 12,
+            backgroundColor: theme.primary,
+            alignItems: 'center',
+        },
+        modalSaveText: {
+            color: theme.primaryText,
+            fontSize: 16,
+            fontWeight: '600',
+        },
+
+        // Celebration Modal
+        celebrationModal: {
+            alignItems: 'center',
+        },
+        celebrationEmoji: {
+            fontSize: 48,
+            marginBottom: 16,
+        },
+        celebrationTitle: {
+            color: theme.success || '#10B981',
+            fontSize: 28,
+            fontWeight: '800',
+            marginBottom: 8,
+        },
+        celebrationSubtitle: {
+            color: theme.text,
+            fontSize: 16,
+            textAlign: 'center',
+            marginBottom: 16,
+        },
+        celebrationText: {
+            color: theme.textSecondary,
+            fontSize: 14,
+            textAlign: 'center',
+            marginBottom: 24,
+            lineHeight: 20,
+        },
+
+        // Legacy pie chart styles (kept for reference)
+        pieChartItem: {
+            alignItems: 'center',
+            width: '25%',
+        },
+        pieChartEmoji: {
+            fontSize: 20,
+            marginBottom: 4,
+        },
+        pieChartCircleContainer: {
+            width: 50,
+            height: 50,
+            marginVertical: 8,
+        },
+        pieChartCircle: {
+            width: 50,
+            height: 50,
+            borderRadius: 25,
+            backgroundColor: theme.background,
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        pieChartBg: {
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            borderRadius: 25,
+            borderWidth: 4,
+        },
+        pieChartProgress: {
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            borderRadius: 25,
+            borderWidth: 4,
+        },
+        pieChartPercentage: {
+            color: theme.text,
+            fontSize: 10,
+            fontWeight: '700',
+        },
+        pieChartLabel: {
+            color: theme.textSecondary,
+            fontSize: 10,
+            textAlign: 'center',
+        },
+        pieChartStatus: {
+            fontSize: 10,
+            fontWeight: '600',
+            marginTop: 2,
+        },
+    }), [theme]);
+
+    // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
 
     if (isLoading) {
         return (
             <View style={[styles.container, styles.center]}>
-                <Stack.Screen options={{ title: 'Cargando...', headerTitleStyle: { color: '#E5E7EB' }, headerStyle: { backgroundColor: '#0D1B2A' }, headerTintColor: '#E5E7EB' }} />
-                <ActivityIndicator size="large" color="#3B82F6" />
+                <Stack.Screen options={{
+                    title: 'Cargando...',
+                    headerTitleStyle: { color: theme.text },
+                    headerStyle: { backgroundColor: theme.background },
+                    headerTintColor: theme.text
+                }} />
+                <ActivityIndicator size="large" color={theme.primary} />
                 <Text style={styles.loadingText}>Cargando datos...</Text>
             </View>
         );
@@ -591,20 +1096,20 @@ export default function TransformacionScreen() {
             <Stack.Screen
                 options={{
                     title: 'Mi Transformación',
-                    headerTitleStyle: { color: '#E5E7EB' },
-                    headerStyle: { backgroundColor: '#0D1B2A' },
-                    headerTintColor: '#E5E7EB',
+                    headerTitleStyle: { color: theme.text },
+                    headerStyle: { backgroundColor: theme.background },
+                    headerTintColor: theme.text,
                     headerLeft: () => (
                         <Pressable onPress={() => router.back()} style={styles.headerButton}>
-                            <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
+                            <Ionicons name="arrow-back" size={24} color={theme.text} />
                         </Pressable>
                     ),
                     headerRight: () => (
                         <Pressable onPress={loadData} style={styles.headerButton} disabled={isRefreshing}>
                             {isRefreshing ? (
-                                <ActivityIndicator size="small" color="#E5E7EB" />
+                                <ActivityIndicator size="small" color={theme.text} />
                             ) : (
-                                <Ionicons name="refresh-outline" size={24} color="#E5E7EB" />
+                                <Ionicons name="refresh-outline" size={24} color={theme.text} />
                             )}
                         </Pressable>
                     ),
@@ -961,433 +1466,10 @@ export default function TransformacionScreen() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STYLES
+// HELPER COMPONENT STYLES (Static)
 // ═══════════════════════════════════════════════════════════════════════════
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0D1B2A',
-    },
-    center: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        color: '#9CA3AF',
-        marginTop: 12,
-        fontSize: 16,
-    },
-    responsiveContainer: {
-        paddingHorizontal: 8,
-    },
-    headerButton: {
-        padding: 8,
-    },
-
-    // Target Section
-    targetSection: {
-        backgroundColor: '#1F2937',
-        borderRadius: 16,
-        padding: 16,
-        marginTop: 16,
-        marginHorizontal: 8,
-        borderWidth: 1,
-        borderColor: '#374151',
-    },
-    targetHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    targetIcon: {
-        fontSize: 24,
-        marginRight: 8,
-    },
-    targetTitle: {
-        color: '#E5E7EB',
-        fontSize: 14,
-        fontWeight: '700',
-        letterSpacing: 1,
-        flex: 1,
-    },
-    editButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: '#3B82F620',
-    },
-    editButtonText: {
-        color: '#3B82F6',
-        fontSize: 14,
-        fontWeight: '600',
-        marginLeft: 4,
-    },
-    targetContent: {
-        alignItems: 'center',
-    },
-    targetWeight: {
-        color: '#fff',
-        fontSize: 48,
-        fontWeight: '800',
-    },
-    targetStats: {
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    currentWeightLabel: {
-        color: '#9CA3AF',
-        fontSize: 14,
-    },
-    currentWeightValue: {
-        color: '#E5E7EB',
-        fontWeight: '600',
-    },
-    diffText: {
-        color: '#10B981',
-        fontSize: 14,
-        fontWeight: '600',
-        marginTop: 4,
-    },
-    progressBarContainer: {
-        width: '100%',
-        marginTop: 16,
-        alignItems: 'center',
-    },
-    progressBarBg: {
-        width: '100%',
-        height: 8,
-        backgroundColor: '#374151',
-        borderRadius: 4,
-        overflow: 'hidden',
-    },
-    progressBarFill: {
-        height: '100%',
-        backgroundColor: '#10B981',
-        borderRadius: 4,
-    },
-    progressText: {
-        color: '#9CA3AF',
-        fontSize: 12,
-        marginTop: 6,
-    },
-    noTargetText: {
-        color: '#6B7280',
-        fontSize: 14,
-        textAlign: 'center',
-        paddingVertical: 16,
-    },
-
-    // Chart Sections
-    chartSection: {
-        backgroundColor: '#1F2937',
-        borderRadius: 16,
-        padding: 16,
-        marginTop: 16,
-        marginHorizontal: 8,
-        borderWidth: 1,
-        borderColor: '#374151',
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    sectionIcon: {
-        fontSize: 20,
-        marginRight: 8,
-    },
-    sectionTitle: {
-        color: '#E5E7EB',
-        fontSize: 16,
-        fontWeight: '700',
-        flex: 1,
-    },
-    avgBadge: {
-        backgroundColor: '#fbbf2420',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    avgBadgeText: {
-        color: '#fbbf24',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    chartWrapper: {
-        alignItems: 'center',
-    },
-    chart: {
-        borderRadius: 12,
-        marginVertical: 8,
-    },
-    // Target weight line overlay styles
-    targetLineOverlay: {
-        position: 'absolute',
-        flexDirection: 'row',
-        alignItems: 'center',
-        zIndex: 10,
-    },
-    targetLine: {
-        flex: 1,
-        height: 2,
-        backgroundColor: '#EF4444',
-        borderStyle: 'dashed',
-    },
-    targetLineBadge: {
-        backgroundColor: '#EF444420',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#EF4444',
-        marginLeft: 4,
-    },
-    targetLineBadgeText: {
-        color: '#EF4444',
-        fontSize: 10,
-        fontWeight: '700',
-    },
-    targetLineInfo: {
-        width: '100%',
-        paddingHorizontal: 16,
-        marginTop: 8,
-    },
-    targetLineLegend: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    targetLineDash: {
-        width: 20,
-        height: 2,
-        backgroundColor: '#EF4444',
-        marginRight: 8,
-        borderStyle: 'dashed',
-    },
-    targetLineLegendText: {
-        color: '#9CA3AF',
-        fontSize: 12,
-    },
-    noDataContainer: {
-        alignItems: 'center',
-        paddingVertical: 32,
-    },
-    noDataText: {
-        color: '#6B7280',
-        fontSize: 14,
-        textAlign: 'center',
-        marginTop: 12,
-    },
-
+const helperStyles = StyleSheet.create({
     // Pie Charts Grid
-    pieChartsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-around',
-    },
-    pieChartCard: {
-        alignItems: 'center',
-        padding: 12,
-        width: '45%',
-        marginBottom: 12,
-    },
-    pieCardEmoji: {
-        fontSize: 24,
-        marginBottom: 8,
-    },
-    pieCardLabel: {
-        color: '#9CA3AF',
-        fontSize: 12,
-        marginTop: 8,
-    },
-
-    // Progress Ring
-    progressRing: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    progressRingBg: {
-        position: 'absolute',
-    },
-    progressRingFill: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    progressRingText: {
-        fontSize: 14,
-        fontWeight: '700',
-    },
-
-    // Sleep Legend
-    sleepLegend: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 8,
-    },
-    sleepLegendDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        marginRight: 6,
-    },
-    sleepLegendText: {
-        color: '#9CA3AF',
-        fontSize: 12,
-    },
-
-    // Correlation Chart
-    correlationContainer: {
-        paddingVertical: 8,
-    },
-    correlationGrid: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        alignItems: 'flex-end',
-        height: 120,
-        marginBottom: 16,
-    },
-    correlationPoint: {
-        alignItems: 'center',
-    },
-    correlationHunger: {
-        color: '#9CA3AF',
-        fontSize: 10,
-        marginBottom: 4,
-    },
-    correlationBar: {
-        width: 24,
-        borderRadius: 4,
-        minHeight: 8,
-    },
-    correlationAdherence: {
-        color: '#E5E7EB',
-        fontSize: 10,
-        marginTop: 4,
-        fontWeight: '600',
-    },
-    insightBox: {
-        backgroundColor: '#374151',
-        borderRadius: 8,
-        padding: 12,
-    },
-    insightText: {
-        color: '#E5E7EB',
-        fontSize: 13,
-        lineHeight: 18,
-    },
-
-    // Modals
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 24,
-    },
-    modalContent: {
-        backgroundColor: '#1F2937',
-        borderRadius: 16,
-        padding: 24,
-        width: '100%',
-        maxWidth: 400,
-        borderWidth: 1,
-        borderColor: '#374151',
-    },
-    modalTitle: {
-        color: '#E5E7EB',
-        fontSize: 20,
-        fontWeight: '700',
-        textAlign: 'center',
-    },
-    modalSubtitle: {
-        color: '#9CA3AF',
-        fontSize: 14,
-        textAlign: 'center',
-        marginTop: 8,
-        marginBottom: 20,
-    },
-    modalInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#111827',
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        marginBottom: 20,
-    },
-    modalInput: {
-        flex: 1,
-        color: '#fff',
-        fontSize: 24,
-        fontWeight: '700',
-        paddingVertical: 16,
-        textAlign: 'center',
-    },
-    modalInputSuffix: {
-        color: '#9CA3AF',
-        fontSize: 18,
-        marginLeft: 8,
-    },
-    modalButtons: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    modalCancelBtn: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 12,
-        backgroundColor: '#374151',
-        alignItems: 'center',
-    },
-    modalCancelText: {
-        color: '#E5E7EB',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    modalSaveBtn: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 12,
-        backgroundColor: '#3B82F6',
-        alignItems: 'center',
-    },
-    modalSaveText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-
-    // Celebration Modal
-    celebrationModal: {
-        alignItems: 'center',
-    },
-    celebrationEmoji: {
-        fontSize: 48,
-        marginBottom: 16,
-    },
-    celebrationTitle: {
-        color: '#10B981',
-        fontSize: 28,
-        fontWeight: '800',
-        marginBottom: 8,
-    },
-    celebrationSubtitle: {
-        color: '#E5E7EB',
-        fontSize: 16,
-        textAlign: 'center',
-        marginBottom: 16,
-    },
-    celebrationText: {
-        color: '#9CA3AF',
-        fontSize: 14,
-        textAlign: 'center',
-        marginBottom: 24,
-        lineHeight: 20,
-    },
-
-    // Legacy pie chart styles (kept for reference)
     pieChartItem: {
         alignItems: 'center',
         width: '25%',
@@ -1405,7 +1487,6 @@ const styles = StyleSheet.create({
         width: 50,
         height: 50,
         borderRadius: 25,
-        backgroundColor: '#111827',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1424,12 +1505,11 @@ const styles = StyleSheet.create({
         borderWidth: 4,
     },
     pieChartPercentage: {
-        color: '#fff',
         fontSize: 10,
         fontWeight: '700',
     },
     pieChartLabel: {
-        color: '#9CA3AF',
+        color: '#9CA3AF', // Default fallback, but likely unused as layout structure
         fontSize: 10,
         textAlign: 'center',
     },
@@ -1437,5 +1517,21 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '600',
         marginTop: 2,
+    },
+
+    // Progress Ring
+    progressRing: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    progressRingBg: {
+        position: 'absolute',
+    },
+    progressRingFill: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    progressRingText: {
+        fontWeight: '700',
     },
 });

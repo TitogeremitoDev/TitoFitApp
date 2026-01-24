@@ -250,7 +250,9 @@ export default function InformacionPersonal() {
             />
 
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Información Personal</Text>
+                <Text style={styles.headerTitle}
+                colors={theme.primary}
+                >Información Personal</Text>
                 <TouchableOpacity
                     style={[styles.saveButton, { backgroundColor: theme.primary }]}
                     onPress={handleSubmit(onSubmit)}
@@ -650,19 +652,7 @@ export default function InformacionPersonal() {
                     />
                 </View>
 
-                <View style={styles.footer}>
-                    <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: theme.primary }]}
-                        onPress={handleSubmit(onSubmit)}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.saveButtonText}>Guardar Cambios</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
+
 
             </ScrollView>
         </View>
@@ -691,7 +681,6 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#fff',
     },
     backButton: {
         padding: 8,

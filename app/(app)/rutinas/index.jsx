@@ -22,7 +22,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
 
 import { useAuth } from '../../../context/AuthContext';
-import { syncRoutinesFromServer } from '../../../src/lib/syncRoutines';
 import { predefinedRoutines } from '../../../src/data/predefinedRoutines';
 import { premiumRoutines } from '../../../src/data/premiumRoutines';
 import AIImportModal from '../../(coach)/workouts/AIImportModal';
@@ -82,10 +81,6 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
   theme,
   onAddRoutine,
   onImportIA,
-  onSync,
-  tipoUsuario,
-  canSync,
-  isSyncing,
   searchQuery,
   onSearchChange,
   folders,
@@ -106,21 +101,10 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
         </TouchableOpacity>
 
         {/* Botón IA PRO - disponible para todos */}
-        <TouchableOpacity style={[styles.button, { backgroundColor: '#8b5cf6' }]} onPress={onImportIA}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: theme.premium }]} onPress={onImportIA}>
           <Ionicons name="sparkles" size={18} color="#fff" />
           <Text style={styles.buttonText}>IA PRO</Text>
         </TouchableOpacity>
-
-        {canSync && (
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: theme.primary }, isSyncing && styles.buttonDisabled]}
-            onPress={onSync}
-            disabled={isSyncing}
-          >
-            {isSyncing ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="sync-outline" size={18} color="#fff" />}
-            <Text style={styles.buttonText}>{isSyncing ? 'Sinc...' : 'Sincronizar'}</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Search Bar */}
@@ -207,7 +191,6 @@ export default function RutinasScreen() {
   const [coachRoutines, setCoachRoutines] = useState([]); // 🆕 Rutinas asignadas por entrenador
   const [activeRoutineId, setActiveRoutineId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isOfferModalVisible, setIsOfferModalVisible] = useState(false);
   const [isPremiumOfferModalVisible, setIsPremiumOfferModalVisible] = useState(false);
 
@@ -228,7 +211,6 @@ export default function RutinasScreen() {
   const { user, token } = useAuth();
   const tipoUsuario = user?.tipoUsuario;
   const hasCoach = !!user?.currentTrainerId; // 🆕 Tiene entrenador asignado
-  const canSync = tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
   const showPremiumTeaser = tipoUsuario === PLAN.FREEUSER;
   const showPremiumRoutines = tipoUsuario === PLAN.PREMIUM || tipoUsuario === PLAN.CLIENTE || tipoUsuario === PLAN.ADMIN;
 
@@ -541,34 +523,6 @@ export default function RutinasScreen() {
     }
   }, [tipoUsuario, rutinas, selectedFolder]);
 
-  /* Sincronización */
-  const onSync = useCallback(async () => {
-    if (!token || !canSync) {
-      Alert.alert('Acción no permitida', 'La sincronización solo está disponible para clientes.');
-      return;
-    }
-    if (isSyncing) return;
-
-    setIsSyncing(true);
-    try {
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-      const { synced, error } = await syncRoutinesFromServer(
-        apiBaseUrl.replace(/\/api$/, ''),
-        token
-      );
-      if (error) {
-        Alert.alert('Error de Sincronización', error);
-      } else {
-        Alert.alert('Sincronización Completa', `Se actualizaron ${synced.length} rutinas.`);
-        await loadRutinasAndActiveId();
-      }
-    } catch (e) {
-      Alert.alert('Error', `No se pudo completar la sincronización: ${e.message}`);
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [token, canSync, isSyncing, loadRutinasAndActiveId]);
-
   /* Folder Management */
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
@@ -767,10 +721,6 @@ export default function RutinasScreen() {
             theme={theme}
             onAddRoutine={handleAddRoutine}
             onImportIA={() => setAiModalVisible(true)}
-            onSync={onSync}
-            tipoUsuario={tipoUsuario}
-            canSync={canSync}
-            isSyncing={isSyncing}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             folders={folders}

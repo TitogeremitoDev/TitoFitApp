@@ -88,7 +88,20 @@ export default function BrandingScreen() {
             const data = await response.json();
 
             if (data.success && data.branding) {
-                setSelectedVariantId(data.branding.variantId);
+                // Cargar configuración de multi-theme desde el servidor
+                if (data.branding.activeThemes?.length > 0) {
+                    // Nuevo formato: Usar activeThemes
+                    const variantIds = data.branding.activeThemes.map(t => t.id);
+                    setActiveVariants(variantIds);
+                    setDefaultVariant(data.branding.defaultVariantId || variantIds[0]);
+                    setSelectedVariantId(data.branding.defaultVariantId || variantIds[0]);
+                } else if (data.branding.variantId) {
+                    // Legacy format fallback
+                    setActiveVariants([data.branding.variantId]);
+                    setDefaultVariant(data.branding.variantId);
+                    setSelectedVariantId(data.branding.variantId);
+                }
+
                 setSelectedFont(data.branding.fontFamily || 'System');
             }
             // Cargar logo oficial actual del usuario si existe

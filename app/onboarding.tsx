@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAlert } from '../src/hooks/useAlert';
+import { useCoachBranding } from '../context/CoachBrandingContext';
 
 // Simple Slider Component
 const SimpleSlider = ({ value, onValueChange, min, max, labels }: any) => {
@@ -51,6 +52,7 @@ export default function Onboarding() {
     const router = useRouter();
     const { theme } = useTheme();
     const { refreshUser } = useAuth();
+    const { refresh: refreshBranding } = useCoachBranding();
     const insets = useSafeAreaInsets();
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -219,7 +221,8 @@ export default function Onboarding() {
                         message: `¡Vinculado con ${trainerName}! 🏋️`
                     });
                     const updatedUser = await refreshUser();
-                    console.log('[Onboarding] ✅ Usuario actualizado tras vincular entrenador:', updatedUser?.tipoUsuario);
+                    await refreshBranding();
+                    console.log('[Onboarding] ✅ Usuario y branding actualizados tras vincular entrenador:', updatedUser?.tipoUsuario);
                     return;
                 }
             } catch (e: any) {
@@ -328,6 +331,8 @@ export default function Onboarding() {
                 const trainerName = response.data.trainer?.nombre || response.data.trainer?.profile?.brandName || 'tu entrenador';
                 setLinkedTrainer(trainerName);
                 await refreshUser();
+                await refreshBranding();
+                console.log('[Onboarding] ✅ Usuario y branding actualizados');
                 // Navegar directamente al siguiente paso
                 setCurrentStep(1);
             }

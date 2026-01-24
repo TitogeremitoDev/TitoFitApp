@@ -83,7 +83,7 @@ export default function ActionButton({
 const styles = StyleSheet.create({
   /* Botón principal */
   btnPrimary: {
-    width: 220,
+    width: 280,
     height: 44,
     borderRadius: 14,
     alignItems: 'center',
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
 
   /* Botones secundarios */
   btnSecondary: {
-    width: 220,
+    width: 280,
     height: 44,
     borderRadius: 14,
     alignItems: 'center',

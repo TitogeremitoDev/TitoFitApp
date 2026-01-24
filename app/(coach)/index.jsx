@@ -68,6 +68,7 @@ const THEMED_BOXES = [
         borderColor: '#8b5cf6',
         items: [
             { icon: 'library', name: 'BD Ejercicios', route: '/(coach)/exercises_coach', color: '#667eea' },
+            { icon: 'restaurant', name: 'BD Alimentos', route: '/(coach)/food-library', color: '#10b981' },
             { icon: 'videocam', name: 'Videos Propios', route: '/(coach)/video-library', color: '#8b5cf6' },
             //{ icon: 'film', name: 'Multimedia', route: '/(coach)/multimedia', color: '#ec4899', webOnly: true },
             { icon: 'flash', name: 'Respuestas Rápidas', route: '/(coach)/snippet-manager', color: '#f59e0b' },

@@ -293,14 +293,6 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
                     suffix=""
                     color="#22c55e"
                 />
-                <MacroInput
-                    label="Fibra"
-                    value={dayTarget.fiber_g?.toString() || ''}
-                    onChange={(v) => onUpdate(index, 'fiber_g', v ? parseInt(v) : '')}
-                    placeholder="30"
-                    suffix="g"
-                    color="#84cc16"
-                />
             </View>
 
             {/* Notas */}
@@ -753,6 +745,27 @@ export default function ClientNutritionEditor() {
                 return processed;
             });
 
+            // Prepare autoConfig if mode is auto
+            let autoConfig = null;
+            if (mode === 'auto' && clientData?.info_user) {
+                const info = clientData.info_user;
+                const obj = info.objetivos?.toLowerCase() || '';
+                let goal = 'maintenance';
+                if (obj.includes('volumen') || obj.includes('ganar')) goal = 'surplus';
+                else if (obj.includes('definici') || obj.includes('perder')) goal = 'deficit';
+
+                autoConfig = {
+                    goal,
+                    activityFactor: clientData.af || 1.55,
+                    adjustmentPercentage: goal === 'surplus' ? 10 : goal === 'deficit' ? -15 : 0,
+                    proteinPerKg: 2.0,
+                    fatPerKg: 1.0,
+                    fiber: 30, // Default
+                    water: 2500, // Default
+                    steps: 10000 // Default
+                };
+            }
+
             const plan = {
                 target: clientId,
                 mode,
@@ -764,6 +777,7 @@ export default function ClientNutritionEditor() {
                     weekSchedule,
                 } : null,
                 mealPlan: mode === 'mealplan' ? mealPlan : null,
+                autoConfig: mode === 'auto' ? autoConfig : null,
             };
 
             const res = await fetch(`${API_URL}/api/nutrition-plans`, {
@@ -876,7 +890,7 @@ export default function ClientNutritionEditor() {
                                 color={mode === 'custom' ? '#fff' : '#64748b'}
                             />
                             <Text style={[styles.modeBtnText, mode === 'custom' && styles.modeBtnTextActive]}>
-                                Personalizado
+                                Flexible
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1036,40 +1050,119 @@ export default function ClientNutritionEditor() {
                         </View>
                     )}
 
-                    {/* Action Buttons */}
-                    <View style={styles.actionButtons}>
-                        <TouchableOpacity
-                            style={styles.draftBtn}
-                            onPress={() => handleSave('draft')}
-                            disabled={isSaving}
-                        >
-                            <Ionicons name="save-outline" size={20} color="#64748b" />
-                            <Text style={styles.draftBtnText}>Guardar Borrador</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.activateBtn}
-                            onPress={() => handleSave('active')}
-                            disabled={isSaving}
-                        >
-                            {isSaving ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <>
-                                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                                    <Text style={styles.activateBtnText}>Activar Plan</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
                 </ScrollView>
             </View>
 
+
+
+            {/* Fixed Bottom Action Bar */}
+            < View style={styles.bottomActionBar} >
+                {/* Macro Summary Badge (Centered above buttons) */}
+                {
+                    (() => {
+                        // Calculate macros for the first template (or handle selection logic if needed)
+                        // For now, we take the first template as the "active" context for the summary
+                        const activeTemplate = mealPlan?.dayTemplates?.[0];
+                        if (!activeTemplate) return null;
+
+                        let currentKcal = 0, currentProtein = 0, currentCarbs = 0, currentFat = 0;
+
+                        activeTemplate.meals.forEach(meal => {
+                            // Assumption: User selects the first option as the "planned" one for macro counting
+                            // Or if it's a buffet, we might average them? 
+                            // User said "el modal que se va llenando", implying progress.
+                            // Standard practice: Count the FIRST option of each meal as the "primary" choice.
+                            const option = meal.options[0];
+                            if (option?.foods) {
+                                option.foods.forEach(food => {
+                                    currentKcal += food.kcal || 0;
+                                    currentProtein += food.protein || 0;
+                                    currentCarbs += food.carbs || 0;
+                                    currentFat += food.fat || 0;
+                                });
+                            }
+                        });
+
+                        // Targets
+                        const targetKcal = activeTemplate.targetMacros.kcal || 2500;
+                        const targetProtein = activeTemplate.targetMacros.protein || 0;
+                        const targetCarbs = activeTemplate.targetMacros.carbs || 0;
+                        const targetFat = activeTemplate.targetMacros.fat || 0;
+
+                        // Percentages for progress bars (capped at 100%)
+                        const pPct = targetProtein > 0 ? Math.min((currentProtein / targetProtein) * 100, 100) : 0;
+                        const cPct = targetCarbs > 0 ? Math.min((currentCarbs / targetCarbs) * 100, 100) : 0;
+                        const fPct = targetFat > 0 ? Math.min((currentFat / targetFat) * 100, 100) : 0;
+                        const kPct = targetKcal > 0 ? Math.min((currentKcal / targetKcal) * 100, 100) : 0;
+
+                        return (
+                            <View style={styles.floatingMacroBadge}>
+                                <View style={styles.macroBadgeItem}>
+                                    <Text style={styles.macroBadgeLabel}>PROTEIN</Text>
+                                    <View style={styles.macroBadgeBarContainer}>
+                                        <View style={[styles.macroBadgeBar, { width: `${pPct}%`, backgroundColor: '#3b82f6' }]} />
+                                    </View>
+                                    <Text style={styles.macroBadgeValue}>{Math.round(currentProtein)}g</Text>
+                                </View>
+                                <View style={styles.macroBadgeDivider} />
+                                <View style={styles.macroBadgeItem}>
+                                    <Text style={styles.macroBadgeLabel}>CARBS</Text>
+                                    <View style={styles.macroBadgeBarContainer}>
+                                        <View style={[styles.macroBadgeBar, { width: `${cPct}%`, backgroundColor: '#22c55e' }]} />
+                                    </View>
+                                    <Text style={styles.macroBadgeValue}>{Math.round(currentCarbs)}g</Text>
+                                </View>
+                                <View style={styles.macroBadgeDivider} />
+                                <View style={styles.macroBadgeItem}>
+                                    <Text style={styles.macroBadgeLabel}>FAT</Text>
+                                    <View style={styles.macroBadgeBarContainer}>
+                                        <View style={[styles.macroBadgeBar, { width: `${fPct}%`, backgroundColor: '#f59e0b' }]} />
+                                    </View>
+                                    <Text style={styles.macroBadgeValue}>{Math.round(currentFat)}g</Text>
+                                </View>
+                                <View style={styles.macroBadgeDivider} />
+                                <View style={styles.macroBadgeKcal}>
+                                    <Text style={styles.macroBadgeKcalValue}>{Math.round(currentKcal)}</Text>
+                                    <Text style={styles.macroBadgeKcalLabel}>/ {targetKcal} KCAL</Text>
+                                </View>
+                            </View>
+                        );
+                    })()
+                }
+
+                <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                        style={styles.draftBtn}
+                        onPress={() => handleSave('draft')}
+                        disabled={isSaving}
+                    >
+                        <Ionicons name="save-outline" size={20} color="#64748b" />
+                        <Text style={styles.draftBtnText}>Guardar Borrador</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.activateBtn}
+                        onPress={() => handleSave('active')}
+                        disabled={isSaving}
+                    >
+                        {isSaving ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <>
+                                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                                <Text style={styles.activateBtnText}>Activar Plan</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </View >
+
             {/* Template Selection Modal */}
-            <Modal
+            < Modal
                 visible={showTemplateModal}
                 animationType="slide"
                 transparent={true}
-                onRequestClose={() => setShowTemplateModal(false)}
+                onRequestClose={() => setShowTemplateModal(false)
+                }
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
@@ -1123,8 +1216,8 @@ export default function ClientNutritionEditor() {
                         )}
                     </View>
                 </View>
-            </Modal>
-        </SafeAreaView>
+            </Modal >
+        </SafeAreaView >
     );
 }
 
@@ -1732,26 +1825,90 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e2e8f0',
     },
-    templateItemLeft: {
+
+    // Fixed Bottom Action Bar
+    bottomActionBar: {
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        padding: 16,
+        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+        ...Platform.select({
+            web: {
+                position: 'sticky',
+                bottom: 0,
+                zIndex: 10,
+                boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
+            },
+            default: {
+                elevation: 20,
+            },
+        }),
+    },
+    floatingMacroBadge: {
+        position: 'absolute',
+        top: -40,
+        alignSelf: 'center',
+        backgroundColor: '#fff',
         flexDirection: 'row',
         alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 100,
         gap: 12,
-        flex: 1,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 8,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
-    templateItemName: {
-        fontSize: 15,
-        fontWeight: '600',
+    macroBadgeItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    macroBadgeLabel: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#94a3b8',
+    },
+    macroBadgeBarContainer: {
+        width: 32,
+        height: 4,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    macroBadgeBar: {
+        height: '100%',
+        borderRadius: 2,
+    },
+    macroBadgeValue: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#475569',
+    },
+    macroBadgeDivider: {
+        width: 1,
+        height: 16,
+        backgroundColor: '#e2e8f0',
+    },
+    macroBadgeKcal: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        gap: 4,
+    },
+    macroBadgeKcalValue: {
+        fontSize: 16,
+        fontWeight: '800',
         color: '#1e293b',
     },
-    templateItemDesc: {
-        fontSize: 12,
-        color: '#64748b',
-        marginTop: 2,
-    },
-    templateItemMeta: {
-        fontSize: 11,
+    macroBadgeKcalLabel: {
+        fontSize: 10,
+        fontWeight: '700',
         color: '#94a3b8',
-        marginTop: 2,
     },
 
     // MealPlan mode container

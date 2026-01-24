@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { avatarService } from '../../../src/services/avatarService';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import { ImageCropper } from '../../../src/components/shared/ImageCropper';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 
 const AVATARS = [
     // Avatares Gratuitos
@@ -45,6 +46,7 @@ export default function PerfilScreen() {
     const router = useRouter();
     const { user, logout, token, refreshUser } = useAuth();
     const { theme, isDark } = useTheme();
+    const { refresh: refreshBranding } = useCoachBranding();
     const { updateStats, checkAchievements, userStats } = useAchievements();
 
     const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -347,7 +349,9 @@ export default function PerfilScreen() {
                 // Refrescar datos del usuario para actualizar tipoUsuario
                 try {
                     const updatedUser = await refreshUser();
-                    console.log('[Perfil] ✅ Usuario actualizado tras vincular. Nuevo tipo:', updatedUser?.tipoUsuario);
+                    // Refrescar branding del coach para actualizar imagen y temas automáticamente
+                    await refreshBranding();
+                    console.log('[Perfil] ✅ Usuario y branding actualizados tras vincular. Nuevo tipo:', updatedUser?.tipoUsuario);
                 } catch (refreshError) {
                     console.error('[Perfil] Error refreshing user:', refreshError);
                 }
@@ -553,12 +557,17 @@ export default function PerfilScreen() {
         { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes', color: '#6B7280' },
     ].filter(item => !item.webOnly || Platform.OS === 'web');
 
-    const gradientColors = isDark
-        ? ['#0B1220', '#0D1B2A', '#111827']
-        : ['#f0f4f8', '#e0e7ef', '#d1dce6'];
+    // Modificación para usar colores del tema (incluyendo Branding del Coach)
+    // Si hay un tema de coach activo, theme.background ya tendrá el color correcto
+    const gradientColors = [
+        theme.background,
+        isDark ? '#00000000' : '#ffffff00', // Fade transparente
+        theme.background
+    ];
 
-    const blobColorTop = isDark ? '#3B82F6' : '#93c5fd';
-    const blobColorBottom = isDark ? '#10B981' : '#6ee7b7';
+    const blobColorTop = theme.primary; // Usar color primario del tema (o coach)
+    const blobColorBottom = theme.success; // Usar otro color del tema para contraste
+
 
     return (
         <View style={styles.root}>
@@ -649,18 +658,18 @@ export default function PerfilScreen() {
 
                         {/* Simplified Referral Banner - Links to Amigos */}
                         <TouchableOpacity
-                            style={[styles.referralBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: theme.primary }]}
+                            style={[styles.referralBanner, { backgroundColor: `${theme.primary}15`, borderColor: theme.primary }]}
                             onPress={() => router.push('/perfil/amigos')}
                         >
                             <View style={styles.referralBannerContent}>
                                 <Ionicons name="gift" size={22} color={theme.primary} />
                                 <View style={styles.referralBannerText}>
-                                    <Text style={[styles.referralBannerTitle, { color: theme.primary }]}>
+                                    <Text style={[styles.referralBannerTitle, { color: theme.text }]}>
                                         Codigos Premium o Referidos
                                     </Text>
                                 </View>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+                            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                         </TouchableOpacity>
 
                         {/* Trainer Section - Simplified */}
@@ -733,8 +742,14 @@ export default function PerfilScreen() {
                                     styles.menuCard,
                                     {
                                         width: cardWidth,
-                                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.9)',
-                                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                                        backgroundColor: theme.cardBackground,
+                                        borderColor: theme.border,
+                                        // Sombra sutil para mejorar contraste sobre gradientes
+                                        shadowColor: theme.shadow || '#000',
+                                        shadowOffset: { width: 0, height: 2 },
+                                        shadowOpacity: isDark ? 0.3 : 0.05,
+                                        shadowRadius: 4,
+                                        elevation: 2,
                                     }
                                 ]}
                                 onPress={() => router.push(item.route)}
@@ -1082,10 +1097,10 @@ export default function PerfilScreen() {
             {/* Code/Trainer Error Modal */}
             <Modal visible={codeErrorModal.visible} transparent animationType="fade" onRequestClose={() => setCodeErrorModal({ visible: false, message: '', errorType: null, trainerName: '' })}>
                 <View style={styles.modalOverlay}>
-                    <View style={[styles.premiumSuccessCard, { backgroundColor: '#1F2937', borderColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B' }]}>
+                    <View style={[styles.premiumSuccessCard, { backgroundColor: theme.cardBackground, borderColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B' }]}>
                         <View style={[
                             { marginBottom: 16, width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
-                            { backgroundColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#FEE2E2' : '#FEF3C7' }
+                            { backgroundColor: codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#FEE2E220' : '#FEF3C720' }
                         ]}>
                             <Ionicons
                                 name={codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? 'people' : 'search'}
@@ -1093,13 +1108,13 @@ export default function PerfilScreen() {
                                 color={codeErrorModal.errorType === 'TRAINER_AT_CAPACITY' ? '#DC2626' : '#F59E0B'}
                             />
                         </View>
-                        <Text style={styles.premiumSuccessTitle}>
+                        <Text style={[styles.premiumSuccessTitle, { color: theme.text }]}>
                             {codeErrorModal.errorType === 'TRAINER_AT_CAPACITY'
                                 ? `${codeErrorModal.trainerName || 'Tu entrenador'} está al máximo`
                                 : 'No encontramos a tu entrenador'
                             }
                         </Text>
-                        <Text style={[styles.premiumSuccessSubtitle, { color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 16 }]}>
+                        <Text style={[styles.premiumSuccessSubtitle, { color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 16 }]}>
                             {codeErrorModal.errorType === 'TRAINER_AT_CAPACITY'
                                 ? `Habla con ${codeErrorModal.trainerName || 'tu entrenador'} para ver opciones disponibles.`
                                 : (codeErrorModal.message || 'Verifica que el código esté escrito correctamente.')

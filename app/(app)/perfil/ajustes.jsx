@@ -857,7 +857,7 @@ export default function AjustesScreen() {
                         }}>
                           <Text style={{ fontSize: 20 }}>🏪</Text>
                           <Text style={{
-                            color: theme.primary,
+                            color: theme.text,
                             fontWeight: '700',
                             fontSize: 16,
                             letterSpacing: 0.5,
@@ -1022,7 +1022,6 @@ export default function AjustesScreen() {
                             style={[
                               styles.themeOptionTitle,
                               { color: theme.text, fontFamily: theme.fontFamily },
-                              isSelected && { color: theme.primary },
                             ]}
                           >
                             {option.title}

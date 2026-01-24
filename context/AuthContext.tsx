@@ -297,8 +297,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 
           return freshUser;
-        } catch (error) {
+        } catch (error: any) {
           console.error('[Auth] ❌ Error refrescando usuario:', error);
+
+          // Si el token expiró (401), cerrar sesión silenciosamente para redirigir al login
+          if (error.response?.status === 401) {
+            console.warn('[Auth] Token expirado (401), cerrando sesión...');
+            await clearSession();
+            setToken(null);
+            setUser(null);
+            return undefined;
+          }
+
+          // Otros errores sí se lanzan
           throw error;
         }
       },

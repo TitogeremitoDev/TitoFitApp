@@ -34,7 +34,7 @@ const DAY_COLORS = [
 ];
 
 // Componente de barra de progreso circular simplificada
-const MacroCircle = ({ value, total, color, label, grams }) => {
+const MacroCircle = ({ value, total, color, label, grams, theme }) => {
     const percentage = Math.min((value / total) * 100, 100);
 
     return (
@@ -45,14 +45,14 @@ const MacroCircle = ({ value, total, color, label, grams }) => {
                     <Text style={[styles.macroCircleUnit, { color: color + '99' }]}>g</Text>
                 </View>
             </View>
-            <Text style={styles.macroCircleLabel}>{label}</Text>
+            <Text style={[styles.macroCircleLabel, { color: theme?.textSecondary || '#94a3b8' }]}>{label}</Text>
             <Text style={[styles.macroCirclePercent, { color }]}>{Math.round(percentage)}%</Text>
         </View>
     );
 };
 
 // Componente de barra horizontal de macros
-const MacroBar = ({ protein, fat, carbs, proteinKcal, fatKcal, carbsKcal, totalKcal }) => {
+const MacroBar = ({ protein, fat, carbs, proteinKcal, fatKcal, carbsKcal, totalKcal, theme }) => {
     const pPct = (proteinKcal / totalKcal) * 100;
     const fPct = (fatKcal / totalKcal) * 100;
     const cPct = (carbsKcal / totalKcal) * 100;
@@ -67,15 +67,15 @@ const MacroBar = ({ protein, fat, carbs, proteinKcal, fatKcal, carbsKcal, totalK
             <View style={styles.macroBarLegend}>
                 <View style={styles.macroBarLegendItem}>
                     <View style={[styles.macroBarLegendDot, { backgroundColor: '#ef4444' }]} />
-                    <Text style={styles.macroBarLegendText}>P {Math.round(pPct)}%</Text>
+                    <Text style={[styles.macroBarLegendText, { color: theme?.textSecondary || '#94a3b8' }]}>P {Math.round(pPct)}%</Text>
                 </View>
                 <View style={styles.macroBarLegendItem}>
                     <View style={[styles.macroBarLegendDot, { backgroundColor: '#f59e0b' }]} />
-                    <Text style={styles.macroBarLegendText}>G {Math.round(fPct)}%</Text>
+                    <Text style={[styles.macroBarLegendText, { color: theme?.textSecondary || '#94a3b8' }]}>G {Math.round(fPct)}%</Text>
                 </View>
                 <View style={styles.macroBarLegendItem}>
                     <View style={[styles.macroBarLegendDot, { backgroundColor: '#3b82f6' }]} />
-                    <Text style={styles.macroBarLegendText}>C {Math.round(cPct)}%</Text>
+                    <Text style={[styles.macroBarLegendText, { color: theme?.textSecondary || '#94a3b8' }]}>C {Math.round(cPct)}%</Text>
                 </View>
             </View>
         </View>
@@ -234,20 +234,20 @@ export default function NutricionScreen() {
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: '#0a0f1a' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header compacto */}
-                <View style={styles.compactHeader}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                        <Ionicons name="arrow-back" size={22} color="#94a3b8" />
+                <View style={[styles.compactHeader, { borderBottomColor: theme.cardBorder }]}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.cardBackground }]}>
+                        <Ionicons name="arrow-back" size={22} color={theme.textSecondary} />
                     </TouchableOpacity>
 
                     <View style={styles.headerCenter}>
-                        <Text style={styles.headerTitle}>🍎 Nutrición</Text>
+                        <Text style={[styles.headerTitle, { color: theme.text }]}>🍎 Nutrición</Text>
                         <View style={styles.badgeRow}>
                             <View style={[styles.objetivoBadge, { backgroundColor: objetivoColor + '20' }]}>
                                 <Ionicons
@@ -282,14 +282,14 @@ export default function NutricionScreen() {
                 </View>
 
                 {!hasData ? (
-                    <View style={styles.emptyCard}>
-                        <Ionicons name="alert-circle-outline" size={60} color="#64748b" />
-                        <Text style={styles.emptyTitle}>Datos Incompletos</Text>
-                        <Text style={styles.emptyText}>
+                    <View style={[styles.emptyCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                        <Ionicons name="alert-circle-outline" size={60} color={theme.textSecondary} />
+                        <Text style={[styles.emptyTitle, { color: theme.text }]}>Datos Incompletos</Text>
+                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                             Necesitamos tu edad, peso, altura y género para calcular tus necesidades.
                         </Text>
                         <TouchableOpacity
-                            style={styles.emptyButton}
+                            style={[styles.emptyButton, { backgroundColor: theme.primary }]}
                             onPress={() => router.push('/perfil/informacion-personal')}
                         >
                             <Ionicons name="person-add" size={20} color="#fff" />
@@ -303,12 +303,12 @@ export default function NutricionScreen() {
                     <>
                         {/* Plan Name & Description Header */}
                         {(coachPlan?.name || coachPlan?.description) && (
-                            <View style={styles.planInfoCard}>
+                            <View style={[styles.planInfoCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                                 {coachPlan?.name && (
-                                    <Text style={styles.planInfoName}>{coachPlan.name}</Text>
+                                    <Text style={[styles.planInfoName, { color: theme.text }]}>{coachPlan.name}</Text>
                                 )}
                                 {coachPlan?.description && (
-                                    <Text style={styles.planInfoDescription}>{coachPlan.description}</Text>
+                                    <Text style={[styles.planInfoDescription, { color: theme.textSecondary }]}>{coachPlan.description}</Text>
                                 )}
                             </View>
                         )}
@@ -330,15 +330,15 @@ export default function NutricionScreen() {
 
                             return (
                                 <>
-                                    <View style={styles.weekPreviewCard}>
-                                        <Text style={styles.weekPreviewTitle}>📅 Tu Semana</Text>
+                                    <View style={[styles.weekPreviewCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                                        <Text style={[styles.weekPreviewTitle, { color: theme.text }]}>📅 Tu Semana</Text>
 
                                         {/* Legend */}
                                         <View style={styles.weekLegend}>
                                             {dayTypes.map((dt, i) => (
                                                 <View key={dt.id} style={styles.weekLegendItem}>
                                                     <View style={[styles.weekLegendDot, { backgroundColor: dt.color || DAY_COLORS[i % DAY_COLORS.length] }]} />
-                                                    <Text style={styles.weekLegendText}>{dt.name || `Tipo ${i + 1}`}</Text>
+                                                    <Text style={[styles.weekLegendText, { color: theme.textSecondary }]}>{dt.name || `Tipo ${i + 1}`}</Text>
                                                 </View>
                                             ))}
                                         </View>
@@ -375,7 +375,7 @@ export default function NutricionScreen() {
                                     </View>
 
                                     {/* 🎯 Día Seleccionado */}
-                                    <View style={styles.coachDayCard}>
+                                    <View style={[styles.coachDayCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                                         <View style={[styles.coachDayHeader, { backgroundColor: activeDay?.color || '#22c55e' }]}>
                                             <Ionicons
                                                 name={activeDay?.isTrainingDay ? 'barbell' : 'bed'}
@@ -394,8 +394,8 @@ export default function NutricionScreen() {
 
                                         {/* KCAL Grande */}
                                         <View style={styles.coachKcalRow}>
-                                            <Text style={styles.coachKcalValue}>{activeDay?.kcal || '---'}</Text>
-                                            <Text style={styles.coachKcalUnit}>kcal</Text>
+                                            <Text style={[styles.coachKcalValue, { color: theme.success }]}>{activeDay?.kcal || '---'}</Text>
+                                            <Text style={[styles.coachKcalUnit, { color: theme.textSecondary }]}>kcal</Text>
                                         </View>
 
                                         {/* Macros */}
@@ -404,19 +404,19 @@ export default function NutricionScreen() {
                                                 <Text style={[styles.coachMacroValue, { color: '#ef4444' }]}>
                                                     {activeDay?.protein_g || '---'}g
                                                 </Text>
-                                                <Text style={styles.coachMacroLabel}>Proteína</Text>
+                                                <Text style={[styles.coachMacroLabel, { color: theme.textSecondary }]}>Proteína</Text>
                                             </View>
                                             <View style={styles.coachMacroItem}>
                                                 <Text style={[styles.coachMacroValue, { color: '#3b82f6' }]}>
                                                     {activeDay?.carbs_g || '---'}g
                                                 </Text>
-                                                <Text style={styles.coachMacroLabel}>Carbs</Text>
+                                                <Text style={[styles.coachMacroLabel, { color: theme.textSecondary }]}>Carbs</Text>
                                             </View>
                                             <View style={styles.coachMacroItem}>
                                                 <Text style={[styles.coachMacroValue, { color: '#f59e0b' }]}>
                                                     {activeDay?.fat_g || '---'}g
                                                 </Text>
-                                                <Text style={styles.coachMacroLabel}>Grasas</Text>
+                                                <Text style={[styles.coachMacroLabel, { color: theme.textSecondary }]}>Grasas</Text>
                                             </View>
                                         </View>
 
@@ -424,47 +424,47 @@ export default function NutricionScreen() {
                                         <View style={styles.coachExtrasGrid}>
                                             <View style={styles.coachExtraItem}>
                                                 <Ionicons name="water" size={20} color="#0ea5e9" />
-                                                <Text style={styles.coachExtraValue}>
+                                                <Text style={[styles.coachExtraValue, { color: theme.text }]}>
                                                     {activeDay?.water_ml ? `${(Number(activeDay.water_ml) / 1000).toFixed(1)}L` : '---'}
                                                 </Text>
-                                                <Text style={styles.coachExtraLabel}>Agua</Text>
+                                                <Text style={[styles.coachExtraLabel, { color: theme.textSecondary }]}>Agua</Text>
                                             </View>
                                             <View style={styles.coachExtraItem}>
                                                 <Ionicons name="footsteps" size={20} color="#22c55e" />
-                                                <Text style={styles.coachExtraValue}>
+                                                <Text style={[styles.coachExtraValue, { color: theme.text }]}>
                                                     {activeDay?.steps_target ? Number(activeDay.steps_target).toLocaleString() : '---'}
                                                 </Text>
-                                                <Text style={styles.coachExtraLabel}>Pasos</Text>
+                                                <Text style={[styles.coachExtraLabel, { color: theme.textSecondary }]}>Pasos</Text>
                                             </View>
                                             <View style={styles.coachExtraItem}>
                                                 <Ionicons name="leaf" size={20} color="#84cc16" />
-                                                <Text style={styles.coachExtraValue}>
+                                                <Text style={[styles.coachExtraValue, { color: theme.text }]}>
                                                     {activeDay?.fiber_g ? `${activeDay.fiber_g}g` : '---'}
                                                 </Text>
-                                                <Text style={styles.coachExtraLabel}>Fibra</Text>
+                                                <Text style={[styles.coachExtraLabel, { color: theme.textSecondary }]}>Fibra</Text>
                                             </View>
                                             <View style={styles.coachExtraItem}>
                                                 <Ionicons name="flash" size={20} color="#a855f7" />
-                                                <Text style={styles.coachExtraValue}>
+                                                <Text style={[styles.coachExtraValue, { color: theme.text }]}>
                                                     {activeDay?.sodium_mg ? `${activeDay.sodium_mg}mg` : '---'}
                                                 </Text>
-                                                <Text style={styles.coachExtraLabel}>Sal</Text>
+                                                <Text style={[styles.coachExtraLabel, { color: theme.textSecondary }]}>Sal</Text>
                                             </View>
                                         </View>
 
                                         {/* Notas del coach */}
                                         {activeDay?.notes && (
-                                            <View style={styles.coachNotesBox}>
-                                                <Ionicons name="chatbubble-ellipses" size={16} color="#8b5cf6" />
-                                                <Text style={styles.coachNotesText}>{activeDay.notes}</Text>
+                                            <View style={[styles.coachNotesBox, { backgroundColor: theme.premium + '15', borderColor: theme.premium + '30' }]}>
+                                                <Ionicons name="chatbubble-ellipses" size={16} color={theme.premium} />
+                                                <Text style={[styles.coachNotesText, { color: theme.textSecondary }]}>{activeDay.notes}</Text>
                                             </View>
                                         )}
                                     </View>
 
                                     {/* Footer Coach */}
-                                    <View style={styles.coachFooter}>
-                                        <Ionicons name="person-circle" size={20} color="#8b5cf6" />
-                                        <Text style={styles.coachFooterText}>
+                                    <View style={[styles.coachFooter, { backgroundColor: theme.premium + '10' }]}>
+                                        <Ionicons name="person-circle" size={20} color={theme.premium} />
+                                        <Text style={[styles.coachFooterText, { color: theme.premium }]}>
                                             Dieta puesta por tu entrenador
                                         </Text>
                                     </View>
@@ -478,12 +478,12 @@ export default function NutricionScreen() {
                     ═══════════════════════════════════════════════════════════════ */
                     <>
                         {/* 🎯 Card Principal KCAL */}
-                        <View style={styles.mainCard}>
+                        <View style={[styles.mainCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                             <View style={styles.mainCardHeader}>
                                 <View style={styles.mainCardIcon}>
                                     <Text style={styles.mainCardEmoji}>🔥</Text>
                                 </View>
-                                <Text style={styles.mainCardTitle}>Calorías Diarias</Text>
+                                <Text style={[styles.mainCardTitle, { color: theme.text }]}>Calorías Diarias</Text>
                             </View>
 
                             {/* Big number */}
@@ -491,23 +491,23 @@ export default function NutricionScreen() {
                                 <Text style={[styles.bigNumber, { color: objetivoColor }]}>
                                     {nutrition.training.kcal.toLocaleString()}
                                 </Text>
-                                <Text style={styles.bigNumberUnit}>kcal/día</Text>
+                                <Text style={[styles.bigNumberUnit, { color: theme.textSecondary }]}>kcal/día</Text>
                             </View>
 
                             {/* Breakdown */}
-                            <View style={styles.kcalBreakdown}>
+                            <View style={[styles.kcalBreakdown, { backgroundColor: theme.inputBackground }]}>
                                 <View style={styles.kcalBreakdownItem}>
-                                    <Text style={styles.kcalBreakdownLabel}>BMR</Text>
-                                    <Text style={styles.kcalBreakdownValue}>{nutrition.bmr}</Text>
+                                    <Text style={[styles.kcalBreakdownLabel, { color: theme.textSecondary }]}>BMR</Text>
+                                    <Text style={[styles.kcalBreakdownValue, { color: theme.text }]}>{nutrition.bmr}</Text>
                                 </View>
-                                <View style={styles.kcalBreakdownDivider} />
+                                <View style={[styles.kcalBreakdownDivider, { backgroundColor: theme.cardBorder }]} />
                                 <View style={styles.kcalBreakdownItem}>
-                                    <Text style={styles.kcalBreakdownLabel}>TDEE</Text>
-                                    <Text style={styles.kcalBreakdownValue}>{nutrition.tdee}</Text>
+                                    <Text style={[styles.kcalBreakdownLabel, { color: theme.textSecondary }]}>TDEE</Text>
+                                    <Text style={[styles.kcalBreakdownValue, { color: theme.text }]}>{nutrition.tdee}</Text>
                                 </View>
-                                <View style={styles.kcalBreakdownDivider} />
+                                <View style={[styles.kcalBreakdownDivider, { backgroundColor: theme.cardBorder }]} />
                                 <View style={styles.kcalBreakdownItem}>
-                                    <Text style={styles.kcalBreakdownLabel}>Ajuste</Text>
+                                    <Text style={[styles.kcalBreakdownLabel, { color: theme.textSecondary }]}>Ajuste</Text>
                                     <Text style={[styles.kcalBreakdownValue, { color: objetivoColor }]}>
                                         {nutrition.kcalDifference > 0 ? '+' : ''}{nutrition.kcalDifference}
                                     </Text>
@@ -516,18 +516,18 @@ export default function NutricionScreen() {
 
                             {/* AF Badge */}
                             <View style={styles.afContainer}>
-                                <Ionicons name="fitness" size={14} color="#64748b" />
-                                <Text style={styles.afText}>
+                                <Ionicons name="fitness" size={14} color={theme.textSecondary} />
+                                <Text style={[styles.afText, { color: theme.textSecondary }]}>
                                     AF {nutrition.activityFactor} • {ACTIVITY_FACTORS[nutrition.activityFactor]?.split('(')[0] || 'Personalizado'}
                                 </Text>
                             </View>
                         </View>
 
                         {/* 🥩 Card Macros Visual */}
-                        <View style={styles.macrosCard}>
+                        <View style={[styles.macrosCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                             <View style={styles.cardHeader}>
                                 <Text style={styles.cardEmoji}>🥩</Text>
-                                <Text style={styles.cardTitle}>Macronutrientes</Text>
+                                <Text style={[styles.cardTitle, { color: theme.text }]}>Macronutrientes</Text>
                             </View>
 
                             {/* Macro circles */}
@@ -538,6 +538,7 @@ export default function NutricionScreen() {
                                     color="#ef4444"
                                     label="Proteína"
                                     grams={nutrition.training.protein}
+                                    theme={theme}
                                 />
                                 <MacroCircle
                                     value={nutrition.training.fatKcal}
@@ -545,6 +546,7 @@ export default function NutricionScreen() {
                                     color="#f59e0b"
                                     label="Grasas"
                                     grams={nutrition.training.fat}
+                                    theme={theme}
                                 />
                                 <MacroCircle
                                     value={nutrition.training.carbsKcal}
@@ -552,6 +554,7 @@ export default function NutricionScreen() {
                                     color="#3b82f6"
                                     label="Carbos"
                                     grams={nutrition.training.carbs}
+                                    theme={theme}
                                 />
                             </View>
 
@@ -564,25 +567,26 @@ export default function NutricionScreen() {
                                 fatKcal={nutrition.training.fatKcal}
                                 carbsKcal={nutrition.training.carbsKcal}
                                 totalKcal={nutrition.training.kcal}
+                                theme={theme}
                             />
 
                             {/* Details */}
-                            <View style={styles.macroDetails}>
+                            <View style={[styles.macroDetails, { borderTopColor: theme.cardBorder }]}>
                                 <View style={styles.macroDetailRow}>
-                                    <Text style={styles.macroDetailLabel}>🥩 Proteína</Text>
-                                    <Text style={styles.macroDetailValue}>
+                                    <Text style={[styles.macroDetailLabel, { color: theme.text }]}>🥩 Proteína</Text>
+                                    <Text style={[styles.macroDetailValue, { color: theme.textSecondary }]}>
                                         {nutrition.training.protein}g ({nutrition.training.proteinPerKg}g/kg)
                                     </Text>
                                 </View>
                                 <View style={styles.macroDetailRow}>
-                                    <Text style={styles.macroDetailLabel}>🥑 Grasas</Text>
-                                    <Text style={styles.macroDetailValue}>
+                                    <Text style={[styles.macroDetailLabel, { color: theme.text }]}>🥑 Grasas</Text>
+                                    <Text style={[styles.macroDetailValue, { color: theme.textSecondary }]}>
                                         {nutrition.training.fat}g ({nutrition.training.fatPercent}%)
                                     </Text>
                                 </View>
                                 <View style={styles.macroDetailRow}>
-                                    <Text style={styles.macroDetailLabel}>🍚 Carbohidratos</Text>
-                                    <Text style={styles.macroDetailValue}>
+                                    <Text style={[styles.macroDetailLabel, { color: theme.text }]}>🍚 Carbohidratos</Text>
+                                    <Text style={[styles.macroDetailValue, { color: theme.textSecondary }]}>
                                         {nutrition.training.carbs}g (resto)
                                     </Text>
                                 </View>
@@ -591,34 +595,34 @@ export default function NutricionScreen() {
 
                         {/* Para Definición: mostrar diferencia días */}
                         {!nutrition.isVolumen && (
-                            <View style={styles.defCard}>
-                                <Text style={styles.defCardTitle}>📊 Ajuste por tipo de día</Text>
+                            <View style={[styles.defCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                                <Text style={[styles.defCardTitle, { color: theme.text }]}>📊 Ajuste por tipo de día</Text>
                                 <View style={styles.defColumns}>
-                                    <View style={[styles.defColumn, { backgroundColor: '#10b98120' }]}>
-                                        <Ionicons name="barbell" size={24} color="#10b981" />
-                                        <Text style={styles.defColumnLabel}>Entrenamiento</Text>
-                                        <Text style={[styles.defColumnValue, { color: '#10b981' }]}>
+                                    <View style={[styles.defColumn, { backgroundColor: theme.success + '20' }]}>
+                                        <Ionicons name="barbell" size={24} color={theme.success} />
+                                        <Text style={[styles.defColumnLabel, { color: theme.textSecondary }]}>Entrenamiento</Text>
+                                        <Text style={[styles.defColumnValue, { color: theme.success }]}>
                                             {nutrition.training.kcal}
                                         </Text>
-                                        <Text style={styles.defColumnUnit}>kcal ({nutrition.kcalDifference})</Text>
+                                        <Text style={[styles.defColumnUnit, { color: theme.textSecondary }]}>kcal ({nutrition.kcalDifference})</Text>
                                     </View>
-                                    <View style={[styles.defColumn, { backgroundColor: '#64748b20' }]}>
-                                        <Ionicons name="bed" size={24} color="#64748b" />
-                                        <Text style={styles.defColumnLabel}>Descanso</Text>
-                                        <Text style={[styles.defColumnValue, { color: '#64748b' }]}>
+                                    <View style={[styles.defColumn, { backgroundColor: theme.textSecondary + '20' }]}>
+                                        <Ionicons name="bed" size={24} color={theme.textSecondary} />
+                                        <Text style={[styles.defColumnLabel, { color: theme.textSecondary }]}>Descanso</Text>
+                                        <Text style={[styles.defColumnValue, { color: theme.textSecondary }]}>
                                             {nutrition.rest.kcal}
                                         </Text>
-                                        <Text style={styles.defColumnUnit}>kcal ({nutrition.kcalDifferenceRest})</Text>
+                                        <Text style={[styles.defColumnUnit, { color: theme.textSecondary }]}>kcal ({nutrition.kcalDifferenceRest})</Text>
                                     </View>
                                 </View>
                             </View>
                         )}
 
                         {/* 💧 Card Hidratación */}
-                        <View style={styles.waterCard}>
+                        <View style={[styles.waterCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
                             <View style={styles.cardHeader}>
                                 <Text style={styles.cardEmoji}>💧</Text>
-                                <Text style={styles.cardTitle}>Hidratación</Text>
+                                <Text style={[styles.cardTitle, { color: theme.text }]}>Hidratación</Text>
                             </View>
 
                             <View style={styles.waterGrid}>
@@ -634,13 +638,13 @@ export default function NutricionScreen() {
                                     </Text>
                                 </LinearGradient>
 
-                                <View style={styles.waterBoxRest}>
-                                    <Ionicons name="bed" size={20} color="#64748b" />
-                                    <Text style={[styles.waterBoxLabel, { color: '#64748b' }]}>Descanso</Text>
-                                    <Text style={[styles.waterBoxValue, { color: '#94a3b8' }]}>
+                                <View style={[styles.waterBoxRest, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}>
+                                    <Ionicons name="bed" size={20} color={theme.textSecondary} />
+                                    <Text style={[styles.waterBoxLabel, { color: theme.textSecondary }]}>Descanso</Text>
+                                    <Text style={[styles.waterBoxValue, { color: theme.text }]}>
                                         {nutrition.rest.water.liters}L
                                     </Text>
-                                    <Text style={styles.waterBoxFormula}>Base</Text>
+                                    <Text style={[styles.waterBoxFormula, { color: theme.textSecondary }]}>Base</Text>
                                 </View>
                             </View>
                         </View>
@@ -669,8 +673,8 @@ export default function NutricionScreen() {
 
                         {/* Info footer */}
                         <View style={styles.infoFooter}>
-                            <Ionicons name="information-circle" size={16} color="#64748b" />
-                            <Text style={styles.infoFooterText}>
+                            <Ionicons name="information-circle" size={16} color={theme.textSecondary} />
+                            <Text style={[styles.infoFooterText, { color: theme.textSecondary }]}>
                                 Calculado para {userInfo.genero}, {userInfo.edad} años, {userInfo.peso}kg, {userInfo.altura}m
                             </Text>
                         </View>

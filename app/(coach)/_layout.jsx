@@ -43,6 +43,7 @@ const SIDEBAR_SECTIONS = [
             { id: 'videos', icon: 'videocam', label: 'Videos', route: '/(coach)/video-library' },
             { id: 'snippets', icon: 'flash', label: 'Respuestas', route: '/(coach)/snippet-manager' },
             { id: 'faqs', icon: 'help-circle', label: 'FAQs', route: '/(coach)/faq-manager' },
+            { id: 'food-library', icon: 'restaurant', label: 'BD Alimentos', route: '/(coach)/food-library' },
         ]
     },
     {
@@ -53,6 +54,7 @@ const SIDEBAR_SECTIONS = [
         items: [
             { id: 'billing', icon: 'card', label: 'Facturación', route: '/(coach)/billing' },
             { id: 'settings', icon: 'settings', label: 'Configuración', route: '/(coach)/settings' },
+            { id: 'branding', icon: 'color-palette', label: 'Branding', route: '/(coach)/branding' },
         ]
     }
 ];

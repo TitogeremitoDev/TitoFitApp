@@ -13,6 +13,8 @@ import {
     TouchableOpacity,
     ScrollView,
     Platform,
+    TextInput,
+    Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -33,6 +35,7 @@ export default function MealCard({
     onAddFood,
     onAddSupplement,
     onRemoveFood,
+    onUpdateFood,
     onRemoveSupplement,
     onAddOption,
     onRemoveOption,
@@ -83,17 +86,14 @@ export default function MealCard({
                         templateColor={templateColor}
                         onAddFood={() => onAddFood(option.id)}
                         onRemoveFood={(foodIdx) => onRemoveFood(option.id, foodIdx)}
+                        onUpdateFood={(foodIdx, data) => onUpdateFood?.(option.id, foodIdx, data)}
                         onDuplicate={() => onDuplicateOption?.(option.id)}
                         onDelete={() => onRemoveOption?.(option.id)}
                         onEditName={(newName) => onEditOptionName?.(option.id, newName)}
                     />
                 ))}
 
-                {/* Empty Add Card */}
-                <TouchableOpacity style={styles.addOptionCard} onPress={onAddOption}>
-                    <Ionicons name="add-circle-outline" size={40} color="#d1d5db" />
-                    <Text style={styles.addOptionCardText}>Nueva{'\n'}Opción</Text>
-                </TouchableOpacity>
+
             </ScrollView>
         </View>
     );
@@ -109,11 +109,14 @@ function OptionCard({
     templateColor,
     onAddFood,
     onRemoveFood,
+    onUpdateFood,
     onDuplicate,
     onDelete,
     onEditName,
 }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [editingFoodIdx, setEditingFoodIdx] = useState(null);
+    const [editAmount, setEditAmount] = useState('');
 
     // Calculate macros
     const optionMacros = option.foods?.reduce(
@@ -176,21 +179,105 @@ function OptionCard({
                     </TouchableOpacity>
                 ) : (
                     <>
-                        {option.foods.map((food, foodIdx) => (
-                            <View key={`${food.name}_${foodIdx}`} style={styles.foodRow}>
-                                <Text style={styles.foodIcon}>•</Text>
-                                <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
-                                <View style={styles.foodAmount}>
-                                    <Text style={styles.foodAmountText}>{food.amount}{food.unit}</Text>
+                        {option.foods.map((food, foodIdx) => {
+                            // Calculate percentage of total option kcal
+                            const pct = optionMacros.kcal > 0
+                                ? Math.round((food.kcal / optionMacros.kcal) * 100)
+                                : 0;
+
+                            return (
+                                <View key={`${food.name}_${foodIdx}`} style={styles.foodCard}>
+                                    {/* Left: Photo or Placeholder */}
+                                    {food.image ? (
+                                        <Image source={{ uri: food.image }} style={styles.foodPhoto} />
+                                    ) : (
+                                        <View style={styles.foodPhotoPlaceholder}>
+                                            <Ionicons name="fast-food-outline" size={18} color="#94a3b8" />
+                                        </View>
+                                    )}
+
+                                    {/* Center: Name + Macros */}
+                                    <View style={styles.foodDetails}>
+                                        <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
+                                        <View style={styles.foodMacrosRow}>
+                                            <Text style={styles.foodKcal}>🔥 {Math.round(food.kcal || 0)}</Text>
+                                            <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
+                                            <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
+                                            <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
+                                        </View>
+                                    </View>
+
+                                    {/* Right: Percentage + Portion */}
+                                    <View style={styles.foodRightSection}>
+                                        {/* Percentage Badge */}
+                                        <View style={[styles.pctBadge, pct >= 50 && { backgroundColor: '#fee2e2' }]}>
+                                            <Text style={[styles.pctText, pct >= 50 && { color: '#ef4444' }]}>{pct}%</Text>
+                                        </View>
+
+                                        {/* Editable Portion */}
+                                        {editingFoodIdx === foodIdx ? (
+                                            <View style={styles.foodAmountEdit}>
+                                                <TextInput
+                                                    style={styles.foodAmountInput}
+                                                    value={editAmount}
+                                                    onChangeText={setEditAmount}
+                                                    keyboardType="numeric"
+                                                    autoFocus
+                                                    selectTextOnFocus
+                                                    onBlur={() => {
+                                                        const newAmount = parseFloat(editAmount);
+                                                        if (newAmount && newAmount > 0 && newAmount !== food.amount) {
+                                                            const ratio = newAmount / food.amount;
+                                                            onUpdateFood?.(foodIdx, {
+                                                                amount: newAmount,
+                                                                kcal: Math.round(food.kcal * ratio),
+                                                                protein: Math.round(food.protein * ratio * 10) / 10,
+                                                                carbs: Math.round(food.carbs * ratio * 10) / 10,
+                                                                fat: Math.round(food.fat * ratio * 10) / 10,
+                                                            });
+                                                        }
+                                                        setEditingFoodIdx(null);
+                                                    }}
+                                                    onSubmitEditing={() => {
+                                                        const newAmount = parseFloat(editAmount);
+                                                        if (newAmount && newAmount > 0 && newAmount !== food.amount) {
+                                                            const ratio = newAmount / food.amount;
+                                                            onUpdateFood?.(foodIdx, {
+                                                                amount: newAmount,
+                                                                kcal: Math.round(food.kcal * ratio),
+                                                                protein: Math.round(food.protein * ratio * 10) / 10,
+                                                                carbs: Math.round(food.carbs * ratio * 10) / 10,
+                                                                fat: Math.round(food.fat * ratio * 10) / 10,
+                                                            });
+                                                        }
+                                                        setEditingFoodIdx(null);
+                                                    }}
+                                                />
+                                                <Text style={styles.foodAmountUnit}>{food.unit}</Text>
+                                            </View>
+                                        ) : (
+                                            <TouchableOpacity
+                                                style={styles.foodAmount}
+                                                onPress={() => {
+                                                    setEditingFoodIdx(foodIdx);
+                                                    setEditAmount(String(food.amount));
+                                                }}
+                                            >
+                                                <Text style={styles.foodAmountText}>{food.amount}{food.unit}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+
+                                    {/* Remove Button */}
+                                    <TouchableOpacity
+                                        style={styles.foodRemove}
+                                        onPress={() => onRemoveFood(foodIdx)}
+                                    >
+                                        <Ionicons name="close" size={14} color="#9ca3af" />
+                                    </TouchableOpacity>
                                 </View>
-                                <TouchableOpacity
-                                    style={styles.foodRemove}
-                                    onPress={() => onRemoveFood(foodIdx)}
-                                >
-                                    <Ionicons name="close" size={12} color="#9ca3af" />
-                                </TouchableOpacity>
-                            </View>
-                        ))}
+                            );
+                        })}
 
                         <TouchableOpacity style={styles.addFoodBtn} onPress={onAddFood}>
                             <Ionicons name="add-circle-outline" size={14} color="#3b82f6" />
@@ -387,8 +474,90 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: '#6b7280',
     },
+    foodAmountEdit: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#3b82f6',
+        borderRadius: 4,
+        paddingHorizontal: 4,
+    },
+    foodAmountInput: {
+        width: 40,
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#1e293b',
+        textAlign: 'center',
+        padding: 2,
+    },
+    foodAmountUnit: {
+        fontSize: 10,
+        color: '#64748b',
+        marginRight: 2,
+    },
     foodRemove: {
-        padding: 4,
+        padding: 6,
+        marginLeft: 4,
+    },
+
+    // NEW: Rich Food Card Styles
+    foodCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fafafa',
+        borderRadius: 8,
+        padding: 8,
+        marginBottom: 6,
+        gap: 8,
+    },
+    foodPhoto: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+    },
+    foodPhotoPlaceholder: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    foodDetails: {
+        flex: 1,
+        minWidth: 0,
+    },
+    foodMacrosRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 2,
+    },
+    foodKcal: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#f97316',
+    },
+    foodMacro: {
+        fontSize: 9,
+        fontWeight: '600',
+        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    foodRightSection: {
+        alignItems: 'flex-end',
+        gap: 4,
+    },
+    pctBadge: {
+        backgroundColor: '#e0f2fe',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    pctText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#0ea5e9',
     },
     addFoodBtn: {
         flexDirection: 'row',

@@ -1,6 +1,4 @@
-/* app/(coach)/nutrition/index.jsx - Lista de Clientes para Nutrición - Smart Cards v2 */
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -14,7 +12,7 @@ import {
     Platform,
     Pressable,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
@@ -126,9 +124,11 @@ export default function NutritionClientsScreen() {
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
-    useEffect(() => {
-        fetchClientsWithNutrition();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchClientsWithNutrition();
+        }, [])
+    );
 
     const fetchClientsWithNutrition = async (isRefresh = false) => {
         try {
@@ -199,14 +199,30 @@ export default function NutritionClientsScreen() {
         const info = client.info_user || {};
 
         // If client has an active plan
+        // DEBUG: Check plan for this client
+        if (plan) {
+            console.log(`[NutritionDebug] Client ${client.nombre} has plan:`, {
+                type: plan.planType,
+                status: plan.status,
+                macros: plan.fixedMacros,
+                auto: plan.autoConfig
+            });
+        }
+
         if (plan && plan.status === 'active') {
             switch (plan.planType) {
                 case 'complete':
                     // Use the first dayTemplate's targetMacros
                     const firstTemplate = plan.dayTemplates?.[0];
+
+                    // Check if it's a "Macro Plan" (Flexible) vs "Meal Plan" (Complete)
+                    // If no meals are defined in templates or structure, treat as Flexible/Macro plan
+                    const hasMeals = plan.mealStructure?.length > 0 || plan.dayTemplates?.some(dt => dt.meals?.length > 0);
+                    const effectivePlanType = hasMeals ? 'complete' : 'flex';
+
                     return {
-                        mode: 'complete',
-                        planType: 'complete',
+                        mode: effectivePlanType,
+                        planType: effectivePlanType,
                         kcal: firstTemplate?.targetMacros?.kcal || '---',
                         hasCoachPlan: true,
                         planName: plan.name,
@@ -221,29 +237,42 @@ export default function NutritionClientsScreen() {
                     };
                 case 'auto':
                     // Calculate dynamically using autoConfig
-                    if (plan.autoConfig && info.peso && info.altura && info.edad) {
-                        const { activityFactor, adjustmentPercentage, proteinPerKg } = plan.autoConfig;
-                        let bmr;
-                        if (info.genero === 'masculino' || info.genero === 'male') {
-                            bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad + 5;
+                    if (plan.autoConfig) {
+                        if (info.peso && info.altura && info.edad) {
+                            const { activityFactor, adjustmentPercentage, proteinPerKg } = plan.autoConfig;
+                            let bmr;
+                            if (info.genero === 'masculino' || info.genero === 'male') {
+                                bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad + 5;
+                            } else {
+                                bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad - 161;
+                            }
+                            const tdee = bmr * (activityFactor || 1.55);
+                            const kcal = Math.round(tdee * (1 + (adjustmentPercentage || 0) / 100));
+                            return {
+                                mode: 'auto',
+                                planType: 'auto',
+                                kcal,
+                                hasCoachPlan: true,
+                                planName: plan.name,
+                            };
                         } else {
-                            bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad - 161;
+                            // Plan exists but data missing to calculate
+                            return {
+                                mode: 'auto',
+                                planType: 'auto',
+                                kcal: '---',
+                                hasCoachPlan: true,
+                                planName: plan.name,
+                                warning: true
+                            };
                         }
-                        const tdee = bmr * (activityFactor || 1.55);
-                        const kcal = Math.round(tdee * (1 + (adjustmentPercentage || 0) / 100));
-                        return {
-                            mode: 'auto',
-                            planType: 'auto',
-                            kcal,
-                            hasCoachPlan: true,
-                            planName: plan.name,
-                        };
                     }
                     break;
             }
         }
 
         // Fallback: Calculate auto if client has required data
+        console.log(`[NutritionDebug] Fallback for ${client.nombre} - No active plan matched switch`);
         if (info.edad && info.peso && info.altura && info.genero) {
             const nutrition = calculateFullNutrition(info, info.objetivos, client.af || 1.55);
             if (nutrition) {
@@ -551,14 +580,38 @@ export default function NutritionClientsScreen() {
                     </View>
 
                     {/* Plan mode badge */}
-                    <View style={[styles.modeBadge, { backgroundColor: nutritionSummary.mode === 'custom' ? '#8b5cf620' : '#64748b15' }]}>
+                    <View style={[
+                        styles.modeBadge,
+                        {
+                            backgroundColor: nutritionSummary.planType === 'complete' ? '#8b5cf620' :
+                                nutritionSummary.planType === 'flex' ? '#f59e0b20' :
+                                    nutritionSummary.planType === 'auto' ? '#10b98120' : '#64748b15'
+                        }
+                    ]}>
                         <Ionicons
-                            name={nutritionSummary.mode === 'custom' ? 'create' : 'calculator'}
+                            name={
+                                nutritionSummary.planType === 'complete' ? 'clipboard' :
+                                    nutritionSummary.planType === 'flex' ? 'shuffle' :
+                                        nutritionSummary.planType === 'auto' ? 'calculator' : 'help-circle-outline'
+                            }
                             size={10}
-                            color={nutritionSummary.mode === 'custom' ? '#8b5cf6' : '#64748b'}
+                            color={
+                                nutritionSummary.planType === 'complete' ? '#8b5cf6' :
+                                    nutritionSummary.planType === 'flex' ? '#f59e0b' :
+                                        nutritionSummary.planType === 'auto' ? '#10b981' : '#64748b'
+                            }
                         />
-                        <Text style={[styles.modeText, { color: nutritionSummary.mode === 'custom' ? '#8b5cf6' : '#64748b' }]}>
-                            {nutritionSummary.mode === 'custom' ? 'Plan Automático' : 'Auto'}
+                        <Text style={[
+                            styles.modeText,
+                            {
+                                color: nutritionSummary.planType === 'complete' ? '#8b5cf6' :
+                                    nutritionSummary.planType === 'flex' ? '#f59e0b' :
+                                        nutritionSummary.planType === 'auto' ? '#10b981' : '#64748b'
+                            }
+                        ]}>
+                            {nutritionSummary.planType === 'complete' ? 'Completo' :
+                                nutritionSummary.planType === 'flex' ? 'Flex' :
+                                    nutritionSummary.planType === 'auto' ? 'Auto' : 'Sin Plan'}
                         </Text>
                     </View>
                 </View>

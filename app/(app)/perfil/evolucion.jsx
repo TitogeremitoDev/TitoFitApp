@@ -27,6 +27,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import { useTheme } from '../../../context/ThemeContext';
 
 // KPI Utilities (mismo sistema que coach progress)
 import {
@@ -115,35 +116,8 @@ const EJES_X = [
 ];
 
 // Colores del gráfico
-const chartConfig = {
-  backgroundColor: '#111827',
-  backgroundGradientFrom: '#0D1B2A',
-  backgroundGradientTo: '#111827',
-  decimalPlaces: 1,
-  color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(209, 213, 219, ${opacity})`,
-  propsForDots: { r: '5', strokeWidth: '2', stroke: '#3B82F6' },
-  fillShadowGradient: '#3b82f6',
-  fillShadowGradientOpacity: 0.3,
-};
-
-// BarChart config para KPIs
-const barChartConfig = {
-  backgroundColor: '#111827',
-  backgroundGradientFrom: '#0D1B2A',
-  backgroundGradientTo: '#111827',
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(209, 213, 219, ${opacity})`,
-  barPercentage: 0.65,
-  fillShadowGradient: '#6366f1',
-  fillShadowGradientOpacity: 1,
-  propsForBackgroundLines: {
-    strokeDasharray: '',
-    stroke: '#1f2937',
-    strokeWidth: 1,
-  },
-};
+// Colores del gráfico MOVIDOS DENTRO DEL COMPONENTE PARA USAR THEME
+// Se mantienen aquí referencias vacías o se eliminan, se generarán dinámicamente.
 
 /* Helpers */
 function normalizeDias(raw) {
@@ -236,6 +210,7 @@ function agregarDatosParaGrafico(logFiltrado, metrica, ejeX) {
 export default function EvolucionScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
+  const { theme, isDark } = useTheme();
 
   // 📐 Responsive: usar ancho de ventana dinámico
   const { width: windowWidth } = useWindowDimensions();
@@ -249,8 +224,57 @@ export default function EvolucionScreen() {
     : windowWidth;
 
   // Ancho de los gráficos - menos padding en pantallas pequeñas
-  const chartPadding = isSmallScreen ? 16 : 32;
+  const chartPadding = isWeb && isLargeScreen ? 48 : 24;
   const chartWidth = contentWidth - chartPadding;
+
+  // 🎨 THEME HELPERS & CHARTS PREPARATION
+  const hexToRgb = (hex) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : { r: 59, g: 130, b: 246 }; // Default blue
+  };
+
+  const dynamicChartConfig = useMemo(() => {
+    const rgb = hexToRgb(theme.primary);
+    const textRgb = hexToRgb(theme.textSecondary || '#9ca3af');
+
+    return {
+      backgroundColor: theme.background,
+      backgroundGradientFrom: theme.cardBackground,
+      backgroundGradientTo: theme.background,
+      decimalPlaces: 1,
+      color: (opacity = 1) => `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(${textRgb.r}, ${textRgb.g}, ${textRgb.b}, ${opacity})`,
+      propsForDots: { r: '5', strokeWidth: '2', stroke: theme.primary },
+      fillShadowGradient: theme.primary,
+      fillShadowGradientOpacity: 0.3,
+    };
+  }, [theme]);
+
+  const dynamicBarChartConfig = useMemo(() => {
+    const rgb = hexToRgb(theme.primary); // Usar primary también para barras o variar si se desea
+    const textRgb = hexToRgb(theme.textSecondary || '#9ca3af');
+
+    return {
+      backgroundColor: theme.background,
+      backgroundGradientFrom: theme.cardBackground,
+      backgroundGradientTo: theme.background,
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(${textRgb.r}, ${textRgb.g}, ${textRgb.b}, ${opacity})`,
+      barPercentage: 0.65,
+      fillShadowGradient: theme.primary,
+      fillShadowGradientOpacity: 1,
+      propsForBackgroundLines: {
+        strokeDasharray: '',
+        stroke: theme.border || '#1f2937',
+        strokeWidth: 1,
+      },
+    };
+  }, [theme]);
 
   const [log, setLog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1230,45 +1254,45 @@ export default function EvolucionScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center, { backgroundColor: theme.background }]}>
         <Stack.Screen
           options={{
             title: 'Cargando...',
-            headerTitleStyle: { color: '#E5E7EB' },
-            headerStyle: { backgroundColor: '#0D1B2A' },
-            headerTintColor: '#E5E7EB',
+            headerTitleStyle: { color: theme.text },
+            headerStyle: { backgroundColor: theme.cardBackground },
+            headerTintColor: theme.text,
             headerLeft: () => (
               <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}>
-                <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
+                <Ionicons name="arrow-back" size={24} color={theme.text} />
               </Pressable>
             ),
           }}
         />
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={styles.loadingText}>Cargando historial...</Text>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando historial...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen
         options={{
           title: 'Evolución',
-          headerTitleStyle: { color: '#E5E7EB' },
-          headerStyle: { backgroundColor: '#0D1B2A' },
-          headerTintColor: '#E5E7EB',
+          headerTitleStyle: { color: theme.text },
+          headerStyle: { backgroundColor: theme.cardBackground },
+          headerTintColor: theme.text,
           headerLeft: () => (
             <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}>
-              <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
             </Pressable>
           ),
           headerRight: () => (
             <Pressable onPress={cargarLog} style={({ pressed }) => [styles.headerButton, { marginRight: 5 }, pressed && styles.headerButtonPressed]} disabled={isRefreshing}>
               {isRefreshing ? (
-                <ActivityIndicator size="small" color="#E5E7EB" />
+                <ActivityIndicator size="small" color={theme.text} />
               ) : (
-                <Ionicons name="refresh-outline" size={24} color="#E5E7EB" />
+                <Ionicons name="refresh-outline" size={24} color={theme.text} />
               )}
             </Pressable>
           ),
@@ -1288,31 +1312,31 @@ export default function EvolucionScreen() {
         {/* ═══════════════════════════════════════════════════════════════════════════
           TOGGLE: GRÁFICA vs TABLA vs NOTAS/MEDIA
           ═══════════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.viewModeToggle}>
+        <View style={[styles.viewModeToggle, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
           <Pressable
-            style={[styles.viewModeBtn, viewMode === 'chart' && styles.viewModeBtnActive]}
+            style={[styles.viewModeBtn, viewMode === 'chart' && { backgroundColor: theme.primary }]}
             onPress={() => setViewMode('chart')}
           >
-            <Ionicons name="bar-chart-outline" size={18} color={viewMode === 'chart' ? '#fff' : '#9ca3af'} />
-            <Text style={[styles.viewModeBtnText, viewMode === 'chart' && styles.viewModeBtnTextActive]}>
+            <Ionicons name="bar-chart-outline" size={18} color={viewMode === 'chart' ? theme.primaryText : theme.textSecondary} />
+            <Text style={[styles.viewModeBtnText, { color: viewMode === 'chart' ? theme.primaryText : theme.textSecondary }]}>
               Gráfica
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+            style={[styles.viewModeBtn, viewMode === 'table' && { backgroundColor: theme.primary }]}
             onPress={() => setViewMode('table')}
           >
-            <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? '#fff' : '#9ca3af'} />
-            <Text style={[styles.viewModeBtnText, viewMode === 'table' && styles.viewModeBtnTextActive]}>
+            <Ionicons name="list-outline" size={18} color={viewMode === 'table' ? theme.primaryText : theme.textSecondary} />
+            <Text style={[styles.viewModeBtnText, { color: viewMode === 'table' ? theme.primaryText : theme.textSecondary }]}>
               Tabla
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.viewModeBtn, viewMode === 'comments' && styles.viewModeBtnActive]}
+            style={[styles.viewModeBtn, viewMode === 'comments' && { backgroundColor: theme.primary }]}
             onPress={() => setViewMode('comments')}
           >
-            <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? '#fff' : '#9ca3af'} />
-            <Text style={[styles.viewModeBtnText, viewMode === 'comments' && styles.viewModeBtnTextActive]}>
+            <Ionicons name="chatbubbles-outline" size={18} color={viewMode === 'comments' ? theme.primaryText : theme.textSecondary} />
+            <Text style={[styles.viewModeBtnText, { color: viewMode === 'comments' ? theme.primaryText : theme.textSecondary }]}>
               Notas
             </Text>
           </Pressable>
@@ -1328,10 +1352,10 @@ export default function EvolucionScreen() {
               {PERIOD_OPTIONS.map(p => (
                 <Pressable
                   key={p.id}
-                  style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
+                  style={[styles.periodBtn, { borderColor: theme.cardBorder }, selectedPeriod === p.id && { backgroundColor: theme.primary, borderColor: theme.primary }]}
                   onPress={() => setSelectedPeriod(p.id)}
                 >
-                  <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
+                  <Text style={[styles.periodBtnText, { color: theme.textSecondary }, selectedPeriod === p.id && { color: theme.primaryText }]}>
                     {p.label}
                   </Text>
                 </Pressable>
@@ -1339,18 +1363,18 @@ export default function EvolucionScreen() {
             </View>
 
             {/* KPI Selector */}
-            <Pressable style={styles.kpiSelector} onPress={() => setKpiModalVisible(true)}>
+            <Pressable style={[styles.kpiSelector, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]} onPress={() => setKpiModalVisible(true)}>
               <View style={styles.kpiSelectorLeft}>
-                <View style={styles.kpiSelectorIconWrap}>
+                <View style={[styles.kpiSelectorIconWrap, { backgroundColor: theme.primary + '20' }]}>
                   <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
-                  <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
+                  <Text style={[styles.kpiSelectorTitle, { color: theme.text }]}>{currentKpi.name}</Text>
+                  <Text style={[styles.kpiSelectorDesc, { color: theme.textSecondary }]} numberOfLines={1}>{currentKpi.description}</Text>
                 </View>
               </View>
               <View style={styles.kpiSelectorChevron}>
-                <Ionicons name="chevron-down" size={18} color="#fff" />
+                <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
               </View>
             </Pressable>
 
@@ -1358,28 +1382,28 @@ export default function EvolucionScreen() {
             {currentKpi.useFilters && (
               <View style={styles.kpiFilters}>
                 <View style={styles.kpiFilterRow}>
-                  <Text style={styles.kpiFilterLabel}>Músculo:</Text>
+                  <Text style={[styles.kpiFilterLabel, { color: theme.textSecondary }]}>Músculo:</Text>
                   <Pressable
-                    style={styles.filterButton}
+                    style={[styles.filterButton, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}
                     onPress={() => setMuscleModalVisible(true)}
                   >
-                    <Text style={styles.filterButtonText}>
+                    <Text style={[styles.filterButtonText, { color: theme.text }]}>
                       {selKpiMusculo === 'TOTAL' ? 'Todos' : selKpiMusculo}
                     </Text>
-                    <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                    <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
                   </Pressable>
                 </View>
                 {selKpiMusculo !== 'TOTAL' && listaEjerciciosKpi.length > 0 && (
                   <View style={styles.kpiFilterRow}>
-                    <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
+                    <Text style={[styles.kpiFilterLabel, { color: theme.textSecondary }]}>Ejercicio:</Text>
                     <Pressable
-                      style={styles.filterButton}
+                      style={[styles.filterButton, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}
                       onPress={() => setExerciseModalVisible(true)}
                     >
-                      <Text style={styles.filterButtonText}>
+                      <Text style={[styles.filterButtonText, { color: theme.text }]}>
                         {selKpiEjercicio || 'Todos'}
                       </Text>
-                      <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                      <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
                     </Pressable>
                   </View>
                 )}
@@ -1387,26 +1411,26 @@ export default function EvolucionScreen() {
             )}
 
             {/* Chart Rendering */}
-            <View style={styles.chartContainer}>
+            <View style={[styles.chartContainer, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
               {/* VOLUMEN */}
               {selectedKpi === 'volume' && volumeData && (
                 <>
                   <View style={styles.chartHeader}>
-                    <Text style={styles.chartTitle}>
+                    <Text style={[styles.chartTitle, { color: theme.text }]}>
                       Volumen {selKpiMusculo !== 'TOTAL' ? `(${selKpiMusculo})` : ''}
                     </Text>
                     <View style={styles.chartSummary}>
-                      <Text style={[styles.chartSummaryValue, { color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444' }]}>
+                      <Text style={[styles.chartSummaryValue, { color: volumeData.lastValue >= 0 ? theme.success : '#ef4444' }]}>
                         {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
                       </Text>
-                      <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                      <Text style={[styles.chartSummaryLabel, { color: theme.textSecondary }]}>vs semana 1</Text>
                     </View>
                   </View>
                   <LineChart
                     data={volumeData}
                     width={chartWidth}
                     height={220}
-                    chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                    chartConfig={{ ...dynamicChartConfig, color: (opacity = 1) => `rgba(${hexToRgb(theme.success || '#10b981').r}, ${hexToRgb(theme.success || '#10b981').g}, ${hexToRgb(theme.success || '#10b981').b}, ${opacity})` }}
                     bezier
                     style={styles.chart}
                     yAxisSuffix="%"
@@ -1433,7 +1457,7 @@ export default function EvolucionScreen() {
                     data={intensityData}
                     width={chartWidth}
                     height={220}
-                    chartConfig={chartConfig}
+                    chartConfig={dynamicChartConfig}
                     bezier
                     style={styles.chart}
                     yAxisSuffix="%"
@@ -1461,7 +1485,7 @@ export default function EvolucionScreen() {
                     data={complianceWeeklyData}
                     width={chartWidth}
                     height={220}
-                    chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})` }}
+                    chartConfig={{ ...dynamicChartConfig, color: (opacity = 1) => `rgba(${hexToRgb(theme.success || '#10b981').r}, ${hexToRgb(theme.success || '#10b981').g}, ${hexToRgb(theme.success || '#10b981').b}, ${opacity})` }}
                     bezier
                     style={styles.chart}
                     yAxisSuffix="%"
@@ -1486,7 +1510,7 @@ export default function EvolucionScreen() {
                     data={heavySetsData}
                     width={chartWidth}
                     height={220}
-                    chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})` }}
+                    chartConfig={{ ...dynamicBarChartConfig, color: (opacity = 1) => `rgba(${hexToRgb(theme.danger || '#ef4444').r}, ${hexToRgb(theme.danger || '#ef4444').g}, ${hexToRgb(theme.danger || '#ef4444').b}, ${opacity})` }}
                     style={styles.chart}
                     yAxisSuffix="%"
                     showValuesOnTopOfBars
@@ -1515,7 +1539,7 @@ export default function EvolucionScreen() {
                       width={muscleBalanceData.labels.length * 60}
                       height={220}
                       chartConfig={{
-                        ...barChartConfig,
+                        ...dynamicBarChartConfig,
                         barPercentage: 0.6,
                       }}
                       style={styles.chart}
@@ -1620,7 +1644,7 @@ export default function EvolucionScreen() {
                     data={prCountData}
                     width={chartWidth}
                     height={220}
-                    chartConfig={{ ...barChartConfig, color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})` }}
+                    chartConfig={{ ...dynamicBarChartConfig, color: (opacity = 1) => `rgba(${hexToRgb(theme.warning || '#eab308').r}, ${hexToRgb(theme.warning || '#eab308').g}, ${hexToRgb(theme.warning || '#eab308').b}, ${opacity})` }}
                     style={styles.chart}
                     showValuesOnTopOfBars
                   />
@@ -1662,14 +1686,14 @@ export default function EvolucionScreen() {
                   </View>
                 </View>
                 {datosPorRutina.old.map((rutina, rIdx) => (
-                  <View key={rIdx} style={styles.routineCardOld}>
+                  <View key={rIdx} style={[styles.routineCardOld, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                     <Pressable
-                      style={styles.routineHeaderOld}
+                      style={[styles.routineHeaderOld, { borderBottomColor: theme.border }]}
                       onPress={() => toggleRoutine(rutina.routineName)}
                     >
                       <View style={styles.routineHeaderLeft}>
-                        <Text style={styles.routineNameOld}>{rutina.routineName}</Text>
-                        <Text style={styles.routineDateOld}>Última: {rutina.lastDate}</Text>
+                        <Text style={[styles.routineNameOld, { color: theme.textSecondary }]}>{rutina.routineName}</Text>
+                        <Text style={[styles.routineDateOld, { color: theme.textTertiary }]}>Última: {rutina.lastDate}</Text>
                       </View>
                       <View style={styles.routineHeaderRight}>
                         <View style={styles.sessionsBadgeOld}>
@@ -1688,10 +1712,10 @@ export default function EvolucionScreen() {
                         {rutina.dias.map((dia, diaIdx) => (
                           <View key={diaIdx} style={styles.dayBlock}>
                             <Pressable
-                              style={styles.dayHeader}
+                              style={[styles.dayHeader, { backgroundColor: theme.background, borderColor: theme.border }]}
                               onPress={() => toggleDay(rutina.routineName, dia.dayIndex)}
                             >
-                              <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                              <Text style={[styles.dayLabel, { color: theme.text }]}>{dia.dayLabel}</Text>
                               <View style={styles.dayMeta}>
                                 <Text style={styles.daySessionCount}>{dia.exercises?.length || 0} ej. • {dia.totalSessions} ses.</Text>
                                 <Ionicons
@@ -1707,12 +1731,12 @@ export default function EvolucionScreen() {
                                 {dia.exercises.map((exercise, exIdx) => (
                                   <View key={exIdx} style={styles.exerciseBlock}>
                                     <View style={styles.exerciseBlockHeader}>
-                                      <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
-                                      <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                      <Text style={[styles.exerciseMuscleTag, { backgroundColor: theme.primary, color: theme.primaryText }]}>{exercise.muscleGroup}</Text>
+                                      <Text style={[styles.exerciseBlockName, { color: theme.text }]} numberOfLines={1}>{exercise.exerciseName}</Text>
                                     </View>
                                     <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
                                       {exercise.sesiones.map((sesion, sIdx) => (
-                                        <View key={sIdx} style={styles.sessionBox}>
+                                        <View key={sIdx} style={[styles.sessionBox, { backgroundColor: theme.background, borderColor: theme.border }]}>
                                           <View style={styles.sessionBoxHeader}>
                                             <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
                                             <Text style={styles.sessionBoxDate}>{sesion.date}</Text>
@@ -1725,14 +1749,14 @@ export default function EvolucionScreen() {
                                           </View>
                                           {sesion.sets.map((set, setIdx) => (
                                             <View key={setIdx} style={styles.setTableRow}>
-                                              <Text style={styles.setColNum}>{set.setNumber}</Text>
+                                              <Text style={[styles.setColNum, { color: theme.textSecondary }]}>{set.setNumber}</Text>
                                               <View style={styles.setColData}>
-                                                <Text style={styles.setColReps}>{set.reps ?? '-'}</Text>
-                                                {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                <Text style={[styles.setColReps, { color: theme.text }]}>{set.reps ?? '-'}</Text>
+                                                {set.repTrend === 'up' && <Ionicons name="caret-up" size={10} color={theme.success} />}
                                               </View>
                                               <View style={styles.setColData}>
-                                                <Text style={styles.setColKg}>{set.weight ?? '-'}</Text>
-                                                {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color="#22c55e" />}
+                                                <Text style={[styles.setColKg, { color: theme.text }]}>{set.weight ?? '-'}</Text>
+                                                {set.weightTrend === 'up' && <Ionicons name="caret-up" size={10} color={theme.success} />}
                                               </View>
                                               <Pressable
                                                 onPress={() => set.notes?.value && setNoteModal({ visible: true, note: set.notes })}
@@ -1760,21 +1784,21 @@ export default function EvolucionScreen() {
             {datosPorRutina.current ? (
               <View style={styles.routineSection}>
                 <View style={styles.sectionTitleRow}>
-                  <Ionicons name="fitness-outline" size={18} color="#60a5fa" />
-                  <Text style={styles.routineSectionTitle}>Rutina Actual</Text>
+                  <Ionicons name="fitness-outline" size={18} color={theme.primary} />
+                  <Text style={[styles.routineSectionTitle, { color: theme.text }]}>Rutina Actual</Text>
                   <View style={styles.activeBadge}>
                     <Text style={styles.activeBadgeText}>ACTIVA</Text>
                   </View>
                 </View>
-                <View style={styles.routineCard}>
+                <View style={[styles.routineCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                   {/* Cabecera de rutina */}
                   <Pressable
-                    style={styles.routineHeaderBlue}
+                    style={[styles.routineHeaderBlue, { backgroundColor: theme.primary + '20', borderBottomColor: theme.primary + '40' }]}
                     onPress={() => toggleRoutine('current')}
                   >
                     <View style={styles.routineHeaderLeft}>
-                      <Text style={styles.routineNameBlue}>{datosPorRutina.current.routineName}</Text>
-                      <Text style={styles.routineDateBlue}>Última: {datosPorRutina.current.lastDate}</Text>
+                      <Text style={[styles.routineNameBlue, { color: theme.text }]}>{datosPorRutina.current.routineName}</Text>
+                      <Text style={[styles.routineDateBlue, { color: theme.textSecondary }]}>Última: {datosPorRutina.current.lastDate}</Text>
                     </View>
                     <View style={styles.routineHeaderRight}>
                       <View style={styles.sessionsBadge}>
@@ -1783,7 +1807,7 @@ export default function EvolucionScreen() {
                       <Ionicons
                         name={expandedRoutines['current'] ? 'chevron-up' : 'chevron-down'}
                         size={22}
-                        color="#60a5fa"
+                        color={theme.primary}
                       />
                     </View>
                   </Pressable>
@@ -1795,10 +1819,10 @@ export default function EvolucionScreen() {
                         <View key={diaIdx} style={styles.dayBlock}>
                           {/* Cabecera del día */}
                           <Pressable
-                            style={styles.dayHeader}
+                            style={[styles.dayHeader, { backgroundColor: theme.background, borderColor: theme.border }]}
                             onPress={() => toggleDay('current', dia.dayIndex)}
                           >
-                            <Text style={styles.dayLabel}>{dia.dayLabel}</Text>
+                            <Text style={[styles.dayLabel, { color: theme.text }]}>{dia.dayLabel}</Text>
                             <View style={styles.dayMeta}>
                               <Text style={styles.daySessionCount}>{dia.exercises?.length || 0} ej. • {dia.totalSessions} ses.</Text>
                               <Ionicons
@@ -1816,14 +1840,14 @@ export default function EvolucionScreen() {
                                 <View key={exIdx} style={styles.exerciseBlock}>
                                   {/* Cabecera del ejercicio */}
                                   <View style={styles.exerciseBlockHeader}>
-                                    <Text style={styles.exerciseMuscleTag}>{exercise.muscleGroup}</Text>
-                                    <Text style={styles.exerciseBlockName} numberOfLines={1}>{exercise.exerciseName}</Text>
+                                    <Text style={[styles.exerciseMuscleTag, { backgroundColor: theme.primary, color: theme.primaryText }]}>{exercise.muscleGroup}</Text>
+                                    <Text style={[styles.exerciseBlockName, { color: theme.text }]} numberOfLines={1}>{exercise.exerciseName}</Text>
                                   </View>
 
                                   {/* Sesiones S1, S2, S3... lado a lado */}
                                   <ScrollView horizontal showsHorizontalScrollIndicator style={styles.sessionsCarousel}>
                                     {exercise.sesiones.map((sesion, sIdx) => (
-                                      <View key={sIdx} style={styles.sessionBox}>
+                                      <View key={sIdx} style={[styles.sessionBox, { backgroundColor: theme.background, borderColor: theme.border }]}>
                                         {/* Header: S1 fecha */}
                                         <View style={styles.sessionBoxHeader}>
                                           <Text style={styles.sessionBoxNum}>S{sesion.week}</Text>
@@ -1897,12 +1921,12 @@ export default function EvolucionScreen() {
                 {comentariosConFeedbacks.current && comentariosConFeedbacks.current.semanas?.length > 0 && (
                   <View style={styles.commentsRoutineSection}>
                     <View style={styles.commentsRoutineHeader}>
-                      <Text style={styles.commentsRoutineLabel}>📋 Rutina Actual</Text>
+                      <Text style={[styles.commentsRoutineLabel, { color: theme.textSecondary }]}>📋 Rutina Actual</Text>
                       <View style={styles.commentsBadge}>
                         <Text style={styles.commentsBadgeText}>{comentariosConFeedbacks.current.totalComentarios}</Text>
                       </View>
                     </View>
-                    <Text style={styles.commentsRoutineName}>{comentariosConFeedbacks.current.routineName}</Text>
+                    <Text style={[styles.commentsRoutineName, { color: theme.text }]}>{comentariosConFeedbacks.current.routineName}</Text>
 
                     {comentariosConFeedbacks.current.semanas.map((semana) => {
                       // Calcular RPE promedio de la semana
@@ -1914,13 +1938,13 @@ export default function EvolucionScreen() {
                       const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
 
                       return (
-                        <View key={semana.week} style={styles.commentsWeekGroup}>
+                        <View key={semana.week} style={[styles.commentsWeekGroup, { backgroundColor: theme.cardBackground, borderRadius: 12, overflow: 'hidden' }]}>
                           <Pressable
                             onPress={() => toggleWeek('current', semana.week)}
-                            style={styles.commentsWeekHeaderPressable}
+                            style={[styles.commentsWeekHeaderPressable, { backgroundColor: theme.background }]}
                           >
-                            <View style={styles.commentsWeekBadge}>
-                              <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
+                            <View style={[styles.commentsWeekBadge, { backgroundColor: theme.cardBackground, borderWidth: 1, borderColor: theme.border }]}>
+                              <Text style={[styles.commentsWeekBadgeText, { color: theme.text }]}>Semana {semana.week}</Text>
                             </View>
                             <View style={styles.commentsWeekRight}>
                               {/* RPE promedio de la semana */}
@@ -1943,7 +1967,7 @@ export default function EvolucionScreen() {
                           </Pressable>
 
                           {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
-                            <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                            <View key={`${dia.dayIndex}-${dIdx}`} style={[styles.commentsDaySection, { borderBottomColor: theme.border }]}>
                               <View style={styles.commentsDayHeaderRow}>
                                 <Text style={styles.commentsDayHeader}>
                                   {dia.dayLabel} • {dia.date}
@@ -2309,9 +2333,9 @@ export default function EvolucionScreen() {
         {/* ═══════════════════════════════════════════════════════════════════════════
           SECCIÓN DE TOTALES CON MEDALLAS 🏆
           ═══════════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.totalesSection}>
+        <View style={[styles.totalesSection, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
           <View style={styles.totalesHeader}>
-            <Text style={styles.totalesTitle}>🏆 Tu Progreso Total</Text>
+            <Text style={[styles.totalesTitle, { color: theme.text }]}>🏆 Tu Progreso Total</Text>
             <View style={styles.dataSourceBadge}>
               <Ionicons
                 name={dataSource === 'cloud' ? 'cloud' : 'phone-portrait'}
@@ -2328,47 +2352,47 @@ export default function EvolucionScreen() {
           </View>
 
           {/* Tarjeta: Repeticiones */}
-          <View style={styles.totalCard}>
+          <View style={[styles.totalCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
             <View style={styles.totalCardLeft}>
               <Text style={styles.totalCardIcon}>📊</Text>
               <View>
-                <Text style={styles.totalCardLabel}>Repeticiones Totales</Text>
-                <Text style={styles.totalCardValue}>{formatNumber(totales.reps)}</Text>
+                <Text style={[styles.totalCardLabel, { color: theme.textSecondary }]}>Repeticiones Totales</Text>
+                <Text style={[styles.totalCardValue, { color: theme.text }]}>{formatNumber(totales.reps)}</Text>
               </View>
             </View>
-            <View style={styles.medallaBadge}>
+            <View style={[styles.medallaBadge, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
               <Text style={styles.medallaEmoji}>{totales.medallaReps.emoji}</Text>
-              <Text style={styles.medallaNombre}>{totales.medallaReps.nombre}</Text>
+              <Text style={[styles.medallaNombre, { color: theme.text }]}>{totales.medallaReps.nombre}</Text>
             </View>
           </View>
 
           {/* Tarjeta: Peso Levantado */}
-          <View style={styles.totalCard}>
+          <View style={[styles.totalCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
             <View style={styles.totalCardLeft}>
               <Text style={styles.totalCardIcon}>🏋️</Text>
               <View>
-                <Text style={styles.totalCardLabel}>Peso Total Levantado</Text>
-                <Text style={styles.totalCardValue}>{formatNumber(totales.peso)} kg</Text>
+                <Text style={[styles.totalCardLabel, { color: theme.textSecondary }]}>Peso Total Levantado</Text>
+                <Text style={[styles.totalCardValue, { color: theme.text }]}>{formatNumber(totales.peso)} kg</Text>
               </View>
             </View>
-            <View style={styles.medallaBadge}>
+            <View style={[styles.medallaBadge, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
               <Text style={styles.medallaEmoji}>{totales.medallaPeso.emoji}</Text>
-              <Text style={styles.medallaNombre}>{totales.medallaPeso.nombre}</Text>
+              <Text style={[styles.medallaNombre, { color: theme.text }]}>{totales.medallaPeso.nombre}</Text>
             </View>
           </View>
 
           {/* Tarjeta: Trabajo Total */}
-          <View style={styles.totalCard}>
+          <View style={[styles.totalCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
             <View style={styles.totalCardLeft}>
               <Text style={styles.totalCardIcon}>💪</Text>
               <View>
-                <Text style={styles.totalCardLabel}>Trabajo Total (Volumen)</Text>
-                <Text style={styles.totalCardValue}>{formatNumber(totales.trabajo)}</Text>
+                <Text style={[styles.totalCardLabel, { color: theme.textSecondary }]}>Trabajo Total (Volumen)</Text>
+                <Text style={[styles.totalCardValue, { color: theme.text }]}>{formatNumber(totales.trabajo)}</Text>
               </View>
             </View>
-            <View style={styles.medallaBadge}>
+            <View style={[styles.medallaBadge, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
               <Text style={styles.medallaEmoji}>{totales.medallaTrabajo.emoji}</Text>
-              <Text style={styles.medallaNombre}>{totales.medallaTrabajo.nombre}</Text>
+              <Text style={[styles.medallaNombre, { color: theme.text }]}>{totales.medallaTrabajo.nombre}</Text>
             </View>
           </View>
         </View>
@@ -2383,11 +2407,11 @@ export default function EvolucionScreen() {
           onRequestClose={() => setKpiModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setKpiModalVisible(false)}>
-            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-              <View style={styles.kpiModalHeader}>
-                <Text style={styles.kpiModalTitle}>Seleccionar KPI</Text>
+            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+              <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar KPI</Text>
                 <Pressable onPress={() => setKpiModalVisible(false)}>
-                  <Ionicons name="close" size={24} color="#64748b" />
+                  <Ionicons name="close" size={24} color={theme.textSecondary} />
                 </Pressable>
               </View>
               <FlatList
@@ -2403,13 +2427,13 @@ export default function EvolucionScreen() {
                   >
                     <Text style={styles.kpiModalItemIcon}>{item.icon}</Text>
                     <View style={styles.kpiModalItemText}>
-                      <Text style={[styles.kpiModalItemName, selectedKpi === item.id && styles.kpiModalItemNameActive]}>
+                      <Text style={[styles.kpiModalItemName, { color: theme.text }, selectedKpi === item.id && styles.kpiModalItemNameActive]}>
                         {item.name}
                       </Text>
-                      <Text style={styles.kpiModalItemDesc}>{item.description}</Text>
+                      <Text style={[styles.kpiModalItemDesc, { color: theme.textSecondary }]}>{item.description}</Text>
                     </View>
                     {selectedKpi === item.id && (
-                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                      <Ionicons name="checkmark-circle" size={22} color={theme.primary} />
                     )}
                   </Pressable>
                 )}
@@ -2428,11 +2452,11 @@ export default function EvolucionScreen() {
           onRequestClose={() => setMuscleModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setMuscleModalVisible(false)}>
-            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-              <View style={styles.kpiModalHeader}>
-                <Text style={styles.kpiModalTitle}>Seleccionar Músculo</Text>
+            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+              <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar Músculo</Text>
                 <Pressable onPress={() => setMuscleModalVisible(false)}>
-                  <Ionicons name="close" size={24} color="#9ca3af" />
+                  <Ionicons name="close" size={24} color={theme.textSecondary} />
                 </Pressable>
               </View>
               <FlatList
@@ -2446,11 +2470,11 @@ export default function EvolucionScreen() {
                       setMuscleModalVisible(false);
                     }}
                   >
-                    <Text style={[styles.kpiModalItemName, selKpiMusculo === item && styles.kpiModalItemNameActive]}>
+                    <Text style={[styles.kpiModalItemName, { color: theme.text }, selKpiMusculo === item && styles.kpiModalItemNameActive]}>
                       {item === 'TOTAL' ? 'Todos los músculos' : item}
                     </Text>
                     {selKpiMusculo === item && (
-                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                      <Ionicons name="checkmark-circle" size={22} color={theme.primary} />
                     )}
                   </Pressable>
                 )}
@@ -2469,11 +2493,11 @@ export default function EvolucionScreen() {
           onRequestClose={() => setExerciseModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setExerciseModalVisible(false)}>
-            <View style={styles.kpiModalContent} onStartShouldSetResponder={() => true}>
-              <View style={styles.kpiModalHeader}>
-                <Text style={styles.kpiModalTitle}>Seleccionar Ejercicio</Text>
+            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+              <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar Ejercicio</Text>
                 <Pressable onPress={() => setExerciseModalVisible(false)}>
-                  <Ionicons name="close" size={24} color="#9ca3af" />
+                  <Ionicons name="close" size={24} color={theme.textSecondary} />
                 </Pressable>
               </View>
               <FlatList
@@ -2487,11 +2511,11 @@ export default function EvolucionScreen() {
                       setExerciseModalVisible(false);
                     }}
                   >
-                    <Text style={[styles.kpiModalItemName, selKpiEjercicio === item.id && styles.kpiModalItemNameActive]}>
+                    <Text style={[styles.kpiModalItemName, { color: theme.text }, selKpiEjercicio === item.id && styles.kpiModalItemNameActive]}>
                       {item.name}
                     </Text>
                     {selKpiEjercicio === item.id && (
-                      <Ionicons name="checkmark-circle" size={22} color="#3b82f6" />
+                      <Ionicons name="checkmark-circle" size={22} color={theme.primary} />
                     )}
                   </Pressable>
                 )}
@@ -2599,9 +2623,9 @@ const styles = StyleSheet.create({
   // NUEVO: Botón "Volcar progreso"
   bulkButton: {
     marginTop: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#2563EB', // Fallback
     borderWidth: 1,
-    borderColor: '#1D4ED8',
+    borderColor: '#1D4ED8', // Fallback
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 10,

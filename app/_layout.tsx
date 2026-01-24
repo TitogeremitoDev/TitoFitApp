@@ -101,8 +101,17 @@ function RootLayoutNav() {
                 {
                   text: 'Actualizar ahora',
                   onPress: () => {
-                    // Abrir la App Store (reemplaza con tu App Store URL real)
-                    const appStoreUrl = 'https://apps.apple.com/app/id6756856683';
+                    // Intentar usar la URL dinámica que devuelve la librería (trackViewUrl)
+                    // @ts-ignore - 'other' puede contener trackViewUrl en iOS
+                    const dynamicUrl = result.other?.trackViewUrl;
+
+                    // Fallback a la URL proporcionada si no hay dinámica
+                    const appStoreUrl = dynamicUrl || 'https://apps.apple.com/us/app/totalgains/id6756856683';
+
+                    if (__DEV__) {
+                      console.log('[InAppUpdates] Opening URL:', appStoreUrl);
+                    }
+
                     Linking.openURL(appStoreUrl);
                   },
                 },

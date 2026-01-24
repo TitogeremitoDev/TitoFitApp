@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import { useTheme } from '../../../context/ThemeContext';
 import { useAchievements } from '../../../context/AchievementsContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
@@ -38,8 +39,8 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Sección expandible (Accordion)
-const ExpandableSection = ({ title, icon, children, expanded, onToggle, color = '#3B82F6' }) => (
-    <View style={styles.accordionContainer}>
+const ExpandableSection = ({ title, icon, children, expanded, onToggle, color = '#3B82F6', theme }) => (
+    <View style={[styles.accordionContainer, { backgroundColor: theme?.cardBackground || '#FFF', borderColor: theme?.cardBorder || '#E5E7EB' }]}>
         <TouchableOpacity
             style={[styles.accordionHeader, { borderLeftColor: color }]}
             onPress={onToggle}
@@ -47,12 +48,12 @@ const ExpandableSection = ({ title, icon, children, expanded, onToggle, color = 
         >
             <View style={styles.accordionTitleRow}>
                 <Text style={styles.accordionIcon}>{icon}</Text>
-                <Text style={styles.accordionTitle}>{title}</Text>
+                <Text style={[styles.accordionTitle, { color: theme?.text || '#1F2937' }]}>{title}</Text>
             </View>
             <Ionicons
                 name={expanded ? 'chevron-up' : 'chevron-down'}
                 size={24}
-                color="#9CA3AF"
+                color={theme?.textSecondary || '#9CA3AF'}
             />
         </TouchableOpacity>
         {expanded && (
@@ -63,59 +64,82 @@ const ExpandableSection = ({ title, icon, children, expanded, onToggle, color = 
     </View>
 );
 
+// Tarjeta de Check-in con nuevo diseño
+const CheckInCard = ({ title, subtitle, icon, iconBg, status, statusColor, onPress, theme }) => (
+    <TouchableOpacity
+        style={[styles.checkInCard, { backgroundColor: theme?.cardBackground || '#FFF', borderColor: theme?.cardBorder || '#E5E7EB' }]}
+        onPress={onPress}
+        activeOpacity={0.7}
+    >
+        <View style={[styles.checkInIconBox, { backgroundColor: iconBg }]}>
+            {icon}
+        </View>
+        <View style={styles.checkInTextContainer}>
+            <Text style={[styles.checkInTitle, { color: theme?.text || '#1F2937' }]}>{title}</Text>
+            <Text style={[styles.checkInSubtitle, { color: theme?.textSecondary || '#6B7280' }]}>{subtitle}</Text>
+        </View>
+        <View style={[styles.checkInBadge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
+            {status === 'LISTO' && <Ionicons name="checkmark" size={14} color={statusColor} style={{ marginRight: 4 }} />}
+            <Text style={[styles.checkInBadgeText, { color: statusColor }]}>{status}</Text>
+        </View>
+    </TouchableOpacity>
+);
+
 // Campo numérico simple
-const NumberInput = ({ label, value, onChangeText, placeholder, suffix = '' }) => (
+const NumberInput = ({ label, value, onChangeText, placeholder, suffix = '', theme }) => (
     <View style={styles.inputRow}>
-        <Text style={styles.inputLabel}>{label}</Text>
-        <View style={styles.inputWrapper}>
+        <Text style={[styles.inputLabel, { color: theme?.text || '#1F2937' }]}>{label}</Text>
+        <View style={[styles.inputWrapper, { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB' }]}>
             <TextInput
-                style={styles.numberInput}
+                style={[styles.numberInput, { color: theme?.text || '#1F2937' }]}
                 value={value}
                 onChangeText={onChangeText}
                 placeholder={placeholder}
-                placeholderTextColor="#6B7280"
+                placeholderTextColor={theme?.placeholder || '#6B7280'}
                 keyboardType="numeric"
             />
-            {suffix ? <Text style={styles.inputSuffix}>{suffix}</Text> : null}
+            {suffix ? <Text style={[styles.inputSuffix, { color: theme?.textSecondary || '#6B7280' }]}>{suffix}</Text> : null}
         </View>
     </View>
 );
 
 // Campo de medición compacto (para filas de 2)
-const MeasureInput = ({ label, value, onChangeText, placeholder }) => (
+const MeasureInput = ({ label, value, onChangeText, placeholder, theme }) => (
     <View style={styles.measureItem}>
-        <Text style={styles.measureLabel}>{label}</Text>
-        <View style={styles.measureInputRow}>
+        <Text style={[styles.measureLabel, { color: theme?.textSecondary || '#6B7280' }]}>{label}</Text>
+        <View style={[styles.measureInputRow, { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB' }]}>
             <TextInput
-                style={styles.measureInput}
+                style={[styles.measureInput, { color: theme?.text || '#1F2937' }]}
                 value={value}
                 onChangeText={onChangeText}
                 placeholder={placeholder}
-                placeholderTextColor="#6B7280"
+                placeholderTextColor={theme?.placeholder || '#6B7280'}
                 keyboardType="numeric"
             />
-            <Text style={styles.measureSuffix}>cm</Text>
+            <Text style={[styles.measureSuffix, { color: theme?.textSecondary || '#6B7280' }]}>cm</Text>
         </View>
     </View>
 );
 
 // Selector de escala (1-5 o 1-10)
-const ScaleSelector = ({ label, value, onChange, max = 5, labels = [] }) => (
+const ScaleSelector = ({ label, value, onChange, max = 5, labels = [], theme }) => (
     <View style={styles.scaleContainer}>
-        <Text style={styles.inputLabel}>{label}</Text>
+        <Text style={[styles.inputLabel, { color: theme?.text || '#1F2937' }]}>{label}</Text>
         <View style={styles.scaleRow}>
             {Array.from({ length: max }, (_, i) => i + 1).map((num) => (
                 <TouchableOpacity
                     key={num}
                     style={[
                         styles.scaleBtn,
-                        value === num && styles.scaleBtnActive
+                        { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB' },
+                        value === num && { backgroundColor: (theme?.primary || '#3B82F6') + '20', borderColor: theme?.primary || '#3B82F6' }
                     ]}
                     onPress={() => onChange(num)}
                 >
                     <Text style={[
                         styles.scaleBtnText,
-                        value === num && styles.scaleBtnTextActive
+                        { color: theme?.textSecondary || '#6B7280' },
+                        value === num && { color: theme?.primary || '#3B82F6' }
                     ]}>
                         {num}
                     </Text>
@@ -124,15 +148,15 @@ const ScaleSelector = ({ label, value, onChange, max = 5, labels = [] }) => (
         </View>
         {labels.length > 0 && (
             <View style={styles.scaleLabels}>
-                <Text style={styles.scaleLabelText}>{labels[0]}</Text>
-                <Text style={styles.scaleLabelText}>{labels[1]}</Text>
+                <Text style={[styles.scaleLabelText, { color: theme?.textSecondary || '#6B7280' }]}>{labels[0]}</Text>
+                <Text style={[styles.scaleLabelText, { color: theme?.textSecondary || '#6B7280' }]}>{labels[1]}</Text>
             </View>
         )}
     </View>
 );
 
 // Selector de ánimo con emojis
-const MoodSelector = ({ value, onChange }) => {
+const MoodSelector = ({ value, onChange, theme }) => {
     const moods = [
         { emoji: '😢', label: 'Mal', value: 1 },
         { emoji: '😕', label: 'Regular', value: 2 },
@@ -143,21 +167,23 @@ const MoodSelector = ({ value, onChange }) => {
 
     return (
         <View style={styles.moodContainer}>
-            <Text style={styles.inputLabel}>¿Cómo te has levantado hoy?</Text>
+            <Text style={[styles.inputLabel, { color: theme?.text || '#1F2937' }]}>¿Cómo te has levantado hoy?</Text>
             <View style={styles.moodRow}>
                 {moods.map((mood) => (
                     <TouchableOpacity
                         key={mood.value}
                         style={[
                             styles.moodBtn,
-                            value === mood.value && styles.moodBtnActive
+                            { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB' },
+                            value === mood.value && { backgroundColor: (theme?.primary || '#3B82F6') + '20', borderColor: theme?.primary || '#3B82F6' }
                         ]}
                         onPress={() => onChange(mood.value)}
                     >
                         <Text style={styles.moodEmoji}>{mood.emoji}</Text>
                         <Text style={[
                             styles.moodLabel,
-                            value === mood.value && styles.moodLabelActive
+                            { color: theme?.textSecondary || '#6B7280' },
+                            value === mood.value && { color: theme?.primary || '#3B82F6' }
                         ]}>
                             {mood.label}
                         </Text>
@@ -169,28 +195,30 @@ const MoodSelector = ({ value, onChange }) => {
 };
 
 // Selector Sí/Medio/No
-const TripleChoice = ({ label, value, onChange }) => {
+const TripleChoice = ({ label, value, onChange, theme }) => {
     const options = [
-        { label: '✅ Sí', value: 'si', color: '#10B981' },
-        { label: '🤔 Medio', value: 'medio', color: '#F59E0B' },
-        { label: '❌ No', value: 'no', color: '#EF4444' },
+        { label: '✅ Sí', value: 'si', color: theme?.success || '#10B981' },
+        { label: '🤔 Medio', value: 'medio', color: theme?.warning || '#F59E0B' },
+        { label: '❌ No', value: 'no', color: theme?.danger || '#EF4444' },
     ];
 
     return (
         <View style={styles.tripleContainer}>
-            <Text style={styles.inputLabel}>{label}</Text>
+            <Text style={[styles.inputLabel, { color: theme?.text || '#1F2937' }]}>{label}</Text>
             <View style={styles.tripleRow}>
                 {options.map((opt) => (
                     <TouchableOpacity
                         key={opt.value}
                         style={[
                             styles.tripleBtn,
-                            value === opt.value && { backgroundColor: opt.color + '30', borderColor: opt.color }
+                            { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB' },
+                            value === opt.value && { backgroundColor: opt.color + '20', borderColor: opt.color }
                         ]}
                         onPress={() => onChange(opt.value)}
                     >
                         <Text style={[
                             styles.tripleBtnText,
+                            { color: theme?.textSecondary || '#6B7280' },
                             value === opt.value && { color: opt.color }
                         ]}>
                             {opt.label}
@@ -203,15 +231,15 @@ const TripleChoice = ({ label, value, onChange }) => {
 };
 
 // Campo de texto para comentarios
-const CommentInput = ({ label, value, onChangeText, placeholder }) => (
+const CommentInput = ({ label, value, onChangeText, placeholder, theme }) => (
     <View style={styles.commentContainer}>
-        <Text style={styles.inputLabel}>{label}</Text>
+        <Text style={[styles.inputLabel, { color: theme?.text || '#1F2937' }]}>{label}</Text>
         <TextInput
-            style={styles.commentInput}
+            style={[styles.commentInput, { backgroundColor: theme?.inputBackground || '#F9FAFB', borderColor: theme?.inputBorder || '#D1D5DB', color: theme?.text || '#1F2937' }]}
             value={value}
             onChangeText={onChangeText}
             placeholder={placeholder}
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={theme?.placeholder || '#6B7280'}
             multiline
             numberOfLines={2}
         />
@@ -219,10 +247,10 @@ const CommentInput = ({ label, value, onChangeText, placeholder }) => (
 );
 
 // Separador de subsección
-const SubsectionTitle = ({ title, icon }) => (
+const SubsectionTitle = ({ title, icon, theme }) => (
     <View style={styles.subsectionHeader}>
         <Text style={styles.subsectionIcon}>{icon}</Text>
-        <Text style={styles.subsectionTitle}>{title}</Text>
+        <Text style={[styles.subsectionTitle, { color: theme?.text || '#1F2937' }]}>{title}</Text>
     </View>
 );
 
@@ -240,8 +268,9 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
  * @param {Set} weeklyDates - Fechas de inicio de semana con check-in semanal
  * @param {string} selectedDate - Fecha actualmente seleccionada (formato 'YYYY-MM-DD')
  * @param {function} onDaySelect - Callback cuando se selecciona un día
+ * @param {object} theme - Tema de colores
  */
-const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), selectedDate, onDaySelect }) => {
+const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), selectedDate, onDaySelect, theme }) => {
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -287,24 +316,24 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), sele
     };
 
     return (
-        <View style={styles.calendarContainer}>
+        <View style={[styles.calendarContainer, { backgroundColor: theme?.cardBackground || '#FFF', borderColor: theme?.cardBorder || '#E5E7EB' }]}>
             {/* Header con navegación */}
             <View style={styles.calendarHeader}>
                 <TouchableOpacity onPress={goToPrevMonth} style={styles.calendarArrow}>
-                    <Ionicons name="chevron-back" size={24} color="#9CA3AF" />
+                    <Ionicons name="chevron-back" size={24} color={theme?.textSecondary || '#9CA3AF'} />
                 </TouchableOpacity>
-                <Text style={styles.calendarMonthText}>
+                <Text style={[styles.calendarMonthText, { color: theme?.text || '#1F2937' }]}>
                     {MONTHS[month]} {year}
                 </Text>
                 <TouchableOpacity onPress={goToNextMonth} style={styles.calendarArrow}>
-                    <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+                    <Ionicons name="chevron-forward" size={24} color={theme?.textSecondary || '#9CA3AF'} />
                 </TouchableOpacity>
             </View>
 
             {/* Días de la semana */}
             <View style={styles.calendarWeekHeader}>
                 {DAYS_OF_WEEK.map(day => (
-                    <Text key={day} style={styles.calendarWeekDay}>{day}</Text>
+                    <Text key={day} style={[styles.calendarWeekDay, { color: theme?.textSecondary || '#6B7280' }]}>{day}</Text>
                 ))}
             </View>
 
@@ -316,9 +345,10 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), sele
                             <TouchableOpacity
                                 style={[
                                     styles.calendarDay,
-                                    isToday && styles.calendarDayToday,
-                                    isSelected && styles.calendarDaySelected,
-                                    isFuture && styles.calendarDayFuture
+                                    { backgroundColor: theme?.inputBackground || '#F9FAFB' },
+                                    isToday && { borderWidth: 2, borderColor: theme?.primary || '#3B82F6' },
+                                    isSelected && { backgroundColor: theme?.primary || '#3B82F6' },
+                                    isFuture && { opacity: 0.4 }
                                 ]}
                                 onPress={() => handleDayPress(dateStr, isFuture)}
                                 activeOpacity={isFuture ? 1 : 0.6}
@@ -326,16 +356,17 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), sele
                             >
                                 <Text style={[
                                     styles.calendarDayText,
-                                    isToday && styles.calendarDayTextToday,
-                                    isSelected && styles.calendarDayTextSelected,
-                                    isFuture && styles.calendarDayTextFuture
+                                    { color: theme?.text || '#1F2937' },
+                                    isToday && { color: theme?.primary || '#3B82F6', fontWeight: '700' },
+                                    isSelected && { color: '#FFF' },
+                                    isFuture && { color: theme?.textSecondary || '#9CA3AF' }
                                 ]}>
                                     {day}
                                 </Text>
                                 {/* Indicadores */}
                                 <View style={styles.calendarIndicators}>
-                                    {hasDaily && <View style={styles.calendarDotDaily} />}
-                                    {hasWeekly && <View style={styles.calendarDotWeekly} />}
+                                    {hasDaily && <View style={[styles.calendarDotDaily, { backgroundColor: theme?.success || '#10B981' }]} />}
+                                    {hasWeekly && <View style={[styles.calendarDotWeekly, { backgroundColor: theme?.primary || '#3B82F6' }]} />}
                                 </View>
                             </TouchableOpacity>
                         ) : null}
@@ -346,12 +377,12 @@ const MonthlyCalendar = ({ dailyDates = new Set(), weeklyDates = new Set(), sele
             {/* Leyenda */}
             <View style={styles.calendarLegend}>
                 <View style={styles.calendarLegendItem}>
-                    <View style={[styles.calendarDotDaily, { marginRight: 4 }]} />
-                    <Text style={styles.calendarLegendText}>Diario</Text>
+                    <View style={[styles.calendarDotDaily, { marginRight: 4, backgroundColor: theme?.success || '#10B981' }]} />
+                    <Text style={[styles.calendarLegendText, { color: theme?.textSecondary || '#6B7280' }]}>Diario</Text>
                 </View>
                 <View style={styles.calendarLegendItem}>
-                    <View style={[styles.calendarDotWeekly, { marginRight: 4 }]} />
-                    <Text style={styles.calendarLegendText}>Semanal</Text>
+                    <View style={[styles.calendarDotWeekly, { marginRight: 4, backgroundColor: theme?.primary || '#3B82F6' }]} />
+                    <Text style={[styles.calendarLegendText, { color: theme?.textSecondary || '#6B7280' }]}>Semanal</Text>
                 </View>
             </View>
         </View>
@@ -381,7 +412,7 @@ const getDeviationColor = (consumed, target) => {
 /**
  * Input GRANDE para Kcal - Prominente al top
  */
-const KcalBigInput = ({ value, target, onChangeText }) => {
+const KcalBigInput = ({ value, target, onChangeText, theme }) => {
     const numValue = parseFloat(value) || 0;
     const numTarget = parseFloat(target) || 0;
     const percentage = numTarget > 0 ? Math.min((numValue / numTarget) * 100, 100) : 0;
@@ -391,7 +422,7 @@ const KcalBigInput = ({ value, target, onChangeText }) => {
         <View style={styles.kcalBigContainer}>
             <View style={styles.kcalHeader}>
                 <Text style={styles.kcalEmoji}>🔥</Text>
-                <Text style={styles.kcalLabel}>Calorías</Text>
+                <Text style={[styles.kcalLabel, { color: theme?.text || '#1F2937' }]}>Calorías</Text>
                 {numTarget > 0 && (
                     <Text style={[styles.kcalPercentage, { color }]}>
                         {Math.round(percentage)}%
@@ -400,21 +431,21 @@ const KcalBigInput = ({ value, target, onChangeText }) => {
             </View>
             <View style={styles.kcalInputRow}>
                 <TextInput
-                    style={[styles.kcalInput, { borderColor: color }]}
+                    style={[styles.kcalInput, { borderColor: color, backgroundColor: theme?.inputBackground || '#F9FAFB', color: theme?.text || '#1F2937' }]}
                     value={value}
                     onChangeText={onChangeText}
                     placeholder="0"
-                    placeholderTextColor="#6B7280"
+                    placeholderTextColor={theme?.placeholder || '#6B7280'}
                     keyboardType="numeric"
                 />
-                <Text style={styles.kcalUnit}>kcal</Text>
+                <Text style={[styles.kcalUnit, { color: theme?.textSecondary || '#6B7280' }]}>kcal</Text>
             </View>
             {numTarget > 0 && (
                 <View style={styles.kcalProgressContainer}>
-                    <View style={styles.kcalProgressBg}>
+                    <View style={[styles.kcalProgressBg, { backgroundColor: theme?.inputBorder || '#E5E7EB' }]}>
                         <View style={[styles.kcalProgressFill, { width: `${percentage}%`, backgroundColor: color }]} />
                     </View>
-                    <Text style={styles.kcalTargetText}>de {numTarget} kcal</Text>
+                    <Text style={[styles.kcalTargetText, { color: theme?.textSecondary || '#6B7280' }]}>de {numTarget} kcal</Text>
                 </View>
             )}
         </View>
@@ -424,7 +455,7 @@ const KcalBigInput = ({ value, target, onChangeText }) => {
 /**
  * Input COMPACTO para Macros - Solo borde con color
  */
-const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
+const CompactMacroInput = ({ label, value, target, onChangeText, emoji, theme }) => {
     const numValue = parseFloat(value) || 0;
     const numTarget = parseFloat(target) || 0;
     const color = getDeviationColor(numValue, numTarget);
@@ -433,14 +464,14 @@ const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
         <View style={styles.compactMacroItem}>
             <Text style={styles.compactMacroEmoji}>{emoji}</Text>
             <TextInput
-                style={[styles.compactMacroInput, { borderColor: color }]}
+                style={[styles.compactMacroInput, { borderColor: color, backgroundColor: theme?.inputBackground || '#F9FAFB', color: theme?.text || '#1F2937' }]}
                 value={value}
                 onChangeText={onChangeText}
                 placeholder="0"
-                placeholderTextColor="#6B7280"
+                placeholderTextColor={theme?.placeholder || '#6B7280'}
                 keyboardType="numeric"
             />
-            <Text style={styles.compactMacroLabel}>{label}</Text>
+            <Text style={[styles.compactMacroLabel, { color: theme?.textSecondary || '#6B7280' }]}>{label}</Text>
         </View>
     );
 };
@@ -451,6 +482,7 @@ const CompactMacroInput = ({ label, value, target, onChangeText, emoji }) => {
 
 export default function SeguimientoScreen() {
     const { user, token, refreshUser } = useAuth();
+    const { theme, isDark } = useTheme();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
     const router = useRouter();
 
@@ -1592,18 +1624,20 @@ export default function SeguimientoScreen() {
     };
 
     return (
-        <View style={styles.root}>
-            <StatusBar style="light" />
-            <LinearGradient
-                colors={['#0B1220', '#0D1B2A', '#111827']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-            />
+        <View style={[styles.root, { backgroundColor: theme.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+            {isDark && (
+                <LinearGradient
+                    colors={[theme.background, theme.backgroundSecondary, theme.backgroundTertiary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                />
+            )}
 
             {/* Blobs decorativos */}
-            <View style={[styles.blob, styles.blobTop]} />
-            <View style={[styles.blob, styles.blobBottom]} />
+            <View style={[styles.blob, styles.blobTop, { backgroundColor: theme.primary }]} />
+            <View style={[styles.blob, styles.blobBottom, { backgroundColor: theme.success }]} />
 
             <ScrollView
                 style={styles.scrollView}
@@ -1612,100 +1646,78 @@ export default function SeguimientoScreen() {
             >
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.headerTitle}>📏 Seguimiento</Text>
-                    <Text style={styles.headerSubtitle}>Registra tu progreso diario y semanal</Text>
+                    <Text style={[styles.headerTitle, { color: theme.text }]}>📏 Seguimiento</Text>
+                    <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Registra tu progreso diario y semanal</Text>
                 </View>
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
                 {/* SECCIÓN DATOS MÍNIMOS (Siempre visible) */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                <View style={styles.minimalDataCard}>
-                    <View style={styles.minimalDataHeader}>
-                        {/* Flecha izquierda - Día anterior */}
+                <View style={[styles.minimalDataCard, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}>
+                    {/* Navegación de fecha centrada */}
+                    <View style={styles.dateNavRow}>
                         <TouchableOpacity
                             onPress={goToPreviousDay}
-                            style={styles.dateNavArrow}
+                            style={styles.dateNavBtn}
                             activeOpacity={0.6}
                         >
-                            <Ionicons name="chevron-back" size={26} color="#3B82F6" />
+                            <Ionicons name="chevron-back" size={24} color={theme.textSecondary} />
                         </TouchableOpacity>
 
-                        {/* Título con fecha */}
-                        <View style={styles.dateNavCenter}>
-                            <Text style={styles.minimalDataIcon}>📊</Text>
-                            <Text style={styles.minimalDataTitle}>{formatDateDisplay(selectedDate)}</Text>
+                        <View style={styles.dateNavCenterNew}>
+                            <Ionicons name="bar-chart" size={18} color={theme.text} style={{ marginRight: 8 }} />
+                            <Text style={[styles.dateNavText, { color: theme.text }]}>{formatDateDisplay(selectedDate)}</Text>
                         </View>
-                        {/* Badge de guardado */}
-                        {minimalDataSaved && (
-                            <Animated.View style={[
-                                styles.savedBadge,
-                                { transform: [{ scale: pulseAnim }] }
-                            ]}>
-                                <Animated.Text style={{
-                                    transform: [{
-                                        rotate: rotateAnim.interpolate({
-                                            inputRange: [0, 1],
-                                            outputRange: ['0deg', '360deg']
-                                        })
-                                    }]
-                                }}>
-                                    {diarioExistente ? '🔄' : '✅'}
-                                </Animated.Text>
-                                <Text style={[styles.savedBadgeText, diarioExistente && { color: '#3B82F6' }]}>
-                                    {diarioExistente ? 'Actualizado' : 'Guardado'}
-                                </Text>
-                            </Animated.View>
-                        )}
-                        {/* Flecha derecha - Día siguiente (deshabilitada si es hoy) */}
+
                         <TouchableOpacity
                             onPress={goToNextDay}
-                            style={[styles.dateNavArrow, isToday && styles.dateNavArrowDisabled]}
+                            style={[styles.dateNavBtn, isToday && { opacity: 0.3 }]}
                             activeOpacity={isToday ? 1 : 0.6}
                             disabled={isToday}
                         >
-                            <Ionicons name="chevron-forward" size={26} color={isToday ? '#4B5563' : '#3B82F6'} />
-
+                            <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} />
                         </TouchableOpacity>
-
-
                     </View>
 
                     {minimalDataLoading ? (
                         <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="small" color="#3B82F6" />
-                            <Text style={styles.loadingText}>Cargando datos...</Text>
+                            <ActivityIndicator size="small" color={theme.primary} />
+                            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando datos...</Text>
                         </View>
                     ) : (
                         <>
-                            {/* Peso */}
-                            <View style={styles.minimalInputRow}>
-                                <Text style={styles.minimalInputLabel}>⚖️ Peso</Text>
-                                <View style={styles.minimalInputWrapper}>
-                                    <TextInput
-                                        style={styles.minimalNumberInput}
-                                        value={minimalData.peso}
-                                        onChangeText={(v) => updateMinimalData('peso', v)}
-                                        placeholder="75.5"
-                                        placeholderTextColor="#6B7280"
-                                        keyboardType="numeric"
-                                    />
-                                    <Text style={styles.minimalInputSuffix}>kg</Text>
+                            {/* Peso y Sueño en dos columnas */}
+                            <View style={styles.dataCardsRow}>
+                                {/* Card Peso */}
+                                <View style={[styles.dataCardItem, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}>
+                                    <Text style={[styles.dataCardLabel, { color: theme.textSecondary }]}>⚖️ PESO</Text>
+                                    <View style={styles.dataCardValueRow}>
+                                        <TextInput
+                                            style={[styles.dataCardInput, { color: theme.text }]}
+                                            value={minimalData.peso}
+                                            onChangeText={(v) => updateMinimalData('peso', v)}
+                                            placeholder="75.5"
+                                            placeholderTextColor={theme.placeholder}
+                                            keyboardType="numeric"
+                                        />
+                                        <Text style={[styles.dataCardUnit, { color: theme.textSecondary }]}>kg</Text>
+                                    </View>
                                 </View>
-                            </View>
 
-                            {/* Horas de sueño */}
-                            <View style={styles.minimalInputRow}>
-                                <Text style={styles.minimalInputLabel}>😴 Horas de sueño</Text>
-                                <View style={styles.minimalInputWrapper}>
-                                    <TextInput
-                                        style={styles.minimalNumberInput}
-                                        value={minimalData.sueno}
-                                        onChangeText={(v) => updateMinimalData('sueno', v)}
-                                        placeholder="7.5"
-                                        placeholderTextColor="#6B7280"
-                                        keyboardType="numeric"
-                                    />
-                                    <Text style={styles.minimalInputSuffix}>h</Text>
+                                {/* Card Sueño */}
+                                <View style={[styles.dataCardItem, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}>
+                                    <Text style={[styles.dataCardLabel, { color: theme.textSecondary }]}>😴 SUEÑO</Text>
+                                    <View style={styles.dataCardValueRow}>
+                                        <TextInput
+                                            style={[styles.dataCardInput, { color: theme.text }]}
+                                            value={minimalData.sueno}
+                                            onChangeText={(v) => updateMinimalData('sueno', v)}
+                                            placeholder="7.5"
+                                            placeholderTextColor={theme.placeholder}
+                                            keyboardType="numeric"
+                                        />
+                                        <Text style={[styles.dataCardUnit, { color: theme.textSecondary }]}>h</Text>
+                                    </View>
                                 </View>
                             </View>
 
@@ -1713,13 +1725,14 @@ export default function SeguimientoScreen() {
                             <MoodSelector
                                 value={minimalData.animo}
                                 onChange={(v) => updateMinimalData('animo', v)}
+                                theme={theme}
                             />
 
                             {/* Botón Guardar */}
                             <TouchableOpacity
                                 style={[
                                     styles.minimalSaveBtn,
-                                    minimalDataSaved && styles.minimalSaveBtnSaved
+                                    { backgroundColor: theme.success },
                                 ]}
                                 onPress={handleGuardarMinimalData}
                             >
@@ -1737,349 +1750,411 @@ export default function SeguimientoScreen() {
                 </View>
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                {/* SECCIÓN DIARIO */}
+                {/* TARJETAS DE CHECK-IN (Nuevo diseño) */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                <ExpandableSection
-                    title="Check-in Diario 30s"
-                    icon="📅"
-                    expanded={diarioExpanded}
-                    onToggle={() => setDiarioExpanded(!diarioExpanded)}
-                    color="#10B981"
-                >
-                    <ScaleSelector
-                        label="Energía en tu día"
-                        value={diario.energia}
-                        onChange={(v) => updateDiario('energia', v)}
-                        max={5}
-                        labels={['Baja', 'Alta']}
-                    />
 
-                    <ScaleSelector
-                        label="Hambre"
-                        value={diario.hambre}
-                        onChange={(v) => updateDiario('hambre', v)}
-                        max={5}
-                        labels={['Poca', 'Mucha']}
-                    />
+                {/* Check-in Diario Card */}
+                <CheckInCard
+                    title="Check-in Diario"
+                    subtitle="30s de duración"
+                    icon={<Ionicons name="calendar" size={22} color="#FFF" />}
+                    iconBg="#F97316"
+                    status={diarioExistente ? "LISTO" : "PENDIENTE"}
+                    statusColor={diarioExistente ? "#10B981" : "#F97316"}
+                    onPress={() => setDiarioExpanded(!diarioExpanded)}
+                    theme={theme}
+                />
 
-                    <NumberInput
-                        label="Pasos"
-                        value={diario.pasos}
-                        onChangeText={(v) => updateDiario('pasos', v)}
-                        placeholder="8000"
-                    />
-
-                    <TripleChoice
-                        label="¿Hoy ha ido bien?"
-                        value={diario.haIdoBien}
-                        onChange={(v) => updateDiario('haIdoBien', v)}
-                    />
-
-                    <CommentInput
-                        label="Nota opcional"
-                        value={diario.nota}
-                        onChangeText={(v) => updateDiario('nota', v)}
-                        placeholder="Algo que quieras recordar..."
-                    />
-
-                    {/* Macros Consumidos - Añadidos al check-in diario */}
-                    <Text style={styles.macrosSectionTitle}>🍽️ Macros Consumidos (opcional)</Text>
-
-                    <KcalBigInput
-                        value={diario.kcalConsumed}
-                        target={nutritionTargets.kcal}
-                        onChangeText={(v) => updateDiario('kcalConsumed', v)}
-                    />
-
-                    <View style={styles.compactMacrosRow}>
-                        <CompactMacroInput
-                            emoji="🥩"
-                            label="Prot"
-                            value={diario.proteinConsumed}
-                            target={nutritionTargets.protein}
-                            onChangeText={(v) => updateDiario('proteinConsumed', v)}
-                        />
-                        <CompactMacroInput
-                            emoji="🍚"
-                            label="Carbs"
-                            value={diario.carbsConsumed}
-                            target={nutritionTargets.carbs}
-                            onChangeText={(v) => updateDiario('carbsConsumed', v)}
-                        />
-                        <CompactMacroInput
-                            emoji="🥑"
-                            label="Grasas"
-                            value={diario.fatConsumed}
-                            target={nutritionTargets.fat}
-                            onChangeText={(v) => updateDiario('fatConsumed', v)}
-                        />
-                    </View>
-
-                    <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarDiario}>
-                        <Ionicons name="save-outline" size={20} color="#FFF" />
-                        <Text style={styles.saveBtnText}>Guardar Diario</Text>
-                    </TouchableOpacity>
-                </ExpandableSection>
+                {/* Check-in Semanal Card */}
+                <CheckInCard
+                    title="Check-in Semanal"
+                    subtitle="Fotos y medidas"
+                    icon={<Ionicons name="bar-chart" size={22} color="#FFF" />}
+                    iconBg="#3B82F6"
+                    status={semanalExistente ? "LISTO" : "PENDIENTE"}
+                    statusColor={semanalExistente ? "#10B981" : "#F97316"}
+                    onPress={() => setSemanalExpanded(!semanalExpanded)}
+                    theme={theme}
+                />
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                {/* SECCIÓN SEMANAL */}
+                {/* SECCIÓN DIARIO (Expandible) */}
                 {/* ═══════════════════════════════════════════════════════════════════ */}
-                <ExpandableSection
-                    title="Check-in semanal y fotos"
-                    icon="📊"
-                    expanded={semanalExpanded}
-                    onToggle={() => setSemanalExpanded(!semanalExpanded)}
-                    color="#3B82F6"
-                >
-                    {/* NUTRICIÓN */}
-                    <SubsectionTitle title="Nutrición" icon="🍽️" />
+                {diarioExpanded && (
+                    <ExpandableSection
+                        title="Check-in Diario 30s"
+                        icon="📅"
+                        expanded={diarioExpanded}
+                        onToggle={() => setDiarioExpanded(!diarioExpanded)}
+                        color={theme.success}
+                        theme={theme}
+                    >
+                        <ScaleSelector
+                            label="Energía en tu día"
+                            value={diario.energia}
+                            onChange={(v) => updateDiario('energia', v)}
+                            max={5}
+                            labels={['Baja', 'Alta']}
+                            theme={theme}
+                        />
 
-                    <ScaleSelector
-                        label="Adherencia a la dieta"
-                        value={semanal.nutriAdherencia}
-                        onChange={(v) => updateSemanal('nutriAdherencia', v)}
-                        max={10}
-                        labels={['Nada', 'Perfecto']}
-                    />
+                        <ScaleSelector
+                            label="Hambre"
+                            value={diario.hambre}
+                            onChange={(v) => updateDiario('hambre', v)}
+                            max={5}
+                            labels={['Poca', 'Mucha']}
+                            theme={theme}
+                        />
 
-                    <ScaleSelector
-                        label="Saciedad general"
-                        value={semanal.nutriSaciedad}
-                        onChange={(v) => updateSemanal('nutriSaciedad', v)}
-                        max={5}
-                        labels={['Siempre hambre', 'Muy saciado']}
-                    />
+                        <NumberInput
+                            label="Pasos"
+                            value={diario.pasos}
+                            onChangeText={(v) => updateDiario('pasos', v)}
+                            placeholder="8000"
+                            theme={theme}
+                        />
 
-                    <ScaleSelector
-                        label="Gastrointestinal"
-                        value={semanal.nutriGI}
-                        onChange={(v) => updateSemanal('nutriGI', v)}
-                        max={5}
-                        labels={['Mal', 'Perfecto']}
-                    />
+                        <TripleChoice
+                            label="¿Hoy ha ido bien?"
+                            value={diario.haIdoBien}
+                            onChange={(v) => updateDiario('haIdoBien', v)}
+                            theme={theme}
+                        />
 
-                    <ScaleSelector
-                        label="Deposiciones"
-                        value={semanal.nutriDeposiciones}
-                        onChange={(v) => updateSemanal('nutriDeposiciones', v)}
-                        max={5}
-                        labels={['Mal', 'Regular']}
-                    />
-
-                    <NumberInput
-                        label="Comidas libres"
-                        value={semanal.nutriComidasLibres}
-                        onChangeText={(v) => updateSemanal('nutriComidasLibres', v)}
-                        placeholder="2"
-                    />
-
-                    <CommentInput
-                        label="Comentario nutrición"
-                        value={semanal.nutriComentario}
-                        onChangeText={(v) => updateSemanal('nutriComentario', v)}
-                        placeholder="¿Cómo te has sentido esta semana con la dieta?"
-                    />
-
-                    {/* ENTRENAMIENTO */}
-                    <SubsectionTitle title="Entrenamiento" icon="💪" />
-
-                    <ScaleSelector
-                        label="Adherencia al plan"
-                        value={semanal.entrenoAdherencia}
-                        onChange={(v) => updateSemanal('entrenoAdherencia', v)}
-                        max={10}
-                        labels={['Nada', 'Todo']}
-                    />
-
-                    <ScaleSelector
-                        label="Rendimiento"
-                        value={semanal.entrenoRendimiento}
-                        onChange={(v) => updateSemanal('entrenoRendimiento', v)}
-                        max={10}
-                        labels={['Muy bajo', 'Excelente']}
-                    />
-
-                    <ScaleSelector
-                        label="Fatiga acumulada"
-                        value={semanal.entrenoFatiga}
-                        onChange={(v) => updateSemanal('entrenoFatiga', v)}
-                        max={5}
-                        labels={['Ninguna', 'Mucha']}
-                    />
-
-                    <View style={styles.toggleRow}>
-                        <Text style={styles.inputLabel}>¿Molestias o lesión?</Text>
-                        <TouchableOpacity
-                            style={[
-                                styles.toggleBtn,
-                                semanal.entrenoMolestias && styles.toggleBtnActive
-                            ]}
-                            onPress={() => updateSemanal('entrenoMolestias', !semanal.entrenoMolestias)}
-                        >
-                            <Text style={styles.toggleBtnText}>
-                                {semanal.entrenoMolestias ? 'Sí' : 'No'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {semanal.entrenoMolestias && (
                         <CommentInput
-                            label="Describe la molestia"
-                            value={semanal.entrenoMolestiasTexto}
-                            onChangeText={(v) => updateSemanal('entrenoMolestiasTexto', v)}
-                            placeholder="¿Qué zona? ¿Desde cuándo?"
+                            label="Nota opcional"
+                            value={diario.nota}
+                            onChangeText={(v) => updateDiario('nota', v)}
+                            placeholder="Algo que quieras recordar..."
+                            theme={theme}
                         />
-                    )}
 
-                    <CommentInput
-                        label="Comentario entrenamiento"
-                        value={semanal.entrenoComentario}
-                        onChangeText={(v) => updateSemanal('entrenoComentario', v)}
-                        placeholder="¿Cómo han ido los entrenos?"
-                    />
+                        {/* Macros Consumidos - Añadidos al check-in diario */}
+                        <Text style={[styles.macrosSectionTitle, { color: theme.text }]}>🍽️ Macros Consumidos (opcional)</Text>
 
-                    {/* SENSACIONES */}
-                    <SubsectionTitle title="Sensaciones" icon="🧠" />
+                        <KcalBigInput
+                            value={diario.kcalConsumed}
+                            target={nutritionTargets.kcal}
+                            onChangeText={(v) => updateDiario('kcalConsumed', v)}
+                            theme={theme}
+                        />
 
-                    <ScaleSelector
-                        label="Motivación"
-                        value={semanal.sensMotivacion}
-                        onChange={(v) => updateSemanal('sensMotivacion', v)}
-                        max={5}
-                        labels={['Baja', 'Alta']}
-                    />
+                        <View style={styles.compactMacrosRow}>
+                            <CompactMacroInput
+                                emoji="🥩"
+                                label="Prot"
+                                value={diario.proteinConsumed}
+                                target={nutritionTargets.protein}
+                                onChangeText={(v) => updateDiario('proteinConsumed', v)}
+                                theme={theme}
+                            />
+                            <CompactMacroInput
+                                emoji="🍚"
+                                label="Carbs"
+                                value={diario.carbsConsumed}
+                                target={nutritionTargets.carbs}
+                                onChangeText={(v) => updateDiario('carbsConsumed', v)}
+                                theme={theme}
+                            />
+                            <CompactMacroInput
+                                emoji="🥑"
+                                label="Grasas"
+                                value={diario.fatConsumed}
+                                target={nutritionTargets.fat}
+                                onChangeText={(v) => updateDiario('fatConsumed', v)}
+                                theme={theme}
+                            />
+                        </View>
 
-                    <ScaleSelector
-                        label="Estrés"
-                        value={semanal.sensEstres}
-                        onChange={(v) => updateSemanal('sensEstres', v)}
-                        max={5}
-                        labels={['Poco', 'Mucho']}
-                    />
+                        <TouchableOpacity style={[styles.saveBtn, { backgroundColor: theme.success }]} onPress={handleGuardarDiario}>
+                            <Ionicons name="save-outline" size={20} color="#FFF" />
+                            <Text style={styles.saveBtnText}>Guardar Diario</Text>
+                        </TouchableOpacity>
+                    </ExpandableSection>
+                )}
 
-                    <ScaleSelector
-                        label="Estado emocional"
-                        value={semanal.sensEmocional}
-                        onChange={(v) => updateSemanal('sensEmocional', v)}
-                        max={5}
-                        labels={['Mal', 'Genial']}
-                    />
+                {/* ═══════════════════════════════════════════════════════════════════ */}
+                {/* SECCIÓN SEMANAL (Expandible) */}
+                {/* ═══════════════════════════════════════════════════════════════════ */}
+                {semanalExpanded && (
+                    <ExpandableSection
+                        title="Check-in semanal y fotos"
+                        icon="📊"
+                        expanded={semanalExpanded}
+                        onToggle={() => setSemanalExpanded(!semanalExpanded)}
+                        color={theme.primary}
+                        theme={theme}
+                    >
+                        {/* NUTRICIÓN */}
+                        <SubsectionTitle title="Nutrición" icon="🍽️" theme={theme} />
 
-                    <NumberInput
-                        label="Sueño medio"
-                        value={semanal.sensSuenoMedio}
-                        onChangeText={(v) => updateSemanal('sensSuenoMedio', v)}
-                        placeholder="7"
-                        suffix="h/noche"
-                    />
+                        <ScaleSelector
+                            label="Adherencia a la dieta"
+                            value={semanal.nutriAdherencia}
+                            onChange={(v) => updateSemanal('nutriAdherencia', v)}
+                            max={10}
+                            labels={['Nada', 'Perfecto']}
+                            theme={theme}
+                        />
 
-                    <CommentInput
-                        label="Comentario sensaciones"
-                        value={semanal.sensComentario}
-                        onChangeText={(v) => updateSemanal('sensComentario', v)}
-                        placeholder="¿Cómo te has sentido en general?"
-                    />
+                        <ScaleSelector
+                            label="Saciedad general"
+                            value={semanal.nutriSaciedad}
+                            onChange={(v) => updateSemanal('nutriSaciedad', v)}
+                            max={5}
+                            labels={['Siempre hambre', 'Muy saciado']}
+                            theme={theme}
+                        />
 
-                    {/* REFLEXIÓN */}
-                    <SubsectionTitle title="Reflexión" icon="💭" />
+                        <ScaleSelector
+                            label="Gastrointestinal"
+                            value={semanal.nutriGI}
+                            onChange={(v) => updateSemanal('nutriGI', v)}
+                            max={5}
+                            labels={['Mal', 'Perfecto']}
+                            theme={theme}
+                        />
 
-                    <CommentInput
-                        label="🎯 Top 1 cosa a mejorar"
-                        value={semanal.topMejorar}
-                        onChangeText={(v) => updateSemanal('topMejorar', v)}
-                        placeholder="¿Qué podrías hacer mejor la próxima semana?"
-                    />
+                        <ScaleSelector
+                            label="Deposiciones"
+                            value={semanal.nutriDeposiciones}
+                            onChange={(v) => updateSemanal('nutriDeposiciones', v)}
+                            max={5}
+                            labels={['Mal', 'Regular']}
+                            theme={theme}
+                        />
 
-                    <CommentInput
-                        label="🏆 Top 1 cosa que hice bien"
-                        value={semanal.topBien}
-                        onChangeText={(v) => updateSemanal('topBien', v)}
-                        placeholder="¿De qué te sientes orgulloso/a?"
-                    />
+                        <NumberInput
+                            label="Comidas libres"
+                            value={semanal.nutriComidasLibres}
+                            onChangeText={(v) => updateSemanal('nutriComidasLibres', v)}
+                            placeholder="2"
+                            theme={theme}
+                        />
 
-                    {/* FOTOS DE PROGRESO */}
-                    <SubsectionTitle title="Fotos de progreso" icon="📸" />
+                        <CommentInput
+                            label="Comentario nutrición"
+                            value={semanal.nutriComentario}
+                            onChangeText={(v) => updateSemanal('nutriComentario', v)}
+                            placeholder="¿Cómo te has sentido esta semana con la dieta?"
+                            theme={theme}
+                        />
 
-                    <View style={styles.photosSection}>
-                        <Text style={styles.photosHint}>
-                            Sube fotos semanales para ver tu evolución física
-                        </Text>
+                        {/* ENTRENAMIENTO */}
+                        <SubsectionTitle title="Entrenamiento" icon="💪" theme={theme} />
 
-                        {progressPhotos.length > 0 && (
-                            <View style={styles.photosGrid}>
-                                {progressPhotos.map((photo, index) => (
-                                    <View key={index} style={styles.photoItem}>
-                                        <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+                        <ScaleSelector
+                            label="Adherencia al plan"
+                            value={semanal.entrenoAdherencia}
+                            onChange={(v) => updateSemanal('entrenoAdherencia', v)}
+                            max={10}
+                            labels={['Nada', 'Todo']}
+                            theme={theme}
+                        />
 
-                                        {/* Tag badges */}
-                                        {photo.tags?.length > 0 && (
-                                            <View style={styles.photoTagBadge}>
-                                                <Text style={styles.photoTagText}>
-                                                    {photo.tags.includes('front') ? 'F' :
-                                                        photo.tags.includes('side') ? 'L' :
-                                                            photo.tags.includes('back') ? 'E' : '?'}
-                                                </Text>
-                                            </View>
-                                        )}
+                        <ScaleSelector
+                            label="Rendimiento"
+                            value={semanal.entrenoRendimiento}
+                            onChange={(v) => updateSemanal('entrenoRendimiento', v)}
+                            max={10}
+                            labels={['Muy bajo', 'Excelente']}
+                            theme={theme}
+                        />
 
-                                        {/* Visibility badge */}
-                                        {photo.visibility && (
-                                            <View style={[
-                                                styles.photoVisibilityBadge,
-                                                photo.visibility === 'shareable' && { backgroundColor: '#10b981' }
-                                            ]}>
-                                                <Ionicons
-                                                    name={photo.visibility === 'shareable' ? 'share-social' :
-                                                        photo.visibility === 'private' ? 'lock-closed' : 'eye'}
-                                                    size={10}
-                                                    color="#fff"
-                                                />
-                                            </View>
-                                        )}
+                        <ScaleSelector
+                            label="Fatiga acumulada"
+                            value={semanal.entrenoFatiga}
+                            onChange={(v) => updateSemanal('entrenoFatiga', v)}
+                            max={5}
+                            labels={['Ninguna', 'Mucha']}
+                            theme={theme}
+                        />
 
-                                        <TouchableOpacity
-                                            style={styles.photoRemoveBtn}
-                                            onPress={() => handleRemovePhoto(index)}
-                                        >
-                                            <Ionicons name="close-circle" size={22} color="#EF4444" />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </View>
+                        <View style={styles.toggleRow}>
+                            <Text style={[styles.inputLabel, { color: theme.text }]}>¿Molestias o lesión?</Text>
+                            <TouchableOpacity
+                                style={[
+                                    styles.toggleBtn,
+                                    { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder },
+                                    semanal.entrenoMolestias && { backgroundColor: theme.warning + '20', borderColor: theme.warning }
+                                ]}
+                                onPress={() => updateSemanal('entrenoMolestias', !semanal.entrenoMolestias)}
+                            >
+                                <Text style={[styles.toggleBtnText, { color: semanal.entrenoMolestias ? theme.warning : theme.textSecondary }]}>
+                                    {semanal.entrenoMolestias ? 'Sí' : 'No'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {semanal.entrenoMolestias && (
+                            <CommentInput
+                                label="Describe la molestia"
+                                value={semanal.entrenoMolestiasTexto}
+                                onChangeText={(v) => updateSemanal('entrenoMolestiasTexto', v)}
+                                placeholder="¿Qué zona? ¿Desde cuándo?"
+                                theme={theme}
+                            />
                         )}
 
-                        <TouchableOpacity
-                            style={styles.addPhotoBtn}
-                            onPress={() => setCameraModalVisible(true)}
-                        >
-                            <Ionicons name="camera-outline" size={22} color="#3B82F6" />
-                            <Text style={styles.addPhotoBtnText}>
-                                {progressPhotos.length > 0 ? 'Añadir más fotos' : 'Añadir fotos'}
+                        <CommentInput
+                            label="Comentario entrenamiento"
+                            value={semanal.entrenoComentario}
+                            onChangeText={(v) => updateSemanal('entrenoComentario', v)}
+                            placeholder="¿Cómo han ido los entrenos?"
+                            theme={theme}
+                        />
+
+                        {/* SENSACIONES */}
+                        <SubsectionTitle title="Sensaciones" icon="🧠" theme={theme} />
+
+                        <ScaleSelector
+                            label="Motivación"
+                            value={semanal.sensMotivacion}
+                            onChange={(v) => updateSemanal('sensMotivacion', v)}
+                            max={5}
+                            labels={['Baja', 'Alta']}
+                            theme={theme}
+                        />
+
+                        <ScaleSelector
+                            label="Estrés"
+                            value={semanal.sensEstres}
+                            onChange={(v) => updateSemanal('sensEstres', v)}
+                            max={5}
+                            labels={['Poco', 'Mucho']}
+                            theme={theme}
+                        />
+
+                        <ScaleSelector
+                            label="Estado emocional"
+                            value={semanal.sensEmocional}
+                            onChange={(v) => updateSemanal('sensEmocional', v)}
+                            max={5}
+                            labels={['Mal', 'Genial']}
+                            theme={theme}
+                        />
+
+                        <NumberInput
+                            label="Sueño medio"
+                            value={semanal.sensSuenoMedio}
+                            onChangeText={(v) => updateSemanal('sensSuenoMedio', v)}
+                            placeholder="7"
+                            suffix="h/noche"
+                            theme={theme}
+                        />
+
+                        <CommentInput
+                            label="Comentario sensaciones"
+                            value={semanal.sensComentario}
+                            onChangeText={(v) => updateSemanal('sensComentario', v)}
+                            placeholder="¿Cómo te has sentido en general?"
+                            theme={theme}
+                        />
+
+                        {/* REFLEXIÓN */}
+                        <SubsectionTitle title="Reflexión" icon="💭" theme={theme} />
+
+                        <CommentInput
+                            label="🎯 Top 1 cosa a mejorar"
+                            value={semanal.topMejorar}
+                            onChangeText={(v) => updateSemanal('topMejorar', v)}
+                            placeholder="¿Qué podrías hacer mejor la próxima semana?"
+                            theme={theme}
+                        />
+
+                        <CommentInput
+                            label="🏆 Top 1 cosa que hice bien"
+                            value={semanal.topBien}
+                            onChangeText={(v) => updateSemanal('topBien', v)}
+                            placeholder="¿De qué te sientes orgulloso/a?"
+                            theme={theme}
+                        />
+
+                        {/* FOTOS DE PROGRESO */}
+                        <SubsectionTitle title="Fotos de progreso" icon="📸" theme={theme} />
+
+                        <View style={styles.photosSection}>
+                            <Text style={[styles.photosHint, { color: theme.textSecondary }]}>
+                                Sube fotos semanales para ver tu evolución física
                             </Text>
+
+                            {progressPhotos.length > 0 && (
+                                <View style={styles.photosGrid}>
+                                    {progressPhotos.map((photo, index) => (
+                                        <View key={index} style={styles.photoItem}>
+                                            <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+
+                                            {/* Tag badges */}
+                                            {photo.tags?.length > 0 && (
+                                                <View style={styles.photoTagBadge}>
+                                                    <Text style={styles.photoTagText}>
+                                                        {photo.tags.includes('front') ? 'F' :
+                                                            photo.tags.includes('side') ? 'L' :
+                                                                photo.tags.includes('back') ? 'E' : '?'}
+                                                    </Text>
+                                                </View>
+                                            )}
+
+                                            {/* Visibility badge */}
+                                            {photo.visibility && (
+                                                <View style={[
+                                                    styles.photoVisibilityBadge,
+                                                    photo.visibility === 'shareable' && { backgroundColor: '#10b981' }
+                                                ]}>
+                                                    <Ionicons
+                                                        name={photo.visibility === 'shareable' ? 'share-social' :
+                                                            photo.visibility === 'private' ? 'lock-closed' : 'eye'}
+                                                        size={10}
+                                                        color="#fff"
+                                                    />
+                                                </View>
+                                            )}
+
+                                            <TouchableOpacity
+                                                style={styles.photoRemoveBtn}
+                                                onPress={() => handleRemovePhoto(index)}
+                                            >
+                                                <Ionicons name="close-circle" size={22} color="#EF4444" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+
+                            <TouchableOpacity
+                                style={[styles.addPhotoBtn, { borderColor: theme.primary + '40' }]}
+                                onPress={() => setCameraModalVisible(true)}
+                            >
+                                <Ionicons name="camera-outline" size={22} color={theme.primary} />
+                                <Text style={[styles.addPhotoBtnText, { color: theme.primary }]}>
+                                    {progressPhotos.length > 0 ? 'Añadir más fotos' : 'Añadir fotos'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* MEDICIONES (Opcional) */}
+                        <SubsectionTitle title="Mediciones (Opcional)" icon="📐" theme={theme} />
+
+                        <View style={styles.measureRow}>
+                            <MeasureInput label="Cuello" value={semanal.medCuello} onChangeText={(v) => updateSemanal('medCuello', v)} placeholder="38" theme={theme} />
+                            <MeasureInput label="Hombros" value={semanal.medHombros} onChangeText={(v) => updateSemanal('medHombros', v)} placeholder="120" theme={theme} />
+                        </View>
+                        <View style={styles.measureRow}>
+                            <MeasureInput label="Pecho" value={semanal.medPecho} onChangeText={(v) => updateSemanal('medPecho', v)} placeholder="100" theme={theme} />
+                            <MeasureInput label="Cintura" value={semanal.medCintura} onChangeText={(v) => updateSemanal('medCintura', v)} placeholder="80" theme={theme} />
+                        </View>
+                        <View style={styles.measureRow}>
+                            <MeasureInput label="Pierna" value={semanal.medPierna} onChangeText={(v) => updateSemanal('medPierna', v)} placeholder="60" theme={theme} />
+                            <MeasureInput label="Gemelo" value={semanal.medGemelo} onChangeText={(v) => updateSemanal('medGemelo', v)} placeholder="38" theme={theme} />
+                        </View>
+
+                        <TouchableOpacity style={[styles.saveBtn, { backgroundColor: theme.primary }]} onPress={handleGuardarSemanal}>
+                            <Ionicons name="save-outline" size={20} color="#FFF" />
+                            <Text style={styles.saveBtnText}>Guardar Semanal</Text>
                         </TouchableOpacity>
-                    </View>
-
-                    {/* MEDICIONES (Opcional) */}
-                    <SubsectionTitle title="Mediciones (Opcional)" icon="📐" />
-
-                    <View style={styles.measureRow}>
-                        <MeasureInput label="Cuello" value={semanal.medCuello} onChangeText={(v) => updateSemanal('medCuello', v)} placeholder="38" />
-                        <MeasureInput label="Hombros" value={semanal.medHombros} onChangeText={(v) => updateSemanal('medHombros', v)} placeholder="120" />
-                    </View>
-                    <View style={styles.measureRow}>
-                        <MeasureInput label="Pecho" value={semanal.medPecho} onChangeText={(v) => updateSemanal('medPecho', v)} placeholder="100" />
-                        <MeasureInput label="Cintura" value={semanal.medCintura} onChangeText={(v) => updateSemanal('medCintura', v)} placeholder="80" />
-                    </View>
-                    <View style={styles.measureRow}>
-                        <MeasureInput label="Pierna" value={semanal.medPierna} onChangeText={(v) => updateSemanal('medPierna', v)} placeholder="60" />
-                        <MeasureInput label="Gemelo" value={semanal.medGemelo} onChangeText={(v) => updateSemanal('medGemelo', v)} placeholder="38" />
-                    </View>
-
-                    <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarSemanal}>
-                        <Ionicons name="save-outline" size={20} color="#FFF" />
-                        <Text style={styles.saveBtnText}>Guardar Semanal</Text>
-                    </TouchableOpacity>
-                </ExpandableSection>
+                    </ExpandableSection>
+                )}
 
                 {/* ═══════════════════════════════════════════════════════════════════ */}
                 {/* FEEDBACK DEL ENTRENADOR */}
@@ -2095,6 +2170,7 @@ export default function SeguimientoScreen() {
                             <TouchableOpacity
                                 style={[
                                     styles.feedbackBtn,
+                                    { backgroundColor: theme.premium },
                                     unreadFeedbackReports > 0 && styles.feedbackBtnGolden
                                 ]}
                                 onPress={() => setFeedbackHistoryVisible(true)}
@@ -2117,6 +2193,7 @@ export default function SeguimientoScreen() {
                     weeklyDates={filledWeeklyDates}
                     selectedDate={selectedDate}
                     onDaySelect={handleDaySelect}
+                    theme={theme}
                 />
 
                 {/* Espaciado inferior */}
@@ -2300,6 +2377,48 @@ const styles = StyleSheet.create({
     accordionContent: {
         padding: 18,
         paddingTop: 0,
+    },
+
+    // CheckIn Card (nuevo diseño)
+    checkInCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        marginBottom: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    checkInIconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
+    },
+    checkInTextContainer: {
+        flex: 1,
+    },
+    checkInTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    checkInSubtitle: {
+        fontSize: 13,
+    },
+    checkInBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    checkInBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
 
     // Section hint
@@ -2948,12 +3067,72 @@ const styles = StyleSheet.create({
     // ═══════════════════════════════════════════════════════════════════════════
     minimalDataCard: {
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        borderRadius: 16,
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: 'rgba(59, 130, 246, 0.3)',
-        padding: 18,
+        padding: 20,
         marginBottom: 20,
     },
+    // Nueva navegación de fecha centrada
+    dateNavRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 20,
+        paddingHorizontal: 4,
+    },
+    dateNavBtn: {
+        padding: 8,
+    },
+    dateNavCenterNew: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.6)',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 25,
+    },
+    dateNavText: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    // Tarjetas de datos lado a lado
+    dataCardsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 20,
+    },
+    dataCardItem: {
+        flex: 1,
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 16,
+        alignItems: 'center',
+    },
+    dataCardLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginBottom: 8,
+        letterSpacing: 0.5,
+    },
+    dataCardValueRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    dataCardInput: {
+        fontSize: 28,
+        fontWeight: '700',
+        textAlign: 'center',
+        minWidth: 60,
+        padding: 0,
+    },
+    dataCardUnit: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginLeft: 4,
+    },
+    // Estilos antiguos mantenidos para compatibilidad
     minimalDataHeader: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -2968,7 +3147,7 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
     },
-    // Navegación de fechas
+    // Navegación de fechas (estilos antiguos)
     dateNavArrow: {
         padding: 6,
         borderRadius: 8,

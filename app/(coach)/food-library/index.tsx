@@ -1,0 +1,388 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    TextInput,
+    FlatList,
+    Alert,
+    ActivityIndicator,
+    useWindowDimensions,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    Modal
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
+import { Stack, router } from 'expo-router';
+import CoachHeader from '../components/CoachHeader';
+import FoodListCard from '../../../components/FoodListCard';
+import FoodGridCard from '../../../components/FoodGridCard';
+import FoodMiniCard from '../../../components/FoodMiniCard';
+import FoodCreatorModal from '../../../components/FoodCreatorModal';
+import FoodLibrarySidebar, { FilterState } from '../../../components/FoodLibrarySidebar';
+
+import { searchFoods, saveFood, getDiscoveryFoods, LAYER_ICONS, FoodItem } from '../../../src/services/foodService';
+
+export default function FoodLibraryScreen() {
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width > 720;
+
+    // Data State
+    const [foods, setFoods] = useState<FoodItem[]>([]); // Search Results
+    const [initialFoods, setInitialFoods] = useState<FoodItem[]>([]); // Discovery Data
+    const [searchQuery, setSearchQuery] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    // Filter & Sort State
+    const [filters, setFilters] = useState<FilterState>({
+        onlyFavorites: false,
+        types: [],
+        goals: [],
+        macros: []
+    });
+    const [showMobileFilters, setShowMobileFilters] = useState(false);
+    const [sortBy, setSortBy] = useState<'recent' | 'calories_asc' | 'protein_desc' | 'name'>('recent');
+
+    // Modals
+    const [creatorVisible, setCreatorVisible] = useState(false);
+    const [editingFood, setEditingFood] = useState<FoodItem | null>(null);
+
+
+
+    // 1. Initial Load
+    useEffect(() => {
+        loadDiscoveryData();
+    }, []);
+
+    const loadDiscoveryData = async () => {
+        try {
+            const data = await searchFoods("");
+            setInitialFoods(data as FoodItem[]);
+        } catch (e) { console.log(e); }
+    };
+
+    // 2. Search Handler
+    useEffect(() => {
+        if (searchQuery.trim().length > 0) {
+            loadFoods(searchQuery);
+        } else {
+            setFoods([]);
+        }
+    }, [searchQuery]);
+
+    const loadFoods = async (query: string) => {
+        setLoading(true);
+        try {
+            const results = await searchFoods(query);
+            setFoods(results as FoodItem[]);
+        } catch (error) { console.error(error); }
+        finally { setLoading(false); }
+    };
+
+    // ─────────────────────────────────────────────────────────
+    // 🧠 MAIN FILTERING ENGINE
+    // ─────────────────────────────────────────────────────────
+    const processedFoods = useMemo(() => {
+        // 1. Source: If search is active use 'foods', else 'initialFoods'
+        let source = searchQuery.length > 0 ? foods : initialFoods;
+
+        // 2. Filter
+        let result = source.filter(item => {
+            // Favorites
+            if (filters.onlyFavorites) {
+                // Mock logic: return false or check a future isFavorite field
+                // return item.isFavorite === true; 
+            }
+
+            // Types (OR Logic)
+            if (filters.types.length > 0) {
+                const hasType = item.tags?.some(t => filters.types.includes(t));
+                if (!hasType) return false;
+            }
+
+            // Goals (OR Logic mostly)
+            if (filters.goals.length > 0) {
+                const hasGoal = item.tags?.some(t => filters.goals.includes(t));
+                if (!hasGoal) return false;
+            }
+
+            // Macros (OR Logic)
+            if (filters.macros.length > 0) {
+                const hasMacro = item.tags?.some(t => filters.macros.includes(t));
+                if (!hasMacro) return false;
+            }
+
+            return true;
+        });
+
+        // 3. Sort
+        result.sort((a, b) => {
+            if (sortBy === 'name') return a.name.localeCompare(b.name);
+            if (sortBy === 'calories_asc') return a.nutrients.kcal - b.nutrients.kcal;
+            if (sortBy === 'protein_desc') return b.nutrients.protein - a.nutrients.protein;
+            // Recent (default) - assuming seeded order is "recent" or adding timestamp later
+            return 0;
+        });
+
+        return result;
+    }, [foods, initialFoods, searchQuery, filters, sortBy]);
+
+    // Handlers
+    const handleCreateNew = () => { setEditingFood(null); setCreatorVisible(true); };
+    const handleEdit = (food: FoodItem) => { setEditingFood(food); setCreatorVisible(true); };
+    const handleSaveFood = async (foodData: any) => {
+        setLoading(true);
+        try {
+            const savedFood = await saveFood(foodData);
+            setFoods(prev => [savedFood as FoodItem, ...prev]);
+            setInitialFoods(prev => [savedFood as FoodItem, ...prev]);
+            setCreatorVisible(false);
+            Alert.alert("Guardado", "El plato se ha guardado correctamente.");
+        } catch (error) {
+            Alert.alert("Error", "No se pudo guardar el plato");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getActiveFilterCount = () => {
+        let count = 0;
+        if (filters.onlyFavorites) count++;
+        count += filters.types.length;
+        count += filters.goals.length;
+        count += filters.macros.length;
+        return count;
+    };
+
+    // Toggle Favorite (Clone-on-Favorite for LOCAL/API)
+    const handleToggleFavorite = async (food: FoodItem) => {
+        try {
+            const { toggleFavorite } = require('../../../src/services/foodService');
+            const result = await toggleFavorite(food);
+
+            // If cloned, update both lists to ensure UI reflects the new CLOUD item immediately
+            if (result.action === 'cloned_and_favorited') {
+                setInitialFoods(prev => [result.food, ...prev]);
+                setFoods(prev => [result.food, ...prev]);
+            } else {
+                // Update the food's isFavorite status in lists
+                const updateFavorite = (list: FoodItem[]) =>
+                    list.map(f => f._id === result.food._id ? { ...f, isFavorite: result.food.isFavorite } : f);
+
+                setFoods(updateFavorite);
+                setInitialFoods(updateFavorite);
+            }
+        } catch (error) {
+            console.error('Toggle favorite error:', error);
+            Alert.alert('Error', 'No se pudo marcar como favorito');
+        }
+    };
+
+    // Open food in modal for viewing/editing
+    const handleOpenFood = (food: FoodItem) => {
+        setEditingFood(food);
+        setCreatorVisible(true);
+    };
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <Stack.Screen options={{ headerShown: false }} />
+            <StatusBar style="dark" />
+
+            {/* Header */}
+            <CoachHeader
+                title="Biblioteca de Alimentos"
+                subtitle="Gestiona tus platos y productos"
+                icon={null}
+                badge={null}
+                rightContent={
+                    <TouchableOpacity
+                        onPress={handleCreateNew}
+                        style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: '#eff6ff',
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 20,
+                            gap: 4
+                        }}
+                    >
+                        <Ionicons name="add" size={18} color="#3b82f6" />
+                        <Text style={{ color: '#3b82f6', fontWeight: '600', fontSize: 13 }}>
+                            Nuevo Plato
+                        </Text>
+                    </TouchableOpacity>
+                }
+            />
+
+            <View style={{ flex: 1, flexDirection: 'row' }}>
+
+                {/* SIDEBAR (Desktop only) */}
+                {isLargeScreen && (
+                    <FoodLibrarySidebar
+                        filters={filters}
+                        onUpdate={setFilters}
+                    />
+                )}
+
+                {/* MAIN CONTENT */}
+                <View style={{ flex: 1 }}>
+
+                    {/* Top Bar: Search + Filter Toggle (Mobile) + Sort */}
+                    <View style={styles.topBar}>
+                        <View style={styles.searchContainer}>
+                            <Ionicons name="search" size={20} color="#94a3b8" />
+                            <TextInput
+                                style={styles.searchInput}
+                                placeholder="Buscar (e.g. Arroz, Pollo)..."
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                returnKeyType="search"
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                    <Ionicons name="close-circle" size={18} color="#cbd5e1" />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        {/* Mobile Filter Button */}
+                        {!isLargeScreen && (
+                            <TouchableOpacity
+                                style={[styles.iconButton, getActiveFilterCount() > 0 && styles.iconButtonActive]}
+                                onPress={() => setShowMobileFilters(true)}
+                            >
+                                <Ionicons name="options" size={20} color={getActiveFilterCount() > 0 ? '#fff' : '#64748b'} />
+                                {getActiveFilterCount() > 0 && (
+                                    <View style={styles.badge}><Text style={styles.badgeText}>{getActiveFilterCount()}</Text></View>
+                                )}
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Sort Dropdown Sim (Button for now) */}
+                        <TouchableOpacity
+                            style={styles.iconButton}
+                            onPress={() => {
+                                // Simple toggle sort for demo
+                                if (sortBy === 'recent') setSortBy('calories_asc');
+                                else if (sortBy === 'calories_asc') setSortBy('protein_desc');
+                                else setSortBy('recent');
+                            }}
+                        >
+                            <Ionicons name="swap-vertical" size={20} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Sort Indicator */}
+                    <View style={{ paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ color: '#64748b', fontSize: 13 }}>
+                            Mostrando {processedFoods.length} resultados
+                        </Text>
+                        <Text style={{ color: '#4f46e5', fontSize: 13, fontWeight: '600' }}>
+                            {sortBy === 'calories_asc' ? 'Menos Calorías' : sortBy === 'protein_desc' ? 'Más Proteína' : 'Más Recientes'}
+                        </Text>
+                    </View>
+
+                    {/* CONTENT GRID */}
+                    <ScrollView contentContainerStyle={{ padding: 10, paddingBottom: 100 }}>
+                        {/* 2. Favorites Carousel (Only if showing 'All' and not searching) */}
+                        {searchQuery === '' && !filters.onlyFavorites && initialFoods.some(f => f.isFavorite) && (
+                            <View style={{ marginBottom: 20 }}>
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 12, paddingHorizontal: 6 }}>
+                                    ⭐ Tus Favoritos
+                                </Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 6 }}>
+                                    {initialFoods.filter(f => f.isFavorite).map((item) => (
+                                        <FoodMiniCard key={item._id} item={item} onPress={() => handleOpenFood(item)} />
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        )}
+
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                            {processedFoods.map((item) => (
+                                <View key={item._id} style={{ width: isLargeScreen ? '33.33%' : '50%', padding: 6 }}>
+                                    <FoodGridCard
+                                        item={item}
+                                        onPress={() => handleOpenFood(item)}
+                                        isFavorite={item.isFavorite}
+                                        onToggleFavorite={() => handleToggleFavorite(item)}
+                                    />
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* EMPTY STATE */}
+                        {processedFoods.length === 0 && (
+                            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                                <Ionicons name="nutrition-outline" size={48} color="#cbd5e1" />
+                                <Text style={{ marginTop: 16, fontSize: 16, color: '#64748b', textAlign: 'center' }}>
+                                    Vaya, no hemos encontrado alimentos con esa combinación exacta.
+                                </Text>
+                                <TouchableOpacity onPress={() => setFilters({ onlyFavorites: false, types: [], goals: [], macros: [] })} style={{ marginTop: 12 }}>
+                                    <Text style={{ color: '#4f46e5', fontWeight: '600' }}>Limpiar filtros</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </ScrollView>
+                </View>
+            </View>
+
+            {/* MOBILE FILTERS MODAL */}
+            <Modal visible={showMobileFilters} animationType="slide" presentationStyle="pageSheet">
+                <FoodLibrarySidebar
+                    filters={filters}
+                    onUpdate={setFilters}
+                    onClose={() => setShowMobileFilters(false)}
+                />
+            </Modal>
+
+            {/* Creator Modal */}
+            <FoodCreatorModal
+                visible={creatorVisible}
+                onClose={() => setCreatorVisible(false)}
+                onSave={handleSaveFood}
+                initialData={editingFood as any}
+            />
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+    },
+    topBar: {
+        flexDirection: 'row',
+        padding: 16,
+        gap: 12,
+        alignItems: 'center'
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+        paddingHorizontal: 12, height: 44, borderRadius: 10,
+        borderWidth: 1, borderColor: '#e2e8f0'
+    },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
+    iconButton: {
+        width: 44, height: 44, borderRadius: 10, backgroundColor: '#fff',
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: '#e2e8f0'
+    },
+    iconButtonActive: {
+        backgroundColor: '#4f46e5',
+        borderColor: '#4f46e5'
+    },
+    badge: {
+        position: 'absolute', top: -5, right: -5,
+        backgroundColor: '#ef4444', width: 18, height: 18, borderRadius: 9,
+        alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff'
+    },
+    badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' }
+});

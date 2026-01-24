@@ -28,6 +28,12 @@ import { PaymentNotificationManager } from '../../src/components/payment';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 
+// Import condicional: Solo en móvil cargamos el layout flotante
+let HomeMobileLayout = null;
+if (Platform.OS !== 'web') {
+  HomeMobileLayout = require('../../components/HomeMobileLayout').default;
+}
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 const FRASES = [
@@ -44,7 +50,7 @@ const FRASES = [
 ];
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 
 const CAMBIOS_112 = [
   '💳 Google Pay: Solucionado problema con pagos fuera de la app.',
@@ -409,7 +415,30 @@ export default function HomeScreen() {
     : 'rgba(255, 255, 255, 0.60)';
   const bannerBg = isDark ? '#1E293B' : '#0F172A';
 
-  const renderContent = () => (
+  // ═══════════════════════════════════════════════════════════════
+  // MÓVIL: Usa el layout flotante separado
+  // WEB: Usa el layout clásico con card (definido abajo)
+  // ═══════════════════════════════════════════════════════════════
+  const renderMobileContent = () => HomeMobileLayout ? (
+    <HomeMobileLayout
+      theme={theme}
+      isDark={isDark}
+      topMargin={topMargin}
+      currentTrainer={currentTrainer}
+      user={user}
+      handlePerfilPress={handlePerfilPress}
+      unreadFeedbackReports={unreadFeedbackReports}
+      bannerBg={bannerBg}
+      fraseActual={fraseActual}
+      APP_VERSION={APP_VERSION}
+      seguimientoBadgeLargeStyle={styles.seguimientoBadgeLarge}
+      seguimientoBadgeTextStyle={styles.seguimientoBadgeText}
+      seguimientoBtnGoldenStyle={styles.seguimientoBtnGolden}
+    />
+  ) : null;
+
+  // Layout clásico con card (usado en web y como fallback)
+  const renderWebContent = () => (
     <>
       <View style={[
         styles.card,
@@ -588,6 +617,9 @@ export default function HomeScreen() {
       </View>
     </>
   );
+
+  // Elegir layout según plataforma
+  const renderContent = () => isWeb ? renderWebContent() : renderMobileContent();
 
   return (
     <PaymentNotificationManager>
@@ -1271,7 +1303,7 @@ const styles = StyleSheet.create({
   // FAB de Chat
   chatFab: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : Platform.OS === 'web' ? 30 : 130,
+    bottom: Platform.OS === 'ios' ? 40 : Platform.OS === 'web' ? 30 : 190,
     right: 20,
     zIndex: 999,
     borderRadius: 30,
