@@ -409,6 +409,55 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
         }));
     };
 
+    const updateOptionName = (templateId, mealId, optionId, newName) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== templateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            options: m.options.map(o =>
+                                o.id !== optionId ? o : { ...o, name: newName }
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
+    const bulkRenameOptions = (templateId, mealId, mode) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t => {
+                if (t.id !== templateId) return t;
+
+                return {
+                    ...t,
+                    meals: t.meals.map(m => {
+                        if (m.id !== mealId) return m;
+
+                        // Rename logic
+                        const weekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+                        const newOptions = m.options.map((option, idx) => {
+                            let newName = option.name;
+                            if (mode === 'weekly') {
+                                newName = weekDays[idx % 7];
+                            } else if (mode === 'numeric') {
+                                newName = `Opción ${idx + 1}`;
+                            }
+                            return { ...option, name: newName };
+                        });
+
+                        return { ...m, options: newOptions };
+                    })
+                };
+            }),
+        }));
+    };
+
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
@@ -505,7 +554,11 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
             {/* MAIN CONTENT (Cards vs Table) */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {viewMode === 'table' ? (
-                <WeeklyTableView plan={plan} />
+                <WeeklyStructureView
+                    plan={plan}
+                    onUpdateOptionName={updateOptionName}
+                    onBulkRename={bulkRenameOptions}
+                />
             ) : (
                 <ScrollView
                     style={styles.mealsScroll}
@@ -900,64 +953,124 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WEEKLY TABLE VIEW (Full Grid)
+// BLUEPRINT VIEW (Stacked Timeline Blocks)
 // ═══════════════════════════════════════════════════════════════════════════
-function WeeklyTableView({ plan }) {
+function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename }) {
     return (
-        <ScrollView style={{ flex: 1 }} horizontal>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
-                <View style={styles.tableContainer}>
-                    {/* Header Row: Day Templates */}
-                    <View style={styles.tableHeaderRow}>
-                        <View style={[styles.tableCell, styles.tableCornerCell]}>
-                            <Text style={styles.tableHeaderText}>COMIDA / DÍA</Text>
-                        </View>
-                        {plan.dayTemplates.map(template => (
-                            <View key={template.id} style={[styles.tableCell, styles.tableHeaderCell, { borderBottomColor: template.color, borderBottomWidth: 3 }]}>
-                                <Text style={styles.tableHeaderTitle}>{template.icon} {template.name}</Text>
-                                <Text style={styles.tableHeaderSubtitle}>{template.targetMacros.kcal} kcal</Text>
+        <ScrollView style={styles.structureContainer} contentContainerStyle={styles.structureContent}>
+            {plan.dayTemplates.map(template => (
+                <View key={template.id} style={styles.dayBlock}>
+                    {/* Level 1: Day Header */}
+                    <View style={[styles.dayBlockHeader, { borderLeftColor: template.color }]}>
+                        <View style={styles.dayHeaderLeft}>
+                            <Text style={styles.dayHeaderTitle}>{template.icon} {template.name}</Text>
+                            <View style={[styles.dayKcalBadge, { backgroundColor: template.color + '20' }]}>
+                                <Text style={[styles.dayKcalText, { color: template.color }]}>
+                                    {template.targetMacros.kcal} kcal
+                                </Text>
                             </View>
-                        ))}
+                        </View>
                     </View>
 
-                    {/* Meal Rows */}
-                    {plan.mealStructure.map(mealDef => (
-                        <View key={mealDef.id} style={styles.tableRow}>
-                            {/* Meal Name Column */}
-                            <View style={[styles.tableCell, styles.tableRowHeader]}>
-                                <Text style={styles.tableRowTitle}>{mealDef.icon} {mealDef.name}</Text>
-                            </View>
+                    {/* Level 2: Meal Rows */}
+                    <View style={styles.dayMealsContainer}>
+                        {plan.mealStructure.map(mealDef => {
+                            // Find the specific meal instance for this template
+                            const meal = template.meals.find(m => m.name === mealDef.name);
+                            const options = meal?.options || [];
 
-                            {/* Options Cells */}
-                            {plan.dayTemplates.map(template => {
-                                const meal = template.meals.find(m => m.name === mealDef.name); // Using name match since ID is unique per instance
-                                const optionsCount = meal?.options?.length || 0;
+                            return (
+                                <View key={mealDef.id} style={styles.mealRow}>
+                                    {/* Left Column: Meal Label & Tools */}
+                                    <View style={styles.mealLabelColumn}>
+                                        <View style={styles.mealIconCircle}>
+                                            <Text style={styles.mealIcon}>{mealDef.icon}</Text>
+                                        </View>
+                                        <Text style={styles.mealName}>{mealDef.name}</Text>
+                                        <Text style={styles.mealTime}>{mealDef.suggestedTime}</Text>
 
-                                return (
-                                    <View key={`${template.id}_${mealDef.id}`} style={styles.tableCell}>
-                                        <View style={styles.tableOptionsContainer}>
-                                            {meal?.options?.map((option, idx) => (
-                                                <View key={option.id} style={styles.tableOptionBadge}>
-                                                    <Text style={styles.tableOptionText} numberOfLines={1}>
-                                                        Opción {idx + 1}: {option.name || 'Sin nombre'}
-                                                    </Text>
-                                                    <Text style={styles.tableOptionMacros}>
-                                                        {option.foods?.length || 0} alimentos
-                                                    </Text>
-                                                </View>
-                                            ))}
-                                            <View style={styles.tableTotalBadge}>
-                                                <Text style={styles.tableTotalText}>{optionsCount} Opciones</Text>
-                                            </View>
+                                        {/* Bulk Rename Tools */}
+                                        <View style={styles.bulkToolsContainer}>
+                                            <TouchableOpacity
+                                                style={styles.bulkToolBtn}
+                                                onPress={() => onBulkRename(template.id, meal.id, 'weekly')}
+                                            >
+                                                <Text style={styles.bulkToolText}>📅 Semanal</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={styles.bulkToolBtn}
+                                                onPress={() => onBulkRename(template.id, meal.id, 'numeric')}
+                                            >
+                                                <Text style={styles.bulkToolText}>🔢 Numérico</Text>
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
-                                );
-                            })}
-                        </View>
-                    ))}
+
+                                    {/* Right Column: Dynamic Options Grid */}
+                                    <View style={styles.optionsGrid}>
+                                        {options.length > 0 ? (
+                                            options.map((option, idx) => (
+                                                <View key={option.id} style={styles.optionCard}>
+                                                    {/* Card Header with Editable Title */}
+                                                    <View style={styles.optionHeader}>
+                                                        <TextInput
+                                                            style={styles.optionTitleInput}
+                                                            value={option.name}
+                                                            onChangeText={(text) => onUpdateOptionName(template.id, meal.id, option.id, text)}
+                                                            placeholder={`Opción ${idx + 1}`}
+                                                            placeholderTextColor="#94a3b8"
+                                                        />
+                                                        {idx === 0 && (
+                                                            <View style={styles.primaryBadge}>
+                                                                <Text style={styles.primaryBadgeText}>A</Text>
+                                                            </View>
+                                                        )}
+                                                    </View>
+
+                                                    {/* Card Body: Ingredient Cluster (Pills) */}
+                                                    <View style={styles.ingredientCluster}>
+                                                        {option.foods && option.foods.length > 0 ? (
+                                                            option.foods.map((food, fIdx) => (
+                                                                <View key={fIdx} style={styles.ingredientPill}>
+                                                                    <Text style={styles.ingredientPillText} numberOfLines={1}>
+                                                                        {food.name}
+                                                                    </Text>
+                                                                </View>
+                                                            ))
+                                                        ) : (
+                                                            <Text style={styles.emptyOptionText}>Sin alimentos</Text>
+                                                        )}
+                                                    </View>
+
+                                                    {/* Card Footer: Macros */}
+                                                    {option.foods && option.foods.length > 0 && (
+                                                        <View style={styles.optionMacros}>
+                                                            <View style={styles.miniMacroBadge}>
+                                                                <Text style={[styles.miniMacroText, { color: '#3b82f6' }]}>P</Text>
+                                                            </View>
+                                                            <View style={styles.miniMacroBadge}>
+                                                                <Text style={[styles.miniMacroText, { color: '#22c55e' }]}>C</Text>
+                                                            </View>
+                                                            <View style={styles.miniMacroBadge}>
+                                                                <Text style={[styles.miniMacroText, { color: '#f59e0b' }]}>G</Text>
+                                                            </View>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ))
+                                        ) : (
+                                            <View style={styles.emptyMealPlaceholder}>
+                                                <Text style={styles.emptyMealText}>Sin opciones configuradas</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            );
+                        })}
+                    </View>
                 </View>
-                <View style={{ height: 100 }} />
-            </ScrollView>
+            ))}
+            <View style={{ height: 100 }} />
         </ScrollView>
     );
 }
@@ -966,101 +1079,228 @@ function WeeklyTableView({ plan }) {
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
-    // Table View Styles
-    tableContainer: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        minWidth: 800, // Force horizontal scroll if needed
-    },
-    tableHeaderRow: {
-        flexDirection: 'row',
-        backgroundColor: '#f8fafc',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
-    },
-    tableRow: {
-        flexDirection: 'row',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
-    },
-    tableCell: {
-        width: 200,
-        padding: 12,
-        borderRightWidth: 1,
-        borderRightColor: '#f1f5f9',
-    },
-    tableCornerCell: {
-        backgroundColor: '#f1f5f9',
-        justifyContent: 'center',
-    },
-    tableHeaderCell: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    tableRowHeader: {
-        backgroundColor: '#f8fafc',
-        justifyContent: 'center',
-    },
-    tableHeaderText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#64748b',
-    },
-    tableHeaderTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#1e293b',
-        textAlign: 'center',
-    },
-    tableHeaderSubtitle: {
-        fontSize: 12,
-        color: '#64748b',
-        marginTop: 2,
-    },
-    tableRowTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#334155',
-    },
-    tableOptionsContainer: {
-        gap: 6,
-    },
-    tableOptionBadge: {
-        backgroundColor: '#f1f5f9',
-        borderRadius: 6,
-        padding: 6,
-    },
-    tableOptionText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#475569',
-    },
-    tableOptionMacros: {
-        fontSize: 10,
-        color: '#94a3b8',
-    },
-    tableTotalBadge: {
-        alignSelf: 'flex-start',
-        backgroundColor: '#e0f2fe',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
-        marginTop: 4,
-    },
-    tableTotalText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#0284c7',
-    },
-
     container: {
         flex: 1,
         backgroundColor: '#f8fafc',
     },
-    // Template Tabs
+    // Blueprint View Styles
+    structureContainer: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+    },
+    structureContent: {
+        padding: 16,
+        paddingBottom: 100,
+        gap: 24,
+    },
+    dayBlock: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        ...Platform.select({
+            web: { boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+            default: { elevation: 1 },
+        }),
+    },
+    dayBlockHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        borderLeftWidth: 6, // Color coded strip
+    },
+    dayHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    dayHeaderTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#1e293b',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    dayKcalBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    dayKcalText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    dayMealsContainer: {
+        padding: 0,
+    },
+    mealRow: {
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        minHeight: 120, // Increased for bulk tools
+    },
+    // Left Column
+    mealLabelColumn: {
+        width: 140, // Fixed width
+        padding: 16,
+        backgroundColor: '#f8fafc',
+        borderRightWidth: 1,
+        borderRightColor: '#f1f5f9',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+    },
+    mealIconCircle: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#fff',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    mealIcon: {
+        fontSize: 16,
+    },
+    mealName: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#334155',
+        marginBottom: 2,
+    },
+    mealTime: {
+        fontSize: 11,
+        color: '#94a3b8',
+        fontWeight: '500',
+        marginBottom: 8,
+    },
+    bulkToolsContainer: {
+        gap: 4,
+        marginTop: 4,
+        width: '100%',
+    },
+    bulkToolBtn: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 4,
+        paddingVertical: 4,
+        paddingHorizontal: 6,
+        alignItems: 'center',
+    },
+    bulkToolText: {
+        fontSize: 10,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    // Right Column
+    optionsGrid: {
+        flex: 1,
+        flexDirection: 'row',
+        padding: 12,
+        gap: 12,
+    },
+    optionCard: {
+        flex: 1, // MAGIC: Distribute space equally
+        minWidth: 140, // Minimum readable width
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        padding: 10,
+        flexDirection: 'column',
+    },
+    optionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+        gap: 8,
+    },
+    optionTitleInput: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+        flex: 1,
+        padding: 2,
+        borderBottomWidth: 1,
+        borderBottomColor: 'transparent', // Show underline only on focus ideally, or subtle always
+    },
+    primaryBadge: {
+        backgroundColor: '#eff6ff',
+        paddingHorizontal: 5,
+        paddingVertical: 1,
+        borderRadius: 4,
+    },
+    primaryBadgeText: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#3b82f6',
+    },
+    // Ingredient Cluster
+    ingredientCluster: {
+        flex: 1,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+        alignContent: 'flex-start',
+        marginBottom: 8,
+    },
+    ingredientPill: {
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 4,
+        maxWidth: Platform.OS === 'web' ? '100%' : 100, // Safe max width
+    },
+    ingredientPillText: {
+        fontSize: 10,
+        color: '#475569',
+        fontWeight: '500',
+    },
+    emptyOptionText: {
+        fontSize: 11,
+        color: '#cbd5e1',
+        fontStyle: 'italic',
+    },
+    // Macros Footer
+    optionMacros: {
+        flexDirection: 'row',
+        gap: 4,
+        marginTop: 'auto', // Push to bottom
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f8fafc',
+    },
+    miniMacroBadge: {
+        backgroundColor: '#f8fafc',
+        paddingHorizontal: 4,
+        borderRadius: 3,
+    },
+    miniMacroText: {
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    emptyMealPlaceholder: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    emptyMealText: {
+        color: '#cbd5e1',
+        fontSize: 12,
+        fontStyle: 'italic',
+    },
+
+
+    // Template Tabs (Existing)
     templateTabs: {
         backgroundColor: '#fff',
         borderBottomWidth: 1,
@@ -1160,6 +1400,12 @@ const styles = StyleSheet.create({
     viewToggleBtnActive: {
         backgroundColor: '#eff6ff',
         borderColor: '#3b82f6',
+    },
+    viewToggleBtnText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginLeft: 6
     },
     // Template Info Bar
     templateInfoBar: {
