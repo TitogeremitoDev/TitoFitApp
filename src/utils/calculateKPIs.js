@@ -80,28 +80,59 @@ export const filterExercises = (session, selMusculo, selEjercicio) => {
 // Agrupación: Por semana, con filtros opcionales
 // ═══════════════════════════════════════════════════════════════════════════
 export const calcIntensityByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio = '') => {
-    const weeks = groupByWeek(sessions);
+    const weeksMap = new Map();
+    const filterMuscle = selMusculo && selMusculo !== 'TOTAL';
+    const filterExercise = !!selEjercicio;
+
+    for (const session of sessions) {
+        let weekNum;
+        if (session.week !== undefined) {
+            weekNum = session.week;
+        } else {
+            const date = new Date(session.date);
+            weekNum = getWeekNumber(date);
+        }
+
+        let weekData = weeksMap.get(weekNum);
+        if (!weekData) {
+            weekData = {
+                week: weekNum,
+                totalVolume: 0,
+                totalReps: 0
+            };
+            weeksMap.set(weekNum, weekData);
+        }
+
+        if (session.exercises) {
+            for (const ex of session.exercises) {
+                if (filterMuscle) {
+                    const muscle = ex.muscleGroup || '';
+                    if (muscle !== selMusculo) continue;
+                }
+                if (filterExercise) {
+                    const name = ex.exerciseName || '';
+                    if (name !== selEjercicio) continue;
+                }
+
+                if (ex.sets) {
+                    for (const set of ex.sets) {
+                        const reps = set.actualReps || 0;
+                        const weight = set.weight || 0;
+                        weekData.totalVolume += reps * weight;
+                        weekData.totalReps += reps;
+                    }
+                }
+            }
+        }
+    }
+
+    const sortedWeeks = Array.from(weeksMap.values()).sort((a, b) => a.week - b.week);
     let baseline = null;
 
-    return weeks.map(({ week, sessions: weekSessions }) => {
-        let totalVolume = 0;
-        let totalReps = 0;
-
-        weekSessions.forEach(session => {
-            const exercises = filterExercises(session, selMusculo, selEjercicio);
-            exercises.forEach(ex => {
-                ex.sets?.forEach(set => {
-                    const reps = set.actualReps || 0;
-                    const weight = set.weight || 0;
-                    totalVolume += reps * weight;
-                    totalReps += reps;
-                });
-            });
-        });
-
+    return sortedWeeks.map(weekData => {
+        const { week, totalVolume, totalReps } = weekData;
         const avgLoad = totalReps > 0 ? totalVolume / totalReps : 0;
 
-        // Primera semana es el baseline
         if (baseline === null && avgLoad > 0) {
             baseline = avgLoad;
         }
