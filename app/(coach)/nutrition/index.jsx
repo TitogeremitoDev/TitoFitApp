@@ -11,6 +11,7 @@ import {
     TextInput,
     Platform,
     Pressable,
+    Switch,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -121,6 +122,7 @@ export default function NutritionClientsScreen() {
 
     // Hover tooltip state (web only)
     const [hoveredClientId, setHoveredClientId] = useState(null);
+    const [hoveredTCAId, setHoveredTCAId] = useState(null);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -160,7 +162,7 @@ export default function NutritionClientsScreen() {
                     setNutritionPlans(plansMap);
                 }
             } catch (e) {
-                console.log('[NutritionClients] Current nutrition endpoint not available yet');
+                console.log('[NutritionClients] Current nutrition endpoint not available yet', e);
             }
 
             // Fetch monitoring metrics (for adherence, weight trend, etc.)
@@ -197,17 +199,6 @@ export default function NutritionClientsScreen() {
     const getClientNutritionSummary = (client) => {
         const plan = nutritionPlans[client._id];
         const info = client.info_user || {};
-
-        // If client has an active plan
-        // DEBUG: Check plan for this client
-        if (plan) {
-            console.log(`[NutritionDebug] Client ${client.nombre} has plan:`, {
-                type: plan.planType,
-                status: plan.status,
-                macros: plan.fixedMacros,
-                auto: plan.autoConfig
-            });
-        }
 
         if (plan && plan.status === 'active') {
             switch (plan.planType) {
@@ -272,7 +263,6 @@ export default function NutritionClientsScreen() {
         }
 
         // Fallback: Calculate auto if client has required data
-        console.log(`[NutritionDebug] Fallback for ${client.nombre} - No active plan matched switch`);
         if (info.edad && info.peso && info.altura && info.genero) {
             const nutrition = calculateFullNutrition(info, info.objetivos, client.af || 1.55);
             if (nutrition) {
@@ -286,6 +276,11 @@ export default function NutritionClientsScreen() {
         }
 
         return { mode: 'none', planType: null, kcal: '---', hasCoachPlan: false };
+    };
+
+    // Helper to see if client is TCA (Sensitive Mode)
+    const isSensitiveClient = (client) => {
+        return client.clientSettings?.hideMacros === true;
     };
 
     // Calculate adherence and weight trend from metrics
@@ -318,6 +313,52 @@ export default function NutritionClientsScreen() {
         return { adherenceScore, weightTrend, currentWeight, daysInactive, lastCheckIn };
     };
 
+    // Handler to toggle Sensitive Mode (TCA)
+    const handleToggleSensitive = async (client) => {
+        const isCurrentlySensitive = isSensitiveClient(client);
+        const newValue = !isCurrentlySensitive;
+
+        // Optimistic Update
+        const updatedClients = clients.map(c => {
+            if (c._id === client._id) {
+                return {
+                    ...c,
+                    clientSettings: {
+                        ...c.clientSettings,
+                        hideMacros: newValue
+                    }
+                };
+            }
+            return c;
+        });
+        setClients(updatedClients);
+
+        // API Call
+        try {
+            const res = await fetch(`${API_URL}/api/nutrition-plans/clients/${client._id}/settings`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ hideMacros: newValue })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message);
+        } catch (error) {
+            console.error("Error toggling sensitive mode:", error);
+            // Revert on error
+            alert("No se pudo actualizar el modo. Verifica tu conexión.");
+            // Revert manually
+            setClients(prev => prev.map(c => {
+                if (c._id === client._id) {
+                    return { ...c, clientSettings: { ...c.clientSettings, hideMacros: isCurrentlySensitive } };
+                }
+                return c;
+            }));
+        }
+    };
+
     // Filter and sort clients
     const filteredClients = useMemo(() => {
         let result = [...clients];
@@ -325,7 +366,12 @@ export default function NutritionClientsScreen() {
         // Search filter
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            result = result.filter(c => c.nombre?.toLowerCase().includes(q));
+            result = result.filter(c => {
+                const nameMatch = c.nombre?.toLowerCase().includes(q);
+                // Also search by tag "tca" or "sensible"
+                const tcaMatch = (q.includes('tca') || q.includes('sensible')) && isSensitiveClient(c);
+                return nameMatch || tcaMatch;
+            });
         }
 
         // Sort
@@ -365,22 +411,7 @@ export default function NutritionClientsScreen() {
         const stats = getClientStats(item._id, info);
         const phaseBadge = getPhaseBadge(info.objetivos);
         const aiHealth = getAIHealthStatus(stats.adherenceScore, stats.weightTrend, stats.daysInactive, info.objetivos);
-
-        // Weight trend arrow and color
-        let trendIcon = null;
-        let trendColor = '#64748b';
-        let trendText = '';
-        if (stats.weightTrend !== 0 && stats.currentWeight) {
-            if (stats.weightTrend < 0) {
-                trendIcon = 'arrow-down';
-                trendColor = phaseBadge.label === 'Volumen' ? '#ef4444' : '#10b981';
-                trendText = `${stats.weightTrend.toFixed(1)}`;
-            } else if (stats.weightTrend > 0) {
-                trendIcon = 'arrow-up';
-                trendColor = phaseBadge.label === 'Volumen' ? '#10b981' : '#ef4444';
-                trendText = `+${stats.weightTrend.toFixed(1)}`;
-            }
-        }
+        const isSensitive = isSensitiveClient(item);
 
         return (
             <TouchableOpacity
@@ -391,228 +422,131 @@ export default function NutritionClientsScreen() {
                 })}
                 activeOpacity={0.7}
             >
-                {/* Row 1: Avatar + Name + Phase Badge + AI Dot */}
-                <View style={styles.cardRow1}>
-                    {/* Avatar with status border and hover tooltip */}
-                    <Pressable
-                        style={[styles.avatarWrapper]}
-                        onHoverIn={() => Platform.OS === 'web' && setHoveredClientId(item._id)}
-                        onHoverOut={() => Platform.OS === 'web' && setHoveredClientId(null)}
-                    >
-                        <View style={[
-                            styles.avatarBorder,
-                            { borderColor: stats.adherenceScore >= 75 ? '#10b981' : stats.adherenceScore >= 50 ? '#f59e0b' : '#ef4444' }
-                        ]}>
-                            <AvatarWithInitials
-                                avatarUrl={item.avatarUrl || item.profilePic}
-                                name={item.nombre}
-                                size={56}
-                            />
-                        </View>
-
-                        {/* Hover Tooltip (Web only) */}
-                        {Platform.OS === 'web' && hoveredClientId === item._id && (
-                            <View style={styles.avatarTooltip}>
-                                <View style={styles.tooltipArrow} />
-                                <Text style={styles.tooltipTitle}>{item.nombre}</Text>
-
-                                {/* AI Health Status */}
-                                <View style={styles.tooltipRow}>
-                                    <View style={[styles.tooltipDot, { backgroundColor: aiHealth.color }]} />
-                                    <Text style={styles.tooltipLabel}>Estado IA:</Text>
-                                    <Text style={styles.tooltipValueHighlight}>{aiHealth.label}</Text>
-                                </View>
-                                <Text style={styles.tooltipHint}>{aiHealth.tooltip}</Text>
-
-                                <View style={styles.tooltipDivider} />
-
-                                {/* Adherence */}
-                                <View style={styles.tooltipRow}>
-                                    <Ionicons name="checkmark-circle" size={12} color="#fff" />
-                                    <Text style={styles.tooltipLabel}>Adherencia:</Text>
-                                    <Text style={styles.tooltipValue}>{stats.adherenceScore ?? '--'}%</Text>
-                                </View>
-
-                                {/* Weight Trend */}
-                                <View style={styles.tooltipRow}>
-                                    <Ionicons name="trending-up" size={12} color="#fff" />
-                                    <Text style={styles.tooltipLabel}>Tendencia peso:</Text>
-                                    <Text style={styles.tooltipValue}>
-                                        {stats.weightTrend !== 0 ? `${stats.weightTrend > 0 ? '+' : ''}${stats.weightTrend.toFixed(1)} kg` : 'Estable'}
-                                    </Text>
-                                </View>
-
-                                {/* Days Active */}
-                                <View style={styles.tooltipRow}>
-                                    <Ionicons name="calendar" size={12} color="#fff" />
-                                    <Text style={styles.tooltipLabel}>Última actividad:</Text>
-                                    <Text style={styles.tooltipValue}>{stats.lastCheckIn}</Text>
-                                </View>
-
-                                {/* Calories */}
-                                <View style={styles.tooltipRow}>
-                                    <Ionicons name="flame" size={12} color="#fff" />
-                                    <Text style={styles.tooltipLabel}>Calorías:</Text>
-                                    <Text style={styles.tooltipValue}>
-                                        {typeof nutritionSummary.kcal === 'number' ? `${nutritionSummary.kcal.toLocaleString()} kcal` : '--'}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.tooltipFooter}>
-                                    <Text style={styles.tooltipFooterText}>Haz clic para ver detalles</Text>
-                                </View>
-                            </View>
-                        )}
-                    </Pressable>
-
-                    <View style={styles.nameSection}>
-                        <View style={styles.nameRow}>
-                            <Text style={styles.clientName}>{item.nombre}</Text>
-                            {/* AI Health Dot */}
-                            <View style={[styles.aiDot, { backgroundColor: aiHealth.color }]} />
-                        </View>
-                        <Text style={styles.lastCheckIn}>
-                            <Ionicons name="time-outline" size={11} color="#94a3b8" /> Último check-in: {stats.lastCheckIn}
-                        </Text>
+                {/* ─── COLUMN 1: IDENTITY & STATUS ───────────────────────────── */}
+                <View style={styles.cardColLeft}>
+                    {/* Avatar */}
+                    <View style={styles.avatarContainer}>
+                        <AvatarWithInitials
+                            avatarUrl={item.avatarUrl || item.profilePic}
+                            name={item.nombre}
+                            size={52}
+                        />
+                        {/* AI Status Dot */}
+                        <View style={[styles.aiStatusDot, { backgroundColor: aiHealth.color }]} />
                     </View>
+
+                    {/* Name */}
+                    <Text style={styles.clientName} numberOfLines={1}>{item.nombre}</Text>
 
                     {/* Phase Badge */}
-                    <View style={[styles.phaseBadge, { backgroundColor: phaseBadge.bgColor }]}>
-                        <Ionicons name={phaseBadge.icon} size={12} color={phaseBadge.color} />
-                        <Text style={[styles.phaseBadgeText, { color: phaseBadge.color }]}>{phaseBadge.label}</Text>
+                    <View style={[styles.phaseBadgePill, { backgroundColor: phaseBadge.bgColor }]}>
+                        <Text style={[styles.phaseBadgePillText, { color: phaseBadge.color }]}>{phaseBadge.label}</Text>
                     </View>
+
+                    {/* Last Active */}
+                    <Text style={styles.lastCheckInText}>
+                        {stats.lastCheckIn}
+                    </Text>
                 </View>
 
-                {/* Row 2: Metrics Grid */}
-                <View style={styles.metricsRow}>
-                    {/* Weight */}
-                    <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>PESO</Text>
-                        <View style={styles.metricValueRow}>
-                            <Text style={styles.metricValue}>
-                                {stats.currentWeight || info.peso || '--'}
-                                <Text style={styles.metricUnit}> kg</Text>
-                            </Text>
-                            {trendIcon && (
-                                <View style={[styles.trendBadge, { backgroundColor: `${trendColor}20` }]}>
-                                    <Ionicons name={trendIcon} size={10} color={trendColor} />
-                                    <Text style={[styles.trendText, { color: trendColor }]}>{trendText}</Text>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* Calories + Plan Type */}
-                    <View style={styles.metricItem}>
-                        <View style={styles.metricLabelRow}>
-                            <Text style={styles.metricLabel}>CALORÍAS</Text>
-                            {nutritionSummary.planType && (
-                                <View style={[
-                                    styles.planTypeBadge,
-                                    nutritionSummary.planType === 'auto' && styles.planTypeBadgeAuto,
-                                    nutritionSummary.planType === 'flex' && styles.planTypeBadgeFlex,
-                                    nutritionSummary.planType === 'complete' && styles.planTypeBadgeComplete,
-                                ]}>
-                                    <Text style={styles.planTypeBadgeText}>
-                                        {nutritionSummary.planType === 'auto' ? '🤖' :
-                                            nutritionSummary.planType === 'flex' ? '🔀' : '📋'}
+                {/* ─── COLUMN 2: METRICS & ACTIONS ───────────────────────────── */}
+                <View style={styles.cardColRight}>
+                    {/* Header: TCA Toggle */}
+                    <View style={styles.colRightHeader}>
+                        <View style={{ position: 'relative', zIndex: 200 }}>
+                            <Pressable
+                                style={styles.tcaSwitchContainer}
+                                onHoverIn={() => Platform.OS === 'web' && setHoveredTCAId(item._id)}
+                                onHoverOut={() => Platform.OS === 'web' && setHoveredTCAId(null)}
+                            >
+                                <Text style={[styles.tcaLabel, isSensitive && styles.tcaLabelActive]}>
+                                    {isSensitive ? "Modo Seguro (TCA)" : "Visible"}
+                                </Text>
+                                <Switch
+                                    trackColor={{ false: "#e2e8f0", true: "#fef3c7" }} // Amber-100
+                                    thumbColor={isSensitive ? "#f59e0b" : "#f4f3f4"}
+                                    ios_backgroundColor="#e2e8f0"
+                                    onValueChange={() => handleToggleSensitive(item)}
+                                    value={isSensitive}
+                                    style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
+                                />
+                            </Pressable>
+                            {/* Tooltip */}
+                            {Platform.OS === 'web' && hoveredTCAId === item._id && (
+                                <View style={styles.tcaTooltip}>
+                                    <Text style={styles.tcaTooltipText}>
+                                        Activa para ocultar métricas sensibles (calorías, peso) al cliente.
                                     </Text>
+                                    <View style={styles.tcaTooltipArrow} />
                                 </View>
                             )}
                         </View>
-                        <Text style={[styles.metricValue, nutritionSummary.hasCoachPlan && styles.customValue]}>
-                            {typeof nutritionSummary.kcal === 'number'
-                                ? nutritionSummary.kcal.toLocaleString()
-                                : nutritionSummary.kcal}
-                            <Text style={styles.metricUnit}> kcal</Text>
-                        </Text>
                     </View>
 
-                    {/* Adherence Ring */}
-                    <View style={styles.adherenceItem}>
-                        <Text style={styles.metricLabel}>ADHERENCIA</Text>
-                        <AdherenceRing percentage={stats.adherenceScore} size={44} />
+                    {/* Metrics Grid */}
+                    <View style={styles.metricsGrid}>
+                        {/* Weight */}
+                        <View style={styles.metricBox}>
+                            <Text style={styles.metaLabel}>PESO</Text>
+                            <Text style={styles.metaValue}>
+                                {stats.currentWeight || '--'} <Text style={styles.metaUnit}>kg</Text>
+                            </Text>
+                        </View>
+
+                        {/* Calories */}
+                        <View style={styles.metricBox}>
+                            <Text style={styles.metaLabel}>KCAL</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Text style={styles.metaValue}>
+                                    {typeof nutritionSummary.kcal === 'number'
+                                        ? nutritionSummary.kcal.toLocaleString()
+                                        : nutritionSummary.kcal
+                                    }
+                                </Text>
+                                {isSensitive && <Ionicons name="shield-checkmark" size={14} color="#f59e0b" />}
+                            </View>
+                        </View>
+
+                        {/* Adherence */}
+                        <View style={styles.metricBoxAdherence}>
+                            <AdherenceRing percentage={stats.adherenceScore} size={38} />
+                        </View>
                     </View>
 
-                    {/* Action Buttons */}
-                    <View style={styles.actionButtons}>
-                        <TouchableOpacity style={styles.actionBtn} onPress={(e) => {
-                            e.stopPropagation();
-                            router.push({
-                                pathname: '/(coach)/nutrition/[clientId]',
-                                params: { clientId: item._id, clientName: item.nombre }
-                            });
-                        }}>
-                            <Ionicons name="document-text-outline" size={18} color="#64748b" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionBtn} onPress={(e) => {
-                            e.stopPropagation();
-                            router.push({
-                                pathname: '/(coach)/seguimiento_coach/[clientId]',
-                                params: { clientId: item._id, clientName: item.nombre }
-                            });
-                        }}>
-                            <Ionicons name="stats-chart-outline" size={18} color="#64748b" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionBtn} onPress={(e) => {
-                            e.stopPropagation();
-                            // Chat action
-                        }}>
-                            <Ionicons name="chatbubble-outline" size={18} color="#64748b" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
+                    {/* Actions Footer */}
+                    <View style={styles.actionsFooter}>
+                        <View style={styles.planInfoRow}>
+                            {nutritionSummary.planType && (
+                                <Text style={{ fontSize: 10, marginRight: 4 }}>
+                                    {nutritionSummary.planType === 'auto' ? '🤖' :
+                                        nutritionSummary.planType === 'flex' ? '🔀' : '📋'}
+                                </Text>
+                            )}
+                            <Text style={styles.planNameText} numberOfLines={1}>
+                                {nutritionSummary.planName || 'Sin Plan'}
+                            </Text>
+                        </View>
 
-                {/* Row 3: Bottom info */}
-                <View style={styles.bottomRow}>
-                    {/* Goal text */}
-                    <View style={styles.goalInfo}>
-                        <Ionicons name="fitness" size={12} color="#64748b" />
-                        <Text style={styles.goalText}>{info.objetivos || 'Sin objetivo'}</Text>
-                    </View>
-
-                    {/* Height */}
-                    <View style={styles.heightInfo}>
-                        <Ionicons name="resize-outline" size={12} color="#64748b" />
-                        <Text style={styles.heightText}>
-                            {info.altura ? (info.altura < 3 ? `${Math.round(info.altura * 100)} cm` : `${info.altura} cm`) : '-- cm'}
-                        </Text>
-                    </View>
-
-                    {/* Plan mode badge */}
-                    <View style={[
-                        styles.modeBadge,
-                        {
-                            backgroundColor: nutritionSummary.planType === 'complete' ? '#8b5cf620' :
-                                nutritionSummary.planType === 'flex' ? '#f59e0b20' :
-                                    nutritionSummary.planType === 'auto' ? '#10b98120' : '#64748b15'
-                        }
-                    ]}>
-                        <Ionicons
-                            name={
-                                nutritionSummary.planType === 'complete' ? 'clipboard' :
-                                    nutritionSummary.planType === 'flex' ? 'shuffle' :
-                                        nutritionSummary.planType === 'auto' ? 'calculator' : 'help-circle-outline'
-                            }
-                            size={10}
-                            color={
-                                nutritionSummary.planType === 'complete' ? '#8b5cf6' :
-                                    nutritionSummary.planType === 'flex' ? '#f59e0b' :
-                                        nutritionSummary.planType === 'auto' ? '#10b981' : '#64748b'
-                            }
-                        />
-                        <Text style={[
-                            styles.modeText,
-                            {
-                                color: nutritionSummary.planType === 'complete' ? '#8b5cf6' :
-                                    nutritionSummary.planType === 'flex' ? '#f59e0b' :
-                                        nutritionSummary.planType === 'auto' ? '#10b981' : '#64748b'
-                            }
-                        ]}>
-                            {nutritionSummary.planType === 'complete' ? 'Completo' :
-                                nutritionSummary.planType === 'flex' ? 'Flex' :
-                                    nutritionSummary.planType === 'auto' ? 'Auto' : 'Sin Plan'}
-                        </Text>
+                        <View style={styles.actionButtonsRow}>
+                            <TouchableOpacity style={styles.miniActionBtn} onPress={(e) => {
+                                e.stopPropagation();
+                                router.push({
+                                    pathname: '/(coach)/nutrition/[clientId]',
+                                    params: { clientId: item._id, clientName: item.nombre }
+                                });
+                            }}>
+                                <Ionicons name="create-outline" size={16} color="#64748b" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.miniActionBtn} onPress={(e) => {
+                                e.stopPropagation();
+                                router.push({
+                                    pathname: '/(coach)/seguimiento_coach/[clientId]',
+                                    params: { clientId: item._id, clientName: item.nombre }
+                                });
+                            }}>
+                                <Ionicons name="stats-chart-outline" size={16} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -628,6 +562,54 @@ export default function NutritionClientsScreen() {
             </Text>
         </View>
     );
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // BULK TOGGLE HANDLER (Global)
+    // ═══════════════════════════════════════════════════════════════════════
+    const handleBulkToggle = async () => {
+        const targets = JSON.parse(JSON.stringify(filteredClients)); // Deep copy targets
+        if (targets.length === 0) return;
+
+        // Logic: If ANY visible client is NOT Sensitive (false/undefined) -> Turn ALL ON (true).
+        // Only if ALL visible clients are Sensitive (true) -> Turn ALL OFF (false).
+        const anyVisible = targets.some(c => !c.clientSettings?.hideMacros);
+        const newSensitiveState = anyVisible; // true = make sensitive (hide macros)
+
+        // 1. Optimistic Update
+        const updatedClients = clients.map(c => {
+            const isTarget = targets.find(t => t._id === c._id);
+            if (isTarget) {
+                return {
+                    ...c,
+                    clientSettings: {
+                        ...c.clientSettings,
+                        hideMacros: newSensitiveState
+                    }
+                };
+            }
+            return c;
+        });
+        setClients(updatedClients);
+
+        // 2. Bulk API Calls (Promise.all)
+        try {
+            const promises = targets.map(c =>
+                fetch(`${API_URL}/api/nutrition-plans/clients/${c._id}/settings`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ hideMacros: newSensitiveState })
+                })
+            );
+            await Promise.all(promises);
+        } catch (error) {
+            console.error("Error in bulk toggle:", error);
+            alert("Error al actualizar algunos clientes. Por favor recarga.");
+            onRefresh(); // Revert/Sync on error
+        }
+    };
 
     if (isLoading) {
         return (
@@ -706,7 +688,7 @@ export default function NutritionClientsScreen() {
                                 style={[styles.sortMenuItem, sortBy === 'aiHealth' && styles.sortMenuItemActive]}
                                 onPress={() => { setSortBy('aiHealth'); setSortMenuOpen(false); }}
                             >
-                                <Ionicons name="pulse-outline" size={14} color={sortBy === 'aiHealth' ? '#3b82f6' : '#64748b'} />
+                                <Ionicons name="medical-outline" size={14} color={sortBy === 'aiHealth' ? '#3b82f6' : '#64748b'} />
                                 <Text style={[styles.sortMenuItemText, sortBy === 'aiHealth' && styles.sortMenuItemTextActive]}>
                                     Estado IA
                                 </Text>
@@ -725,41 +707,42 @@ export default function NutritionClientsScreen() {
                 </View>
             </View>
 
-            {/* Search Input */}
+            {/* Search Input Row */}
             <View style={styles.searchBar}>
                 <View style={styles.searchContainer}>
-                    <Ionicons name="search" size={16} color="#94a3b8" />
+                    <Ionicons name="search" size={18} color="#94a3b8" style={{ marginRight: 8 }} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Buscar cliente por nombre o etiqueta..."
+                        placeholder="Buscar cliente por nombre..."
                         placeholderTextColor="#94a3b8"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
-                    {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name="close-circle" size={16} color="#94a3b8" />
-                        </TouchableOpacity>
-                    )}
-                    <View style={styles.cmdK}>
-                        <Text style={styles.cmdKText}>⌘K</Text>
-                    </View>
                 </View>
+
+                {/* BULK TOGGLE BUTTON (Replaces Filter) */}
+                <TouchableOpacity
+                    style={[styles.filterTagBtn, { backgroundColor: '#fff', borderColor: '#e2e8f0', flexDirection: 'row', gap: 6 }]}
+                    onPress={handleBulkToggle}
+                >
+                    <Ionicons name="shield-checkmark" size={16} color="#f59e0b" />
+                    <Text style={styles.filterTagText}>
+                        Global TCA
+                    </Text>
+                </TouchableOpacity>
             </View>
 
+            {/* Clients List */}
             <FlatList
                 data={filteredClients}
                 keyExtractor={(item) => item._id}
                 renderItem={renderClientCard}
-                ListEmptyComponent={renderEmpty}
-                contentContainerStyle={clients.length === 0 ? styles.emptyList : styles.list}
+                contentContainerStyle={styles.list}
                 refreshControl={
-                    <RefreshControl
-                        refreshing={isRefreshing}
-                        onRefresh={onRefresh}
-                        colors={['#22c55e']}
-                    />
+                    <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#22c55e" />
                 }
+                ListEmptyComponent={renderEmpty}
+                style={{ overflow: 'visible', zIndex: 1 }} // Help with tooltips
             />
         </SafeAreaView>
     );
@@ -905,18 +888,35 @@ const styles = StyleSheet.create({
     // Search Bar
     searchBar: {
         paddingHorizontal: 16,
-        paddingBottom: 8,
+        paddingBottom: 12,
+        flexDirection: 'row',
+        gap: 8,
     },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#fff',
-        borderRadius: 10,
+        borderRadius: 12,
         paddingHorizontal: 12,
-        height: 40,
-        gap: 8,
+        height: 44,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+        flex: 1,
+    },
+    filterTagBtn: {
+        height: 44,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    filterTagText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
     },
     searchInput: {
         flex: 1,
@@ -945,204 +945,205 @@ const styles = StyleSheet.create({
         flex: 1,
     },
 
-    // Client Card - Smart Design
+    // Client Card - Smart Design (Redesigned 2-Column)
     clientCard: {
         backgroundColor: '#fff',
-        borderRadius: 14,
+        borderRadius: 16,
         padding: 12,
-        marginBottom: 10,
+        marginBottom: 12,
         borderWidth: 1,
         borderColor: '#e2e8f0',
-        overflow: 'visible',
+        flexDirection: 'row',
+        gap: 12,
         ...Platform.select({
             ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6 },
-            android: { elevation: 1 },
-            web: { overflow: 'visible' },
+            android: { elevation: 2 },
+            web: { overflow: 'visible', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
         }),
     },
 
-    // Row 1: Avatar + Name + Phase
-    cardRow1: {
-        flexDirection: 'row',
+    // COL 1: Left (Identity)
+    cardColLeft: {
+        width: 85,
         alignItems: 'center',
-        marginBottom: 12,
-        overflow: 'visible',
-        zIndex: 100,
+        borderRightWidth: 1,
+        borderRightColor: '#f1f5f9',
+        paddingRight: 10,
     },
-    avatarBorder: {
-        borderWidth: 3,
-        borderRadius: 32,
-        padding: 2,
+    avatarContainer: {
+        position: 'relative',
+        marginBottom: 8,
     },
-    nameSection: {
-        flex: 1,
-        marginLeft: 10,
-    },
-    nameRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
+    aiStatusDot: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        borderWidth: 2,
+        borderColor: '#fff',
     },
     clientName: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '700',
         color: '#1e293b',
+        textAlign: 'center',
+        marginBottom: 6,
+        lineHeight: 16,
     },
-    aiDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
+    phaseBadgePill: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 100,
+        marginBottom: 6,
     },
-    lastCheckIn: {
-        fontSize: 11,
+    phaseBadgePillText: {
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    lastCheckInText: {
+        fontSize: 9,
         color: '#94a3b8',
-        marginTop: 2,
-    },
-    phaseBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-    },
-    phaseBadgeText: {
-        fontSize: 12,
-        fontWeight: '600',
+        textAlign: 'center',
     },
 
-    // Row 2: Metrics
-    metricsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingTop: 10,
-        paddingBottom: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#f1f5f9',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
-    },
-    metricItem: {
+    // COL 2: Right (Metrics & Actions)
+    cardColRight: {
         flex: 1,
-        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    metricLabel: {
+    colRightHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginBottom: 10,
+    },
+    tcaSwitchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        paddingLeft: 10,
+        paddingRight: 4,
+        paddingVertical: 2,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignSelf: 'flex-start',
+        marginLeft: 'auto', // Push to right
+    },
+    tcaLabel: {
         fontSize: 10,
-        fontWeight: '600',
-        color: '#94a3b8',
-        letterSpacing: 0.5,
-        marginBottom: 4,
-    },
-    metricLabelRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        marginBottom: 4,
-    },
-    metricValueRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    metricValue: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#1e293b',
-    },
-    metricUnit: {
-        fontSize: 12,
-        fontWeight: '400',
         color: '#64748b',
+        fontWeight: '600',
+        marginRight: 4,
     },
-    customValue: {
-        color: '#8b5cf6',
+    tcaLabelActive: {
+        color: '#f59e0b',
     },
-    // Plan Type Badges
-    planTypeBadge: {
-        width: 18,
-        height: 18,
-        borderRadius: 9,
+    tcaTooltip: {
+        position: 'absolute',
+        bottom: '100%',
+        right: 0,
+        marginBottom: 8,
+        backgroundColor: '#1e293b',
+        padding: 8,
+        borderRadius: 8,
+        width: 150,
+        zIndex: 999,
+        // Shadow for web
+        ...Platform.select({
+            web: { boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' }
+        })
+    },
+    tcaTooltipText: {
+        fontSize: 10,
+        color: '#fff',
+        textAlign: 'center',
+        lineHeight: 14,
+    },
+    tcaTooltipArrow: {
+        position: 'absolute',
+        bottom: -4,
+        right: 12,
+        width: 0,
+        height: 0,
+        borderLeftWidth: 5,
+        borderRightWidth: 5,
+        borderTopWidth: 5,
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        borderTopColor: '#1e293b',
+    },
+
+    // Metrics Grid
+    metricsGrid: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 12,
+    },
+    metricBox: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        paddingVertical: 8,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    planTypeBadgeAuto: {
-        backgroundColor: '#ede9fe',
+    metricBoxAdherence: {
+        width: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    planTypeBadgeFlex: {
-        backgroundColor: '#dbeafe',
+    metaLabel: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#94a3b8',
+        marginBottom: 2,
+        letterSpacing: 0.5,
     },
-    planTypeBadgeComplete: {
-        backgroundColor: '#d1fae5',
+    metaValue: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#334155',
     },
-    planTypeBadgeText: {
+    metaUnit: {
         fontSize: 10,
+        fontWeight: '500',
+        color: '#94a3b8',
     },
-    trendBadge: {
+
+    // Actions Footer
+    actionsFooter: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 5,
-        paddingVertical: 2,
-        borderRadius: 4,
-        gap: 2,
+        justifyContent: 'space-between',
+        marginTop: 4,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
     },
-    trendText: {
-        fontSize: 10,
-        fontWeight: '600',
-    },
-    adherenceItem: {
-        alignItems: 'center',
-    },
-    actionButtons: {
+    planInfoRow: {
         flexDirection: 'row',
-        gap: 4,
-        marginLeft: 8,
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 8,
     },
-    actionBtn: {
+    planNameText: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    actionButtonsRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    miniActionBtn: {
         width: 32,
         height: 32,
         borderRadius: 8,
-        backgroundColor: '#f8fafc',
+        backgroundColor: '#f1f5f9',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-
-    // Row 3: Bottom info
-    bottomRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 10,
-        gap: 12,
-    },
-    goalInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    goalText: {
-        fontSize: 11,
-        color: '#64748b',
-    },
-    heightInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    heightText: {
-        fontSize: 11,
-        color: '#64748b',
-    },
-    modeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-        gap: 4,
-        marginLeft: 'auto',
-    },
-    modeText: {
-        fontSize: 10,
-        fontWeight: '500',
     },
 
     // Empty state
@@ -1165,96 +1166,5 @@ const styles = StyleSheet.create({
         marginTop: 8,
         textAlign: 'center',
         lineHeight: 22,
-    },
-
-    // Avatar Wrapper for tooltip
-    avatarWrapper: {
-        position: 'relative',
-        zIndex: 9999,
-        overflow: 'visible',
-    },
-
-    // Hover Tooltip Styles (Web only)
-    avatarTooltip: {
-        position: 'absolute',
-        left: '100%',
-        top: '50%',
-        transform: [{ translateY: -80 }],
-        marginLeft: 12,
-        width: 220,
-        backgroundColor: '#3b82f6',
-        borderRadius: 12,
-        padding: 14,
-        zIndex: 99999,
-        ...Platform.select({
-            web: {
-                boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
-            },
-        }),
-    },
-    tooltipArrow: {
-        position: 'absolute',
-        left: -6,
-        top: 30,
-        width: 12,
-        height: 12,
-        backgroundColor: '#3b82f6',
-        transform: [{ rotate: '45deg' }],
-    },
-    tooltipTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#fff',
-        marginBottom: 10,
-    },
-    tooltipRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 6,
-    },
-    tooltipDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    tooltipLabel: {
-        fontSize: 11,
-        color: 'rgba(255,255,255,0.8)',
-    },
-    tooltipValue: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: '#fff',
-        marginLeft: 'auto',
-    },
-    tooltipValueHighlight: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#fef08a',
-        marginLeft: 'auto',
-    },
-    tooltipHint: {
-        fontSize: 10,
-        color: 'rgba(255,255,255,0.7)',
-        fontStyle: 'italic',
-        marginBottom: 8,
-        marginLeft: 14,
-    },
-    tooltipDivider: {
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        marginVertical: 8,
-    },
-    tooltipFooter: {
-        marginTop: 8,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.2)',
-    },
-    tooltipFooterText: {
-        fontSize: 10,
-        color: 'rgba(255,255,255,0.7)',
-        textAlign: 'center',
     },
 });

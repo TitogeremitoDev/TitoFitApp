@@ -12,9 +12,10 @@ import LOCAL_FOODS from '../constants/localFoods.json';
 // ─────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────
-const USE_BACKEND = true; // ✅ Connected to Koyeb
+const USE_BACKEND = true; // ✅ Connected to Local
 const USE_OPENFOODFACTS = true;
-const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
+// const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
+const API_BASE_URL = 'http://localhost:3000/api';
 
 // ─────────────────────────────────────────────────────────
 // TYPES
@@ -41,6 +42,11 @@ export interface FoodItem {
         unit: string;    // Ej: "Unidad", "Rebanada", "Scoop"
         weight: number;  // Equivalencia en gramos
     };
+    // Recipe fields
+    isComposite?: boolean;
+    instructions?: string;
+    prepTime?: number;
+    ingredients?: any[]; // Snapshot of ingredients
 }
 
 // ─────────────────────────────────────────────────────────
@@ -234,6 +240,38 @@ export const saveFood = async (foodData: Partial<FoodItem>): Promise<FoodItem> =
 };
 
 // ─────────────────────────────────────────────────────────
+// SAVE FROM PLAN (Reverse Clone)
+// ─────────────────────────────────────────────────────────
+export const saveFoodFromPlan = async (payload: {
+    name: string;
+    items: any[];
+    instructions?: string;
+    image?: string;
+}): Promise<FoodItem> => {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const token = await AsyncStorage.getItem('totalgains_token');
+
+    if (!token) throw new Error('No hay sesión activa');
+
+    const response = await fetch(`${API_BASE_URL}/foods/save-from-plan`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al guardar receta desde plan');
+    }
+
+    const data = await response.json();
+    return data.food;
+};
+
+// ─────────────────────────────────────────────────────────
 // TOGGLE FAVORITE (Clone-on-Favorite)
 // ─────────────────────────────────────────────────────────
 export const toggleFavorite = async (food: FoodItem): Promise<{ food: FoodItem | null; action: string }> => {
@@ -263,6 +301,32 @@ export const toggleFavorite = async (food: FoodItem): Promise<{ food: FoodItem |
     }
 
     return response.json();
+};
+
+// ─────────────────────────────────────────────────────────
+// DELETE FOOD
+// ─────────────────────────────────────────────────────────
+export const deleteFood = async (id: string): Promise<boolean> => {
+    if (!USE_BACKEND) return true;
+
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const token = await AsyncStorage.getItem('totalgains_token');
+
+    if (!token) throw new Error('No hay sesión activa');
+
+    const response = await fetch(`${API_BASE_URL}/foods/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al eliminar alimento');
+    }
+
+    return true;
 };
 
 // ─────────────────────────────────────────────────────────

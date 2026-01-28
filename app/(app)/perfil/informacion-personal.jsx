@@ -51,7 +51,7 @@ const CustomSlider = ({ label, value, onValueChange, min, max, leftIcon, rightIc
                         {...panResponder.panHandlers}
                     >
                         <View style={styles.sliderTrack}>
-                            <View pointerEvents="none" style={[styles.sliderFill, { width: `${percentage}%`, backgroundColor: theme.primary }]} />
+                            <View style={[styles.sliderFill, { width: `${percentage}%`, backgroundColor: theme.primary, pointerEvents: 'none' }]} />
                         </View>
                     </View>
                 )}
@@ -251,7 +251,7 @@ export default function InformacionPersonal() {
 
             <View style={styles.header}>
                 <Text style={styles.headerTitle}
-                colors={theme.primary}
+                    colors={theme.primary}
                 >Información Personal</Text>
                 <TouchableOpacity
                     style={[styles.saveButton, { backgroundColor: theme.primary }]}

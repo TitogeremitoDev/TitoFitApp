@@ -293,6 +293,14 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
                     suffix=""
                     color="#22c55e"
                 />
+                <MacroInput
+                    label="Fibra"
+                    value={dayTarget.fiber_g?.toString() || ''}
+                    onChange={(v) => onUpdate(index, 'fiber_g', v ? parseInt(v) : '')}
+                    placeholder="30"
+                    suffix="g"
+                    color="#84cc16"
+                />
             </View>
 
             {/* Notas */}
@@ -389,16 +397,21 @@ export default function ClientNutritionEditor() {
         monday: null, tuesday: null, wednesday: null, thursday: null,
         friday: null, saturday: null, sunday: null
     });
+    const [isEditingName, setIsEditingName] = useState(false);
 
     // 🍽️ Meal Plan state (for 'mealplan' mode)
     const [mealPlan, setMealPlan] = useState(null);
+
+    // 🛡️ Sensitive Mode (TCA)
+    const [hideMacros, setHideMacros] = useState(false);
 
     // Template loading
     const [templates, setTemplates] = useState([]);
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [loadingTemplates, setLoadingTemplates] = useState(false);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    // Force local connection to ensure we hit the user's local DB
+    const API_URL = 'http://localhost:3000';
 
     // 🖥️ Responsive layout
     const { width: windowWidth } = useWindowDimensions();
@@ -478,6 +491,10 @@ export default function ClientNutritionEditor() {
                             setMealPlan(planData.plan.mealPlan);
                         }
                     }
+                    // Load Client Settings (Sensitive Mode)
+                    if (planData.clientSettings) {
+                        setHideMacros(planData.clientSettings.hideMacros);
+                    }
                 }
             } catch (e) {
                 console.log('[Editor] No existing plan found');
@@ -487,6 +504,33 @@ export default function ClientNutritionEditor() {
             console.error('[Editor] Error:', error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // Toggle Sensitive Mode
+    const toggleSensitiveMode = async () => {
+        const newValue = !hideMacros;
+        setHideMacros(newValue); // Optimistic update
+        try {
+            const res = await fetch(`${API_URL}/api/nutrition-plans/clients/${clientId}/settings`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ hideMacros: newValue })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message);
+
+            if (Platform.OS === 'web') {
+                // Toast or simple alert
+                // console.log("Modo sensible actualizado");
+            }
+        } catch (error) {
+            console.error("Error updating sensitive mode:", error);
+            setHideMacros(!newValue); // Rollback
+            Alert.alert('Error', 'No se pudo actualizar el modo sensible.');
         }
     };
 
@@ -584,11 +628,45 @@ export default function ClientNutritionEditor() {
 
     // Apply template to current plan
     const applyTemplate = (template) => {
-        if (template.customPlan) {
-            setDayTargets(template.customPlan.dayTargets || []);
-            setWeekSchedule(template.customPlan.weekSchedule || {});
+        // 1. Detect Plan Type
+        const isMealPlan = template.planType === 'complete' || (template.dayTemplates && template.dayTemplates.length > 0 && template.dayTemplates[0].meals?.length > 0);
+
+        if (isMealPlan) {
+            // Apply as Meal Plan
+            setMode('mealplan');
+            setMealPlan({
+                name: template.name,
+                globalNotes: template.globalNotes || '', // If stored
+                mealStructure: template.mealStructure || [],
+                dayTemplates: template.dayTemplates || [],
+                weekMap: template.weekMap || {}
+            });
+            // Hydrate simple Custom data too just in case they switch back
+            // (Optional, or leave empty)
+        } else {
+            // Apply as Custom/Flex Plan
+            setMode('custom');
+            if (template.customPlan) {
+                setDayTargets(template.customPlan.dayTargets || []);
+                setWeekSchedule(template.customPlan.weekSchedule || {});
+            } else {
+                // Fallback for flat templates that might be flex but saved flat
+                setDayTargets((template.dayTemplates || []).map(dt => ({
+                    id: dt.id,
+                    name: dt.name,
+                    color: dt.color,
+                    // Map back macros
+                    kcal: dt.targetMacros?.kcal,
+                    protein_g: dt.targetMacros?.protein,
+                    carbs_g: dt.targetMacros?.carbs,
+                    fat_g: dt.targetMacros?.fat,
+                    // ... other fields
+                    notes: dt.notes
+                })));
+                setWeekSchedule(template.weekMap || {});
+            }
         }
-        setMode('custom');
+
         setShowTemplateModal(false);
         if (Platform.OS === 'web') {
             window.alert(`✅ Plan cargado: Se ha aplicado el plan "${template.name}"`);
@@ -596,6 +674,13 @@ export default function ClientNutritionEditor() {
             Alert.alert('✅ Plan cargado', `Se ha aplicado el plan "${template.name}"`);
         }
     };
+
+    // 🛑 LOG DE CONTROL: Vigilar sincronización con el hijo (WeeklyMealPlanner)
+    useEffect(() => {
+        // Safe access to deep property
+        const foodCount = mealPlan?.dayTemplates?.[0]?.meals?.[0]?.options?.[0]?.foods?.length || 0;
+        console.log("👀 PLAN EN EL PADRE ACTUALIZADO:", foodCount, "alimentos en el primer plato.");
+    }, [mealPlan]);
 
     // Open template modal
     const openTemplateModal = () => {
@@ -605,12 +690,13 @@ export default function ClientNutritionEditor() {
 
     // Save current plan as a template
     const saveAsTemplate = async () => {
-        if (mode !== 'custom' || dayTargets.length === 0) {
-            if (Platform.OS === 'web') {
-                window.alert('Sin datos: Necesitas tener un plan personalizado con al menos un tipo de día');
-            } else {
-                Alert.alert('Sin datos', 'Necesitas tener un plan personalizado con al menos un tipo de día');
-            }
+        // Validation per mode
+        if (mode === 'custom' && dayTargets.length === 0) {
+            Alert.alert('Sin datos', 'Necesitas tener un plan personalizado con al menos un tipo de día');
+            return;
+        }
+        if (mode === 'mealplan' && (!mealPlan?.dayTemplates || mealPlan.dayTemplates.length === 0)) {
+            Alert.alert('Sin datos', 'El plan de comidas está vacío');
             return;
         }
 
@@ -621,39 +707,67 @@ export default function ClientNutritionEditor() {
             try {
                 setIsSavingAsTemplate(true);
 
-                // Process dayTargets
-                const processedDayTargets = dayTargets.map((dt, idx) => {
-                    const processed = { ...dt };
-                    if (!processed.color) {
-                        processed.color = DAY_COLORS[idx % DAY_COLORS.length];
-                    }
-                    if (dt.macroMode === 'percent' && dt.kcal) {
-                        const kcal = parseFloat(dt.kcal) || 0;
-                        const pPct = parseFloat(dt.protein_pct) || 30;
-                        const cPct = parseFloat(dt.carbs_pct) || 45;
-                        const fPct = parseFloat(dt.fat_pct) || 25;
-                        processed.protein_g = Math.round((kcal * (pPct / 100)) / 4);
-                        processed.carbs_g = Math.round((kcal * (cPct / 100)) / 4);
-                        processed.fat_g = Math.round((kcal * (fPct / 100)) / 9);
-                    } else if (dt.macroMode === 'grams' || !dt.macroMode) {
-                        if (dt.protein_g || dt.carbs_g || dt.fat_g) {
-                            const p = parseFloat(dt.protein_g) || 0;
-                            const c = parseFloat(dt.carbs_g) || 0;
-                            const f = parseFloat(dt.fat_g) || 0;
-                            processed.kcal = Math.round(p * 4 + c * 4 + f * 9);
-                        }
-                    }
-                    return processed;
-                });
-
-                const body = {
+                let body = {
                     name: templateName.trim(),
                     description: planDescription.trim() || `Plan basado en ${clientName || 'cliente'}`,
-                    customPlan: {
-                        dayTargets: processedDayTargets,
-                        weekSchedule,
-                    },
+                    planType: mode === 'mealplan' ? 'complete' : 'flex'
                 };
+
+                if (mode === 'mealplan') {
+                    // MealPlan mode: spread the mealPlan object (already matches structure)
+                    body = {
+                        ...body,
+                        dayTemplates: mealPlan.dayTemplates,
+                        weekMap: mealPlan.weekMap,
+                        mealStructure: mealPlan.mealStructure
+                    };
+                } else {
+                    // Custom/Flex mode: Process dayTargets to dayTemplates
+                    const processedDayTemplates = dayTargets.map((dt, idx) => {
+                        // Logic to convert simpler dayTarget to full dayTemplate or similar
+                        // Note: Backend expects dayTemplates array
+                        let macros = {};
+                        if (dt.macroMode === 'percent' && dt.kcal) {
+                            const kcal = parseFloat(dt.kcal) || 0;
+                            const pPct = parseFloat(dt.protein_pct) || 30;
+                            const cPct = parseFloat(dt.carbs_pct) || 45;
+                            const fPct = parseFloat(dt.fat_pct) || 25;
+                            macros = {
+                                kcal,
+                                protein: Math.round((kcal * (pPct / 100)) / 4),
+                                carbs: Math.round((kcal * (cPct / 100)) / 4),
+                                fat: Math.round((kcal * (fPct / 100)) / 9),
+                            };
+                        } else {
+                            macros = {
+                                kcal: parseFloat(dt.kcal) || 0,
+                                protein: parseFloat(dt.protein_g) || 0,
+                                carbs: parseFloat(dt.carbs_g) || 0,
+                                fat: parseFloat(dt.fat_g) || 0,
+                            };
+                            // Auto calc kcal if missing? Backend might not care for flex but good to have
+                            if (!macros.kcal && (macros.protein || macros.carbs || macros.fat)) {
+                                macros.kcal = macros.protein * 4 + macros.carbs * 4 + macros.fat * 9;
+                            }
+                        }
+
+                        return {
+                            id: dt.id,
+                            name: dt.name,
+                            color: dt.color || DAY_COLORS[idx % DAY_COLORS.length],
+                            targetMacros: macros,
+                            meals: [], // Empty for flex/custom
+                            notes: dt.notes || ''
+                        };
+                    });
+
+                    body = {
+                        ...body,
+                        dayTemplates: processedDayTemplates,
+                        weekMap: weekSchedule,
+                        mealStructure: []
+                    };
+                }
 
                 const res = await fetch(`${API_URL}/api/nutrition-plans/templates`, {
                     method: 'POST',
@@ -667,23 +781,19 @@ export default function ClientNutritionEditor() {
                 const data = await res.json();
                 if (data.success) {
                     if (Platform.OS === 'web') {
-                        window.alert('✅ Guardado: Plan guardado como reutilizable');
+                        window.alert('✅ Guardado: Plan exportado como plantilla');
                     } else {
-                        Alert.alert('✅ Guardado', 'Plan guardado como reutilizable');
+                        Alert.alert('✅ Guardado', 'Plan exportado como plantilla');
                     }
                 } else {
-                    if (Platform.OS === 'web') {
-                        window.alert('Error: ' + (data.message || 'No se pudo guardar'));
-                    } else {
-                        Alert.alert('Error', data.message || 'No se pudo guardar');
-                    }
+                    throw new Error(data.message || 'No se pudo guardar');
                 }
             } catch (error) {
                 console.error('[Editor] Save as template error:', error);
                 if (Platform.OS === 'web') {
-                    window.alert('Error: Error de conexión');
+                    window.alert('Error: ' + error.message);
                 } else {
-                    Alert.alert('Error', 'Error de conexión');
+                    Alert.alert('Error', error.message);
                 }
             } finally {
                 setIsSavingAsTemplate(false);
@@ -692,14 +802,14 @@ export default function ClientNutritionEditor() {
 
         // En web usamos window.prompt, en móvil Alert.prompt
         if (Platform.OS === 'web') {
-            const templateName = window.prompt('Guardar como Plan\n\nIntroduce un nombre para guardar este plan como reutilizable:', planName || '');
+            const templateName = window.prompt('Exportar Dieta\n\nIntroduce un nombre para guardar esta dieta:', planName || '');
             if (templateName) {
                 doSaveAsTemplate(templateName);
             }
         } else {
             Alert.prompt(
-                'Guardar como Plan',
-                'Introduce un nombre para guardar este plan como reutilizable:',
+                'Exportar Dieta',
+                'Introduce un nombre para guardar esta dieta:',
                 (templateName) => doSaveAsTemplate(templateName),
                 'plain-text',
                 planName || ''
@@ -745,30 +855,41 @@ export default function ClientNutritionEditor() {
                 return processed;
             });
 
-            // Prepare autoConfig if mode is auto
-            let autoConfig = null;
-            if (mode === 'auto' && clientData?.info_user) {
-                const info = clientData.info_user;
-                const obj = info.objetivos?.toLowerCase() || '';
-                let goal = 'maintenance';
-                if (obj.includes('volumen') || obj.includes('ganar')) goal = 'surplus';
-                else if (obj.includes('definici') || obj.includes('perder')) goal = 'deficit';
+            // 🛑 SMART PAYLOAD LOGIC (Mirrored from WeeklyMealPlanner)
+            let finalMode = mode;
+            let rootData = {};
 
-                autoConfig = {
-                    goal,
-                    activityFactor: clientData.af || 1.55,
-                    adjustmentPercentage: goal === 'surplus' ? 10 : goal === 'deficit' ? -15 : 0,
-                    proteinPerKg: 2.0,
-                    fatPerKg: 1.0,
-                    fiber: 30, // Default
-                    water: 2500, // Default
-                    steps: 10000 // Default
-                };
+            // If in mealplan mode, check if we have actual food to save
+            if (mode === 'mealplan' && mealPlan && mealPlan.dayTemplates) {
+                const hasFood = mealPlan.dayTemplates.some(day =>
+                    day.meals?.some(meal =>
+                        meal.options?.some(opt => (opt.foods && opt.foods.length > 0))
+                    )
+                );
+
+                if (hasFood) {
+                    finalMode = 'complete';
+                    // Flatten data to root for backend sanitizer
+                    rootData = {
+                        dayTemplates: mealPlan.dayTemplates.map(dt => ({
+                            id: dt.id, // 🛑 CRITICAL: Ensure ID is sent!
+                            name: dt.name,
+                            icon: dt.icon,
+                            color: dt.color,
+                            targetMacros: dt.targetMacros,
+                            meals: dt.meals,
+                            notes: dt.notes
+                        })),
+                        weekMap: mealPlan.weekMap || {},
+                        mealStructure: mealPlan.mealStructure || [],
+                        planType: 'complete',
+                    };
+                }
             }
 
-            const plan = {
+            const rawPayload = {
                 target: clientId,
-                mode,
+                mode: finalMode,
                 status,
                 name: planName.trim(),
                 description: planDescription.trim(),
@@ -777,8 +898,26 @@ export default function ClientNutritionEditor() {
                     weekSchedule,
                 } : null,
                 mealPlan: mode === 'mealplan' ? mealPlan : null,
-                autoConfig: mode === 'auto' ? autoConfig : null,
+                ...rootData, // Spread root data if exists
             };
+
+            // 🛑 DEEP CLONE: Evitar transmutación por referencias compartidas durante el envío
+            const payload = JSON.parse(JSON.stringify(rawPayload));
+
+            // 🚨 CHIVATO DE SEGURIDAD 🚨
+            let totalFoodsInState = 0;
+            if (payload.dayTemplates) {
+                totalFoodsInState = payload.dayTemplates.reduce((acc, day) =>
+                    acc + (day.meals?.reduce((mAcc, meal) =>
+                        mAcc + (meal.options?.reduce((oAcc, opt) => oAcc + (opt.foods?.length || 0), 0) || 0), 0) || 0), 0);
+            }
+
+            console.log("-----------------------------------------");
+            console.log("🔥 INTENTO DE ENVÍO AL BACKEND (PARENT) 🔥");
+            console.log("📍 Target (Client ID):", clientId);
+            console.log("🍎 Alimentos detectados en el PAYLOAD:", totalFoodsInState);
+            console.log("📦 PAYLOAD REAL (Copia plana):", payload);
+            console.log("-----------------------------------------");
 
             const res = await fetch(`${API_URL}/api/nutrition-plans`, {
                 method: 'POST',
@@ -786,27 +925,30 @@ export default function ClientNutritionEditor() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(plan),
+                body: JSON.stringify(payload),
             });
 
             const data = await res.json();
             if (data.success) {
-                const message = status === 'active' ? 'Plan activado correctamente' : 'Borrador guardado';
+                // ✅ UX MEJORA: Simular limpieza de caché y feedback visual
                 if (Platform.OS === 'web') {
-                    window.alert('✅ Guardado: ' + message);
+                    window.alert('✅ Plan guardado y sincronizado correctamente con el cliente.');
                     router.canGoBack() ? router.back() : router.replace('/(coach)');
                 } else {
                     Alert.alert(
-                        '✅ Guardado',
-                        message,
-                        [{ text: 'OK', onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)') }]
+                        '✅ Plan Guardado',
+                        'El plan se ha asignado correctamente. Se han limpiado los datos temporales del cliente.',
+                        [{
+                            text: 'Volver',
+                            onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)')
+                        }]
                     );
                 }
             } else {
                 if (Platform.OS === 'web') {
-                    window.alert('Error: ' + (data.message || 'No se pudo guardar'));
+                    window.alert('⚠️ Error al guardar: ' + (data.message || 'Inténtalo de nuevo.'));
                 } else {
-                    Alert.alert('Error', data.message || 'No se pudo guardar');
+                    Alert.alert('Error', data.message || 'No se pudo guardar el plan.');
                 }
             }
         } catch (error) {
@@ -834,13 +976,47 @@ export default function ClientNutritionEditor() {
 
     return (
         <SafeAreaView style={styles.container}>
+
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={22} color="#1e293b" />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle}>Plan Nutricional</Text>
+                    {isEditingName ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <TextInput
+                                value={planName}
+                                onChangeText={setPlanName}
+                                style={{
+                                    fontSize: 18,
+                                    fontWeight: '700',
+                                    color: '#1e293b',
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: '#22c55e',
+                                    minWidth: 150,
+                                    textAlign: 'center',
+                                    paddingVertical: 0
+                                }}
+                                autoFocus
+                                onBlur={() => setIsEditingName(false)}
+                                placeholder="Nombre del Plan"
+                            />
+                            <TouchableOpacity onPress={() => setIsEditingName(false)}>
+                                <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                            onPress={() => setIsEditingName(true)}
+                        >
+                            <Text style={styles.headerTitle}>
+                                {planName || 'Plan Nutricional'}
+                            </Text>
+                            <Ionicons name="create-outline" size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
                     <Text style={styles.headerSubtitle}>{clientName || 'Cliente'}</Text>
                 </View>
                 <View style={styles.headerRight} />
@@ -861,9 +1037,56 @@ export default function ClientNutritionEditor() {
                     />
                 )}
 
-                <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                    {/* Mode Selector */}
-                    <View style={styles.modeSelector}>
+                <View style={{ flex: 1 }}>
+                    {/* SENSITIVE MODE TOGGLE */}
+                    <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: '#fff',
+                            padding: 12,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: hideMacros ? '#f59e0b' : '#e2e8f0',
+                            marginBottom: 10
+                        }}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1e293b' }}>
+                                    🛡️ Modo Sensible (TCA)
+                                </Text>
+                                <Text style={{ fontSize: 12, color: '#64748b' }}>
+                                    Oculta calorías y macros al cliente
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                style={{
+                                    width: 44,
+                                    height: 24,
+                                    borderRadius: 12,
+                                    backgroundColor: hideMacros ? '#f59e0b' : '#e2e8f0',
+                                    padding: 2,
+                                    alignItems: hideMacros ? 'flex-end' : 'flex-start',
+                                }}
+                                onPress={toggleSensitiveMode}
+                            >
+                                <View style={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: 10,
+                                    backgroundColor: '#fff',
+                                    shadowColor: "#000",
+                                    shadowOffset: { width: 0, height: 1 },
+                                    shadowOpacity: 0.2,
+                                    shadowRadius: 1.41,
+                                    elevation: 2,
+                                }} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    {/* GLOBAL MODE SELECTOR (Always Visible) */}
+                    <View style={[styles.modeSelector, { paddingHorizontal: 16, paddingTop: 0, marginBottom: 10 }]}>
                         <TouchableOpacity
                             style={[styles.modeBtn, mode === 'auto' && styles.modeBtnActive]}
                             onPress={() => setMode('auto')}
@@ -874,7 +1097,7 @@ export default function ClientNutritionEditor() {
                                 color={mode === 'auto' ? '#fff' : '#64748b'}
                             />
                             <Text style={[styles.modeBtnText, mode === 'auto' && styles.modeBtnTextActive]}>
-                                Auto (Fórmula)
+                                Auto
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -890,7 +1113,7 @@ export default function ClientNutritionEditor() {
                                 color={mode === 'custom' ? '#fff' : '#64748b'}
                             />
                             <Text style={[styles.modeBtnText, mode === 'custom' && styles.modeBtnTextActive]}>
-                                Flexible
+                                Flex
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -903,266 +1126,209 @@ export default function ClientNutritionEditor() {
                                 color={mode === 'mealplan' ? '#fff' : '#64748b'}
                             />
                             <Text style={[styles.modeBtnText, mode === 'mealplan' && styles.modeBtnTextActive]}>
-                                Plan de Comidas
+                                Completa
                             </Text>
                         </TouchableOpacity>
                     </View>
 
-                    {/* AUTO MODE - Preview */}
-                    {mode === 'auto' && (
-                        <View style={styles.autoPreview}>
-                            <Text style={styles.sectionTitle}>🔢 Cálculo Automático</Text>
-                            <Text style={styles.sectionSubtitle}>
-                                Basado en los datos del cliente (BMR × AF + objetivo)
-                            </Text>
+                    {/* 1. SCROLLABLE CONTENT (Auto & Custom) */}
+                    {mode !== 'mealplan' && (
+                        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
 
-                            {autoNutrition ? (
-                                <View style={styles.autoCard}>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Objetivo</Text>
-                                        <Text style={[styles.autoValue, {
-                                            color: autoNutrition.isVolumen ? '#3b82f6' : '#ef4444'
-                                        }]}>
-                                            {autoNutrition.objetivo}
-                                        </Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Kcal (entreno)</Text>
-                                        <Text style={styles.autoValueBig}>{autoNutrition.training.kcal}</Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Proteína</Text>
-                                        <Text style={styles.autoValue}>{autoNutrition.training.protein}g</Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Carbs</Text>
-                                        <Text style={styles.autoValue}>{autoNutrition.training.carbs}g</Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Grasas</Text>
-                                        <Text style={styles.autoValue}>{autoNutrition.training.fat}g</Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Agua (entreno)</Text>
-                                        <Text style={styles.autoValue}>{autoNutrition.training.water.liters}L</Text>
-                                    </View>
-                                    <View style={styles.autoRow}>
-                                        <Text style={styles.autoLabel}>Pasos</Text>
-                                        <Text style={styles.autoValue}>{autoNutrition.steps.text}</Text>
-                                    </View>
-                                </View>
-                            ) : (
-                                <View style={styles.noDataCard}>
-                                    <Ionicons name="alert-circle-outline" size={40} color="#f59e0b" />
-                                    <Text style={styles.noDataText}>
-                                        El cliente no tiene datos completos (edad, peso, altura, género)
+                            {/* AUTO MODE - Preview */}
+                            {mode === 'auto' && (
+                                <View style={styles.autoPreview}>
+                                    <Text style={styles.sectionTitle}>🔢 Cálculo Automático</Text>
+                                    <Text style={styles.sectionSubtitle}>
+                                        Basado en los datos del cliente (BMR × AF + objetivo)
                                     </Text>
-                                </View>
-                            )}
-                        </View>
-                    )}
 
-                    {/* CUSTOM MODE */}
-                    {mode === 'custom' && (
-                        <>
-                            {/* Plan Name & Description */}
-                            <View style={styles.planInfoSection}>
-                                <Text style={styles.sectionTitle}>📝 Información del Plan</Text>
-                                <TextInput
-                                    style={styles.planNameInput}
-                                    value={planName}
-                                    onChangeText={setPlanName}
-                                    placeholder="Nombre del plan (ej: Dieta definición Juan)"
-                                    placeholderTextColor="#94a3b8"
-                                />
-                                <TextInput
-                                    style={styles.planDescInput}
-                                    value={planDescription}
-                                    onChangeText={setPlanDescription}
-                                    placeholder="Descripción opcional..."
-                                    placeholderTextColor="#94a3b8"
-                                    multiline
-                                />
-                            </View>
-
-                            {/* Action Buttons Row */}
-                            <View style={styles.templateActionsRow}>
-                                <TouchableOpacity
-                                    style={styles.loadTemplateBtn}
-                                    onPress={openTemplateModal}
-                                >
-                                    <Ionicons name="download-outline" size={18} color="#8b5cf6" />
-                                    <Text style={styles.loadTemplateBtnText}>Cargar Plan</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.saveAsTemplateBtn}
-                                    onPress={saveAsTemplate}
-                                    disabled={isSavingAsTemplate}
-                                >
-                                    {isSavingAsTemplate ? (
-                                        <ActivityIndicator size="small" color="#22c55e" />
+                                    {autoNutrition ? (
+                                        <View style={styles.autoCard}>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Objetivo</Text>
+                                                <Text style={[styles.autoValue, {
+                                                    color: autoNutrition.isVolumen ? '#3b82f6' : '#ef4444'
+                                                }]}>
+                                                    {autoNutrition.objetivo}
+                                                </Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Kcal (entreno)</Text>
+                                                <Text style={styles.autoValueBig}>{autoNutrition.training.kcal}</Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Proteína</Text>
+                                                <Text style={styles.autoValue}>{autoNutrition.training.protein}g</Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Carbs</Text>
+                                                <Text style={styles.autoValue}>{autoNutrition.training.carbs}g</Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Grasas</Text>
+                                                <Text style={styles.autoValue}>{autoNutrition.training.fat}g</Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Agua (entreno)</Text>
+                                                <Text style={styles.autoValue}>{autoNutrition.training.water.liters}L</Text>
+                                            </View>
+                                            <View style={styles.autoRow}>
+                                                <Text style={styles.autoLabel}>Pasos</Text>
+                                                <Text style={styles.autoValue}>{autoNutrition.steps.text}</Text>
+                                            </View>
+                                        </View>
                                     ) : (
-                                        <>
-                                            <Ionicons name="bookmark-outline" size={18} color="#22c55e" />
-                                            <Text style={styles.saveAsTemplateBtnText}>Guardar como Plan</Text>
-                                        </>
+                                        <View style={styles.noDataCard}>
+                                            <Ionicons name="alert-circle-outline" size={40} color="#f59e0b" />
+                                            <Text style={styles.noDataText}>
+                                                El cliente no tiene datos completos (edad, peso, altura, género)
+                                            </Text>
+                                        </View>
                                     )}
-                                </TouchableOpacity>
-                            </View>
-
-                            <View style={styles.customSection}>
-                                <View style={styles.sectionHeader}>
-                                    <Text style={styles.sectionTitle}>📋 Tipos de Día</Text>
-                                    <TouchableOpacity style={styles.addBtn} onPress={addDayTarget}>
-                                        <Ionicons name="add" size={20} color="#22c55e" />
-                                        <Text style={styles.addBtnText}>Añadir</Text>
-                                    </TouchableOpacity>
                                 </View>
-
-                                {dayTargets.map((dt, idx) => (
-                                    <DayTargetCard
-                                        key={dt.id}
-                                        dayTarget={dt}
-                                        index={idx}
-                                        onUpdate={updateDayTarget}
-                                        onDelete={deleteDayTarget}
-                                    />
-                                ))}
-                            </View>
-
-                            {dayTargets.length > 0 && (
-                                <WeekSchedulePicker
-                                    weekSchedule={weekSchedule}
-                                    dayTargets={dayTargets}
-                                    onChange={updateWeekSchedule}
-                                />
                             )}
-                        </>
+
+                            {/* CUSTOM MODE */}
+                            {mode === 'custom' && (
+                                <>
+                                    {/* Plan Name & Description */}
+                                    <View style={styles.planInfoSection}>
+                                        <Text style={styles.sectionTitle}>📝 Información del Plan</Text>
+                                        <TextInput
+                                            style={styles.planNameInput}
+                                            value={planName}
+                                            onChangeText={setPlanName}
+                                            placeholder="Nombre del plan (ej: Dieta definición Juan)"
+                                            placeholderTextColor="#94a3b8"
+                                        />
+                                        <TextInput
+                                            style={styles.planDescInput}
+                                            value={planDescription}
+                                            onChangeText={setPlanDescription}
+                                            placeholder="Descripción opcional..."
+                                            placeholderTextColor="#94a3b8"
+                                            multiline
+                                        />
+                                    </View>
+
+                                    {/* Action Buttons Row */}
+                                    <View style={styles.templateActionsRow}>
+                                        <TouchableOpacity
+                                            style={styles.loadTemplateBtn}
+                                            onPress={openTemplateModal}
+                                        >
+                                            <Ionicons name="download-outline" size={18} color="#8b5cf6" />
+                                            <Text style={styles.loadTemplateBtnText}>Cargar Plan</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.saveAsTemplateBtn}
+                                            onPress={saveAsTemplate}
+                                            disabled={isSavingAsTemplate}
+                                        >
+                                            {isSavingAsTemplate ? (
+                                                <ActivityIndicator size="small" color="#22c55e" />
+                                            ) : (
+                                                <>
+                                                    <Ionicons name="bookmark-outline" size={18} color="#22c55e" />
+                                                    <Text style={styles.saveAsTemplateBtnText}>Guardar como Plan</Text>
+                                                </>
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.customSection}>
+                                        <View style={styles.sectionHeader}>
+                                            <Text style={styles.sectionTitle}>📋 Tipos de Día</Text>
+                                            <TouchableOpacity style={styles.addBtn} onPress={addDayTarget}>
+                                                <Ionicons name="add" size={20} color="#22c55e" />
+                                                <Text style={styles.addBtnText}>Añadir</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        {dayTargets.map((dt, idx) => (
+                                            <DayTargetCard
+                                                key={dt.id}
+                                                dayTarget={dt}
+                                                index={idx}
+                                                onUpdate={updateDayTarget}
+                                                onDelete={deleteDayTarget}
+                                            />
+                                        ))}
+                                    </View>
+
+                                    {dayTargets.length > 0 && (
+                                        <WeekSchedulePicker
+                                            weekSchedule={weekSchedule}
+                                            dayTargets={dayTargets}
+                                            onChange={updateWeekSchedule}
+                                        />
+                                    )}
+                                </>
+                            )}
+                        </ScrollView>
                     )}
 
-                    {/* MEALPLAN MODE - Weekly Meal Planner */}
+                    {/* 2. MEALPLAN MODE (Full Height) */}
                     {mode === 'mealplan' && (
-                        <View style={styles.mealPlanContainer}>
+                        <View style={{ flex: 1 }}>
                             <WeeklyMealPlanner
+                                clientId={clientId}
                                 initialData={mealPlan}
                                 onDataChange={(data) => setMealPlan(data)}
+                                showFooter={false}
                             />
                         </View>
                     )}
 
-                </ScrollView>
+                    {/* 3. FIXED FOOTER (Always Visible) */}
+                    <View style={styles.actionButtonsFixed}>
+                        <TouchableOpacity
+                            style={styles.draftBtn}
+                            onPress={() => handleSave('draft')}
+                            disabled={isSaving}
+                        >
+                            <Ionicons name="save-outline" size={20} color="#64748b" />
+                            <Text style={styles.draftBtnText}>Guardar Borrador</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.draftBtn, { flex: 0.8, backgroundColor: '#fcd34d' }]}
+                            onPress={saveAsTemplate}
+                            disabled={isSavingAsTemplate}
+                        >
+                            {isSavingAsTemplate ? (
+                                <ActivityIndicator size="small" color="#92400e" />
+                            ) : (
+                                <>
+                                    <Ionicons name="download-outline" size={20} color="#92400e" />
+                                    <Text style={[styles.draftBtnText, { color: '#92400e' }]}>Exportar Dieta</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.activateBtn, { flex: 1.2 }]} // Give more space to "Activar"
+                            onPress={() => handleSave('active')}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                                    <Text style={styles.activateBtnText}>Activar Plan</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
             </View>
 
-
-
-            {/* Fixed Bottom Action Bar */}
-            < View style={styles.bottomActionBar} >
-                {/* Macro Summary Badge (Centered above buttons) */}
-                {
-                    (() => {
-                        // Calculate macros for the first template (or handle selection logic if needed)
-                        // For now, we take the first template as the "active" context for the summary
-                        const activeTemplate = mealPlan?.dayTemplates?.[0];
-                        if (!activeTemplate) return null;
-
-                        let currentKcal = 0, currentProtein = 0, currentCarbs = 0, currentFat = 0;
-
-                        activeTemplate.meals.forEach(meal => {
-                            // Assumption: User selects the first option as the "planned" one for macro counting
-                            // Or if it's a buffet, we might average them? 
-                            // User said "el modal que se va llenando", implying progress.
-                            // Standard practice: Count the FIRST option of each meal as the "primary" choice.
-                            const option = meal.options[0];
-                            if (option?.foods) {
-                                option.foods.forEach(food => {
-                                    currentKcal += food.kcal || 0;
-                                    currentProtein += food.protein || 0;
-                                    currentCarbs += food.carbs || 0;
-                                    currentFat += food.fat || 0;
-                                });
-                            }
-                        });
-
-                        // Targets
-                        const targetKcal = activeTemplate.targetMacros.kcal || 2500;
-                        const targetProtein = activeTemplate.targetMacros.protein || 0;
-                        const targetCarbs = activeTemplate.targetMacros.carbs || 0;
-                        const targetFat = activeTemplate.targetMacros.fat || 0;
-
-                        // Percentages for progress bars (capped at 100%)
-                        const pPct = targetProtein > 0 ? Math.min((currentProtein / targetProtein) * 100, 100) : 0;
-                        const cPct = targetCarbs > 0 ? Math.min((currentCarbs / targetCarbs) * 100, 100) : 0;
-                        const fPct = targetFat > 0 ? Math.min((currentFat / targetFat) * 100, 100) : 0;
-                        const kPct = targetKcal > 0 ? Math.min((currentKcal / targetKcal) * 100, 100) : 0;
-
-                        return (
-                            <View style={styles.floatingMacroBadge}>
-                                <View style={styles.macroBadgeItem}>
-                                    <Text style={styles.macroBadgeLabel}>PROTEIN</Text>
-                                    <View style={styles.macroBadgeBarContainer}>
-                                        <View style={[styles.macroBadgeBar, { width: `${pPct}%`, backgroundColor: '#3b82f6' }]} />
-                                    </View>
-                                    <Text style={styles.macroBadgeValue}>{Math.round(currentProtein)}g</Text>
-                                </View>
-                                <View style={styles.macroBadgeDivider} />
-                                <View style={styles.macroBadgeItem}>
-                                    <Text style={styles.macroBadgeLabel}>CARBS</Text>
-                                    <View style={styles.macroBadgeBarContainer}>
-                                        <View style={[styles.macroBadgeBar, { width: `${cPct}%`, backgroundColor: '#22c55e' }]} />
-                                    </View>
-                                    <Text style={styles.macroBadgeValue}>{Math.round(currentCarbs)}g</Text>
-                                </View>
-                                <View style={styles.macroBadgeDivider} />
-                                <View style={styles.macroBadgeItem}>
-                                    <Text style={styles.macroBadgeLabel}>FAT</Text>
-                                    <View style={styles.macroBadgeBarContainer}>
-                                        <View style={[styles.macroBadgeBar, { width: `${fPct}%`, backgroundColor: '#f59e0b' }]} />
-                                    </View>
-                                    <Text style={styles.macroBadgeValue}>{Math.round(currentFat)}g</Text>
-                                </View>
-                                <View style={styles.macroBadgeDivider} />
-                                <View style={styles.macroBadgeKcal}>
-                                    <Text style={styles.macroBadgeKcalValue}>{Math.round(currentKcal)}</Text>
-                                    <Text style={styles.macroBadgeKcalLabel}>/ {targetKcal} KCAL</Text>
-                                </View>
-                            </View>
-                        );
-                    })()
-                }
-
-                <View style={styles.actionButtons}>
-                    <TouchableOpacity
-                        style={styles.draftBtn}
-                        onPress={() => handleSave('draft')}
-                        disabled={isSaving}
-                    >
-                        <Ionicons name="save-outline" size={20} color="#64748b" />
-                        <Text style={styles.draftBtnText}>Guardar Borrador</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.activateBtn}
-                        onPress={() => handleSave('active')}
-                        disabled={isSaving}
-                    >
-                        {isSaving ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <>
-                                <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                                <Text style={styles.activateBtnText}>Activar Plan</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View >
-
             {/* Template Selection Modal */}
-            < Modal
+            <Modal
                 visible={showTemplateModal}
                 animationType="slide"
                 transparent={true}
-                onRequestClose={() => setShowTemplateModal(false)
-                }
+                onRequestClose={() => setShowTemplateModal(false)}
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
@@ -1216,8 +1382,8 @@ export default function ClientNutritionEditor() {
                         )}
                     </View>
                 </View>
-            </Modal >
-        </SafeAreaView >
+            </Modal>
+        </SafeAreaView>
     );
 }
 
@@ -1825,97 +1991,41 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e2e8f0',
     },
-
-    // Fixed Bottom Action Bar
-    bottomActionBar: {
-        backgroundColor: '#fff',
-        borderTopWidth: 1,
-        borderTopColor: '#e2e8f0',
-        padding: 16,
-        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-        ...Platform.select({
-            web: {
-                position: 'sticky',
-                bottom: 0,
-                zIndex: 10,
-                boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
-            },
-            default: {
-                elevation: 20,
-            },
-        }),
-    },
-    floatingMacroBadge: {
-        position: 'absolute',
-        top: -40,
-        alignSelf: 'center',
-        backgroundColor: '#fff',
+    templateItemLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 100,
         gap: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 8,
-        borderWidth: 1,
-        borderColor: '#f1f5f9',
+        flex: 1,
     },
-    macroBadgeItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    macroBadgeLabel: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#94a3b8',
-    },
-    macroBadgeBarContainer: {
-        width: 32,
-        height: 4,
-        backgroundColor: '#f1f5f9',
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    macroBadgeBar: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    macroBadgeValue: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#475569',
-    },
-    macroBadgeDivider: {
-        width: 1,
-        height: 16,
-        backgroundColor: '#e2e8f0',
-    },
-    macroBadgeKcal: {
-        flexDirection: 'row',
-        alignItems: 'baseline',
-        gap: 4,
-    },
-    macroBadgeKcalValue: {
-        fontSize: 16,
-        fontWeight: '800',
+    templateItemName: {
+        fontSize: 15,
+        fontWeight: '600',
         color: '#1e293b',
     },
-    macroBadgeKcalLabel: {
-        fontSize: 10,
-        fontWeight: '700',
+    templateItemDesc: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    templateItemMeta: {
+        fontSize: 11,
         color: '#94a3b8',
+        marginTop: 2,
     },
 
-    // MealPlan mode container
     mealPlanContainer: {
         flex: 1,
         marginHorizontal: -16,
         marginTop: -16,
         minHeight: 500,
+    },
+    actionButtonsFixed: {
+        padding: 16,
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderTopColor: '#e2e8f0',
+        flexDirection: 'row',
+        gap: 12,
+        paddingBottom: Platform.OS === 'ios' ? 0 : 16, // SafeArea handles iOS usually, but extra padding good
     },
 });

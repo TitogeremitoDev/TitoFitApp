@@ -13,11 +13,15 @@ import {
     ActivityIndicator,
     Modal,
     SectionList,
+    Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
+import * as DocumentPicker from 'expo-document-picker';
+import { uploadDietPdf, saveImportedDiet } from '../../../src/services/aiNutritionService';
+import DietStagingModal from './components/DietStagingModal';
 
 const DAY_COLORS = [
     '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
@@ -36,6 +40,12 @@ export default function NutritionTemplatesScreen() {
     // Modal para crear carpeta
     const [showFolderModal, setShowFolderModal] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
+
+    // AI PDF Import State
+    const [isUploading, setIsUploading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [showStagingModal, setShowStagingModal] = useState(false);
+    const [parsedPlan, setParsedPlan] = useState(null);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -111,31 +121,48 @@ export default function NutritionTemplatesScreen() {
     };
 
     const deleteTemplate = async (templateId) => {
-        Alert.alert(
-            'Eliminar plan',
-            '¿Estás seguro de que quieres eliminar este plan nutricional?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const res = await fetch(`${API_URL}/api/nutrition-plans/templates/${templateId}`, {
-                                method: 'DELETE',
-                                headers: { Authorization: `Bearer ${token}` }
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                                setTemplates(templates.filter(t => t._id !== templateId));
+        if (Platform.OS === 'web') {
+            if (window.confirm('¿Estás seguro de que quieres eliminar este plan nutricional?')) {
+                try {
+                    const res = await fetch(`${API_URL}/api/nutrition-plans/templates/${templateId}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setTemplates(templates.filter(t => t._id !== templateId));
+                    }
+                } catch (e) {
+                    console.error('[Templates] Delete error:', e);
+                }
+            }
+        } else {
+            Alert.alert(
+                'Eliminar plan',
+                '¿Estás seguro de que quieres eliminar este plan nutricional?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Eliminar',
+                        style: 'destructive',
+                        onPress: async () => {
+                            try {
+                                const res = await fetch(`${API_URL}/api/nutrition-plans/templates/${templateId}`, {
+                                    method: 'DELETE',
+                                    headers: { Authorization: `Bearer ${token}` }
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                    setTemplates(templates.filter(t => t._id !== templateId));
+                                }
+                            } catch (e) {
+                                console.error('[Templates] Delete error:', e);
                             }
-                        } catch (e) {
-                            console.error('[Templates] Delete error:', e);
                         }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     const createFolder = () => {
@@ -146,6 +173,65 @@ export default function NutritionTemplatesScreen() {
         }
         setNewFolderName('');
         setShowFolderModal(false);
+    };
+
+    const handleImportPdf = async () => {
+        try {
+            console.log('Pick document...');
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                copyToCacheDirectory: true
+            });
+
+            if (result.canceled) return;
+
+            const file = result.assets[0];
+            setIsUploading(true);
+
+            // Upload and Parse - We pass the full result object now
+            const response = await uploadDietPdf(result, token);
+
+            if (response.success) {
+                setParsedPlan(response.plan);
+                setShowStagingModal(true);
+            } else {
+                Alert.alert('Error', response.message || 'No se pudo importar el plan.');
+            }
+
+        } catch (error) {
+            console.error('Import Error:', error);
+            Alert.alert('Error', 'Falló la importación del archivo.');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleConfirmImport = async () => {
+        // Real Save Logic
+        try {
+            setIsSaving(true); // Pass this to modal if needed, or manage modal prop
+            // Note: Since dietStagingModal has its own isSaving prop, 
+            // we should probably just set a state here that is passed down to it.
+            // Oh wait, I am in templates.jsx scope. I need a state here usually.
+            // But let's check current state definitions. 
+            // Ah, I don't have isSaving state defined in templates.jsx yet, only isUploading.
+
+            // Calling the new service
+            const response = await saveImportedDiet(parsedPlan, token);
+
+            if (response.success) {
+                Alert.alert('Éxito', 'Plan guardado correctamente.');
+                setShowStagingModal(false);
+                fetchTemplates(); // Refresh list to show new template!
+            } else {
+                Alert.alert('Error', response.message || 'No se pudo guardar el plan.');
+            }
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'Error desconocido al guardar.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const renderSectionHeader = ({ section }) => (
@@ -248,14 +334,27 @@ export default function NutritionTemplatesScreen() {
         <SafeAreaView style={styles.container}>
             <CoachHeader title="Planes Nutricionales" showBack />
 
-            {/* Folder button */}
-            <TouchableOpacity
-                style={styles.createFolderBtn}
-                onPress={() => setShowFolderModal(true)}
-            >
-                <Ionicons name="folder-open-outline" size={18} color="#8b5cf6" />
-                <Text style={styles.createFolderBtnText}>Nueva Carpeta</Text>
-            </TouchableOpacity>
+            {/* Action Buttons Row */}
+            <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 12 }}>
+                <TouchableOpacity
+                    style={[styles.createFolderBtn, { flex: 1, marginHorizontal: 0 }]}
+                    onPress={() => setShowFolderModal(true)}
+                >
+                    <Ionicons name="folder-open-outline" size={18} color="#8b5cf6" />
+                    <Text style={styles.createFolderBtnText}>Nueva Carpeta</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.createFolderBtn, { flex: 1, marginHorizontal: 0, backgroundColor: '#22c55e15', borderColor: '#22c55e30' }]}
+                    onPress={handleImportPdf}
+                    disabled={isUploading}
+                >
+                    {isUploading ? <ActivityIndicator size="small" color="#22c55e" /> : <Ionicons name="cloud-upload-outline" size={18} color="#22c55e" />}
+                    <Text style={[styles.createFolderBtnText, { color: '#22c55e' }]}>
+                        {isUploading ? 'Analizando...' : 'Importar PDF'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
 
             {templates.length === 0 ? (
                 renderEmpty()
@@ -318,6 +417,15 @@ export default function NutritionTemplatesScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* AI Staging Modal */}
+            <DietStagingModal
+                visible={showStagingModal}
+                plan={parsedPlan}
+                onClose={() => setShowStagingModal(false)}
+                onConfirm={handleConfirmImport}
+                isSaving={isSaving}
+            />
         </SafeAreaView>
     );
 }

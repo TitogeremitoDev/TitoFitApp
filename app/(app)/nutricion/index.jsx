@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
+import ClientMealPlanView from './components/ClientMealPlanView';
 import {
     calculateFullNutrition,
     ACTIVITY_FACTORS,
@@ -94,6 +95,7 @@ export default function NutricionScreen() {
 
     // Estado para plan del coach
     const [coachPlan, setCoachPlan] = useState(null);
+    const [clientSettings, setClientSettings] = useState({});
     const [todayTarget, setTodayTarget] = useState(null);
     const [planMode, setPlanMode] = useState('auto'); // 'auto' | 'custom'
     const [selectedDayIndex, setSelectedDayIndex] = useState(null); // Para ver otros días
@@ -109,6 +111,8 @@ export default function NutricionScreen() {
         const loadUserData = async () => {
             setIsLoading(true);
             try {
+                let currentMode = 'auto'; // Default local tracker
+
                 // 1. Primero intentar cargar plan del coach (para cualquier premium)
                 if (isPremium && token) {
                     try {
@@ -118,14 +122,22 @@ export default function NutricionScreen() {
                         });
                         const data = await res.json();
                         console.log('[Nutricion] Respuesta my-plan:', data);
-                        if (data.success && data.plan && data.mode === 'custom') {
-                            console.log('[Nutricion] ✅ Plan personalizado del coach encontrado');
+
+                        // ACEPTAR 'custom' (Flex), 'complete' (Meal Plan) O 'mealplan'
+                        if (data.success && data.plan && (data.mode === 'custom' || data.mode === 'complete' || data.mode === 'mealplan')) {
+                            console.log('[Nutricion] ✅ Plan del coach encontrado:', data.mode);
+                            console.log('[Nutricion] ✅ Plan del coach encontrado:', data.mode);
                             setCoachPlan(data.plan);
+                            setClientSettings(data.clientSettings || {});
                             setTodayTarget(data.todayTarget);
-                            setPlanMode('custom');
+
+                            const newMode = (data.mode === 'complete' || data.mode === 'mealplan') ? 'mealplan' : 'custom';
+                            setPlanMode(newMode);
+                            currentMode = newMode;
+
                             setDataSource('coach');
                         } else {
-                            console.log('[Nutricion] No hay plan custom activo, usando auto');
+                            console.log('[Nutricion] No hay plan activo compatible, usando auto');
                         }
                     } catch (e) {
                         console.log('[Nutricion] Error buscando plan:', e.message);
@@ -136,18 +148,29 @@ export default function NutricionScreen() {
                 console.log('[Nutricion] Cargando info_user desde la nube...');
                 setUserInfo(user?.info_user || {});
                 setActivityFactor(user?.info_user?.af || 1.55);
-                if (planMode !== 'custom') setDataSource('cloud');
+
+                // Only set to cloud if we didn't just set it to coach
+                if (currentMode !== 'custom' && currentMode !== 'mealplan') {
+                    setDataSource('cloud');
+                }
+                console.log('[Nutricion] Datos cargados. currentMode:', currentMode);
+
             } catch (error) {
                 console.error('[Nutricion] Error cargando datos:', error);
                 setUserInfo(user?.info_user || {});
                 setActivityFactor(user?.info_user?.af || 1.55);
             } finally {
+                console.log('[Nutricion] Setting isLoading false');
                 setIsLoading(false);
             }
         };
 
         loadUserData();
     }, [user, isPremium, token]);
+
+
+
+
 
     // Priorizar objetivoPrincipal (ganar_peso/definir/mantener) sobre objetivos (texto libre)
     const objetivo = userInfo.objetivoPrincipal || userInfo.objetivos || 'volumen';
@@ -229,6 +252,32 @@ export default function NutricionScreen() {
                         Cargando tu plan...
                     </Text>
                 </View>
+            </SafeAreaView>
+        );
+    }
+
+    // 🟢 NUEVA VISTA: Plan de Comidas Completo (Moved here to fix Hook Order)
+    if (planMode === 'mealplan' && coachPlan) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+                {/* Header for Meal Plan View */}
+                <View style={[styles.compactHeader, { borderBottomColor: theme.cardBorder }]}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.cardBackground }]}>
+                        <Ionicons name="arrow-back" size={22} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                    <View style={styles.headerCenter}>
+                        <Text style={[styles.headerTitle, { color: theme.text }]}>🍽️ Plan de Comidas</Text>
+                    </View>
+                    <View style={styles.headerRight} />
+                </View>
+
+                <ClientMealPlanView
+                    plan={coachPlan}
+                    todayTarget={todayTarget}
+                    theme={theme}
+                    user={user}
+                    clientSettings={clientSettings}
+                />
             </SafeAreaView>
         );
     }

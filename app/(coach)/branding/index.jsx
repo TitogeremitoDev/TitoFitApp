@@ -1127,7 +1127,7 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 15,
         color: '#1e293b',
-        outline: 'none',
+        // outline: 'none',
         height: '100%',
     },
     uploadBox: {

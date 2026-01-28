@@ -79,7 +79,7 @@ export default function FoodLibrarySidebar({ filters, onUpdate, onClose }: Sideb
                 {/* ☕ TIPO DE COMIDA */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Tipo de Comida</Text>
-                    {['Desayuno', 'Comida', 'Cena', 'Snack'].map(type => (
+                    {['Desayuno', 'Almuerzo', 'Cena', 'Snack'].map(type => (
                         <CheckboxItem
                             key={type}
                             label={type}

@@ -11,6 +11,7 @@ import {
     TextInput,
     Alert,
     ActivityIndicator,
+    Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -459,24 +460,36 @@ export default function TemplateEditorScreen() {
 
     const deleteDayTarget = (index) => {
         if (dayTargets.length <= 1) {
-            Alert.alert('Mínimo requerido', 'Necesitas al menos un tipo de día');
+            if (Platform.OS === 'web') {
+                window.alert('Mínimo requerido: Necesitas al menos un tipo de día');
+            } else {
+                Alert.alert('Mínimo requerido', 'Necesitas al menos un tipo de día');
+            }
             return;
         }
-        Alert.alert(
-            'Eliminar tipo de día',
-            '¿Estás seguro?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: () => {
-                        const updated = dayTargets.filter((_, i) => i !== index);
-                        setDayTargets(updated);
+
+        if (Platform.OS === 'web') {
+            if (window.confirm('Eliminar tipo de día: ¿Estás seguro?')) {
+                const updated = dayTargets.filter((_, i) => i !== index);
+                setDayTargets(updated);
+            }
+        } else {
+            Alert.alert(
+                'Eliminar tipo de día',
+                '¿Estás seguro?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Eliminar',
+                        style: 'destructive',
+                        onPress: () => {
+                            const updated = dayTargets.filter((_, i) => i !== index);
+                            setDayTargets(updated);
+                        }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     const updateWeekSchedule = (day, targetId) => {
@@ -485,7 +498,11 @@ export default function TemplateEditorScreen() {
 
     const handleSave = async () => {
         if (!templateName.trim()) {
-            Alert.alert('Nombre requerido', 'Por favor introduce un nombre para el plan');
+            if (Platform.OS === 'web') {
+                window.alert('Nombre requerido: Por favor introduce un nombre para el plan');
+            } else {
+                Alert.alert('Nombre requerido', 'Por favor introduce un nombre para el plan');
+            }
             return;
         }
 
@@ -539,17 +556,35 @@ export default function TemplateEditorScreen() {
 
             const data = await res.json();
             if (data.success) {
-                Alert.alert(
-                    '✅ Guardado',
-                    isEditing ? 'Plan actualizado' : 'Plan creado',
-                    [{ text: 'OK', onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)') }]
-                );
+                if (Platform.OS === 'web') {
+                    if (window.confirm(isEditing ? '✅ Plan actualizado' : '✅ Plan creado')) {
+                        router.canGoBack() ? router.back() : router.replace('/(coach)');
+                    } else {
+                        // Even if cancelled, we probably should go back or stay? 
+                        // Usually 'OK' implies navigation.
+                        router.canGoBack() ? router.back() : router.replace('/(coach)');
+                    }
+                } else {
+                    Alert.alert(
+                        '✅ Guardado',
+                        isEditing ? 'Plan actualizado' : 'Plan creado',
+                        [{ text: 'OK', onPress: () => router.canGoBack() ? router.back() : router.replace('/(coach)') }]
+                    );
+                }
             } else {
-                Alert.alert('Error', data.message || 'No se pudo guardar');
+                if (Platform.OS === 'web') {
+                    window.alert('Error: ' + (data.message || 'No se pudo guardar'));
+                } else {
+                    Alert.alert('Error', data.message || 'No se pudo guardar');
+                }
             }
         } catch (error) {
             console.error('[TemplateEditor] Save error:', error);
-            Alert.alert('Error', 'Error de conexión');
+            if (Platform.OS === 'web') {
+                window.alert('Error: Error de conexión');
+            } else {
+                Alert.alert('Error', 'Error de conexión');
+            }
         } finally {
             setIsSaving(false);
         }

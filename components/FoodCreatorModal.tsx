@@ -30,6 +30,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { FoodItem, saveFood } from '../src/services/foodService';
+// @ts-ignore
+import SmartFoodDrawer from '../app/(coach)/nutrition/components/SmartFoodDrawer';
 
 // ─────────────────────────────────────────────────────────
 // TYPES & CONSTANTS
@@ -39,6 +41,7 @@ interface FoodCreatorModalProps {
     onClose: () => void;
     onSave: (foodData: Partial<FoodItem>) => void;
     initialData?: FoodItem | null;
+    onDelete?: (id: string) => void;
 }
 
 type ImageTab = 'upload' | 'url' | 'ai';
@@ -54,7 +57,7 @@ const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/a
 // ─────────────────────────────────────────────────────────
 // COMPONENT
 // ─────────────────────────────────────────────────────────
-export default function FoodCreatorModal({ visible, onClose, onSave, initialData }: FoodCreatorModalProps) {
+export default function FoodCreatorModal({ visible, onClose, onSave, initialData, onDelete }: FoodCreatorModalProps) {
     const { width } = useWindowDimensions();
     const isLargeScreen = width > 600;
 
@@ -84,10 +87,15 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
     const [aiEstimated, setAiEstimated] = useState(false);
     const [aiConfidence, setAiConfidence] = useState<number | null>(null);
 
-    // AI Image Generation State
     const [imageAiLoading, setImageAiLoading] = useState(false);
     const [imageAiIndex, setImageAiIndex] = useState(0);
     const [imageAiRemaining, setImageAiRemaining] = useState(3);
+
+    // 🍲 RECIPE MODE STATE
+    const [mode, setMode] = useState<'basic' | 'recipe'>('basic');
+    const [ingredients, setIngredients] = useState<any[]>([]); // { item: FoodItem, quantity: number, unit: string, id: string }
+    const [instructions, setInstructions] = useState('');
+    const [searchVisible, setSearchVisible] = useState(false);
 
     // Animation refs
     const shimmerAnim = useRef(new Animated.Value(0)).current;
@@ -96,16 +104,40 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
     useEffect(() => {
         if (visible) {
             if (initialData) {
+                // Common Fields
                 setName(initialData.name || '');
                 setBrand(initialData.brand || '');
                 setImage(initialData.image || '');
+                setImageUrl(initialData.image || '');
                 setSelectedTags(initialData.tags || []);
-                setKcal(String(initialData.nutrients?.kcal || ''));
-                setProtein(String(initialData.nutrients?.protein || ''));
-                setCarbs(String(initialData.nutrients?.carbs || ''));
-                setFat(String(initialData.nutrients?.fat || ''));
-                setServingUnit(initialData.servingSize?.unit || 'g');
-                setServingWeight(String(initialData.servingSize?.weight || 100));
+
+                // Mode Selection
+                if (initialData.isComposite) {
+                    setMode('recipe');
+                    setInstructions(initialData.instructions || '');
+
+                    console.log('[Creator] Loading Recipe with Ingredients:', initialData.ingredients);
+
+                    // Map Ingredients (Snapshot or Ref)
+                    // The backend should return populated ingredients for editing
+                    const loadedIngredients = (initialData.ingredients || []).map((ing: any) => ({
+                        item: ing.item || ing, // Handle both populated and raw structures
+                        cachedName: ing.cachedName, // 🟢 FALLBACK NAME
+                        quantity: String(ing.quantity || 100),
+                        unit: ing.unit || 'g',
+                        id: Date.now().toString() + Math.random()
+                    }));
+                    setIngredients(loadedIngredients);
+                } else {
+                    setMode('basic');
+                    setKcal(String(initialData.nutrients?.kcal || ''));
+                    setProtein(String(initialData.nutrients?.protein || ''));
+                    setCarbs(String(initialData.nutrients?.carbs || ''));
+                    setFat(String(initialData.nutrients?.fat || ''));
+                    setServingUnit(initialData.servingSize?.unit || 'g');
+                    setServingWeight(String(initialData.servingSize?.weight || 100));
+                }
+
                 setAiEstimated(false);
                 setAiConfidence(null);
             } else {
@@ -316,35 +348,130 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
         }
     };
 
+    // ─────────────────────────────────────────────────────────
+    // 🍲 RECIPE LOGIC
+    // ─────────────────────────────────────────────────────────
+    const totals = React.useMemo(() => {
+        return ingredients.reduce((acc, ing) => {
+            const qty = parseFloat(String(ing.quantity)) || 0; // 🟢 Define qty
+            const ratio = qty / 100; // Base 100g
+            if (!ing.item || !ing.item.nutrients) return acc; // Safety check
+
+            const nutrients = ing.item.nutrients;
+            return {
+                kcal: acc.kcal + (nutrients.kcal || 0) * ratio,
+                protein: acc.protein + (nutrients.protein || 0) * ratio,
+                carbs: acc.carbs + (nutrients.carbs || 0) * ratio,
+                fat: acc.fat + (nutrients.fat || 0) * ratio,
+                totalWeight: (acc.totalWeight || 0) + qty // 🟢 SUM TOTAL WEIGHT
+            };
+        }, { kcal: 0, protein: 0, carbs: 0, fat: 0, totalWeight: 0 });
+    }, [ingredients]);
+
+    // 🟢 HANDLE ADD FROM SMART DRAWER
+    const handleSmartDrawerAdd = (addedItems: any[]) => {
+        console.log('[Creator] Added items from drawer:', addedItems);
+        const newIngredients = addedItems.map(item => ({
+            item: item.food,
+            quantity: String(item.amount || 100),
+            unit: item.unit || 'g',
+            id: Date.now().toString() + Math.random()
+        }));
+        setIngredients(prev => [...prev, ...newIngredients]);
+        setSearchVisible(false);
+    };
+
+    const handleAddIngredient = (food: FoodItem) => {
+        setIngredients(prev => [
+            ...prev,
+            {
+                item: food,
+                quantity: '100', // Default 100g
+                unit: 'g',
+                id: Date.now().toString()
+            }
+        ]);
+        setSearchVisible(false);
+    };
+
+    const handleRemoveIngredient = (id: string) => {
+        setIngredients(prev => prev.filter(i => i.id !== id));
+    };
+
+    const handleUpdateIngredient = (id: string, qty: string) => {
+        setIngredients(prev => prev.map(ing =>
+            ing.id === id ? { ...ing, quantity: qty } : ing
+        ));
+    };
+
     const handleSave = () => {
-        // Validation
+        // Validation Common
         if (!name.trim()) {
             Alert.alert('Error', 'El nombre del alimento es obligatorio');
             return;
         }
-        if (!kcal || !protein || !carbs || !fat) {
-            Alert.alert('Error', 'Completa todos los valores nutricionales');
-            return;
-        }
 
-        const foodData: Partial<FoodItem> = {
+        let foodData: Partial<FoodItem> = {
+            _id: initialData?._id, // Preserve ID for updates
+            ownerId: initialData?.ownerId, // Preserve Owner
             name: name.trim(),
             brand: brand.trim() || undefined,
             image: image || undefined,
             tags: selectedTags.length > 0 ? selectedTags : undefined,
-            nutrients: {
-                kcal: parseFloat(kcal) || 0,
-                protein: parseFloat(protein) || 0,
-                carbs: parseFloat(carbs) || 0,
-                fat: parseFloat(fat) || 0,
-            },
-            servingSize: {
-                unit: servingUnit || 'g',
-                weight: parseFloat(servingWeight) || 100
-            },
-            layer: 'CLOUD',
-            isSystem: false,
+            layer: initialData?.layer || 'CLOUD',
+            isSystem: initialData?.isSystem || false,
         };
+
+        if (mode === 'recipe') {
+            // RECIPE MODE
+            if (ingredients.length === 0) {
+                Alert.alert('Receta Vacía', 'Añade al menos un ingrediente para crear la receta.');
+                return;
+            }
+
+            foodData = {
+                ...foodData,
+                isComposite: true,
+                ingredients: ingredients.map(ing => ({
+                    item: ing.item._id, // Note: Backend handles snapshots if using correct service
+                    quantity: parseFloat(ing.quantity) || 0,
+                    unit: ing.unit
+                })),
+                nutrients: {
+                    kcal: Math.round(totals.kcal),
+                    protein: Math.round(totals.protein * 10) / 10,
+                    carbs: Math.round(totals.carbs * 10) / 10,
+                    fat: Math.round(totals.fat * 10) / 10,
+                },
+                servingSize: {
+                    unit: 'Ración',
+                    weight: Math.round(totals.totalWeight) || 100 // 🟢 DEFAULT TO TOTAL WEIGHT
+                },
+                instructions: instructions
+            };
+
+        } else {
+            // BASIC MODE
+            if (!kcal || !protein || !carbs || !fat) {
+                Alert.alert('Error', 'Completa todos los valores nutricionales');
+                return;
+            }
+
+            foodData = {
+                ...foodData,
+                isComposite: false,
+                nutrients: {
+                    kcal: parseFloat(kcal) || 0,
+                    protein: parseFloat(protein) || 0,
+                    carbs: parseFloat(carbs) || 0,
+                    fat: parseFloat(fat) || 0,
+                },
+                servingSize: {
+                    unit: servingUnit || 'g',
+                    weight: parseFloat(servingWeight) || 100
+                }
+            };
+        }
 
         onSave(foodData);
         onClose();
@@ -371,7 +498,6 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                     style={styles.centeredView}
                 >
                     <View style={[styles.modalCard, isLargeScreen && { maxWidth: 750, minWidth: 650 }]}>
-                        {/* Header */}
                         <View style={styles.header}>
                             <View style={styles.headerTitle}>
                                 <Ionicons name="restaurant-outline" size={20} color="#2563eb" />
@@ -379,6 +505,31 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                     {initialData ? 'Editar Alimento' : 'Nuevo Alimento'}
                                 </Text>
                             </View>
+
+                            {/* 🆕 TYPE SELECTOR - Hidden if editing existing recipe to avoid mode switching */}
+                            {!initialData && (
+                                <View style={styles.typeSelector}>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.typeBtn,
+                                            mode === 'basic' && styles.typeBtnActive
+                                        ]}
+                                        onPress={() => setMode('basic')}
+                                    >
+                                        <Text style={[styles.typeBtnText, mode === 'basic' && styles.typeBtnTextActive]}>Food</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.typeBtn,
+                                            mode === 'recipe' && styles.typeBtnActive
+                                        ]}
+                                        onPress={() => setMode('recipe')}
+                                    >
+                                        <Text style={[styles.typeBtnText, mode === 'recipe' && styles.typeBtnTextActive]}>Receta</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
                             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                                 <Ionicons name="close" size={24} color="#64748b" />
                             </TouchableOpacity>
@@ -644,8 +795,10 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                             <View style={styles.nutritionZone}>
                                 <View style={styles.nutritionHeader}>
                                     <View style={styles.nutritionTitleRow}>
-                                        <Text style={styles.nutritionTitle}>INFORMACIÓN NUTRICIONAL</Text>
-                                        {aiEstimated && (
+                                        <Text style={styles.nutritionTitle}>
+                                            {mode === 'recipe' ? 'TOTALES (Calculado)' : 'INFORMACIÓN NUTRICIONAL'}
+                                        </Text>
+                                        {aiEstimated && mode === 'basic' && (
                                             <View style={styles.aiEstimatedBadge}>
                                                 <Ionicons name="sparkles" size={10} color="#8b5cf6" />
                                                 <Text style={styles.aiEstimatedText}>
@@ -655,91 +808,200 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                         )}
                                     </View>
                                     <View style={styles.per100gBadge}>
-                                        <Text style={styles.per100gText}>por 100g</Text>
+                                        <Text style={styles.per100gText}>
+                                            {mode === 'recipe'
+                                                ? `Total: ${Math.round(totals.totalWeight || 0)}g`
+                                                : 'por 100g'}
+                                        </Text>
                                     </View>
                                 </View>
 
-                                <View style={[styles.macrosGrid, !isLargeScreen && styles.macrosGridMobile]}>
-                                    {/* Kcal */}
-                                    <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
-                                        {aiLoading ? (
-                                            <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
-                                        ) : (
-                                            <>
+                                {mode === 'recipe' ? (
+                                    /* 🍲 RECIPE MODE UI */
+                                    <View>
+                                        {/* READ ONLY MACROS */}
+                                        <View style={styles.macrosGrid}>
+                                            <View style={[styles.macroCard, { backgroundColor: '#f1f5f9' }]}>
                                                 <Text style={styles.macroIcon}>🔥</Text>
                                                 <Text style={styles.macroLabel}>Kcal</Text>
-                                                <TextInput
-                                                    style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
-                                                    placeholder="0"
-                                                    placeholderTextColor="#cbd5e1"
-                                                    value={kcal}
-                                                    onChangeText={setKcal}
-                                                    keyboardType="numeric"
-                                                />
-                                            </>
-                                        )}
-                                    </View>
-
-                                    {/* Protein */}
-                                    <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
-                                        {aiLoading ? (
-                                            <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
-                                        ) : (
-                                            <>
+                                                <Text style={[styles.macroValue, { color: '#64748b' }]}>{Math.round(totals.kcal)}</Text>
+                                            </View>
+                                            <View style={[styles.macroCard, { backgroundColor: '#f1f5f9' }]}>
                                                 <Text style={styles.macroIcon}>🥩</Text>
-                                                <Text style={styles.macroLabel}>Proteína (g)</Text>
-                                                <TextInput
-                                                    style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
-                                                    placeholder="0"
-                                                    placeholderTextColor="#cbd5e1"
-                                                    value={protein}
-                                                    onChangeText={setProtein}
-                                                    keyboardType="numeric"
-                                                />
-                                            </>
-                                        )}
-                                    </View>
-
-                                    {/* Carbs */}
-                                    <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
-                                        {aiLoading ? (
-                                            <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
-                                        ) : (
-                                            <>
+                                                <Text style={styles.macroLabel}>Prot</Text>
+                                                <Text style={[styles.macroValue, { color: '#64748b' }]}>{Math.round(totals.protein)}</Text>
+                                            </View>
+                                            <View style={[styles.macroCard, { backgroundColor: '#f1f5f9' }]}>
                                                 <Text style={styles.macroIcon}>🍞</Text>
-                                                <Text style={styles.macroLabel}>Carbos (g)</Text>
-                                                <TextInput
-                                                    style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
-                                                    placeholder="0"
-                                                    placeholderTextColor="#cbd5e1"
-                                                    value={carbs}
-                                                    onChangeText={setCarbs}
-                                                    keyboardType="numeric"
-                                                />
-                                            </>
-                                        )}
-                                    </View>
-
-                                    {/* Fat */}
-                                    <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
-                                        {aiLoading ? (
-                                            <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
-                                        ) : (
-                                            <>
+                                                <Text style={styles.macroLabel}>Carb</Text>
+                                                <Text style={[styles.macroValue, { color: '#64748b' }]}>{Math.round(totals.carbs)}</Text>
+                                            </View>
+                                            <View style={[styles.macroCard, { backgroundColor: '#f1f5f9' }]}>
                                                 <Text style={styles.macroIcon}>🥑</Text>
-                                                <Text style={styles.macroLabel}>Grasas (g)</Text>
-                                                <TextInput
-                                                    style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
-                                                    placeholder="0"
-                                                    placeholderTextColor="#cbd5e1"
-                                                    value={fat}
-                                                    onChangeText={setFat}
-                                                    keyboardType="numeric"
-                                                />
-                                            </>
-                                        )}
+                                                <Text style={styles.macroLabel}>Grasa</Text>
+                                                <Text style={[styles.macroValue, { color: '#64748b' }]}>{Math.round(totals.fat)}</Text>
+                                            </View>
+                                        </View>
+
+                                        {/* INGREDIENTS LIST */}
+                                        <View style={{ marginTop: 20 }}>
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                                <Text style={{ fontWeight: '700', fontSize: 14, color: '#334155' }}>INGREDIENTES ({ingredients.length})</Text>
+                                                <TouchableOpacity onPress={() => setSearchVisible(true)} style={styles.addIngredientBtn}>
+                                                    <Ionicons name="add-circle" size={16} color="#2563eb" />
+                                                    <Text style={styles.addIngredientText}>Añadir</Text>
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            {ingredients.length === 0 ? (
+                                                <View style={styles.emptyIngredients}>
+                                                    <Text style={{ color: '#94a3b8', fontSize: 13 }}>Añade ingredientes para calcular los macros.</Text>
+                                                </View>
+                                            ) : (
+                                                ingredients.map((ing, idx) => {
+                                                    // 🧮 Calculate Macros per Ingredient
+                                                    const qty = parseFloat(String(ing.quantity)) || 0;
+                                                    const ratio = qty / 100;
+                                                    const n = ing.item?.nutrients || {};
+                                                    const iKcal = Math.round((n.kcal || 0) * ratio);
+                                                    const iPro = Math.round((n.protein || 0) * ratio);
+                                                    const iCar = Math.round((n.carbs || 0) * ratio);
+                                                    const iFat = Math.round((n.fat || 0) * ratio);
+
+                                                    return (
+                                                        <View key={ing.id || idx} style={styles.ingredientRow}>
+                                                            {/* 📷 INGREDIENT IMAGE */}
+                                                            {ing.item?.image ? (
+                                                                <Image source={{ uri: ing.item.image }} style={styles.ingredientThumb} />
+                                                            ) : (
+                                                                <View style={styles.ingredientThumbPlaceholder}>
+                                                                    <Ionicons name="fast-food-outline" size={20} color="#cbd5e1" />
+                                                                </View>
+                                                            )}
+
+                                                            <View style={{ flex: 1, marginRight: 8 }}>
+                                                                <Text style={{ fontWeight: '600', color: '#1e293b', fontSize: 14 }} numberOfLines={1}>
+                                                                    {ing.item?.name || ing.cachedName || 'Ingrediente desconocido'}
+                                                                </Text>
+                                                                <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                                                                    {iKcal} kcal • P: {iPro} • C: {iCar} • G: {iFat}
+                                                                </Text>
+                                                            </View>
+
+                                                            <TextInput
+                                                                style={styles.qtyInput}
+                                                                value={String(ing.quantity)}
+                                                                onChangeText={(t) => handleUpdateIngredient(ing.id, t)}
+                                                                keyboardType="numeric"
+                                                                selectTextOnFocus
+                                                            />
+                                                            <Text style={{ color: '#64748b', fontSize: 12, marginRight: 10 }}>g</Text>
+                                                            <TouchableOpacity onPress={() => handleRemoveIngredient(ing.id)}>
+                                                                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    );
+                                                })
+                                            )}
+                                        </View>
+
+                                        {/* INSTRUCTIONS */}
+                                        <View style={{ marginTop: 20 }}>
+                                            <Text style={styles.fieldLabel}>Instrucciones de Preparación</Text>
+                                            <TextInput
+                                                style={[styles.textInput, { minHeight: 80, textAlignVertical: 'top' }]}
+                                                multiline
+                                                placeholder="Describe cómo preparar este plato..."
+                                                placeholderTextColor="#94a3b8"
+                                                value={instructions}
+                                                onChangeText={setInstructions}
+                                            />
+                                        </View>
                                     </View>
-                                </View>
+                                ) : (
+                                    /* 🍎 BASIC MODE UI (Existing) */
+                                    <View style={[styles.macrosGrid, !isLargeScreen && styles.macrosGridMobile]}>
+                                        {/* Kcal */}
+                                        <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
+                                            {aiLoading ? (
+                                                <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
+                                            ) : (
+                                                <>
+                                                    <Text style={styles.macroIcon}>🔥</Text>
+                                                    <Text style={styles.macroLabel}>Kcal</Text>
+                                                    <TextInput
+                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                        placeholder="0"
+                                                        placeholderTextColor="#cbd5e1"
+                                                        value={kcal}
+                                                        onChangeText={setKcal}
+                                                        keyboardType="numeric"
+                                                    />
+                                                </>
+                                            )}
+                                        </View>
+
+                                        {/* Protein */}
+                                        <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
+                                            {aiLoading ? (
+                                                <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
+                                            ) : (
+                                                <>
+                                                    <Text style={styles.macroIcon}>🥩</Text>
+                                                    <Text style={styles.macroLabel}>Proteína (g)</Text>
+                                                    <TextInput
+                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                        placeholder="0"
+                                                        placeholderTextColor="#cbd5e1"
+                                                        value={protein}
+                                                        onChangeText={setProtein}
+                                                        keyboardType="numeric"
+                                                    />
+                                                </>
+                                            )}
+                                        </View>
+
+                                        {/* Carbs */}
+                                        <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
+                                            {aiLoading ? (
+                                                <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
+                                            ) : (
+                                                <>
+                                                    <Text style={styles.macroIcon}>🍞</Text>
+                                                    <Text style={styles.macroLabel}>Carbos (g)</Text>
+                                                    <TextInput
+                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                        placeholder="0"
+                                                        placeholderTextColor="#cbd5e1"
+                                                        value={carbs}
+                                                        onChangeText={setCarbs}
+                                                        keyboardType="numeric"
+                                                    />
+                                                </>
+                                            )}
+                                        </View>
+
+                                        {/* Fat */}
+                                        <View style={[styles.macroCard, aiLoading && styles.macroCardLoading]}>
+                                            {aiLoading ? (
+                                                <Animated.View style={[styles.shimmer, { opacity: shimmerOpacity }]} />
+                                            ) : (
+                                                <>
+                                                    <Text style={styles.macroIcon}>🥑</Text>
+                                                    <Text style={styles.macroLabel}>Grasas (g)</Text>
+                                                    <TextInput
+                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                        placeholder="0"
+                                                        placeholderTextColor="#cbd5e1"
+                                                        value={fat}
+                                                        onChangeText={setFat}
+                                                        keyboardType="numeric"
+                                                    />
+                                                </>
+                                            )}
+                                        </View>
+                                    </View>
+                                )}
 
                                 {/* ═══════════════════════════════════════════════ */}
                                 {/*   RACIÓN HABITUAL (Smart Portions)              */}
@@ -798,18 +1060,57 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                         </ScrollView>
 
                         {/* Footer */}
-                        <View style={styles.footer}>
-                            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                                <Text style={styles.cancelBtnText}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                                <Ionicons name="save-outline" size={18} color="#fff" />
-                                <Text style={styles.saveBtnText}>Guardar</Text>
-                            </TouchableOpacity>
+                        <View style={[styles.footer, onDelete && initialData ? { justifyContent: 'space-between' } : { justifyContent: 'flex-end', gap: 12 }]}>
+                            {onDelete && initialData && (
+                                <TouchableOpacity
+                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10 }}
+                                    onPress={() => {
+                                        if (Platform.OS === 'web') {
+                                            const confirmed = window.confirm('¿Estás seguro de que quieres eliminar este alimento? Esta acción no se puede deshacer.');
+                                            if (confirmed) {
+                                                onDelete(initialData._id);
+                                            }
+                                        } else {
+                                            Alert.alert(
+                                                'Eliminar Alimento',
+                                                '¿Estás seguro de que quieres eliminar este alimento de la base de datos? Esta acción no se puede deshacer.',
+                                                [
+                                                    { text: 'Cancelar', style: 'cancel' },
+                                                    { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(initialData._id) }
+                                                ]
+                                            );
+                                        }
+                                    }}
+                                >
+                                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                                    <Text style={{ color: '#ef4444', fontWeight: '600' }}>Eliminar</Text>
+                                </TouchableOpacity>
+                            )}
+                            <View style={{ flexDirection: 'row', gap: 12 }}>
+                                <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+                                    <Text style={styles.cancelBtnText}>Cancelar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                                    <Ionicons name="save-outline" size={18} color="#fff" />
+                                    <Text style={styles.saveBtnText}>Guardar</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
                 </KeyboardAvoidingView>
             </View>
+
+            {/* 🟢 SMART FOOD DRAWER OVERLAY */}
+            {searchVisible && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+                    <SmartFoodDrawer
+                        visible={searchVisible}
+                        onClose={() => setSearchVisible(false)}
+                        context={{}}
+                        onAddFoods={handleSmartDrawerAdd}
+                    />
+                </View>
+            )}
         </Modal>
     );
 }
@@ -1241,8 +1542,109 @@ const styles = StyleSheet.create({
         backgroundColor: '#dbeafe',
         paddingHorizontal: 8,
         paddingVertical: 4,
+    },
+
+    // 🆕 TYPE SELECTOR STYLES
+    typeSelector: {
+        flexDirection: 'row',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 8,
+        padding: 4,
+        gap: 4
+    },
+    typeBtn: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
         borderRadius: 6,
     },
+    typeBtnActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 1
+    },
+    typeBtnText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b'
+    },
+    typeBtnTextActive: {
+        color: '#2563eb'
+    },
+    typeBtnDisabled: {
+        opacity: 0.5,
+        backgroundColor: '#e2e8f0',
+    },
+
+    // 🍲 RECIPE MODE STYLES
+    macroValue: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b'
+    },
+    addIngredientBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: '#eff6ff',
+        borderRadius: 16,
+    },
+    addIngredientText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#2563eb',
+    },
+    emptyIngredients: {
+        padding: 24,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderStyle: 'dashed',
+        alignItems: 'center',
+    },
+    ingredientRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 10,
+        borderRadius: 8,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    ingredientThumb: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+        marginRight: 10,
+        backgroundColor: '#e2e8f0'
+    },
+    ingredientThumbPlaceholder: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+        marginRight: 10,
+        backgroundColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    qtyInput: {
+        width: 60,
+        height: 32,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 6,
+        textAlign: 'center',
+        marginHorizontal: 10,
+        fontSize: 13,
+        color: '#1e293b',
+        fontWeight: '600',
+    },
+
     per100gText: {
         fontSize: 11,
         fontWeight: '600',

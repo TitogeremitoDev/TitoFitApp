@@ -15,8 +15,14 @@ import {
     Platform,
     TextInput,
     Image,
+    Modal,
+    Alert,
+    ActivityIndicator
 } from 'react-native';
+import { saveFoodFromPlan } from '../../../../../src/services/foodService';
 import { Ionicons } from '@expo/vector-icons';
+import { getRecipePlaceholder } from '../../../../../src/utils/recipePlaceholder';
+import * as ImagePicker from 'expo-image-picker';
 
 // Meal icons
 const MEAL_ICONS = {
@@ -42,9 +48,46 @@ export default function MealCard({
     onDuplicateOption,
     onEditOptionName,
     onBulkRename, // NEW
+    onUpdateOptionImage, // NEW: Hero Image
 }) {
     const mealConfig = MEAL_ICONS[meal.name] || { icon: 'restaurant', color: '#64748b' };
     const optionsCount = meal.options?.length || 0;
+
+    // Save As Recipe State
+    const [saveModalVisible, setSaveModalVisible] = useState(false);
+    const [recipeName, setRecipeName] = useState('');
+    const [savingOption, setSavingOption] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleOpenSave = (option) => {
+        setSavingOption(option);
+        setRecipeName(option.name || 'Nueva Receta');
+        setSaveModalVisible(true);
+    };
+
+    const confirmSaveRecipe = async () => {
+        if (!recipeName.trim()) return Alert.alert('Error', 'Ponle nombre a la receta');
+        if (!savingOption) return;
+
+        setIsSaving(true);
+        try {
+            await saveFoodFromPlan({
+                name: recipeName,
+                items: savingOption.foods,
+                instructions: `Receta generada desde el plan: ${meal.name}`,
+                image: null,
+            });
+            Alert.alert('¡Guardado!', 'La receta se ha guardado en tu librería.');
+            setSaveModalVisible(false);
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'No se pudo guardar la receta');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+
 
     return (
         <View style={styles.mealSection}>
@@ -107,11 +150,50 @@ export default function MealCard({
                         onDuplicate={() => onDuplicateOption?.(option.id)}
                         onDelete={() => onRemoveOption?.(option.id)}
                         onEditName={(newName) => onEditOptionName?.(option.id, newName)}
+                        onSaveAsRecipe={() => handleOpenSave(option)} // Pass handler
+                        onUpdateImage={(uri) => onUpdateOptionImage?.(option.id, uri)} // Pass handler
                     />
                 ))}
 
 
             </ScrollView>
+
+            {/* SAVE RECIPE MODAL */}
+            <Modal visible={saveModalVisible} transparent animationType="fade">
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                    <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 400 }}>
+                        <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' }}>💾 Guardar como Receta</Text>
+                        <Text style={{ color: '#64748b', marginBottom: 16, textAlign: 'center' }}>
+                            Se creará una "Receta Maestra" con los ingredientes de esta opción para usarla en el futuro.
+                        </Text>
+
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#334155', marginBottom: 6 }}>Nombre de la Receta</Text>
+                        <TextInput
+                            style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, marginBottom: 20, fontSize: 16 }}
+                            value={recipeName}
+                            onChangeText={setRecipeName}
+                            placeholder="Ej: Desayuno Campeón"
+                        />
+
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity
+                                style={{ flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 8 }}
+                                onPress={() => setSaveModalVisible(false)}
+                            >
+                                <Text style={{ color: '#64748b', fontWeight: '600' }}>Cancelar</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={{ flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#3b82f6', borderRadius: 8, opacity: isSaving ? 0.7 : 1 }}
+                                onPress={confirmSaveRecipe}
+                                disabled={isSaving}
+                            >
+                                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '600' }}>Guardar</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -130,10 +212,31 @@ function OptionCard({
     onDuplicate,
     onDelete,
     onEditName,
+    onSaveAsRecipe, // NEW prop
+    onUpdateImage, // NEW prop
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editingFoodIdx, setEditingFoodIdx] = useState(null);
     const [editAmount, setEditAmount] = useState('');
+
+    const handlePickImage = async () => {
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permissionResult.granted === false) {
+            Alert.alert("Permiso denegado", "Se necesita acceso a la galería.");
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [16, 9], // Hero aspect ratio
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            onUpdateImage(result.assets[0].uri);
+        }
+    };
 
     // Calculate macros
     const optionMacros = option.foods?.reduce(
@@ -153,6 +256,10 @@ function OptionCard({
             {/* Option Header */}
             <View style={[styles.optionHeader, { borderLeftColor: templateColor }]}>
                 <View style={styles.optionTitleRow}>
+                    {/* NEW: Thumbnail if exists */}
+                    {option.image && (
+                        <Image source={{ uri: option.image }} style={{ width: 24, height: 24, borderRadius: 12, marginRight: 6 }} />
+                    )}
                     {/* NEW: Editable Title */}
                     <TextInput
                         style={styles.optionNameInput}
@@ -166,8 +273,15 @@ function OptionCard({
 
                 {/* Action buttons */}
                 <View style={styles.optionActions}>
+                    <TouchableOpacity style={styles.optionActionBtn} onPress={handlePickImage} onLongPress={() => onUpdateImage(null)}>
+                        <Ionicons name="camera-outline" size={14} color="#6366f1" />
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.optionActionBtn} onPress={onDuplicate}>
                         <Ionicons name="copy-outline" size={14} color="#64748b" />
+                    </TouchableOpacity>
+                    {/* SAVE AS RECIPE BUTTON */}
+                    <TouchableOpacity style={styles.optionActionBtn} onPress={onSaveAsRecipe}>
+                        <Ionicons name="save-outline" size={14} color="#3b82f6" />
                     </TouchableOpacity>
                     {!isOnlyOption && (
                         <TouchableOpacity style={styles.optionActionBtn} onPress={onDelete}>
@@ -207,6 +321,49 @@ function OptionCard({
                                 ? Math.round((food.kcal / optionMacros.kcal) * 100)
                                 : 0;
 
+                            // 🎨 POLYMORPHIC UI: Recipe Card vs Ingredient Row
+                            // 🎨 POLYMORPHIC UI: Recipe Card vs Ingredient Row
+                            if (food.isComposite) {
+                                const placeholder = getRecipePlaceholder(food.name);
+
+                                return (
+                                    <View key={`${food.name}_${foodIdx}`} style={styles.recipeCard}>
+                                        {food.image ? (
+                                            <Image
+                                                source={{ uri: food.image }}
+                                                style={styles.recipeImage}
+                                            />
+                                        ) : (
+                                            <View style={[styles.recipeImage, { backgroundColor: placeholder.backgroundColor, alignItems: 'center', justifyContent: 'center' }]}>
+                                                <Text style={{ fontSize: 32 }}>{placeholder.icon}</Text>
+                                            </View>
+                                        )}
+                                        <View style={styles.recipeContent}>
+                                            <View style={styles.recipeHeader}>
+                                                <View style={styles.recipeBadge}>
+                                                    <Ionicons name="restaurant" size={10} color="#fff" />
+                                                    <Text style={styles.recipeBadgeText}>RECETA</Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => onRemoveFood(foodIdx)}>
+                                                    <Ionicons name="close" size={16} color="#94a3b8" />
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <Text style={styles.recipeName} numberOfLines={2}>{food.name}</Text>
+
+                                            <View style={styles.recipeFooter}>
+                                                <Text style={styles.recipeMacros}>
+                                                    🔥 {Math.round(food.kcal)} kcal
+                                                </Text>
+                                                <Text style={styles.recipePortion}>
+                                                    {food.amount} {food.unit}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                );
+                            }
+
                             return (
                                 <View key={`${food.name}_${foodIdx}`} style={styles.foodCard}>
                                     {/* Left: Photo or Placeholder */}
@@ -222,10 +379,18 @@ function OptionCard({
                                     <View style={styles.foodDetails}>
                                         <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
                                         <View style={styles.foodMacrosRow}>
-                                            <Text style={styles.foodKcal}>🔥 {Math.round(food.kcal || 0)}</Text>
-                                            <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
-                                            <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
-                                            <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
+                                            {food.unit === 'a_gusto' ? (
+                                                <View style={{ backgroundColor: '#ecfccb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' }}>
+                                                    <Text style={{ color: '#4d7c0f', fontSize: 10, fontWeight: '700' }}>CONSUMO LIBRE</Text>
+                                                </View>
+                                            ) : (
+                                                <>
+                                                    <Text style={styles.foodKcal}>🔥 {Math.round(food.kcal || 0)}</Text>
+                                                    <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
+                                                    <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
+                                                    <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
+                                                </>
+                                            )}
                                         </View>
                                     </View>
 
@@ -649,4 +814,73 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 8,
     },
+    addOptionCardText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#9ca3af',
+        textAlign: 'center',
+        marginTop: 8,
+    },
+
+    // 🧑‍🍳 RECIPE CARD STYLES (Polymorphic)
+    recipeCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 8,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        flexDirection: 'row',
+        height: 80,
+    },
+    recipeImage: {
+        width: 80,
+        height: '100%',
+        backgroundColor: '#f1f5f9',
+    },
+    recipeContent: {
+        flex: 1,
+        padding: 8,
+        justifyContent: 'space-between',
+    },
+    recipeHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    recipeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#3b82f6',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    recipeBadgeText: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    recipeName: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#1e293b',
+        marginVertical: 4,
+    },
+    recipeFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    recipeMacros: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    recipePortion: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#3b82f6',
+    }
 });

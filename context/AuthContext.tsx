@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { syncRoutinesFromServer } from '../src/lib/syncRoutines';
 import { handlePlanTransition, getSyncDirection, SyncResult } from '../src/lib/dataSyncService';
 
-const DEFAULT_KOYEB = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+const DEFAULT_KOYEB = 'http://localhost:3000'; // 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 const API_BASE = ((process.env.EXPO_PUBLIC_API_URL as string) || DEFAULT_KOYEB).replace(/\/+$/, '');
 axios.defaults.baseURL = `${API_BASE}/api`;
 

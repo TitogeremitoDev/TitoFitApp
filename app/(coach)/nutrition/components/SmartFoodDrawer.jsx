@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import SmartScalingModal from './SmartScalingModal'; // NEW Import
 
 // Import food service (uses correct API + token)
 import { searchFoods, getFavorites, saveFood } from '../../../../src/services/foodService';
@@ -33,16 +34,8 @@ import localFoods from '../../../../src/constants/localFoods.json';
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Unit conversions (grams equivalent for 1 unit)
-const UNIT_CONVERSIONS = {
-    gramos: { factor: 1, label: 'g', labelLong: 'Gramos' },
-    cucharada: { factor: 15, label: 'cda', labelLong: 'Cucharada' },
-    cucharadita: { factor: 5, label: 'cdta', labelLong: 'Cucharadita' },
-    taza: { factor: 200, label: 'taza', labelLong: 'Taza' },
-    puñado: { factor: 30, label: 'puñado', labelLong: 'Puñado' },
-    rebanada: { factor: 30, label: 'reb', labelLong: 'Rebanada' },
-    scoop: { factor: 30, label: 'scoop', labelLong: 'Scoop' },
-};
+// Import shared units
+import { UNIT_CONVERSIONS } from '../../../../src/constants/units';
 
 // Drawer mode tabs
 const MODE_TABS = [
@@ -87,12 +80,18 @@ const TAG_DISPLAY = {
     'Integral': { icon: '🌾', label: 'Integral' },
     'Desayuno': { icon: '🌅', label: 'Desayuno' },
     'Snack': { icon: '🍿', label: 'Snack' },
+    'Merienda': { icon: '🥪', label: 'Merienda' },
+    'Comida': { icon: '🍽️', label: 'Comida' },
+    'Almuerzo': { icon: '🍽️', label: 'Almuerzo' },
+    'Cena': { icon: '🌙', label: 'Cena' },
     'Proteína': { icon: '🥩', label: 'Proteína' },
     'Carbo': { icon: '🍚', label: 'Carbo' },
     'Lácteo': { icon: '🥛', label: 'Lácteo' },
     'Fruta': { icon: '🍎', label: 'Fruta' },
     'Vegetal': { icon: '🥦', label: 'Vegetal' },
 };
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FOOD ROW ITEM COMPONENT (Data-Rich Design)
@@ -104,6 +103,7 @@ function FoodRowItem({
     onQuickAdd,
     selectionData, // { amount, unit }
     onUpdateSelection,
+    onRecipeSelect, // NEW Prop
 }) {
     const [expanded, setExpanded] = useState(false);
     const baseNutrients = food.nutrients || {};
@@ -116,6 +116,12 @@ function FoodRowItem({
     }, [baseNutrients, selectionData]);
 
     const handleToggle = () => {
+        // 🛑 INTERCEPT RECIPES
+        if (food.isComposite && onRecipeSelect) {
+            onRecipeSelect(food);
+            return;
+        }
+
         if (isSelected) {
             onToggleSelect(food, false);
             setExpanded(false);
@@ -210,11 +216,20 @@ function FoodRowItem({
             {/* BLOCK 2: Stats + Input (Center-Right) */}
             <View style={styles.controlBlock}>
                 {/* A. Dynamic Macros (Vertical Column) */}
+                {/* A. Dynamic Macros (Vertical Column) */}
                 <View style={styles.statsColumn}>
-                    <Text style={styles.kcalBadge}>🔥 {displayMacros.kcal}</Text>
-                    <Text style={[styles.macroNum, { color: '#3b82f6' }]}>P:{Math.round(displayMacros.protein)}</Text>
-                    <Text style={[styles.macroNum, { color: '#22c55e' }]}>C:{Math.round(displayMacros.carbs)}</Text>
-                    <Text style={[styles.macroNum, { color: '#f59e0b' }]}>G:{Math.round(displayMacros.fat)}</Text>
+                    {selectionData?.unit === 'a_gusto' ? (
+                        <View style={{ backgroundColor: '#ecfccb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ color: '#4d7c0f', fontSize: 10, fontWeight: '700' }}>LIBRE</Text>
+                        </View>
+                    ) : (
+                        <>
+                            <Text style={styles.kcalBadge}>🔥 {displayMacros.kcal}</Text>
+                            <Text style={[styles.macroNum, { color: '#3b82f6' }]}>P:{Math.round(displayMacros.protein)}</Text>
+                            <Text style={[styles.macroNum, { color: '#22c55e' }]}>C:{Math.round(displayMacros.carbs)}</Text>
+                            <Text style={[styles.macroNum, { color: '#f59e0b' }]}>G:{Math.round(displayMacros.fat)}</Text>
+                        </>
+                    )}
                 </View>
 
                 {/* B. Inline Input Group + Weight Hint */}
@@ -305,6 +320,9 @@ export default function SmartFoodDrawer({
         fat: '',
     });
 
+    // Smart Scaling State
+    const [scalingRecipe, setScalingRecipe] = useState(null);
+
     // Toast State
     const [toast, setToast] = useState({ visible: false, message: '' });
 
@@ -372,8 +390,13 @@ export default function SmartFoodDrawer({
         if (!visible) return;
 
         const timeoutId = setTimeout(() => {
-            if (activeTab === 'global' && searchQuery.trim().length >= 2) {
-                fetchFoods(searchQuery);
+            if (activeTab === 'global') {
+                if (searchQuery.trim().length >= 2) {
+                    fetchFoods(searchQuery);
+                } else if (searchQuery.trim().length === 0) {
+                    // Reset to initial state (empty query)
+                    fetchFoods('');
+                }
             }
         }, 300);
 
@@ -416,6 +439,10 @@ export default function SmartFoodDrawer({
 
     // Get display name for current meal
     const mealDisplayName = useMemo(() => {
+        // Prefer explicit name from context
+        if (context?.mealName) return context.mealName;
+
+        // Fallback to ID parsing
         if (!context?.mealId) return null;
         const mealIdLower = context.mealId.toLowerCase();
 
@@ -424,22 +451,33 @@ export default function SmartFoodDrawer({
         if (mealIdLower.includes('comida') || mealIdLower.includes('almuerzo')) return 'Comida';
         if (mealIdLower.includes('cena')) return 'Cena';
         return 'Snack';
-    }, [context?.mealId]);
+    }, [context?.mealId, context?.mealName]);
+
+    // Smart suggestions based on meal context (desayuno, comida, cena, snack)
+
 
     // Smart suggestions based on meal context (desayuno, comida, cena, snack)
     const suggestedFoods = useMemo(() => {
-        if (!context?.mealId) return [];
-        const mealIdLower = context.mealId.toLowerCase();
+        // Fallback to mealId if mealName missing (backward compatibility)
+        const nameSource = context?.mealName || context?.mealId || '';
+        const nameLower = nameSource.toLowerCase();
 
-        // Determine which tags to search based on mealId content
-        let relevantTags = ['Snack', 'snack', 'SNACK', 'merienda', 'Merienda'];
+        if (!nameLower) return [];
 
-        if (mealIdLower.includes('desayuno')) {
-            relevantTags = ['Desayuno', 'desayuno', 'DESAYUNO', 'breakfast'];
-        } else if (mealIdLower.includes('comida') || mealIdLower.includes('almuerzo')) {
-            relevantTags = ['Almuerzo', 'almuerzo', 'ALMUERZO', 'Comida', 'comida', 'lunch'];
-        } else if (mealIdLower.includes('cena')) {
-            relevantTags = ['Cena', 'cena', 'CENA', 'dinner'];
+        // Determine which tags to search based on meal context
+        // Default tags for fallback or generic meals
+        let relevantTags = ['Snack', 'snack', 'SNACK', 'merienda', 'Merienda', 'Fruta', 'Lácteo', 'Yogur', 'Nueces'];
+
+        if (nameLower.includes('desayuno') || nameLower.includes('breakfast')) {
+            relevantTags = ['Desayuno', 'desayuno', 'DESAYUNO', 'breakfast', 'Huevo', 'Avena', 'Pan', 'Fruta', 'Lácteo', 'Café'];
+        } else if (nameLower.includes('comida') || nameLower.includes('almuerzo') || nameLower.includes('lunch')) {
+            // Lunch: Main proteins, carbs, etc. PLUS explicit Meal Tags
+            relevantTags = ['Almuerzo', 'almuerzo', 'ALMUERZO', 'Comida', 'comida', 'COMIDA', 'lunch', 'Proteína', 'Carne', 'Pescado', 'Pollo', 'Arroz', 'Pasta', 'Legumbre'];
+        } else if (nameLower.includes('cena') || nameLower.includes('dinner')) {
+            // Dinner: Lighter proteins, veggies PLUS explicit Meal Tags
+            relevantTags = ['Cena', 'cena', 'CENA', 'dinner', 'Proteína', 'Pescado', 'Huevo', 'Vegetal', 'Verdura', 'Ensalada', 'Ligero'];
+        } else if (nameLower.includes('merienda') || nameLower.includes('snack')) {
+            relevantTags = ['Snack', 'snack', 'SNACK', 'merienda', 'Merienda', 'Fruta', 'Lácteo', 'Yogur', 'Nueces'];
         }
 
         // Filter allFoods by matching tags
@@ -447,7 +485,7 @@ export default function SmartFoodDrawer({
             food.tags?.some(tag => relevantTags.includes(tag))
         );
         return matches.slice(0, 5); // Limit to 5 suggestions
-    }, [context?.mealId, allFoods]);
+    }, [context?.mealId, context?.mealName, allFoods]);
 
     // Selection handlers
     const handleToggleSelect = useCallback((food, selected, initialData) => {
@@ -653,6 +691,29 @@ export default function SmartFoodDrawer({
         setDrawerMode('manual');
     }, []);
 
+    // Handle Recipe Selection (Triggers Modal)
+    const handleRecipeSelect = useCallback((food) => {
+        setScalingRecipe(food);
+    }, []);
+
+    // Handle Smart Add from Modal
+    const handleSmartAdd = useCallback((items, mode) => {
+        // items is array of { food, amount, unit, calculatedMacros }
+        onAddFoods(items);
+        setScalingRecipe(null);
+
+        const msg = mode === 'block'
+            ? `📦 Receta añadida como bloque`
+            : `📝 ${items.length} ingredientes desglosados`;
+        showToast(msg);
+
+        // Also save original recipe to recent, not the exploded parts?
+        // Actually saveToRecent handles this in onAddFoods wrapper usually, 
+        // but let's call it manually for the base recipe to be safe
+        if (scalingRecipe) saveToRecent([scalingRecipe]);
+
+    }, [onAddFoods, scalingRecipe, saveToRecent, showToast]);
+
     if (!visible) return null;
 
     return (
@@ -784,6 +845,7 @@ export default function SmartFoodDrawer({
                                         onToggleSelect={handleToggleSelect}
                                         onUpdateSelection={handleUpdateSelection}
                                         onQuickAdd={handleQuickAdd}
+                                        onRecipeSelect={handleRecipeSelect} // Pass Handler
                                     />
                                 ))}
                             </View>
@@ -805,6 +867,7 @@ export default function SmartFoodDrawer({
                                 onToggleSelect={handleToggleSelect}
                                 onUpdateSelection={handleUpdateSelection}
                                 onQuickAdd={handleQuickAdd}
+                                onRecipeSelect={handleRecipeSelect} // Pass Handler
                             />
                         ))}
 
@@ -836,6 +899,12 @@ export default function SmartFoodDrawer({
 
                         {/* Bottom padding for floating button */}
                         <View style={{ height: 100 }} />
+
+                        <TouchableOpacity style={styles.addNowBtn} onPress={handleAddSelected}>
+                            <Ionicons name="add-circle" size={22} color="#fff" />
+                            <Text style={styles.addNowText}>AÑADIR AHORA</Text>
+                        </TouchableOpacity>
+
                     </ScrollView>
                 )}
 
@@ -1026,15 +1095,7 @@ export default function SmartFoodDrawer({
                 {/* Floating Add Button (Search Mode Only) */}
                 {drawerMode === 'search' && Object.keys(selections).length > 0 && (
                     <View style={styles.floatingFooter}>
-                        <TouchableOpacity
-                            style={styles.addSelectedBtn}
-                            onPress={handleAddSelected}
-                        >
-                            <Ionicons name="add-circle" size={22} color="#fff" />
-                            <Text style={styles.addSelectedText}>
-                                Añadir {Object.keys(selections).length} alimento{Object.keys(selections).length > 1 ? 's' : ''}
-                            </Text>
-                        </TouchableOpacity>
+
                     </View>
                 )}
 
@@ -1045,6 +1106,14 @@ export default function SmartFoodDrawer({
                     </View>
                 )}
             </Animated.View>
+
+            {/* Smart Scaling Modal */}
+            <SmartScalingModal
+                visible={!!scalingRecipe}
+                recipe={scalingRecipe}
+                onClose={() => setScalingRecipe(null)}
+                onAdd={handleSmartAdd}
+            />
         </View>
     );
 }
@@ -1067,6 +1136,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.2)',
     },
     drawer: {
+        flex: 1,
         backgroundColor: '#fff',
         overflow: 'hidden',
         pointerEvents: 'auto',
@@ -1449,17 +1519,14 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
     },
 
-    // Floating Footer
+    // Floating Footer (Static - Relative)
     floatingFooter: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
         padding: 16,
         paddingBottom: Platform.OS === 'ios' ? 32 : 16,
         backgroundColor: '#fff',
         borderTopWidth: 1,
         borderTopColor: '#e2e8f0',
+        zIndex: 1000,
     },
     addSelectedBtn: {
         flexDirection: 'row',
@@ -1622,7 +1689,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#22c55e',
         paddingVertical: 14,
         borderRadius: 12,
-        marginTop: 24,
+        position: 'sticky',
+        bottom: 100,
+        zIndex: 1000,
     },
     addNowText: {
         fontSize: 16,
@@ -1645,15 +1714,9 @@ const styles = StyleSheet.create({
         marginTop: 8,
         marginBottom: 24,
     },
+    // Quick Add Button Removed
     quickAddBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        backgroundColor: '#adadadff',
-        paddingVertical: 16,
-        borderRadius: 12,
-        marginTop: 24,
+        display: 'none',
     },
     quickAddMacrosBtn: {
         flexDirection: 'row',

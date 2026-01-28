@@ -29,7 +29,7 @@ const WebDatePicker = ({ value, onChange, minDate }) => {
             width: '100%',
             color: '#1e293b',
             fontFamily: 'System',
-            outline: 'none',
+            // outline: 'none', // Removed for RN compatibility
             backgroundColor: '#ffffff'
         }
     });

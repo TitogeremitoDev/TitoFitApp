@@ -1199,8 +1199,8 @@ function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
           }}
         >
           {/* Icono de cierre */}
-          <Pressable onPress={onClose} style={styles.statsModalClose} pointerEvents="box-none">
-            <View pointerEvents="auto">
+          <Pressable onPress={onClose} style={[styles.statsModalClose, { pointerEvents: 'box-none' }]}>
+            <View style={{ pointerEvents: 'auto' }}>
               <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
             </View>
           </Pressable>

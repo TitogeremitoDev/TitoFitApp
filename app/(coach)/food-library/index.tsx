@@ -24,7 +24,7 @@ import FoodMiniCard from '../../../components/FoodMiniCard';
 import FoodCreatorModal from '../../../components/FoodCreatorModal';
 import FoodLibrarySidebar, { FilterState } from '../../../components/FoodLibrarySidebar';
 
-import { searchFoods, saveFood, getDiscoveryFoods, LAYER_ICONS, FoodItem } from '../../../src/services/foodService';
+import { searchFoods, saveFood, deleteFood, getDiscoveryFoods, LAYER_ICONS, FoodItem } from '../../../src/services/foodService';
 
 export default function FoodLibraryScreen() {
     const { width } = useWindowDimensions();
@@ -45,6 +45,9 @@ export default function FoodLibraryScreen() {
     });
     const [showMobileFilters, setShowMobileFilters] = useState(false);
     const [sortBy, setSortBy] = useState<'recent' | 'calories_asc' | 'protein_desc' | 'name'>('recent');
+
+    // View Mode (Ingredients vs Recipes)
+    const [viewMode, setViewMode] = useState<'INGREDIENTS' | 'RECIPES'>('INGREDIENTS');
 
     // Modals
     const [creatorVisible, setCreatorVisible] = useState(false);
@@ -94,7 +97,16 @@ export default function FoodLibraryScreen() {
             // Favorites
             if (filters.onlyFavorites) {
                 // Mock logic: return false or check a future isFavorite field
-                // return item.isFavorite === true; 
+                return item.isFavorite === true;
+            }
+
+            // View Mode Filter (Recipes vs Ingredients)
+            // Backend sends 'isComposite' boolean.
+            if (viewMode === 'RECIPES') {
+                if (!item.isComposite) return false;
+            } else {
+                // Ingredients (Raw)
+                if (item.isComposite) return false;
             }
 
             // Types (OR Logic)
@@ -128,7 +140,7 @@ export default function FoodLibraryScreen() {
         });
 
         return result;
-    }, [foods, initialFoods, searchQuery, filters, sortBy]);
+    }, [foods, initialFoods, searchQuery, filters, sortBy, viewMode]);
 
     // Handlers
     const handleCreateNew = () => { setEditingFood(null); setCreatorVisible(true); };
@@ -145,6 +157,18 @@ export default function FoodLibraryScreen() {
             Alert.alert("Error", "No se pudo guardar el plato");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDeleteFood = async (id: string) => {
+        try {
+            await deleteFood(id);
+            setFoods(prev => prev.filter(f => f._id !== id));
+            setInitialFoods(prev => prev.filter(f => f._id !== id));
+            setCreatorVisible(false);
+            Alert.alert("Eliminado", "El alimento ha sido eliminado.");
+        } catch (error: any) {
+            Alert.alert("Error", error.message || "No se pudo eliminar");
         }
     };
 
@@ -199,25 +223,86 @@ export default function FoodLibraryScreen() {
                 icon={null}
                 badge={null}
                 rightContent={
-                    <TouchableOpacity
-                        onPress={handleCreateNew}
-                        style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            backgroundColor: '#eff6ff',
-                            paddingHorizontal: 12,
-                            paddingVertical: 6,
-                            borderRadius: 20,
-                            gap: 4
-                        }}
-                    >
-                        <Ionicons name="add" size={18} color="#3b82f6" />
-                        <Text style={{ color: '#3b82f6', fontWeight: '600', fontSize: 13 }}>
-                            Nuevo Plato
-                        </Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {/* New Recipe Button */}
+                        <TouchableOpacity
+                            onPress={() => router.push('/(coach)/food-library/create-recipe')}
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: '#fff',
+                                borderWidth: 1,
+                                borderColor: '#e2e8f0',
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 20,
+                                gap: 4
+                            }}
+                        >
+                            <Text style={{ fontSize: 14 }}>🍲</Text>
+                            <Text style={{ color: '#1e293b', fontWeight: '600', fontSize: 13 }}>
+                                Crear Receta
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={handleCreateNew}
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: '#eff6ff',
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 20,
+                                gap: 4
+                            }}
+                        >
+                            <Ionicons name="add" size={18} color="#3b82f6" />
+                            <Text style={{ color: '#3b82f6', fontWeight: '600', fontSize: 13 }}>
+                                Alimento
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 }
             />
+
+            {/* TABS (Ingredients vs Recipes) */}
+            <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, gap: 12 }}>
+                <TouchableOpacity
+                    onPress={() => setViewMode('INGREDIENTS')}
+                    style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                        borderBottomWidth: 2,
+                        borderBottomColor: viewMode === 'INGREDIENTS' ? '#4f46e5' : 'transparent'
+                    }}
+                >
+                    <Text style={{
+                        color: viewMode === 'INGREDIENTS' ? '#4f46e5' : '#64748b',
+                        fontWeight: '600'
+                    }}>🍎 Ingredientes</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={() => setViewMode('RECIPES')}
+                    style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                        borderBottomWidth: 2,
+                        borderBottomColor: viewMode === 'RECIPES' ? '#4f46e5' : 'transparent'
+                    }}
+                >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 16 }}>🍲</Text>
+                        <Text style={{
+                            color: viewMode === 'RECIPES' ? '#4f46e5' : '#64748b',
+                            fontWeight: '600'
+                        }}>Mis Recetas</Text>
+                    </View>
+                </TouchableOpacity>
+            </View>
 
             <View style={{ flex: 1, flexDirection: 'row' }}>
 
@@ -303,6 +388,25 @@ export default function FoodLibraryScreen() {
                             </View>
                         )}
 
+                        {/* RECIPES EMPTY STATE */}
+                        {viewMode === 'RECIPES' && processedFoods.length === 0 && searchQuery === '' && (
+                            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                                <Text style={{ fontSize: 40, marginBottom: 10 }}>🍲</Text>
+                                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1e293b', textAlign: 'center' }}>
+                                    Aún no has creado recetas
+                                </Text>
+                                <Text style={{ marginTop: 8, fontSize: 14, color: '#64748b', textAlign: 'center', maxWidth: 300 }}>
+                                    Crea "Platos Maestros" agrupando ingredientes (ej: Arroz con Pollo) para usarlos rápidamente en tus planes.
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => router.push('/(coach)/food-library/create-recipe')}
+                                    style={{ marginTop: 20, backgroundColor: '#4f46e5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 }}
+                                >
+                                    <Text style={{ color: '#fff', fontWeight: '600' }}>Crear mi primera receta</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                             {processedFoods.map((item) => (
                                 <View key={item._id} style={{ width: isLargeScreen ? '33.33%' : '50%', padding: 6 }}>
@@ -346,6 +450,7 @@ export default function FoodLibraryScreen() {
                 visible={creatorVisible}
                 onClose={() => setCreatorVisible(false)}
                 onSave={handleSaveFood}
+                onDelete={handleDeleteFood}
                 initialData={editingFood as any}
             />
         </SafeAreaView>

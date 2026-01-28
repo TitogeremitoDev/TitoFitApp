@@ -5,7 +5,7 @@
  * - Sin weekMap (no L-M-X-J-V-S-D)
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -17,55 +17,88 @@ import {
     Modal,
     useWindowDimensions,
     Image, // Added Image
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MealCard from './MealCard';
 import MacroSummaryFooter from './MacroSummaryFooter';
 import SmartFoodDrawer from '../SmartFoodDrawer';
+import ActionsFooter from './ActionsFooter'; // Import Footer
+import axios from 'axios'; // Import Axios
+
+// Helper: UUID Generator (Lightweight)
+const uuidv4 = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
+
+// Helper: Hydrate Template (Regenerate IDs to avoid shared references)
+const hydrateTemplate = (templateData) => {
+    // 1. Deep Clone FIRST (Break all references)
+    const clonedData = JSON.parse(JSON.stringify(templateData));
+
+    const idMap = {}; // Old ID -> New ID mapping
+
+    // 2. Regenerate IDs for DayTemplates
+    const newDayTemplates = (clonedData.dayTemplates || []).map(day => {
+        // Generate new Day ID
+        const newDayId = `template_${Date.now()}_${uuidv4().substr(0, 8)}`;
+        idMap[day.id] = newDayId; // Map old ID to new
+
+        return {
+            ...day,
+            id: newDayId,
+            // Regenerate IDs for Meals
+            meals: (day.meals || []).map(meal => {
+                const newMealId = `meal_${newDayId}_${uuidv4().substr(0, 8)}`;
+                return {
+                    ...meal,
+                    id: newMealId,
+                    // Regenerate IDs for Options
+                    options: (meal.options || []).map(opt => ({
+                        ...opt,
+                        id: `option_${uuidv4().substr(0, 8)}`
+                    }))
+                };
+            })
+        };
+    });
+
+    // 3. Remap Week Schedule (weekMap) using the ID mapping
+    const newWeekMap = {};
+    if (clonedData.weekMap) {
+        Object.entries(clonedData.weekMap).forEach(([dayKey, oldTemplateId]) => {
+            // Only map if the old ID exists in our new map (clean up ghosts)
+            if (idMap[oldTemplateId]) {
+                newWeekMap[dayKey] = idMap[oldTemplateId];
+            } else if (newDayTemplates.length > 0) {
+                // Fallback: If ID not found, assign first available template? 
+                // Better to leave empty or assign first to avoid broken UI.
+                // Let's safe-guard:
+                newWeekMap[dayKey] = newDayTemplates[0].id;
+            }
+        });
+    }
+
+    return {
+        ...clonedData,
+        dayTemplates: newDayTemplates,
+        weekMap: newWeekMap,
+        mealStructure: clonedData.mealStructure || []
+    };
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
-const MEAL_STRUCTURES = {
-    3: [
-        { id: 'desayuno', name: 'Desayuno', icon: '🌅', suggestedTime: '08:00' },
-        { id: 'comida', name: 'Comida', icon: '🍽️', suggestedTime: '14:00' },
-        { id: 'cena', name: 'Cena', icon: '🌙', suggestedTime: '21:00' },
-    ],
-    4: [
-        { id: 'desayuno', name: 'Desayuno', icon: '🌅', suggestedTime: '08:00' },
-        { id: 'comida', name: 'Comida', icon: '🍽️', suggestedTime: '14:00' },
-        { id: 'merienda', name: 'Merienda', icon: '🥪', suggestedTime: '18:00' },
-        { id: 'cena', name: 'Cena', icon: '🌙', suggestedTime: '21:00' },
-    ],
-    5: [
-        { id: 'desayuno', name: 'Desayuno', icon: '🌅', suggestedTime: '08:00' },
-        { id: 'media_manana', name: 'Media Mañana', icon: '🍎', suggestedTime: '11:00' },
-        { id: 'comida', name: 'Comida', icon: '🍽️', suggestedTime: '14:00' },
-        { id: 'merienda', name: 'Merienda', icon: '🥪', suggestedTime: '18:00' },
-        { id: 'cena', name: 'Cena', icon: '🌙', suggestedTime: '21:00' },
-    ],
-    6: [
-        { id: 'desayuno', name: 'Desayuno', icon: '🌅', suggestedTime: '08:00' },
-        { id: 'media_manana', name: 'Media Mañana', icon: '🍎', suggestedTime: '11:00' },
-        { id: 'comida', name: 'Comida', icon: '🍽️', suggestedTime: '14:00' },
-        { id: 'merienda', name: 'Merienda', icon: '🥪', suggestedTime: '18:00' },
-        { id: 'cena', name: 'Cena', icon: '🌙', suggestedTime: '21:00' },
-        { id: 'recena', name: 'Recena', icon: '🥛', suggestedTime: '23:00' },
-    ]
-};
+// Import shared constants
+import { MEAL_STRUCTURES } from '../../../../../src/constants/nutrition';
 
-// Unit conversion labels (matches SmartFoodDrawer)
-const UNIT_CONVERSIONS = {
-    gramos: { label: 'g' },
-    cucharada: { label: 'cda' },
-    cucharadita: { label: 'cdta' },
-    taza: { label: 'taza' },
-    puñado: { label: 'puñado' },
-    unidad: { label: 'ud' },
-    rebanada: { label: 'reb' },
-    scoop: { label: 'scoop' },
-};
+// Import shared units
+import { UNIT_CONVERSIONS } from '../../../../../src/constants/units';
 
 // Create empty meal with one option
 const createEmptyMeal = (mealDef) => ({
@@ -116,17 +149,243 @@ const createDefaultPlan = () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
-export default function WeeklyMealPlanner({ initialData, onDataChange }) {
+export default function WeeklyMealPlanner({ initialData, onDataChange, showFooter = true, clientId }) {
     const { width: windowWidth } = useWindowDimensions();
 
     // State
-    const [plan, setPlan] = useState(() => initialData || createDefaultPlan());
+    // 🛑 INITIALIZATION FIX: Always hydrate initialData to prevent shared reference bugs
+    const [plan, setPlan] = useState(() => {
+        if (initialData) {
+            return hydrateTemplate(initialData);
+        }
+        return createDefaultPlan();
+    });
+
+    // 🛑 REF SYNC: Mantener una referencia mutable al plan para evitar cierres obsoletos (Stale Closures)
+    const planRef = useRef(plan);
+    // FORCE SYNC: Update ref on every render to guarantee handleActivate sees what the User sees
+    planRef.current = plan;
+
+    // DEBUG: Verify Render State
+    // console.log('🎨 WeeklyMealPlanner Render. Foods:', plan.dayTemplates[0]?.meals[0]?.options[0]?.foods?.length || 0);
+
     const [selectedTemplateId, setSelectedTemplateId] = useState(() =>
         plan.dayTemplates[0]?.id || null
     );
     const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
     const [activeModal, setActiveModal] = useState(null);
     const [editingTemplate, setEditingTemplate] = useState(null);
+
+    // Actions State
+    const [isSaving, setIsSaving] = useState(false);
+    const [isActivating, setIsActivating] = useState(false);
+    const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
+
+    // Template Form State
+    const [templateName, setTemplateName] = useState('');
+    const [templateFolder, setTemplateFolder] = useState('');
+
+    // Import Data State
+    const [availableTemplates, setAvailableTemplates] = useState([]);
+    const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ACTIONS & LOGIC (CORREGIDO PARA ENVIAR DATOS REALES)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Helper: Construir Payload Inteligente (USANDO REF PARA EVITAR STALE STATE)
+    const buildSmartPayload = (status) => {
+        const currentPlan = planRef.current; // Leer siempre el más fresco
+
+        // 1. Detectar si el plan actual tiene comida (Importado o Manual rellenado)
+        const hasFood = currentPlan.dayTemplates.some(day =>
+            day.meals?.some(meal =>
+                meal.options?.some(opt => (opt.foods && opt.foods.length > 0))
+            )
+        );
+
+        // 2. Determinar el target (Cliente)
+        // Usamos la prop clientId si existe, o el userId del plan inicial
+        const targetId = clientId || initialData?.userId || currentPlan.userId;
+
+        if (!targetId) {
+            alert("Error: No se ha especificado el cliente (target)");
+            throw new Error("Missing target clientId");
+        }
+
+        console.log(`📦 Construyendo Payload. ¿Tiene comida? ${hasFood ? 'SI' : 'NO'}`);
+
+        return {
+            target: targetId,
+            status: status, // 'draft' o 'active'
+
+            // 🛑 TRUCO DEL ALMENDRUCO PARA EL BACKEND:
+            // Si hay comida, forzamos 'complete' y enviamos los datos en la RAÍZ.
+            // Esto activa el "Camino B" (Root/Import) en tu backend nuevo y gana las elecciones.
+            mode: hasFood ? 'complete' : 'mealplan',
+            planType: 'complete',
+
+            // DATOS EN LA RAÍZ (Para que el Backend Sanitizer los coja)
+            name: currentPlan.name,
+            description: currentPlan.globalNotes || '',
+            dayTemplates: currentPlan.dayTemplates, // <--- AQUÍ VA LA IMPORTACIÓN
+            weekMap: currentPlan.weekMap || {},
+            mealStructure: currentPlan.mealStructure || [],
+
+            // También lo enviamos en mealPlan por si acaso (redundancia segura)
+            mealPlan: {
+                dayTemplates: currentPlan.dayTemplates,
+                weekMap: currentPlan.weekMap,
+                mealStructure: currentPlan.mealStructure
+            }
+        };
+    };
+
+    // 1. Guardar Borrador (Save Draft)
+    const handleSaveDraft = async () => {
+        try {
+            setIsSaving(true);
+            const payload = buildSmartPayload('draft');
+
+            // Llamada API Real
+            const res = await axios.post('http://localhost:3000/api/nutrition-plans', payload);
+
+            if (res.data.success) {
+                if (Platform.OS === 'web') window.alert('✅ Borrador guardado');
+                else Alert.alert('Éxito', 'Borrador guardado correctamente');
+            }
+
+        } catch (error) {
+            console.error('Error saving draft:', error);
+            alert('Error al guardar borrador: ' + (error.response?.data?.message || error.message));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // 2. Guardar Plantilla (Sin cambios, ya funcionaba con /templates)
+    const handleSaveTemplate = async () => {
+        try {
+            setIsSaving(true);
+            const payload = {
+                name: templateName,
+                folder: templateFolder,
+                ...plan,
+                planType: 'complete'
+            };
+            // Asegúrate que esta URL es correcta
+            await axios.post('http://localhost:3000/api/nutrition-plans/templates', payload);
+
+            setShowSaveTemplateModal(false);
+            setTemplateName('');
+            alert('Plantilla guardada correctamente');
+        } catch (error) {
+            console.error('Error saving template', error);
+            alert('Error al guardar plantilla');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // 4. Activar Plan (EL MÁS IMPORTANTE)
+    const handleActivate = async () => {
+        try {
+            setIsActivating(true);
+
+            // Construimos el payload "Ganador"
+            const rawPayload = buildSmartPayload('active');
+
+            // 🛑 DEEP CLONE: Evitar transmutación por referencias compartidas durante el envío
+            const payload = JSON.parse(JSON.stringify(rawPayload));
+
+            // 🚨 CHIVATO DE SEGURIDAD 🚨
+            const totalFoodsInState = payload.dayTemplates?.reduce((acc, day) =>
+                acc + (day.meals?.reduce((mAcc, meal) =>
+                    mAcc + (meal.options?.reduce((oAcc, opt) => oAcc + (opt.foods?.length || 0), 0) || 0), 0) || 0), 0);
+
+            console.log("-----------------------------------------");
+            console.log("🔥 INTENTO DE ENVÍO AL BACKEND 🔥");
+            console.log("📍 Target (Client ID):", clientId);
+            console.log("🍎 Alimentos detectados en el PAYLOAD:", totalFoodsInState);
+            console.log("📦 PAYLOAD REAL (Copia plana):", payload);
+            console.log("-----------------------------------------");
+
+            // DEBUG: Inspect Payload content before sending
+            // console.log('🐞 DEBUG PAYLOAD BEFORE SEND (Activate):', payload);
+            if (payload.dayTemplates.length === 0) console.error('❌ ERROR: dayTemplates is EMPTY');
+            if (payload.dayTemplates.length === 0) console.error('❌ ERROR: dayTemplates is EMPTY');
+            if (payload.dayTemplates[0]?.meals[0]?.options[0]?.foods?.length === 0) console.warn('⚠️ WARNING: No foods in first meal option');
+
+            console.log('🚀 Enviando Activación...', payload);
+
+            // Llamada API Real
+            const res = await axios.post('http://localhost:3000/api/nutrition-plans', payload);
+
+            if (res.data.success) {
+                console.log('✅ Plan Activado:', res.data.plan);
+                if (Platform.OS === 'web') window.alert('🚀 Plan activado y enviado al cliente');
+                else Alert.alert('Éxito', 'Plan activado correctamente');
+
+                // Opcional: Actualizar estado local si el backend devuelve datos nuevos
+                // setPlan(hydrateTemplate(res.data.plan)); 
+            }
+
+        } catch (error) {
+            console.error('Error activating plan:', error);
+            alert('Error al activar: ' + (error.response?.data?.message || error.message));
+        } finally {
+            setIsActivating(false);
+        }
+    };
+
+    // 3. Import Template (Fetch & Hydrate)
+    const handleOpenImport = async () => {
+        setShowImportModal(true);
+        setIsLoadingTemplates(true);
+        try {
+            const res = await axios.get('http://localhost:3000/api/nutrition-plans/templates/list');
+            if (res.data.success) {
+                setAvailableTemplates(res.data.templates);
+            }
+        } catch (error) {
+            console.error('Error loading templates', error);
+        } finally {
+            setIsLoadingTemplates(false);
+        }
+    };
+
+    const handleImportTemplate = async (templateId) => {
+        try {
+            setIsLoadingTemplates(true);
+            const res = await axios.get(`http://localhost:3000/api/nutrition-plans/templates/${templateId}`);
+            if (res.data.success) {
+                // 🛑 CRITICAL: Hydrate with refreshed IDs to avoid "Zombie Selectors" and collisions
+                const hydratedPlan = hydrateTemplate(res.data.template);
+
+                setPlan(hydratedPlan);
+                // 🛑 CRITICAL PROPAGATION: Notify parent immediately!
+                if (onDataChange) {
+                    onDataChange(hydratedPlan);
+                }
+                setShowImportModal(false);
+
+                // 🛑 RESET SELECTION: Force select the newly generated ID of the first day
+                if (hydratedPlan.dayTemplates.length > 0) {
+                    setSelectedTemplateId(hydratedPlan.dayTemplates[0].id);
+                }
+            }
+        } catch (error) {
+            console.error('Error importing', error);
+            if (Platform.OS === 'web') {
+                window.alert('Error al importar');
+            } else {
+                Alert.alert('Error', 'Error al importar');
+            }
+        } finally {
+            setIsLoadingTemplates(false);
+        }
+    };
 
     // Sync initial state with parent if generated internally
     useEffect(() => {
@@ -138,12 +397,16 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
     // Sync with external initialData updates (e.g. async fetch)
     useEffect(() => {
         if (initialData) {
-            setPlan(initialData);
-            // Optionally reset selected template if current is invalid, 
-            // but usually we want to keep selection or default to first.
-            // If the plan changed completely, we might want to reset selection:
-            if (!initialData.dayTemplates.find(t => t.id === selectedTemplateId)) {
-                setSelectedTemplateId(initialData.dayTemplates[0]?.id || null);
+            // 🛑 CRITICAL: Re-Hydrate on external updates too to prevent mirror effects if reloading
+            // But be careful not to overwrite user edits if this triggers unexpectedly.
+            // Usually initialData only changes on mount or explicit reload.
+            // Let's assume safe to hydrate.
+            const hydrated = hydrateTemplate(initialData);
+            setPlan(hydrated);
+
+            // Check if current selection is still valid in new data
+            if (!hydrated.dayTemplates.find(t => t.id === selectedTemplateId)) {
+                setSelectedTemplateId(hydrated.dayTemplates[0]?.id || null);
             }
         }
     }, [initialData]);
@@ -438,6 +701,25 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
         }));
     };
 
+    const updateOptionImage = (templateId, mealId, optionId, imageUri) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== templateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            options: m.options.map(o =>
+                                o.id !== optionId ? o : { ...o, image: imageUri }
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
     const bulkRenameOptions = (templateId, mealId, mode) => {
         updatePlan(prev => ({
             ...prev,
@@ -554,6 +836,15 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                                 {viewMode === 'cards' ? 'Vista tabla' : 'Vista cards'}
                             </Text>
                         </TouchableOpacity>
+
+                        {/* IMPORT BUTTON (Header) */}
+                        <TouchableOpacity
+                            style={styles.importBtn}
+                            onPress={handleOpenImport}
+                        >
+                            <Ionicons name="download-outline" size={18} color="#64748b" />
+                            <Text style={styles.importBtnText}>Importar</Text>
+                        </TouchableOpacity>
                     </View>
                 </ScrollView>
             </View>
@@ -568,10 +859,10 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                     plan={plan}
                     onUpdateOptionName={updateOptionName}
                     onBulkRename={bulkRenameOptions}
-                    onAddFood={(templateId, mealId, optionId) => {
+                    onAddFood={(templateId, mealId, optionId, mealName) => {
                         // Switch to the correct template if needed (though View usually shows all)
                         // But for Modal context we need IDs
-                        setActiveModal({ type: 'food', mealId, optionId });
+                        setActiveModal({ type: 'food', mealId, optionId, mealName });
                         // If we need to set templateId context for the drawer:
                         setSelectedTemplateId(templateId);
                     }}
@@ -593,7 +884,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                                 key={meal.id}
                                 meal={meal}
                                 templateColor={currentTemplate.color}
-                                onAddFood={(optionId) => setActiveModal({ type: 'food', mealId: meal.id, optionId })}
+                                onAddFood={(optionId) => setActiveModal({ type: 'food', mealId: meal.id, optionId, mealName: meal.name })}
                                 onAddSupplement={() => setActiveModal({ type: 'supplement', mealId: meal.id, optionId: null })}
                                 onRemoveFood={(optionId, foodIdx) => removeFoodFromMeal(meal.id, optionId, foodIdx)}
                                 onUpdateFood={(optionId, foodIdx, data) => updateFoodInMeal(meal.id, optionId, foodIdx, data)}
@@ -602,6 +893,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                                 onRemoveOption={(optionId) => removeOptionFromMeal(meal.id, optionId)}
                                 onDuplicateOption={(optionId) => duplicateOption(meal.id, optionId)}
                                 onEditOptionName={(optionId, newName) => updateOptionName(currentTemplate.id, meal.id, optionId, newName)}
+                                onUpdateOptionImage={(optionId, uri) => updateOptionImage(currentTemplate.id, meal.id, optionId, uri)}
                                 onBulkRename={(mode) => bulkRenameOptions(currentTemplate.id, meal.id, mode)}
                             />
                         ))}
@@ -612,9 +904,26 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
             )}
 
             {/* ═══════════════════════════════════════════════════════════════ */}
-            {/* FLOATING FOOTER */}
+            {/* ACTIONS FOOTER */}
             {/* ═══════════════════════════════════════════════════════════════ */}
 
+            {/* Restore Macro Summary Footer - Floating stats above actions */}
+            <MacroSummaryFooter
+                macros={templateMacros}
+                targets={currentTemplate?.targetMacros}
+            />
+
+            {showFooter && (
+                <ActionsFooter
+                    planName={plan.name}
+                    onChangePlanName={(text) => updatePlan(prev => ({ ...prev, name: text }))}
+                    isSaving={isSaving}
+                    isActivating={isActivating}
+                    onSaveDraft={handleSaveDraft}
+                    onSaveTemplate={() => setShowSaveTemplateModal(true)}
+                    onActivate={handleActivate}
+                />
+            )}
 
             {/* ═══════════════════════════════════════════════════════════════ */}
             {/* SMART FOOD DRAWER */}
@@ -626,6 +935,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                     templateId: selectedTemplateId,
                     mealId: activeModal?.mealId,
                     optionId: activeModal?.optionId,
+                    mealName: activeModal?.mealName, // Pass Name explicitly
                 }}
                 onAddFoods={(foodsData) => {
                     // Batch add foods to the meal
@@ -660,6 +970,14 @@ export default function WeeklyMealPlanner({ initialData, onDataChange }) {
                     }
                     setEditingTemplate(null);
                 }}
+            />
+
+            <ImportTemplateModal
+                visible={showImportModal}
+                isLoading={isLoadingTemplates}
+                templates={availableTemplates}
+                onClose={() => setShowImportModal(false)}
+                onSelect={handleImportTemplate}
             />
         </View>
     );
@@ -1045,7 +1363,7 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                                                     {/* Card Body: Rich Ingredient Stack */}
                                                     <TouchableOpacity
                                                         style={styles.richStackContainer}
-                                                        onPress={() => onAddFood(template.id, meal.id, option.id)} // Functionality restored
+                                                        onPress={() => onAddFood(template.id, meal.id, option.id, mealDef.name)} // Pass mealDef.name
                                                     >
                                                         {option.foods && option.foods.length > 0 ? (
                                                             <>
@@ -1141,6 +1459,61 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
 // ═══════════════════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPORT TEMPLATE MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function ImportTemplateModal({ visible, isLoading, templates, onClose, onSelect }) {
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    <View style={styles.modalHeader}>
+                        <Text style={styles.modalTitle}>Importar Plantilla</Text>
+                        <TouchableOpacity onPress={onClose}>
+                            <Ionicons name="close" size={24} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {isLoading ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color="#4f46e5" />
+                            <Text style={{ marginTop: 12, color: '#64748b' }}>Cargando rutinas de nutrición...</Text>
+                        </View>
+                    ) : templates.length === 0 ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
+                            <Text style={{ marginTop: 12, color: '#64748b', textAlign: 'center' }}>
+                                No se encontraron rutinas en la colección "nutritionroutines"
+                            </Text>
+                        </View>
+                    ) : (
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            {templates.map(t => (
+                                <TouchableOpacity
+                                    key={t._id}
+                                    style={styles.templateItem}
+                                    onPress={() => onSelect(t._id)}
+                                >
+                                    <View style={styles.templateIcon}>
+                                        <Ionicons name="nutrition" size={20} color="#4f46e5" />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.templateName}>{t.name}</Text>
+                                        <Text style={styles.templateInfo}>
+                                            {t.planType === 'complete' ? 'Plan Completo' : 'Macros Flexibles'} • {new Date(t.createdAt).toLocaleDateString()}
+                                        </Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    )}
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -1792,5 +2165,111 @@ const styles = StyleSheet.create({
     },
     iconOptionText: {
         fontSize: 20,
+    },
+    // New Import Button
+    importBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginLeft: 8,
+    },
+    importBtnText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContent: {
+        width: '100%',
+        maxWidth: 500,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        ...Platform.select({
+            web: { boxShadow: '0 10px 25px rgba(0,0,0,0.1)' },
+            default: { elevation: 5 },
+        }),
+        maxHeight: '80%'
+    },
+    modalContentSmall: {
+        width: '90%',
+        maxWidth: 400,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        ...Platform.select({
+            web: { boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' },
+            default: { elevation: 10 }
+        })
+    },
+    modalContentLarge: {
+        width: '90%',
+        maxWidth: 600,
+        height: '80%',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        ...Platform.select({
+            web: { boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' },
+            default: { elevation: 10 }
+        })
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    inputLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: 8,
+        marginTop: 12,
+    },
+    textInput: {
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 15,
+        color: '#1e293b',
+    },
+    templateItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    templateItemName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#334155',
+    },
+    templateItemFolder: {
+        fontSize: 12,
+        color: '#94a3b8',
     },
 });
