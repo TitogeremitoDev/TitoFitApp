@@ -3686,7 +3686,17 @@ export default function Entreno() {
     );
   }
 
-  const ejerciciosDia = (diasEj[diaIdx] || []).filter(Boolean);
+  const exercisesWithDetails = useMemo(() => {
+    return (diasEj[diaIdx] || []).filter(Boolean).map(item => {
+      const details = findExerciseInIndex(item.musculo, item.nombre);
+      return {
+        ...item,
+        _details: details,
+        _hasImage: !!details?.imagenEjercicioId?.trim(),
+        _hasVideo: !!details?.videoId?.trim()
+      };
+    });
+  }, [diasEj, diaIdx, findExerciseInIndex]);
 
   const bringCardIntoView = (idx) => {
     try {
@@ -3781,7 +3791,7 @@ export default function Entreno() {
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled={true}
           style={{ marginTop: 12 }}
-          data={ejerciciosDia}
+          data={exercisesWithDetails}
           keyExtractor={(it, i) => (it?.id ? String(it.id) : `idx-${i}`)}
           renderItem={({ item, index }) => {
             if (!item) return null;
@@ -3802,7 +3812,7 @@ export default function Entreno() {
             };
 
             const currentIsBiserie = isBiserie(item);
-            const nextItem = ejerciciosDia[index + 1];
+            const nextItem = exercisesWithDetails[index + 1];
             const nextIsBiserie = isBiserie(nextItem);
 
             // Mostrar el "+" si este Y el siguiente son biseries
@@ -3877,45 +3887,33 @@ export default function Entreno() {
                         <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
                       </TouchableOpacity>
 
-                      {(() => {
-                        const ejImg = findExerciseInIndex(item.musculo, item.nombre);
-                        const hasImage = !!ejImg?.imagenEjercicioId?.trim();
-                        return (
-                          <TouchableOpacity
-                            onPress={() => onOpenImage(item)}
-                            style={[styles.toolBtn, styles.toolBtnIcon, {
-                              backgroundColor: theme.backgroundTertiary,
-                              borderColor: theme.border,
-                              opacity: hasImage ? 1 : 0.5
-                            }]}
-                            activeOpacity={0.85}
-                          >
-                            <Text style={{ fontSize: 14 }}>{hasImage ? '🖼️' : '🚫'}</Text>
-                          </TouchableOpacity>
-                        );
-                      })()}
+                      <TouchableOpacity
+                        onPress={() => onOpenImage(item)}
+                        style={[styles.toolBtn, styles.toolBtnIcon, {
+                          backgroundColor: theme.backgroundTertiary,
+                          borderColor: theme.border,
+                          opacity: item._hasImage ? 1 : 0.5
+                        }]}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={{ fontSize: 14 }}>{item._hasImage ? '🖼️' : '🚫'}</Text>
+                      </TouchableOpacity>
 
-                      {(() => {
-                        const ejVid = findExerciseInIndex(item.musculo, item.nombre);
-                        const hasVideo = !!ejVid?.videoId?.trim();
-                        return (
-                          <TouchableOpacity
-                            onPress={() => onOpenVideo(item)}
-                            style={[styles.toolBtn, styles.toolBtnIcon, {
-                              backgroundColor: theme.backgroundTertiary,
-                              borderColor: theme.border,
-                              opacity: hasVideo ? 1 : 0.5
-                            }]}
-                            activeOpacity={0.85}
-                          >
-                            <Ionicons
-                              name={hasVideo ? "videocam-outline" : "videocam-off-outline"}
-                              size={16}
-                              color={theme.text}
-                            />
-                          </TouchableOpacity>
-                        );
-                      })()}
+                      <TouchableOpacity
+                        onPress={() => onOpenVideo(item)}
+                        style={[styles.toolBtn, styles.toolBtnIcon, {
+                          backgroundColor: theme.backgroundTertiary,
+                          borderColor: theme.border,
+                          opacity: item._hasVideo ? 1 : 0.5
+                        }]}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons
+                          name={item._hasVideo ? "videocam-outline" : "videocam-off-outline"}
+                          size={16}
+                          color={theme.text}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -4142,7 +4140,7 @@ export default function Entreno() {
           }}
           ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.textSecondary }}>Sin ejercicios</Text>}
           ListFooterComponent={
-            ejerciciosDia.length > 0 ? (
+            exercisesWithDetails.length > 0 ? (
               <View style={styles.footerButtonContainer}>
                 <TouchableOpacity
                   style={[styles.saveDayButton, { backgroundColor: theme.success }]}
