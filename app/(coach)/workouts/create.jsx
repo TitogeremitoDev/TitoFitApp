@@ -4,18 +4,14 @@ import {
   View,
   Text,
   SectionList,
-  TouchableOpacity,
   StyleSheet,
-  TextInput,
   Alert,
   ActivityIndicator,
   Modal,
   Platform,
   ActionSheetIOS,
   Image,
-  ScrollView,
   Dimensions,
-  Pressable,
 } from 'react-native';
 import YoutubeIframe from 'react-native-youtube-iframe';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,6 +19,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../../context/AuthContext';
 import ExerciseSearchModal from '../../../components/ExerciseSearchModal';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedTouchable as TouchableOpacity,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales', 'Biserie'];
 

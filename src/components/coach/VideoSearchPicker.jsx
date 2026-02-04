@@ -8,7 +8,6 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     View,
     Text,
-    TextInput,
     TouchableOpacity,
     ScrollView,
     Image,
@@ -17,6 +16,7 @@ import {
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -111,8 +111,9 @@ export default function VideoSearchPicker({
             <View style={styles.searchRow}>
                 <View style={styles.inputContainer}>
                     <Ionicons name="search" size={18} color="#4361ee" style={styles.searchIcon} />
-                    <TextInput
-                        style={styles.input}
+                    <EnhancedTextInput
+                        containerStyle={styles.inputContainerStyle}
+                        style={styles.inputText}
                         placeholder="Buscar video por nombre..."
                         placeholderTextColor="#666"
                         value={query}
@@ -195,11 +196,13 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 8,
     },
-    input: {
+    inputContainerStyle: {
         flex: 1,
+        paddingVertical: 12,
+    },
+    inputText: {
         color: '#fff',
         fontSize: 14,
-        paddingVertical: 12,
     },
     resultsContainer: {
         backgroundColor: '#1a1a2e',

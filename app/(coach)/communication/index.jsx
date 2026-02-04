@@ -11,9 +11,9 @@ import {
     SafeAreaView,
     TouchableOpacity,
     FlatList,
-    TextInput,
     ActivityIndicator
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -21,7 +21,7 @@ import CoachHeader from '../components/CoachHeader';
 import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import BroadcastModal from '../../../components/BroadcastModal';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TABS CONFIGURATION
@@ -159,8 +159,9 @@ const ChatTab = ({ token }) => {
             {/* Search Bar */}
             <View style={styles.searchContainer}>
                 <Ionicons name="search" size={20} color="#94a3b8" />
-                <TextInput
-                    style={styles.searchInput}
+                <EnhancedTextInput
+                    style={styles.searchInputText}
+                    containerStyle={styles.searchInputContainer}
                     placeholder="Buscar cliente..."
                     placeholderTextColor="#94a3b8"
                     value={searchQuery}
@@ -504,11 +505,13 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e2e8f0'
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
         marginLeft: 12,
+    },
+    searchInputText: {
         fontSize: 15,
-        color: '#1e293b'
+        color: '#1e293b',
     },
 
     // Filter Tabs

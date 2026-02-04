@@ -5,13 +5,13 @@ import {
     StyleSheet,
     ScrollView,
     Pressable,
-    TextInput,
     Alert,
     ActivityIndicator,
     Modal,
     Switch,
     Platform
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -537,11 +537,9 @@ export default function AdminPanel() {
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>
                                     Código *
                                 </Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={codeFormData.code}
                                     onChangeText={(t) => setCodeFormData({ ...codeFormData, code: t.toUpperCase() })}
                                     placeholder="ej: PREMIUM2024"
@@ -555,11 +553,9 @@ export default function AdminPanel() {
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>
                                     Descripción
                                 </Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={codeFormData.description}
                                     onChangeText={(t) => setCodeFormData({ ...codeFormData, description: t })}
                                     placeholder="ej: Código para primeros 50 usuarios"
@@ -571,11 +567,9 @@ export default function AdminPanel() {
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>
                                     Máximo de usos (0 = ilimitado)
                                 </Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={codeFormData.maxUses}
                                     onChangeText={(t) => setCodeFormData({ ...codeFormData, maxUses: t })}
                                     placeholder="50"
@@ -591,11 +585,9 @@ export default function AdminPanel() {
                                 <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6 }}>
                                     Fecha hasta cuando el código puede canjearse
                                 </Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={codeFormData.expiresAt}
                                     onChangeText={(t) => setCodeFormData({ ...codeFormData, expiresAt: t })}
                                     placeholder="YYYY-MM-DD (ej: 2025-01-31)"
@@ -610,10 +602,10 @@ export default function AdminPanel() {
                                 <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6 }}>
                                     Fecha en que expira el acceso del usuario que canjea
                                 </Text>
-                                <TextInput
-                                    style={[styles.input, {
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, {
                                         backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000',
                                         borderColor: '#F59E0B',
                                         borderWidth: 1
                                     }]}
@@ -724,11 +716,9 @@ export default function AdminPanel() {
                         <ScrollView>
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>Precio Actual</Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     keyboardType="numeric"
                                     value={formData.precioActual}
                                     onChangeText={(t) => setFormData({ ...formData, precioActual: t })}
@@ -737,11 +727,9 @@ export default function AdminPanel() {
 
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>Precio Original (Tachado)</Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     keyboardType="numeric"
                                     value={formData.precioOriginal}
                                     onChangeText={(t) => setFormData({ ...formData, precioOriginal: t })}
@@ -750,11 +738,9 @@ export default function AdminPanel() {
 
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>Etiqueta Oferta</Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={formData.etiquetaOferta}
                                     onChangeText={(t) => setFormData({ ...formData, etiquetaOferta: t })}
                                 />
@@ -762,11 +748,9 @@ export default function AdminPanel() {
 
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>Texto Ahorro</Text>
-                                <TextInput
-                                    style={[styles.input, {
-                                        backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                        color: isDark ? '#FFF' : '#000'
-                                    }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                    containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                     value={formData.textoAhorro}
                                     onChangeText={(t) => setFormData({ ...formData, textoAhorro: t })}
                                 />
@@ -793,11 +777,9 @@ export default function AdminPanel() {
                             {formData.isCoach && (
                                 <View style={styles.inputGroup}>
                                     <Text style={[styles.label, { color: isDark ? '#d1d5db' : '#374151' }]}>Rango de Clientes</Text>
-                                    <TextInput
-                                        style={[styles.input, {
-                                            backgroundColor: isDark ? '#374151' : '#f9fafb',
-                                            color: isDark ? '#FFF' : '#000'
-                                        }]}
+                                    <EnhancedTextInput
+                                        style={[styles.inputText, { color: isDark ? '#FFF' : '#000' }]}
+                                        containerStyle={[styles.inputContainer, { backgroundColor: isDark ? '#374151' : '#f9fafb' }]}
                                         keyboardType="numeric"
                                         value={formData.clientRange}
                                         onChangeText={(t) => setFormData({ ...formData, clientRange: t })}
@@ -970,10 +952,12 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 20, fontWeight: 'bold' },
     inputGroup: { marginBottom: 16 },
     label: { fontSize: 14, marginBottom: 8, fontWeight: '600' },
-    input: {
+    inputContainer: {
         borderRadius: 8,
         padding: 12,
-        fontSize: 16
+    },
+    inputText: {
+        fontSize: 16,
     },
     switchGroup: {
         flexDirection: 'row',

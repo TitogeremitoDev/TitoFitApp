@@ -4,7 +4,7 @@
    Incluye selección de tema (Automático, Modo Día, Modo Noche)
    ──────────────────────────────────────────────────────────────────────── */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,10 +15,10 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  TextInput,
   Switch,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -790,10 +790,19 @@ export default function AjustesScreen() {
     if (user) {
       loadSubscriptionStatus();
     }
-  }, [user]);
+  }, [user?._id, user?.tipoUsuario]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* CUSTOM HEADER */}
+      <View style={[styles.customHeader, { paddingTop: Platform.OS === 'android' ? 10 : 0 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase', marginLeft: 4 }}>AJUSTES</Text>
+      </View>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -802,8 +811,8 @@ export default function AjustesScreen() {
 
         {/* Sección de Apariencia */}
         <View style={styles.section}>
-          <View style={[styles.sectionHeader, { marginTop: 30, backgroundColor: theme.sectionHeader }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <View style={[styles.sectionHeader, { marginTop: 0, backgroundColor: theme.sectionHeader }]}>
+            <View style={styles.rowCenterFlex1}>
               <Ionicons name="color-palette-outline" size={20} color={theme.text} />
               <Text style={[styles.sectionTitle, { color: theme.text, fontFamily: theme.fontFamily }]}>
                 Apariencia
@@ -1112,13 +1121,13 @@ export default function AjustesScreen() {
             })()}
 
             {/* Selector de Tipografía */}
-            <View style={{ marginTop: 24, marginBottom: 8, paddingHorizontal: 4 }}>
+            <View style={styles.typographySection}>
               <Text style={[styles.sectionTitle, { color: theme.text, fontSize: 16, fontFamily: theme.fontFamily }]}>
                 Tipografía
               </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+            <View style={styles.typographyRow}>
               {[
                 { id: 'default', label: 'Predeterminada', icon: 'text' },
                 { id: 'serif', label: 'Elegante', icon: 'book-outline', fontFamily: 'serif' },
@@ -1129,21 +1138,19 @@ export default function AjustesScreen() {
                   <TouchableOpacity
                     key={font.id}
                     onPress={() => setFontSelection(font.id)}
-                    style={{
-                      flex: 1,
-                      backgroundColor: isSelected ? `${theme.primary}15` : theme.background,
-                      borderRadius: 12,
-                      paddingVertical: 12,
-                      alignItems: 'center',
-                      borderWidth: 1,
-                      borderColor: isSelected ? theme.primary : theme.border,
-                    }}
+                    style={[
+                      styles.fontOptionBase,
+                      {
+                        backgroundColor: isSelected ? `${theme.primary}15` : theme.background,
+                        borderColor: isSelected ? theme.primary : theme.border,
+                      }
+                    ]}
                   >
                     <Ionicons
                       name={font.icon}
                       size={20}
                       color={isSelected ? theme.primary : theme.textSecondary}
-                      style={{ marginBottom: 6 }}
+                      style={styles.iconMarginBottom}
                     />
                     <Text style={{
                       color: isSelected ? theme.primary : theme.textSecondary,
@@ -1214,7 +1221,7 @@ export default function AjustesScreen() {
 
             <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }]}>
               {loadingSub ? (
-                <View style={{ padding: 20, alignItems: 'center' }}>
+                <View style={styles.paddingCenter}>
                   <ActivityIndicator size="small" color={theme.primary} />
                   <Text style={[{ color: theme.textSecondary, marginTop: 8 }]}>Cargando...</Text>
                 </View>
@@ -1283,7 +1290,7 @@ export default function AjustesScreen() {
                   )}
                 </>
               ) : (
-                <View style={{ padding: 20, alignItems: 'center' }}>
+                <View style={styles.paddingCenter}>
                   <Ionicons name="card-outline" size={32} color={theme.textSecondary} />
                   <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
                     No tienes una suscripción activa
@@ -1320,7 +1327,7 @@ export default function AjustesScreen() {
                     <Ionicons name="cloud-download-outline" size={20} color={theme.primary} />
                   )}
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={styles.flex1}>
                   <Text style={[styles.settingItemTitle, { color: theme.text }]}>
                     Exportar Datos
                   </Text>
@@ -1355,7 +1362,7 @@ export default function AjustesScreen() {
                         <Ionicons name="cloud-upload-outline" size={20} color="#10B981" />
                       )}
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.flex1}>
                       <Text style={[styles.settingItemTitle, { color: theme.text }]}>
                         Guardar en la Nube
                       </Text>
@@ -1394,7 +1401,7 @@ export default function AjustesScreen() {
                 <View style={[styles.iconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                   <Ionicons name="play-circle-outline" size={20} color="#10B981" />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={styles.flex1}>
                   <Text style={[styles.settingItemTitle, { color: theme.text }]}>
                     Tutoriales
                   </Text>
@@ -1457,7 +1464,7 @@ export default function AjustesScreen() {
                     <View style={[styles.iconCircle, { backgroundColor: theme.primaryLight || 'rgba(59, 130, 246, 0.15)' }]}>
                       <Ionicons name="person-circle-outline" size={20} color={theme.primary} />
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.flex1}>
                       <Text style={[styles.settingItemTitle, { color: theme.text }]}>
                         Entrenado por
                       </Text>
@@ -1480,7 +1487,7 @@ export default function AjustesScreen() {
                     <View style={[styles.iconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
                       <Ionicons name="exit-outline" size={20} color={theme.warning || '#F59E0B'} />
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.flex1}>
                       <Text style={[styles.deleteAccountTitle, { color: theme.warning || '#F59E0B' }]}>
                         Dejar Entrenador
                       </Text>
@@ -1492,7 +1499,7 @@ export default function AjustesScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={{ height: 12 }} />
+                <View style={styles.spacer12} />
               </>
             )}
 
@@ -1509,7 +1516,7 @@ export default function AjustesScreen() {
                 <View style={[styles.iconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
                   <Ionicons name="trash-outline" size={20} color={theme.danger || '#EF4444'} />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={styles.flex1}>
                   <Text style={[styles.deleteAccountTitle, { color: theme.danger || '#EF4444' }]}>
                     Eliminar Cuenta
                   </Text>
@@ -1524,7 +1531,7 @@ export default function AjustesScreen() {
         </View>
 
         {/* Espacio final */}
-        <View style={{ height: 40 }} />
+        <View style={styles.spacer40} />
       </ScrollView>
 
 
@@ -1546,8 +1553,9 @@ export default function AjustesScreen() {
             {/* Contraseña Actual */}
             <View style={[styles.passwordInputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.passwordInput, { color: theme.text }]}
+              <EnhancedTextInput
+                style={{ fontSize: 16, color: theme.text }}
+                containerStyle={{ flex: 1 }}
                 placeholder="Contraseña actual"
                 placeholderTextColor={theme.textSecondary}
                 value={currentPassword}
@@ -1567,8 +1575,9 @@ export default function AjustesScreen() {
             {/* Nueva Contraseña */}
             <View style={[styles.passwordInputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Ionicons name="key-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.passwordInput, { color: theme.text }]}
+              <EnhancedTextInput
+                style={{ fontSize: 16, color: theme.text }}
+                containerStyle={{ flex: 1 }}
                 placeholder="Nueva contraseña (mín. 8 caracteres)"
                 placeholderTextColor={theme.textSecondary}
                 value={newPassword}
@@ -1588,8 +1597,9 @@ export default function AjustesScreen() {
             {/* Confirmar Contraseña */}
             <View style={[styles.passwordInputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Ionicons name="checkmark-circle-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.passwordInput, { color: theme.text }]}
+              <EnhancedTextInput
+                style={{ fontSize: 16, color: theme.text }}
+                containerStyle={{ flex: 1 }}
                 placeholder="Confirmar nueva contraseña"
                 placeholderTextColor={theme.textSecondary}
                 value={confirmPassword}
@@ -1952,7 +1962,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 100,
   },
   header: {
     paddingHorizontal: 16,
@@ -2137,6 +2147,18 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Contenedor responsive para web
+  responsiveContainer: {
+    flex: 1,
+    paddingHorizontal: 6,
+    maxWidth: '100%'
+  },
+  customHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   subsInfoContainer: {
     paddingHorizontal: 16,
@@ -2489,5 +2511,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     gap: 12,
+  },
+  // Estilos reutilizables refactorizados
+  rowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowCenterFlex1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  rowCenterGap8: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rowCenterGap6: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  flex1: {
+    flex: 1,
+  },
+  spacer12: {
+    height: 12,
+  },
+  spacer40: {
+    height: 40,
+  },
+  paddingCenter: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  // Selector de tipografía
+  typographySection: {
+    marginTop: 24,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  typographyRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  fontOptionBase: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  iconMarginBottom: {
+    marginBottom: 6,
   },
 });

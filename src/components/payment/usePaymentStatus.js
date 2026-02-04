@@ -4,7 +4,7 @@ import { Linking, Clipboard, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../../context/AuthContext';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 const CACHE_KEY = 'cached_subscription_data';
 
 /**
@@ -14,8 +14,9 @@ const CACHE_KEY = 'cached_subscription_data';
  * 
  * Level 0: No action needed (current or pending_verification)
  * Level 1: 2 days before payment (dismissable toast)
- * Level 2: Day of payment (bottom sheet modal)
- * Level 3: Overdue or rejected (blocking overlay)
+ * Level 2: Day of payment (friendly reminder)
+ * Level 3: 1-5 days overdue (friendly reminder)
+ * Level 4: >5 days overdue (blocking overlay with delay)
  */
 export function usePaymentStatus() {
     const { token, user } = useAuth();
@@ -119,8 +120,14 @@ export function usePaymentStatus() {
             if (recentlyReported) return 0; // Grace period active
         }
 
-        // Level 3: Overdue or Rejected
-        if (paymentStatus === 'overdue' || paymentStatus === 'rejected') {
+        // Overdue Handling (Split into Level 3 and 4)
+        if (paymentStatus === 'overdue' || paymentStatus === 'rejected' || daysUntilPayment < 0) {
+            const overdueDays = Math.abs(daysUntilPayment);
+
+            // Level 4: Aggressive (> 5 days)
+            if (overdueDays > 5) return 4;
+
+            // Level 3: Reminder (1-5 days)
             return 3;
         }
 

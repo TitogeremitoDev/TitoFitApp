@@ -3,22 +3,25 @@ import React, { useState } from 'react';
 import {
     View,
     Text,
-    TextInput,
     StyleSheet,
-    Pressable,
     ActivityIndicator,
     Alert,
     Platform,
     KeyboardAvoidingView,
-    ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import * as Clipboard from 'expo-clipboard';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedPressable as Pressable,
+    EnhancedTextInput as TextInput,
+} from '../../components/ui';
 
-const API_URL = 'http://localhost:3000';
+const API_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 export default function ForgotPasswordScreen() {
     const router = useRouter();

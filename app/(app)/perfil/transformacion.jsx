@@ -22,10 +22,10 @@ import {
     Alert,
     Platform,
     Modal,
-    TextInput,
     TouchableOpacity,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart, BarChart, ProgressChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,7 +34,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CHART CONFIGURATIONS
@@ -220,7 +220,7 @@ export default function TransformacionScreen() {
     const isPremium = useMemo(() => {
         if (!user) return false;
         return ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMINISTRADOR'].includes(user.tipoUsuario);
-    }, [user]);
+    }, [user?.tipoUsuario]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // LOAD DATA
@@ -345,7 +345,7 @@ export default function TransformacionScreen() {
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [user, token, isPremium]);
+    }, [user?._id, user?.tipoUsuario, token, isPremium]);
 
     useEffect(() => {
         loadData();
@@ -369,7 +369,7 @@ export default function TransformacionScreen() {
             setGoalReachedModal(true);
         }
         setGoalChecked(true);
-    }, [targetWeight, user, goalChecked]);
+    }, [targetWeight, user?.info_user?.peso, goalChecked]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // SAVE TARGET WEIGHT
@@ -430,7 +430,7 @@ export default function TransformacionScreen() {
     // Current weight from user profile (most reliable source)
     const currentWeight = useMemo(() => {
         return user?.info_user?.peso || null;
-    }, [user]);
+    }, [user?.info_user?.peso]);
 
     // Weight progress percentage - simple direct comparison
     const weightProgress = useMemo(() => {
@@ -1079,12 +1079,34 @@ export default function TransformacionScreen() {
     if (isLoading) {
         return (
             <View style={[styles.container, styles.center]}>
-                <Stack.Screen options={{
-                    title: 'Cargando...',
-                    headerTitleStyle: { color: theme.text },
-                    headerStyle: { backgroundColor: theme.background },
-                    headerTintColor: theme.text
-                }} />
+                <Stack.Screen
+                    options={{
+                        title: '',
+                        headerTitleAlign: 'center',
+                        headerStyle: { backgroundColor: theme.background },
+                        headerShadowVisible: false,
+                        headerLeft: () => (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Pressable
+                                    onPress={() => router.back()}
+                                    style={({ pressed }) => [styles.headerButton, { backgroundColor: theme.backgroundSecondary }, pressed && styles.headerButtonPressed]}
+                                >
+                                    <Ionicons name="arrow-back" size={24} color={theme.text} />
+                                </Pressable>
+                                <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase' }}>TRANSFORMACIÓN</Text>
+                            </View>
+                        ),
+                        headerRight: () => (
+                            <Pressable onPress={loadData} style={styles.headerButton} disabled={isRefreshing}>
+                                {isRefreshing ? (
+                                    <ActivityIndicator size="small" color={theme.text} />
+                                ) : (
+                                    <Ionicons name="refresh-outline" size={24} color={theme.text} />
+                                )}
+                            </Pressable>
+                        ),
+                    }}
+                />
                 <ActivityIndicator size="large" color={theme.primary} />
                 <Text style={styles.loadingText}>Cargando datos...</Text>
             </View>
@@ -1095,17 +1117,23 @@ export default function TransformacionScreen() {
         <ScrollView style={styles.container}>
             <Stack.Screen
                 options={{
-                    title: 'Mi Transformación',
+                    headerShown: true,
+                    headerTransparent: false,
+                    safeAreaInsets: { top: 0 },
+                    title: '',
                     headerTitleStyle: { color: theme.text },
                     headerStyle: { backgroundColor: theme.background },
-                    headerTintColor: theme.text,
+                    headerShadowVisible: false,
                     headerLeft: () => (
-                        <Pressable onPress={() => router.back()} style={styles.headerButton}>
-                            <Ionicons name="arrow-back" size={24} color={theme.text} />
-                        </Pressable>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}>
+                                <Ionicons name="arrow-back" size={24} color={theme.text} />
+                            </Pressable>
+                            <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase' }}>MI TRANSFORMACIÓN</Text>
+                        </View>
                     ),
                     headerRight: () => (
-                        <Pressable onPress={loadData} style={styles.headerButton} disabled={isRefreshing}>
+                        <Pressable onPress={loadData} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]} disabled={isRefreshing}>
                             {isRefreshing ? (
                                 <ActivityIndicator size="small" color={theme.text} />
                             ) : (
@@ -1391,8 +1419,9 @@ export default function TransformacionScreen() {
                         <Text style={styles.modalSubtitle}>¿Cuál es tu meta de peso?</Text>
 
                         <View style={styles.modalInputRow}>
-                            <TextInput
-                                style={styles.modalInput}
+                            <EnhancedTextInput
+                                style={{ color: theme.text, fontSize: 24, fontWeight: '700', textAlign: 'center' }}
+                                containerStyle={{ flex: 1, paddingVertical: 16 }}
                                 value={newTargetWeight}
                                 onChangeText={setNewTargetWeight}
                                 placeholder="Ej: 75"

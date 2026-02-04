@@ -11,9 +11,9 @@ import {
     Platform,
     Text,
     TouchableOpacity,
-    TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 
 // Colores neón reducidos
 const NEON_COLORS = [
@@ -307,8 +307,9 @@ const SkiaAnnotationCanvas = React.forwardRef(function SkiaAnnotationCanvas({
             {/* Note Input - Estilo similar a referencia */}
             <View style={styles.noteSection}>
                 <Text style={styles.noteLabel}>📝 Tu Feedback</Text>
-                <TextInput
-                    style={styles.noteInput}
+                <EnhancedTextInput
+                    containerStyle={styles.noteInputContainer}
+                    style={styles.noteInputText}
                     placeholder="Escribe tu feedback aquí..."
                     placeholderTextColor="#6b7280"
                     value={note}
@@ -404,13 +405,15 @@ const styles = StyleSheet.create({
         fontSize: 13,
         marginBottom: 8,
     },
-    noteInput: {
+    noteInputContainer: {
         backgroundColor: '#252530',
         borderRadius: 8,
         padding: 12,
+        minHeight: 60,
+    },
+    noteInputText: {
         color: '#fff',
         fontSize: 14,
-        minHeight: 60,
         textAlignVertical: 'top',
     },
     fallback: {

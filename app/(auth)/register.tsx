@@ -1,14 +1,20 @@
 // app/(auth)/register.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator,
-  Alert, Platform, KeyboardAvoidingView, ScrollView
+  View, Text, StyleSheet, ActivityIndicator,
+  Alert, Platform, KeyboardAvoidingView
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../components/ui';
 
 function isValidEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s).toLowerCase());

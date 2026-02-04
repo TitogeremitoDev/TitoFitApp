@@ -10,7 +10,6 @@ import {
     Text,
     Modal,
     TouchableOpacity,
-    TextInput,
     ScrollView,
     StyleSheet,
     Linking,
@@ -109,8 +108,12 @@ export default function VideoFeedbackResponseModal({
         }
         return () => {
             // Cleanup audio on close
-            if (audioRecorder.isRecording) {
-                audioRecorder.stop();
+            try {
+                if (audioRecorder.isRecording) {
+                    audioRecorder.stop();
+                }
+            } catch (e) {
+                // AudioRecorder shared object may already be released
             }
             if (recordingInterval.current) {
                 clearInterval(recordingInterval.current);

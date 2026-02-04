@@ -3,25 +3,28 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
     ActivityIndicator,
-    TouchableOpacity,
     RefreshControl,
     Platform,
     Share,
     Modal,
-    TextInput,
     Alert
 } from 'react-native';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useAchievements } from '../../../context/AchievementsContext';
 import SyncProgressModal from '../../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 // Constantes para cálculo de ahorro
 const MONTHLY_PRICE_ORIGINAL = 4.99; // €/mes (precio sin descuento)
@@ -32,6 +35,7 @@ const SAVINGS_PER_REFERRAL = DAILY_PRICE * REFERRAL_DAYS; // ~1.16€
 export default function Amigos() {
     const { theme, isDark } = useTheme();
     const { user, token, refreshUser } = useAuth();
+    const router = useRouter();
     const { updateStats, checkAchievements } = useAchievements();
 
     const [referredUsers, setReferredUsers] = useState([]);
@@ -66,7 +70,7 @@ export default function Amigos() {
     const [friendToDelete, setFriendToDelete] = useState(null);
     const [deletingFriend, setDeletingFriend] = useState(false);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     const gradientColors = isDark
         ? ['#0B1220', '#0D1B2A', '#111827']
@@ -320,8 +324,13 @@ export default function Amigos() {
 
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.text }]}>Amigos</Text>
-                <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                    <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
+                        <Ionicons name="arrow-back" size={24} color={theme.text} />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: theme.text, fontSize: 18, textTransform: 'uppercase' }]}>AMIGOS</Text>
+                </View>
+                <Text style={[styles.headerSubtitle, { color: theme.textSecondary, marginLeft: 36 }]}>
                     Invita amigos y gana premium gratis
                 </Text>
             </View>
@@ -672,7 +681,7 @@ export default function Amigos() {
 const styles = StyleSheet.create({
     root: {
         flex: 1,
-        paddingTop: Platform.OS === 'android' ? 36 : 50,
+        paddingTop: 0,
     },
     header: {
         paddingHorizontal: 20,

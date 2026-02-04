@@ -6,15 +6,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Platform,
     useWindowDimensions, Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // Configuración de categorías con iconos y colores
 const CATEGORIES_CONFIG = {
@@ -296,8 +297,9 @@ export default function CoachHelpScreen() {
             {/* Search Bar - Sticky */}
             <View style={[styles.searchContainer, isLargeScreen && { maxWidth: contentMaxWidth, alignSelf: 'center', width: '100%' }]}>
                 <Feather name="search" size={20} color="#888" style={styles.searchIcon} />
-                <TextInput
-                    style={styles.searchInput}
+                <EnhancedTextInput
+                    style={{ color: '#fff', fontSize: 15, ...(Platform.OS === 'web' && { outlineStyle: 'none' }) }}
+                    containerStyle={{ flex: 1 }}
                     placeholder="Busca tu duda (ej. Creatina, Ayuno...)"
                     placeholderTextColor="#888"
                     value={searchQuery}

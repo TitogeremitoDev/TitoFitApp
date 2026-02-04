@@ -330,13 +330,13 @@ export default function EvolucionScreen() {
     custom: '#3b82f6',  // Azul
   };
 
-  const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+  const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
   // Determinar si el usuario es premium
   const isPremium = useMemo(() => {
     if (!user) return false;
     return ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMINISTRADOR'].includes(user.tipoUsuario);
-  }, [user]);
+  }, [user?.tipoUsuario]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TRANSFORMAR WORKOUTS DE MONGODB A FORMATO GLOBAL_LOG
@@ -1278,14 +1278,19 @@ export default function EvolucionScreen() {
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen
         options={{
-          title: 'Evolución',
-          headerTitleStyle: { color: theme.text },
+          headerShown: true,
+          headerTransparent: false,
+          safeAreaInsets: { top: 0 },
+          title: '',
           headerStyle: { backgroundColor: theme.cardBackground },
-          headerTintColor: theme.text,
+          headerShadowVisible: false,
           headerLeft: () => (
-            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}>
-              <Ionicons name="arrow-back" size={24} color={theme.text} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}>
+                <Ionicons name="arrow-back" size={24} color={theme.text} />
+              </Pressable>
+              <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase' }}>EVOLUCIÓN</Text>
+            </View>
           ),
           headerRight: () => (
             <Pressable onPress={cargarLog} style={({ pressed }) => [styles.headerButton, { marginRight: 5 }, pressed && styles.headerButtonPressed]} disabled={isRefreshing}>

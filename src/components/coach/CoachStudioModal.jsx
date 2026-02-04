@@ -21,9 +21,9 @@ import {
     Alert,
     Platform,
     ScrollView,
-    TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
 import SkiaAnnotationCanvas from './SkiaAnnotationCanvas';
 import { useFeedbackDraft } from '../../../context/FeedbackDraftContext';
@@ -211,7 +211,7 @@ export default function CoachStudioModal({
         return TOOLS.filter(tool => !tool.hidden && (!tool.mobileOnly || Platform.OS !== 'web'));
     }, []);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // ─────────────────────────────────────────────────────────────────────────
     // CAROUSEL NAVIGATION
@@ -980,7 +980,7 @@ export default function CoachStudioModal({
                             <View style={styles.noteSection}>
                                 <View style={styles.noteInputContainer}>
                                     <Ionicons name="chatbubble-outline" size={16} color="#9ca3af" />
-                                    <TextInput
+                                    <EnhancedTextInput
                                         placeholder="Añadir nota para el cliente..."
                                         placeholderTextColor="#9ca3af"
                                         value={annotationNote}
@@ -988,11 +988,13 @@ export default function CoachStudioModal({
                                             setAnnotationNote(text);
                                             setHasChanges(true);
                                         }}
-                                        style={{
+                                        containerStyle={{
                                             flex: 1,
+                                            marginLeft: 10,
+                                        }}
+                                        style={{
                                             color: '#fff',
                                             fontSize: 14,
-                                            marginLeft: 10,
                                         }}
                                     />
                                 </View>

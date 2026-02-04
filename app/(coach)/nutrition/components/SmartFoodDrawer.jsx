@@ -12,7 +12,6 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    TextInput,
     Animated,
     Platform,
     useWindowDimensions,
@@ -20,6 +19,7 @@ import {
     Image,
     ActivityIndicator,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartScalingModal from './SmartScalingModal'; // NEW Import
@@ -47,6 +47,7 @@ const MODE_TABS = [
 // Food filter tabs (for search mode)
 const FOOD_TABS = [
     { id: 'global', label: 'Global', icon: 'globe-outline' },
+    { id: 'recetas', label: 'Recetas', icon: 'restaurant-outline' }, // NEW Tab
     { id: 'recientes', label: 'Recientes', icon: 'time-outline' },
     { id: 'favoritos', label: 'Favoritos', icon: 'star-outline' },
 ];
@@ -235,8 +236,9 @@ function FoodRowItem({
                 {/* B. Inline Input Group + Weight Hint */}
                 <View style={styles.inputWrapper}>
                     <View style={styles.inlineInputGroup}>
-                        <TextInput
-                            style={styles.inlineInputNumber}
+                        <EnhancedTextInput
+                            containerStyle={styles.inlineInputNumberContainer}
+                            style={styles.inlineInputNumberText}
                             value={String(selectionData?.amount || 100)}
                             onChangeText={handleAmountChange}
                             keyboardType="numeric"
@@ -341,15 +343,34 @@ export default function SmartFoodDrawer({
     }, [flashAnim]);
 
     // Fetch foods using foodService
-    const fetchFoods = useCallback(async (query = '') => {
+    const fetchFoods = useCallback(async (query = '', options = {}) => {
         try {
             setIsLoading(true);
-            // searchFoods handles LOCAL + CLOUD + API layers
-            const results = await searchFoods(query);
-            setAllFoods(results);
+
+            // 1. Fast Load (Local + Cloud) - Skip External
+            const internalResults = await searchFoods(query, { ...options, skipExternal: true });
+            setAllFoods(internalResults);
+            setIsLoading(false); // Render immediately
+
+            // 2. Slow Load (External API - Background)
+            // Only if searching globally and few results found
+            const layer = options.layer || 'ALL';
+            if ((layer === 'ALL' || layer === 'API') && internalResults.length < 10) {
+                const { searchExternalFoods } = require('../../../../src/services/foodService');
+                const externalResults = await searchExternalFoods(query);
+
+                if (externalResults.length > 0) {
+                    setAllFoods(prev => {
+                        // Deduplicate (External shouldn't override Local/Cloud if exists)
+                        const existingIds = new Set(prev.map(p => p.name.toLowerCase()));
+                        const newItems = externalResults.filter(e => !existingIds.has(e.name.toLowerCase()));
+                        return [...prev, ...newItems];
+                    });
+                }
+            }
+
         } catch (error) {
             console.error('[SmartDrawer] Search error:', error);
-        } finally {
             setIsLoading(false);
         }
     }, []);
@@ -385,18 +406,18 @@ export default function SmartFoodDrawer({
         }
     }, [visible, fetchFoods, fetchFavorites, loadRecentFoods]);
 
-    // Debounced search
+    // Debounced search & Tab Sync
     useEffect(() => {
         if (!visible) return;
 
         const timeoutId = setTimeout(() => {
             if (activeTab === 'global') {
-                if (searchQuery.trim().length >= 2) {
-                    fetchFoods(searchQuery);
-                } else if (searchQuery.trim().length === 0) {
-                    // Reset to initial state (empty query)
-                    fetchFoods('');
+                if (searchQuery.trim().length >= 2 || searchQuery.trim().length === 0) {
+                    fetchFoods(searchQuery, { layer: 'ALL' });
                 }
+            } else if (activeTab === 'recetas') {
+                // Fetch recipes (filtered by query if exists)
+                fetchFoods(searchQuery, { layer: 'RECIPE' });
             }
         }, 300);
 
@@ -432,8 +453,8 @@ export default function SmartFoodDrawer({
             return recentFoods;
         }
 
-        // Global tab: Use allFoods from searchFoods (already merged LOCAL + CLOUD + API)
-        // If no search, show all; searchFoods already handles this
+        // Global OR Recetas tab: Use allFoods from searchFoods (already merged/fetched)
+        // If no search, show all; searchFoods function handles this
         return allFoods;
     }, [activeTab, allFoods, favorites, recentFoods]);
 
@@ -557,7 +578,9 @@ export default function SmartFoodDrawer({
         }
 
         const foodsToAdd = validSelections.map(sel => ({
-            food: sel.food,
+            food: {
+                ...sel.food, // 🟢 PRESERVE ORIGINAL PROPERTIES (ingredients, isComposite, etc.)
+            },
             amount: sel.amount || 100,
             unit: sel.unit || 'gramos',
             calculatedMacros: calculateMacros(sel.food.nutrients, sel.amount || 100, sel.unit || 'gramos'),
@@ -771,8 +794,9 @@ export default function SmartFoodDrawer({
                         <>
                             <View style={styles.searchContainer}>
                                 <Ionicons name="search" size={18} color="#94a3b8" />
-                                <TextInput
-                                    style={styles.searchInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.searchInputContainer}
+                                    style={styles.searchInputText}
                                     value={searchQuery}
                                     onChangeText={setSearchQuery}
                                     placeholder="Buscar alimento..."
@@ -791,7 +815,42 @@ export default function SmartFoodDrawer({
                                     <TouchableOpacity
                                         key={tab.id}
                                         style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-                                        onPress={() => setActiveTab(tab.id)}
+                                        onPress={() => {
+                                            setActiveTab(tab.id);
+                                            // This logic should ideally be in a useEffect or a dedicated fetch function
+                                            // triggered by activeTab change, but faithfully inserting as requested.
+                                            // Note: 'await' cannot be used directly in onPress, this will cause a syntax error.
+                                            // Assuming this is a placeholder for a function call that handles fetching.
+                                            // For now, it's commented out to maintain syntactical correctness.
+                                            /*
+                                            let results = [];
+                                            if (tab.id === 'favoritos') { // Use tab.id instead of activeTab for immediate effect
+                                                results = await getFavorites();
+                                                // Client-side filter if query exists
+                                                if (debouncedQuery) {
+                                                    results = results.filter(f => f.name.toLowerCase().includes(debouncedQuery.toLowerCase()));
+                                                }
+                                            } else if (tab.id === 'recetas') {
+                                                // Fetch recipes from backend
+                                                results = await searchFoods(debouncedQuery, { layer: 'RECIPE' });
+                                            } else {
+                                                // Global or other tabs
+                                                const layer = tab.id === 'recientes' ? 'LOCAL' : 'ALL'; 
+                                                // Note: 'recientes' logic usually handled differently (local storage), but if using searchFoods:
+                                                // Actually 'recientes' usually implies previously used. Let's assume standard browse for now.
+                                                // If 'recientes' logic is missing, fallback to ALL or check implementation.
+                                                // Re-reading code: 'recientes' logic is likely handled via local storage in useEffect, but here we overwrite.
+                                                // Let's keep existing logic and just add 'recetas'.
+                                                
+                                                // Existing logic likely handled 'recientes' differently? 
+                                                // Let's check original code block below.
+                                                
+                                                results = await searchFoods(debouncedQuery, { 
+                                                   layer: tab.id === 'global' ? 'ALL' : 'ALL' 
+                                                });
+                                            }
+                                            */
+                                        }}
                                     >
                                         <Ionicons
                                             name={tab.icon}
@@ -914,8 +973,9 @@ export default function SmartFoodDrawer({
                 {drawerMode === 'manual' && (
                     <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
                         <Text style={styles.formLabel}>Nombre del alimento</Text>
-                        <TextInput
-                            style={styles.formInput}
+                        <EnhancedTextInput
+                            containerStyle={styles.formInputContainer}
+                            style={styles.formInputText}
                             value={manualForm.name}
                             onChangeText={(v) => setManualForm(p => ({ ...p, name: v }))}
                             placeholder="Ej: Pastel de cumpleaños"
@@ -925,8 +985,9 @@ export default function SmartFoodDrawer({
                         <View style={styles.formRow}>
                             <View style={styles.formCol}>
                                 <Text style={styles.formLabel}>Cantidad</Text>
-                                <TextInput
-                                    style={styles.formInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.formInputContainer}
+                                    style={styles.formInputText}
                                     value={manualForm.quantity}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, quantity: v }))}
                                     keyboardType="numeric"
@@ -934,8 +995,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.formCol}>
                                 <Text style={styles.formLabel}>Unidad</Text>
-                                <TextInput
-                                    style={styles.formInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.formInputContainer}
+                                    style={styles.formInputText}
                                     value={manualForm.unit}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, unit: v }))}
                                     placeholder="Porción"
@@ -949,8 +1011,9 @@ export default function SmartFoodDrawer({
                         <View style={styles.macroGrid}>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🔥</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={manualForm.kcal}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, kcal: v }))}
                                     keyboardType="numeric"
@@ -960,8 +1023,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🥩</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={manualForm.protein}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, protein: v }))}
                                     keyboardType="numeric"
@@ -971,8 +1035,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🍚</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={manualForm.carbs}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, carbs: v }))}
                                     keyboardType="numeric"
@@ -982,8 +1047,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🥑</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={manualForm.fat}
                                     onChangeText={(v) => setManualForm(p => ({ ...p, fat: v }))}
                                     keyboardType="numeric"
@@ -1036,8 +1102,9 @@ export default function SmartFoodDrawer({
                         <View style={styles.macroGrid}>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🔥</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={quickForm.kcal}
                                     onChangeText={(v) => setQuickForm(p => ({ ...p, kcal: v }))}
                                     keyboardType="numeric"
@@ -1047,8 +1114,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🥩</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={quickForm.protein}
                                     onChangeText={(v) => setQuickForm(p => ({ ...p, protein: v }))}
                                     keyboardType="numeric"
@@ -1058,8 +1126,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🍚</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={quickForm.carbs}
                                     onChangeText={(v) => setQuickForm(p => ({ ...p, carbs: v }))}
                                     keyboardType="numeric"
@@ -1069,8 +1138,9 @@ export default function SmartFoodDrawer({
                             </View>
                             <View style={styles.macroInputBox}>
                                 <Text style={styles.macroEmoji}>🥑</Text>
-                                <TextInput
-                                    style={styles.macroInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.macroInputContainer}
+                                    style={styles.macroInputText}
                                     value={quickForm.fat}
                                     onChangeText={(v) => setQuickForm(p => ({ ...p, fat: v }))}
                                     keyboardType="numeric"
@@ -1202,6 +1272,13 @@ const styles = StyleSheet.create({
     },
     searchInput: {
         flex: 1,
+        fontSize: 15,
+        color: '#1e293b',
+    },
+    searchInputContainer: {
+        flex: 1,
+    },
+    searchInputText: {
         fontSize: 15,
         color: '#1e293b',
     },
@@ -1398,6 +1475,18 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         padding: 0,
         backgroundColor: '#fff',
+    },
+    inlineInputNumberContainer: {
+        width: 36,
+        height: '100%',
+        padding: 0,
+        backgroundColor: '#fff',
+    },
+    inlineInputNumberText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+        textAlign: 'center',
     },
     inlineUnitPicker: {
         flexDirection: 'row',
@@ -1619,6 +1708,16 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#1e293b',
     },
+    formInputContainer: {
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    formInputText: {
+        fontSize: 15,
+        color: '#1e293b',
+    },
     formRow: {
         flexDirection: 'row',
         gap: 12,
@@ -1653,6 +1752,14 @@ const styles = StyleSheet.create({
     },
     macroInput: {
         flex: 1,
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    macroInputContainer: {
+        flex: 1,
+    },
+    macroInputText: {
         fontSize: 16,
         fontWeight: '600',
         color: '#1e293b',

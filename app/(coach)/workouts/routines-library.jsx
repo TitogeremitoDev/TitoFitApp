@@ -11,11 +11,11 @@ import {
     ActivityIndicator,
     Alert,
     RefreshControl,
-    TextInput,
     Modal,
     ScrollView,
     Platform
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -700,8 +700,9 @@ export default function RoutinesLibraryScreen() {
             {/* Search Bar */}
             <View style={styles.searchContainer}>
                 <Ionicons name="search" size={20} color="#94a3b8" style={styles.searchIcon} />
-                <TextInput
+                <EnhancedTextInput
                     style={styles.searchInput}
+                    containerStyle={{ flex: 1 }}
                     placeholder="Buscar rutinas..."
                     placeholderTextColor="#94a3b8"
                     value={searchQuery}
@@ -786,8 +787,9 @@ export default function RoutinesLibraryScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Nueva Carpeta</Text>
-                        <TextInput
-                            style={styles.modalInput}
+                        <EnhancedTextInput
+                            style={styles.modalInputText}
+                            containerStyle={styles.modalInputContainer}
                             placeholder="Nombre de la carpeta"
                             placeholderTextColor="#94a3b8"
                             value={newFolderName}
@@ -945,7 +947,6 @@ const styles = StyleSheet.create({
     },
     searchIcon: { marginRight: 8 },
     searchInput: {
-        flex: 1,
         fontSize: 15,
         color: '#1e293b',
     },
@@ -1058,15 +1059,17 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         textAlign: 'center',
     },
-    modalInput: {
+    modalInputContainer: {
         borderWidth: 1,
         borderColor: '#e2e8f0',
         borderRadius: 12,
         paddingHorizontal: 16,
         paddingVertical: 12,
+        marginBottom: 20,
+    },
+    modalInputText: {
         fontSize: 15,
         color: '#1e293b',
-        marginBottom: 20,
     },
     modalButtons: { flexDirection: 'row', gap: 12 },
     modalButton: {

@@ -15,7 +15,6 @@ import {
     View,
     Text,
     Modal,
-    TextInput,
     TouchableOpacity,
     StyleSheet,
     ScrollView,
@@ -27,6 +26,7 @@ import {
     Animated,
     ActivityIndicator
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { FoodItem, saveFood } from '../src/services/foodService';
@@ -52,7 +52,7 @@ const TAG_OPTIONS = [
     'Vegano', 'Sin Gluten', 'Integral'
 ];
 
-const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app').replace(/\/+$/, '') + '/api';
 
 // ─────────────────────────────────────────────────────────
 // COMPONENT
@@ -86,6 +86,10 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
     const [aiLoading, setAiLoading] = useState(false);
     const [aiEstimated, setAiEstimated] = useState(false);
     const [aiConfidence, setAiConfidence] = useState<number | null>(null);
+    const [aiProgressMessage, setAiProgressMessage] = useState('');
+    const [aiShowRetry, setAiShowRetry] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
+    const aiAbortControllerRef = useRef<AbortController | null>(null);
 
     const [imageAiLoading, setImageAiLoading] = useState(false);
     const [imageAiIndex, setImageAiIndex] = useState(0);
@@ -283,14 +287,53 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
     // ─────────────────────────────────────────────────────────
     // ✨ AI MAGIC AUTOCOMPLETE
     // ─────────────────────────────────────────────────────────
+
+    // Mensajes progresivos para la estimación de IA
+    const AI_PROGRESS_MESSAGES = [
+        { time: 0, message: 'Analizando alimento...' },
+        { time: 3000, message: 'Buscando información nutricional...' },
+        { time: 8000, message: 'Calculando macronutrientes...' },
+        { time: 15000, message: 'Procesando datos...' },
+        { time: 25000, message: 'Tardando más de lo esperado...' },
+        { time: 35000, message: 'Casi listo, un momento más...' },
+    ];
+
     const handleAiEstimate = async () => {
         if (!name.trim() || name.trim().length < 2) {
             Alert.alert('Error', 'Escribe el nombre del alimento primero (mínimo 2 caracteres)');
             return;
         }
 
+        // Cancelar petición anterior si existe
+        if (aiAbortControllerRef.current) {
+            aiAbortControllerRef.current.abort();
+        }
+
+        // Crear nuevo AbortController
+        const abortController = new AbortController();
+        aiAbortControllerRef.current = abortController;
+
         setAiLoading(true);
         setAiEstimated(false);
+        setAiShowRetry(false);
+        setAiError(null);
+        setAiProgressMessage(AI_PROGRESS_MESSAGES[0].message);
+
+        // Configurar mensajes progresivos
+        const progressTimeouts: ReturnType<typeof setTimeout>[] = [];
+        AI_PROGRESS_MESSAGES.slice(1).forEach(({ time, message }) => {
+            const timeout = setTimeout(() => {
+                if (!abortController.signal.aborted) {
+                    setAiProgressMessage(message);
+                }
+            }, time);
+            progressTimeouts.push(timeout);
+        });
+
+        // Timeout de 45 segundos
+        const timeoutId = setTimeout(() => {
+            abortController.abort();
+        }, 45000);
 
         try {
             // Get auth token from storage
@@ -308,7 +351,8 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ foodName: name.trim() })
+                body: JSON.stringify({ foodName: name.trim() }),
+                signal: abortController.signal
             });
 
             const data = await response.json();
@@ -342,10 +386,33 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
             }
         } catch (error: any) {
             console.error('AI Estimate error:', error);
-            Alert.alert('Error', error.message || 'No se pudo estimar los nutrientes');
+
+            if (error.name === 'AbortError') {
+                setAiError('La solicitud ha tardado demasiado. ¿Quieres intentarlo de nuevo?');
+                setAiShowRetry(true);
+            } else {
+                setAiError(error.message || 'No se pudo estimar los nutrientes');
+                setAiShowRetry(true);
+            }
         } finally {
+            // Limpiar timeouts
+            clearTimeout(timeoutId);
+            progressTimeouts.forEach(t => clearTimeout(t));
+
             setAiLoading(false);
+            setAiProgressMessage('');
+            aiAbortControllerRef.current = null;
         }
+    };
+
+    const handleCancelAiEstimate = () => {
+        if (aiAbortControllerRef.current) {
+            aiAbortControllerRef.current.abort();
+        }
+        setAiLoading(false);
+        setAiProgressMessage('');
+        setAiShowRetry(false);
+        setAiError(null);
     };
 
     // ─────────────────────────────────────────────────────────
@@ -433,9 +500,13 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                 ...foodData,
                 isComposite: true,
                 ingredients: ingredients.map(ing => ({
-                    item: ing.item._id, // Note: Backend handles snapshots if using correct service
+                    item: ing.item, // Return FULL item object for proper display
                     quantity: parseFloat(ing.quantity) || 0,
-                    unit: ing.unit
+                    unit: ing.unit,
+                    // Also include flattened data for easier access
+                    cachedName: ing.item?.name || 'Ingrediente',
+                    cachedImage: ing.item?.image || null,
+                    cachedNutrients: ing.item?.nutrients || {}
                 })),
                 nutrients: {
                     kcal: Math.round(totals.kcal),
@@ -596,8 +667,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                     </TouchableOpacity>
                                                 )}
                                                 {imageTab === 'url' && (
-                                                    <TextInput
-                                                        style={styles.mobileUrlInput}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.mobileUrlInputContainer}
+                                                        style={styles.mobileUrlInputText}
                                                         placeholder="Pega la URL de la imagen..."
                                                         placeholderTextColor="#94a3b8"
                                                         value={imageUrl}
@@ -678,8 +750,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                             )}
                                             {imageTab === 'url' && (
                                                 <View style={styles.urlInputRow}>
-                                                    <TextInput
-                                                        style={styles.urlInput}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.urlInputContainer}
+                                                        style={styles.urlInputText}
                                                         placeholder="https://..."
                                                         value={imageUrl}
                                                         onChangeText={setImageUrl}
@@ -722,14 +795,17 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                 <View style={styles.formFields}>
                                     <Text style={styles.fieldLabel}>Nombre del Alimento</Text>
                                     <View style={styles.nameInputRow}>
-                                        <TextInput
-                                            style={[styles.textInput, styles.nameInput]}
+                                        <EnhancedTextInput
+                                            containerStyle={[styles.textInputContainer, styles.nameInput]}
+                                            style={styles.textInputText}
                                             placeholder="Ej: Pechuga de Pollo"
                                             placeholderTextColor="#94a3b8"
                                             value={name}
                                             onChangeText={(text) => {
                                                 setName(text);
                                                 setAiEstimated(false); // Reset AI state when typing
+                                                setAiShowRetry(false);
+                                                setAiError(null);
                                             }}
                                         />
                                         <TouchableOpacity
@@ -745,9 +821,34 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                         </TouchableOpacity>
                                     </View>
 
+                                    {/* AI Progress Message */}
+                                    {aiLoading && aiProgressMessage && (
+                                        <View style={styles.aiProgressContainer}>
+                                            <View style={styles.aiProgressContent}>
+                                                <ActivityIndicator size="small" color="#8b5cf6" style={{ marginRight: 8 }} />
+                                                <Text style={styles.aiProgressText}>{aiProgressMessage}</Text>
+                                            </View>
+                                            <TouchableOpacity onPress={handleCancelAiEstimate} style={styles.aiCancelBtn}>
+                                                <Text style={styles.aiCancelText}>Cancelar</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+
+                                    {/* AI Error with Retry */}
+                                    {!aiLoading && aiError && aiShowRetry && (
+                                        <View style={styles.aiErrorContainer}>
+                                            <Text style={styles.aiErrorText}>{aiError}</Text>
+                                            <TouchableOpacity onPress={handleAiEstimate} style={styles.aiRetryBtn}>
+                                                <Ionicons name="refresh" size={14} color="#8b5cf6" />
+                                                <Text style={styles.aiRetryText}>Reintentar</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+
                                     <Text style={styles.fieldLabel}>Marca <Text style={styles.optional}>(Opcional)</Text></Text>
-                                    <TextInput
-                                        style={styles.textInput}
+                                    <EnhancedTextInput
+                                        containerStyle={styles.textInputContainer}
+                                        style={styles.textInputText}
                                         placeholder="Ej: Mercadona, Hacendado..."
                                         placeholderTextColor="#94a3b8"
                                         value={brand}
@@ -888,8 +989,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                                 </Text>
                                                             </View>
 
-                                                            <TextInput
-                                                                style={styles.qtyInput}
+                                                            <EnhancedTextInput
+                                                                containerStyle={styles.qtyInputContainer}
+                                                                style={styles.qtyInputText}
                                                                 value={String(ing.quantity)}
                                                                 onChangeText={(t) => handleUpdateIngredient(ing.id, t)}
                                                                 keyboardType="numeric"
@@ -908,8 +1010,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                         {/* INSTRUCTIONS */}
                                         <View style={{ marginTop: 20 }}>
                                             <Text style={styles.fieldLabel}>Instrucciones de Preparación</Text>
-                                            <TextInput
-                                                style={[styles.textInput, { minHeight: 80, textAlignVertical: 'top' }]}
+                                            <EnhancedTextInput
+                                                containerStyle={[styles.textInputContainer, { minHeight: 80 }]}
+                                                style={[styles.textInputText, { textAlignVertical: 'top' }]}
                                                 multiline
                                                 placeholder="Describe cómo preparar este plato..."
                                                 placeholderTextColor="#94a3b8"
@@ -929,8 +1032,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                 <>
                                                     <Text style={styles.macroIcon}>🔥</Text>
                                                     <Text style={styles.macroLabel}>Kcal</Text>
-                                                    <TextInput
-                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.macroInputContainer}
+                                                        style={[styles.macroInputText, aiEstimated && styles.macroInputAi]}
                                                         placeholder="0"
                                                         placeholderTextColor="#cbd5e1"
                                                         value={kcal}
@@ -949,8 +1053,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                 <>
                                                     <Text style={styles.macroIcon}>🥩</Text>
                                                     <Text style={styles.macroLabel}>Proteína (g)</Text>
-                                                    <TextInput
-                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.macroInputContainer}
+                                                        style={[styles.macroInputText, aiEstimated && styles.macroInputAi]}
                                                         placeholder="0"
                                                         placeholderTextColor="#cbd5e1"
                                                         value={protein}
@@ -969,8 +1074,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                 <>
                                                     <Text style={styles.macroIcon}>🍞</Text>
                                                     <Text style={styles.macroLabel}>Carbos (g)</Text>
-                                                    <TextInput
-                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.macroInputContainer}
+                                                        style={[styles.macroInputText, aiEstimated && styles.macroInputAi]}
                                                         placeholder="0"
                                                         placeholderTextColor="#cbd5e1"
                                                         value={carbs}
@@ -989,8 +1095,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                                 <>
                                                     <Text style={styles.macroIcon}>🥑</Text>
                                                     <Text style={styles.macroLabel}>Grasas (g)</Text>
-                                                    <TextInput
-                                                        style={[styles.macroInput, aiEstimated && styles.macroInputAi]}
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.macroInputContainer}
+                                                        style={[styles.macroInputText, aiEstimated && styles.macroInputAi]}
                                                         placeholder="0"
                                                         placeholderTextColor="#cbd5e1"
                                                         value={fat}
@@ -1021,8 +1128,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                         {/* Unit Name */}
                                         <View style={{ flex: 2 }}>
                                             <Text style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>Nombre de la unidad</Text>
-                                            <TextInput
-                                                style={{ height: 44, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, fontSize: 14, color: '#1e293b', backgroundColor: '#f8fafc' }}
+                                            <EnhancedTextInput
+                                                containerStyle={{ height: 44, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#f8fafc' }}
+                                                style={{ fontSize: 14, color: '#1e293b' }}
                                                 placeholder="Ej: Rebanada, Unidad, Scoop..."
                                                 placeholderTextColor="#94a3b8"
                                                 value={servingUnit}
@@ -1033,8 +1141,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                                         {/* Weight */}
                                         <View style={{ flex: 1 }}>
                                             <Text style={{ fontSize: 12, color: '#475569', marginBottom: 4 }}>Peso (g)</Text>
-                                            <TextInput
-                                                style={{ height: 44, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, fontSize: 14, color: '#1e293b', backgroundColor: '#f8fafc', textAlign: 'center' }}
+                                            <EnhancedTextInput
+                                                containerStyle={{ height: 44, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#f8fafc' }}
+                                                style={{ fontSize: 14, color: '#1e293b', textAlign: 'center' }}
                                                 placeholder="100"
                                                 placeholderTextColor="#94a3b8"
                                                 value={servingWeight}
@@ -1273,14 +1382,16 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#2563eb',
     },
-    mobileUrlInput: {
+    mobileUrlInputContainer: {
         backgroundColor: '#f8fafc',
         borderRadius: 8,
         paddingHorizontal: 14,
         paddingVertical: 14,
-        fontSize: 14,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+    },
+    mobileUrlInputText: {
+        fontSize: 14,
     },
     mobileAiSection: {
         alignItems: 'center',
@@ -1360,15 +1471,17 @@ const styles = StyleSheet.create({
     urlInputRow: {
         flexDirection: 'row',
     },
-    urlInput: {
+    urlInputContainer: {
         flex: 1,
         backgroundColor: '#f8fafc',
         borderRadius: 6,
         paddingHorizontal: 10,
         paddingVertical: 8,
-        fontSize: 12,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+    },
+    urlInputText: {
+        fontSize: 12,
     },
     aiImageSection: {
         alignItems: 'center',
@@ -1416,16 +1529,18 @@ const styles = StyleSheet.create({
         fontWeight: '400',
         color: '#94a3b8',
     },
-    textInput: {
+    textInputContainer: {
         backgroundColor: '#f8fafc',
         borderWidth: 1,
         borderColor: '#e2e8f0',
         borderRadius: 8,
         paddingHorizontal: 12,
         paddingVertical: 10,
+        marginBottom: 12,
+    },
+    textInputText: {
         fontSize: 14,
         color: '#1e293b',
-        marginBottom: 12,
     },
     nameInputRow: {
         flexDirection: 'row',
@@ -1633,13 +1748,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    qtyInput: {
+    qtyInputContainer: {
         width: 60,
         height: 32,
         backgroundColor: '#f1f5f9',
         borderRadius: 6,
-        textAlign: 'center',
         marginHorizontal: 10,
+    },
+    qtyInputText: {
+        textAlign: 'center',
         fontSize: 13,
         color: '#1e293b',
         fontWeight: '600',
@@ -1693,13 +1810,15 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         textAlign: 'center',
     },
-    macroInput: {
+    macroInputContainer: {
         width: '100%',
+        paddingVertical: 4,
+    },
+    macroInputText: {
         textAlign: 'center',
         fontSize: 18,
         fontWeight: '700',
         color: '#1e293b',
-        paddingVertical: 4,
     },
     macroInputAi: {
         color: '#8b5cf6',
@@ -1738,5 +1857,72 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: '#fff',
+    },
+
+    // AI Progress & Retry Styles
+    aiProgressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#faf5ff',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+    },
+    aiProgressContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    aiProgressText: {
+        fontSize: 13,
+        color: '#7c3aed',
+        fontWeight: '500',
+    },
+    aiCancelBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+        backgroundColor: '#ede9fe',
+    },
+    aiCancelText: {
+        fontSize: 12,
+        color: '#6d28d9',
+        fontWeight: '600',
+    },
+    aiErrorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#fef2f2',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#fecaca',
+    },
+    aiErrorText: {
+        fontSize: 13,
+        color: '#dc2626',
+        flex: 1,
+        marginRight: 12,
+    },
+    aiRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+        backgroundColor: '#faf5ff',
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+    },
+    aiRetryText: {
+        fontSize: 12,
+        color: '#8b5cf6',
+        fontWeight: '600',
     },
 });

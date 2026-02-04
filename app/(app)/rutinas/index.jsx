@@ -6,13 +6,18 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  View, Text, TextInput, StyleSheet, Linking, ImageBackground,
-  TouchableOpacity, SectionList, Alert, Platform,
+  View, Text, StyleSheet, Linking, ImageBackground,
+  SectionList, Alert, Platform,
   ActivityIndicator, Modal, SafeAreaView,
-  ScrollView
 } from 'react-native';
 import { router, Stack } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedTouchable as TouchableOpacity,
+  EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';

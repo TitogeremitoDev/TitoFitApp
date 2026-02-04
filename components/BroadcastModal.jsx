@@ -11,16 +11,16 @@ import {
     StyleSheet,
     Modal,
     TouchableOpacity,
-    TextInput,
     FlatList,
     ActivityIndicator,
     Platform,
     ScrollView
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // Opciones de audiencia
 const AUDIENCE_OPTIONS = [
@@ -315,8 +315,9 @@ export default function BroadcastModal({ visible, onClose }) {
                                 ))}
                             </View>
 
-                            <TextInput
-                                style={styles.messageInput}
+                            <EnhancedTextInput
+                                containerStyle={styles.messageInputContainer}
+                                style={styles.messageInputText}
                                 placeholder="Escribe tu mensaje aquí..."
                                 placeholderTextColor="#94a3b8"
                                 value={message}
@@ -713,15 +714,17 @@ const styles = StyleSheet.create({
     typeButtonTextActive: {
         color: '#fff'
     },
-    messageInput: {
+    messageInputContainer: {
         backgroundColor: '#fff',
         borderRadius: 12,
         padding: 16,
-        fontSize: 16,
-        color: '#1e293b',
         minHeight: 180,
         borderWidth: 1,
-        borderColor: '#e2e8f0'
+        borderColor: '#e2e8f0',
+    },
+    messageInputText: {
+        fontSize: 16,
+        color: '#1e293b',
     },
     charCount: {
         textAlign: 'right',

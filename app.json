@@ -2,8 +2,8 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.1.4",
-    "runtimeVersion": "1.1.4",
+    "version": "1.1.5",
+    "runtimeVersion": "1.1.5",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -23,7 +23,7 @@
       "isTabletOnly": false,
       "requireFullScreen": false,
       "bundleIdentifier": "com.german92.titofitapp",
-      "buildNumber": "31",
+      "buildNumber": "32",
       "usesAppleSignIn": true,
       "icon": "./assets/images/icon-ios.png",
       "infoPlist": {
@@ -102,6 +102,13 @@
       "baseUrl": "/app"
     },
     "plugins": [
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "titogeremito",
+          "project": "react-native"
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",

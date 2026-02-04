@@ -12,7 +12,6 @@ import {
     StyleSheet,
     Modal,
     TouchableOpacity,
-    TextInput,
     FlatList,
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -21,13 +20,14 @@ import {
     Pressable,
     Animated
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AvatarWithInitials from '../src/components/shared/AvatarWithInitials';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -243,7 +243,7 @@ export default function FeedbackChatModal({
         } finally {
             setLoading(false);
         }
-    }, [visible, token, clientId, user, isCoach]);
+    }, [visible, token, clientId, user?._id, isCoach]);
 
     const markAsRead = async (targetClientId) => {
         try {
@@ -355,7 +355,7 @@ export default function FeedbackChatModal({
         return () => {
             if (pollTimeoutId) clearTimeout(pollTimeoutId);
         };
-    }, [visible, token, clientId, user, isCoach, getPollInterval]);
+    }, [visible, token, clientId, user?._id, isCoach, getPollInterval]);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // QUICK RESPONSES
@@ -703,12 +703,14 @@ export default function FeedbackChatModal({
                                 />
                             </TouchableOpacity>
                         )}
-                        <TextInput
-                            style={[styles.input, {
+                        <EnhancedTextInput
+                            containerStyle={[styles.inputContainer, {
                                 backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : '#f1f5f9',
-                                color: isDark ? '#FFFFFF' : '#1e293b',
                                 borderColor: isDark ? 'rgba(255,255,255,0.4)' : '#e2e8f0',
                                 borderWidth: 1.5
+                            }]}
+                            style={[styles.inputText, {
+                                color: isDark ? '#FFFFFF' : '#1e293b',
                             }]}
                             placeholder="Escribe un mensaje..."
                             placeholderTextColor={isDark ? '#aaaaaa' : '#94a3b8'}
@@ -1133,14 +1135,16 @@ const styles = StyleSheet.create({
         flex: 1,
         gap: 10
     },
-    input: {
+    inputContainer: {
         flex: 1,
         borderRadius: 24,
         paddingHorizontal: 18,
         paddingVertical: 12,
-        fontSize: 16,
         minHeight: 44,
         maxHeight: 100
+    },
+    inputText: {
+        fontSize: 16,
     },
     sendButton: {
         width: 44,

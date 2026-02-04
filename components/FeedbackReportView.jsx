@@ -11,7 +11,6 @@ import {
     Modal,
     TouchableOpacity,
     ScrollView,
-    TextInput,
     Alert,
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -19,13 +18,14 @@ import {
     Image,
     useWindowDimensions
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useAudioPlayer } from 'expo-audio';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FOCUS STATE BADGE (Translated traffic light)
@@ -443,8 +443,9 @@ export default function FeedbackReportView({ visible, report, onClose, onReportU
                                 <Text style={styles.responseInputHint}>
                                     Máximo 500 caracteres • Solo puedes responder una vez
                                 </Text>
-                                <TextInput
-                                    style={styles.responseInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.responseInputContainer}
+                                    style={styles.responseInputText}
                                     value={responseText}
                                     onChangeText={setResponseText}
                                     placeholder="Escribe tu respuesta..."
@@ -769,16 +770,18 @@ const styles = StyleSheet.create({
         color: '#64748b',
         marginBottom: 12
     },
-    responseInput: {
+    responseInputContainer: {
         backgroundColor: '#f8fafc',
         borderRadius: 12,
         padding: 14,
+        minHeight: 100,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    responseInputText: {
         fontSize: 14,
         color: '#1e293b',
-        minHeight: 100,
         textAlignVertical: 'top',
-        borderWidth: 1,
-        borderColor: '#e2e8f0'
     },
     charCount: {
         fontSize: 11,

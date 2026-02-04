@@ -1,0 +1,134 @@
+# ========================================
+# DEPENDENCIAS (El culpable nº1 de RAM/CPU)
+# ========================================
+node_modules/
+**/node_modules/**
+.pnp
+.pnp.js
+vendor/
+__pycache__/
+*.pyc
+
+# ========================================
+# ARCHIVOS DE SISTEMA Y GIT
+# ========================================
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ========================================
+# REACT NATIVE - CARPETAS NATIVAS (GBs)
+# Si solo tocas JS/React, déjalas aquí
+# Si trabajas con código nativo, comenta con #
+# ========================================
+android/
+ios/
+
+# ========================================
+# ARCHIVOS TEMPORALES Y CACHÉ
+# ========================================
+.expo/
+.metro/
+.cache/
+.temp/
+.tmp/
+tmp/
+temp/
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.turbo/
+
+# ========================================
+# LOCK FILES (Miles de líneas inútiles)
+# ========================================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+composer.lock
+Gemfile.lock
+poetry.lock
+
+# ========================================
+# BUILDS Y COMPILADOS
+# ========================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+.vercel/
+coverage/
+*.tsbuildinfo
+.parcel-cache/
+
+# ========================================
+# VARIABLES DE ENTORNO Y SECRETOS
+# ========================================
+.env
+.env.*
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# ========================================
+# ASSETS GRANDES (Imágenes, videos, etc)
+# Descomenta si tienes carpetas pesadas
+# ========================================
+# public/uploads/
+# storage/
+# uploads/
+# media/
+
+# ========================================
+# BASES DE DATOS LOCALES
+# ========================================
+*.sqlite
+*.sqlite3
+*.db
+
+# ========================================
+# DOCUMENTACIÓN GENERADA
+# ========================================
+docs/build/
+site/
+_site/
+
+# ========================================
+# TESTING
+# ========================================
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# ========================================
+# BACKEND ESPECÍFICOS
+# ========================================
+# Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Java/Kotlin
+*.class
+.gradle/
+gradle/
+target/
+
+# .NET
+bin/
+obj/
+*.suo
+*.user

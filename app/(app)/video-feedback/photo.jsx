@@ -14,11 +14,11 @@ import {
     Alert,
     ActivityIndicator,
     Image,
-    TextInput,
     KeyboardAvoidingView,
     ScrollView
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../context/AuthContext';

@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    TextInput,
     ScrollView,
     Image,
     Alert,
@@ -14,6 +13,7 @@ import {
     Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, router } from 'expo-router';
 import CoachHeader from '../components/CoachHeader';
@@ -22,14 +22,70 @@ import SmartFoodDrawer from '../nutrition/components/SmartFoodDrawer';
 import debounce from 'lodash/debounce';
 import * as ImagePicker from 'expo-image-picker';
 import { ActivityIndicator, Animated } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
+
+// Helper to get auth token
+const getAuthToken = async () => {
+    return await AsyncStorage.getItem('totalgains_token');
+};
 
 const TAG_OPTIONS = [
     'Proteína', 'Carbo', 'Vegetal', 'Fruta', 'Lácteo', 'Grasa',
     'Desayuno', 'Almuerzo', 'Cena', 'Snack',
     'Vegano', 'Sin Gluten', 'Integral', 'Postre', 'Bebida'
 ];
+
+// Helper to clean AI instructions - remove {{}} format for display
+const cleanInstructionsForDisplay = (text: string): string => {
+    if (!text) return '';
+    // Convert {{Ingrediente|cantidad}} to "Ingrediente (cantidad)"
+    return text.replace(/\{\{([^|]+)\|([^}]+)\}\}/g, '$1 ($2)');
+};
+
+// Helper to render instructions with auto-highlighted ingredients
+// Matches ingredient names from the current list and highlights them
+const renderInstructionsWithIngredients = (text: string, ingredientsList: any[]) => {
+    if (!text || ingredientsList.length === 0) {
+        return <Text style={{ color: '#374151', fontSize: 14, lineHeight: 22 }}>{text}</Text>;
+    }
+
+    // Get ingredient names for matching
+    const ingredientNames = ingredientsList
+        .map(ing => ing.item?.name?.toLowerCase())
+        .filter(Boolean);
+
+    if (ingredientNames.length === 0) {
+        return <Text style={{ color: '#374151', fontSize: 14, lineHeight: 22 }}>{text}</Text>;
+    }
+
+    // Create regex pattern from ingredient names (escape special chars, sort by length desc)
+    const sortedNames = [...ingredientNames].sort((a, b) => b.length - a.length);
+    const escapedNames = sortedNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`(${escapedNames.join('|')})`, 'gi');
+
+    // Split text by ingredient matches
+    const parts = text.split(pattern);
+
+    return (
+        <Text style={{ color: '#374151', fontSize: 14, lineHeight: 22 }}>
+            {parts.map((part, i) => {
+                const isIngredient = ingredientNames.some(
+                    name => part.toLowerCase() === name
+                );
+                if (isIngredient) {
+                    return (
+                        <Text key={i} style={{ color: '#8b5cf6', fontWeight: '700', backgroundColor: '#faf5ff' }}>
+                            {part}
+                        </Text>
+                    );
+                }
+                return <Text key={i}>{part}</Text>;
+            })}
+        </Text>
+    );
+};
 
 export default function CreateRecipeScreen() {
     // Recipe Metadata
@@ -55,11 +111,19 @@ export default function CreateRecipeScreen() {
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [showTagPicker, setShowTagPicker] = useState(false);
 
+    // AI Recipe Suggest State
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiSuggested, setAiSuggested] = useState(false);
+    const [aiStats, setAiStats] = useState<{ total: number; matched: number; estimated: number; duplicatesRemoved?: number } | null>(null);
+
+    // AI Ingredient Images State
+    const [ingredientImagesLoading, setIngredientImagesLoading] = useState(false);
+
     // Live Macros
     const totals = useMemo(() => {
         return ingredients.reduce((acc, ing) => {
             const ratio = (parseFloat(ing.quantity) || 0) / 100; // Base 100g
-            const nutrients = ing.item.nutrients;
+            const nutrients = ing.item?.nutrients || { kcal: 0, protein: 0, carbs: 0, fat: 0 };
             return {
                 kcal: acc.kcal + (nutrients.kcal || 0) * ratio,
                 protein: acc.protein + (nutrients.protein || 0) * ratio,
@@ -113,31 +177,293 @@ export default function CreateRecipeScreen() {
             return;
         }
 
+        const nextIndex = imageAiIndex + 1;
+        setImageAiIndex(nextIndex);
         setImageAiLoading(true);
 
         try {
-            // Use Lorem Flickr (Redundant & reliable)
-            // https://loremflickr.com/width/height/keywords
-            const encodedName = encodeURIComponent(name.trim());
-            const imageUrl = `https://loremflickr.com/800/600/food,${encodedName}/all?lock=${Math.floor(Math.random() * 1000)}`;
+            const token = await getAuthToken();
 
-            console.log('Fetching Image:', imageUrl);
-            setImage(imageUrl);
+            if (!token) {
+                Alert.alert('Error', 'Sesión no válida');
+                setImageAiLoading(false);
+                return;
+            }
 
-            // Simular carga
-            setTimeout(() => setImageAiLoading(false), 500);
+            // Use the same API as FoodCreatorModal - /api/foods/ai-image
+            const response = await fetch(`${API_BASE_URL}/foods/ai-image`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    foodName: name.trim(),
+                    index: nextIndex - 1 // Send 0-based index for different images
+                })
+            });
 
-        } catch (error) {
-            console.error(error);
-            Alert.alert('Error', 'No se pudo generar la imagen');
+            const data = await response.json();
+
+            if (response.status === 429) {
+                Alert.alert('Límite alcanzado', data.message || 'Demasiados intentos');
+                setImageAiLoading(false);
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Error generando imagen');
+            }
+
+            if (data.success && (data.image?.dataUrl || data.image?.url)) {
+                const imageUrl = data.image.dataUrl || data.image.url;
+                console.log('[AI Image] Generated:', imageUrl);
+                setImage(imageUrl);
+            } else {
+                throw new Error('No se encontró imagen');
+            }
+
+        } catch (error: any) {
+            console.error('[Image Error]', error);
+            Alert.alert('Error', error.message || 'No se pudo obtener la imagen. Intenta con URL manual.');
+        } finally {
             setImageAiLoading(false);
         }
     };
+
+    // Generate images for ingredients without images
+    const handleAiGenerateIngredientImages = async () => {
+        // Find ingredients without images (including virtual ones)
+        const ingredientsWithoutImages = ingredients.filter(
+            (ing) => !ing.item?.image && ing.item?.name
+        );
+
+        if (ingredientsWithoutImages.length === 0) {
+            Alert.alert('Info', 'Todos los ingredientes ya tienen imagen');
+            return;
+        }
+
+        setIngredientImagesLoading(true);
+
+        try {
+            const token = await getAuthToken();
+
+            if (!token) {
+                Alert.alert('Error', 'Sesión no válida');
+                setIngredientImagesLoading(false);
+                return;
+            }
+
+            let successCount = 0;
+            let savedToDbCount = 0;
+            let errorCount = 0;
+
+            // Process each ingredient without image
+            for (let i = 0; i < ingredients.length; i++) {
+                const ing = ingredients[i];
+
+                // Skip if already has image
+                if (ing.item?.image) continue;
+
+                const foodName = ing.item?.name;
+                if (!foodName) continue;
+
+                const isVirtual = ing.isVirtual || ing.item?.isVirtual || (typeof ing.item?._id === 'string' && ing.item._id.startsWith('virtual_'));
+
+                try {
+                    // Step 1: Get image from AI
+                    const response = await fetch(`${API_BASE_URL}/foods/ai-image`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            foodName: foodName.trim(),
+                            index: i
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && (data.image?.dataUrl || data.image?.url)) {
+                        const imageUrl = data.image.dataUrl || data.image.url;
+
+                        // Step 2: For real DB items, save to database
+                        if (!isVirtual && ing.item?._id) {
+                            const updateResponse = await fetch(`${API_BASE_URL}/foods/${ing.item._id}`, {
+                                method: 'PUT',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    image: imageUrl
+                                })
+                            });
+
+                            if (updateResponse.ok) {
+                                savedToDbCount++;
+                                console.log(`[Ingredient Image] ✓ ${foodName}: saved to DB`);
+                            } else {
+                                console.warn(`[Ingredient Image] ⚠ ${foodName}: DB update failed`);
+                            }
+                        } else {
+                            console.log(`[Ingredient Image] ✓ ${foodName}: saved locally (virtual)`);
+                        }
+
+                        // Step 3: Always update local state
+                        setIngredients(prev => {
+                            const newArr = [...prev];
+                            if (newArr[i] && newArr[i].item) {
+                                newArr[i] = {
+                                    ...newArr[i],
+                                    item: {
+                                        ...newArr[i].item,
+                                        image: imageUrl
+                                    }
+                                };
+                            }
+                            return newArr;
+                        });
+                        successCount++;
+                    } else {
+                        errorCount++;
+                        console.log(`[Ingredient Image] ✗ ${foodName}: No image found`);
+                    }
+                } catch (err) {
+                    errorCount++;
+                    console.error(`[Ingredient Image] Error for ${foodName}:`, err);
+                }
+
+                // Small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            if (successCount > 0) {
+                const virtualNote = (successCount - savedToDbCount) > 0
+                    ? `\n${successCount - savedToDbCount} se guardarán al crear la receta.`
+                    : '';
+                Alert.alert(
+                    '✨ Imágenes generadas',
+                    `Se generaron ${successCount} imagen${successCount > 1 ? 'es' : ''}.${savedToDbCount > 0 ? `\n${savedToDbCount} guardada${savedToDbCount > 1 ? 's' : ''} en BD.` : ''}${virtualNote}${errorCount > 0 ? `\n${errorCount} no se pudieron obtener.` : ''}`
+                );
+            } else {
+                Alert.alert('Error', 'No se pudieron obtener imágenes para los ingredientes');
+            }
+
+        } catch (error: any) {
+            console.error('[Ingredient Images Error]', error);
+            Alert.alert('Error', 'Error al obtener imágenes de ingredientes');
+        } finally {
+            setIngredientImagesLoading(false);
+        }
+    };
+
+    // Count ingredients without images (including virtual)
+    const ingredientsWithoutImagesCount = useMemo(() => {
+        return ingredients.filter(ing => !ing.item?.image && ing.item?.name).length;
+    }, [ingredients]);
 
     const handleTagToggle = (tag: string) => {
         setSelectedTags(prev =>
             prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
         );
+    };
+
+    // ─────────────────────────────────────────────────────────
+    // ✨ AI RECIPE SUGGEST - Auto-fill everything!
+    // ─────────────────────────────────────────────────────────
+    const handleAiSuggestRecipe = async () => {
+        if (!name.trim() || name.trim().length < 3) {
+            Alert.alert('Error', 'Escribe el nombre de la receta primero (mínimo 3 caracteres)');
+            return;
+        }
+
+        setAiLoading(true);
+        setAiSuggested(false);
+        setAiStats(null);
+
+        try {
+            const token = await getAuthToken();
+            if (!token) {
+                Alert.alert('Error', 'Sesión no válida. Por favor, vuelve a iniciar sesión.');
+                return;
+            }
+
+            console.log('[AI Recipe] Requesting suggestion for:', name.trim());
+
+            const response = await fetch(`${API_BASE_URL}/foods/ai-recipe-suggest`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ recipeName: name.trim() })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Error en la sugerencia de IA');
+            }
+
+            if (data.success && data.recipe) {
+                const { recipe, stats } = data;
+
+                console.log('[AI Recipe] Received suggestion:', recipe);
+                console.log('[AI Recipe] Stats:', stats);
+
+                // Auto-fill all fields with slight delay for visual effect
+                setTimeout(() => {
+                    // Name (cleaned by AI)
+                    if (recipe.name) setName(recipe.name);
+
+                    // Prep Time
+                    if (recipe.prepTime) setPrepTime(String(recipe.prepTime));
+
+                    // Tags
+                    if (recipe.tags && Array.isArray(recipe.tags)) {
+                        const validTags = recipe.tags.filter((t: string) => TAG_OPTIONS.includes(t));
+                        setSelectedTags(validTags);
+                    }
+
+                    // Instructions - Clean AI format for human-readable display
+                    if (recipe.instructions) {
+                        setInstructions(cleanInstructionsForDisplay(recipe.instructions));
+                    }
+
+                    // Ingredients - Map to the format expected by the component
+                    if (recipe.ingredients && Array.isArray(recipe.ingredients)) {
+                        const mappedIngredients = recipe.ingredients.map((ing: any) => ({
+                            item: ing.item,
+                            quantity: String(ing.quantity || 100),
+                            unit: ing.unit || 'g',
+                            id: Date.now().toString() + Math.random(),
+                            isVirtual: ing.item?.isVirtual || false,
+                            matchSource: ing.matchSource
+                        }));
+                        setIngredients(mappedIngredients);
+                    }
+
+                    // Stats
+                    setAiStats(stats);
+                    setAiSuggested(true);
+                }, 200);
+
+                // Success feedback
+                const matchInfo = stats
+                    ? `${stats.matched} ingredientes encontrados en tu base de datos, ${stats.estimated} estimados por IA.`
+                    : '';
+                Alert.alert('✨ Receta Sugerida', `La receta ha sido rellenada automáticamente.\n\n${matchInfo}\n\nRevisa y ajusta los ingredientes si es necesario.`);
+            }
+
+        } catch (error: any) {
+            console.error('[AI Recipe Suggest Error]', error);
+            Alert.alert('Error', error.message || 'No se pudo generar la sugerencia de receta');
+        } finally {
+            setAiLoading(false);
+        }
     };
 
     const addCustomTag = (tag: string) => {
@@ -162,16 +488,64 @@ export default function CreateRecipeScreen() {
         setIsSaving(true);
 
         try {
-            const finalIngredients = ingredients.map(ing => {
-                if (!ing.item || !ing.item._id) {
-                    throw new Error(`Datos corruptos en ingrediente: ${ing.item?.name}`);
+            const token = await getAuthToken();
+            if (!token) {
+                Alert.alert('Error', 'Sesión no válida');
+                return;
+            }
+
+            // Handle virtual (AI-estimated) ingredients: create them in DB first
+            const finalIngredients = [];
+
+            for (const ing of ingredients) {
+                const isVirtual = ing.isVirtual || ing.item?.isVirtual || (typeof ing.item?._id === 'string' && ing.item._id.startsWith('virtual_'));
+
+                if (isVirtual) {
+                    // Create this food in the database
+                    console.log(`[Save] Creating virtual food: ${ing.item?.name}`);
+
+                    const createResponse = await fetch(`${API_BASE_URL}/foods`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            name: ing.item?.name || 'Ingrediente',
+                            nutrients: ing.item?.nutrients || { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+                            image: ing.item?.image || undefined, // Include image if ingredient has one
+                            isComposite: false,
+                            tags: [],
+                            layer: 'CLOUD'
+                        })
+                    });
+
+                    const createData = await createResponse.json();
+
+                    if (!createResponse.ok || !createData.food?._id) {
+                        console.warn(`Failed to create virtual food: ${ing.item?.name}`);
+                        throw new Error(`No se pudo crear el ingrediente: ${ing.item?.name}`);
+                    }
+
+                    finalIngredients.push({
+                        item: createData.food._id,
+                        quantity: parseFloat(ing.quantity),
+                        unit: ing.unit
+                    });
+
+                    console.log(`[Save] Created food with ID: ${createData.food._id}`);
+                } else {
+                    // Normal ingredient from DB
+                    if (!ing.item || !ing.item._id) {
+                        throw new Error(`Datos corruptos en ingrediente: ${ing.item?.name}`);
+                    }
+                    finalIngredients.push({
+                        item: ing.item._id,
+                        quantity: parseFloat(ing.quantity),
+                        unit: ing.unit
+                    });
                 }
-                return {
-                    item: ing.item._id,
-                    quantity: parseFloat(ing.quantity),
-                    unit: ing.unit
-                };
-            });
+            }
 
             // Prepare Payload
             const payload = {
@@ -187,15 +561,27 @@ export default function CreateRecipeScreen() {
 
             console.log('Sending Payload:', JSON.stringify(payload, null, 2));
 
-            await saveFood(payload);
+            const savedFood = await saveFood(payload);
+            console.log('[Save] Recipe saved successfully:', savedFood?._id || savedFood?.name);
 
-            Alert.alert('¡Receta Creada!', 'Ya puedes usarla en tus planes.', [
-                { text: 'Genial', onPress: () => router.back() }
-            ]);
+            // Success! Show confirmation
+            if (Platform.OS === 'web') {
+                // On web, use window.alert as backup
+                window.alert('¡Receta Creada! Ya puedes usarla en tus planes.');
+                router.back();
+            } else {
+                Alert.alert('¡Receta Creada!', 'Ya puedes usarla en tus planes.', [
+                    { text: 'Genial', onPress: () => router.back() }
+                ]);
+            }
 
         } catch (error: any) {
             console.error('Save Error:', error);
-            Alert.alert('Error', error.message || 'No se pudo guardar la receta');
+            if (Platform.OS === 'web') {
+                window.alert(`Error: ${error.message || 'No se pudo guardar la receta'}`);
+            } else {
+                Alert.alert('Error', error.message || 'No se pudo guardar la receta');
+            }
         } finally {
             setIsSaving(false);
         }
@@ -228,19 +614,49 @@ export default function CreateRecipeScreen() {
                     {/* Basic Info */}
                     <View style={styles.section}>
                         <Text style={styles.label}>Nombre del Plato</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Ej: Arroz con Pollo al Curry"
-                            value={name}
-                            onChangeText={setName}
-                        />
+                        <View style={styles.nameInputRow}>
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, styles.nameInput]}
+                                style={styles.inputText}
+                                placeholder="Ej: Arroz con Pollo al Curry"
+                                value={name}
+                                onChangeText={(text) => {
+                                    setName(text);
+                                    setAiSuggested(false);
+                                }}
+                            />
+                            <TouchableOpacity
+                                style={[styles.magicBtn, aiLoading && styles.magicBtnLoading]}
+                                onPress={handleAiSuggestRecipe}
+                                disabled={aiLoading || name.trim().length < 3}
+                            >
+                                {aiLoading ? (
+                                    <ActivityIndicator size="small" color="#8b5cf6" />
+                                ) : (
+                                    <Ionicons name="sparkles" size={20} color={name.trim().length >= 3 ? "#8b5cf6" : "#cbd5e1"} />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                        {aiSuggested && aiStats && (
+                            <View style={styles.aiStatsBadge}>
+                                <Ionicons name="sparkles" size={12} color="#8b5cf6" />
+                                <Text style={styles.aiStatsText}>
+                                    {Math.round((aiStats.matched / aiStats.total) * 100)}% acierto
+                                </Text>
+                                <View style={styles.aiStatsDivider} />
+                                <Text style={styles.aiStatsText}>
+                                    {aiStats.matched} BD · {aiStats.estimated} IA
+                                </Text>
+                            </View>
+                        )}
 
                         <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
                             {/* Prep Time */}
                             <View style={{ flex: 0.3 }}>
                                 <Text style={styles.label}>Tiempo (min)</Text>
-                                <TextInput
-                                    style={styles.input}
+                                <EnhancedTextInput
+                                    containerStyle={styles.inputContainer}
+                                    style={styles.inputText}
                                     placeholder="15"
                                     keyboardType="numeric"
                                     value={prepTime}
@@ -268,8 +684,9 @@ export default function CreateRecipeScreen() {
                             <View style={styles.tagContainer}>
                                 {/* Custom Tag Input */}
                                 <View style={styles.customTagRow}>
-                                    <TextInput
-                                        style={styles.customTagInput}
+                                    <EnhancedTextInput
+                                        containerStyle={styles.customTagInputContainer}
+                                        style={styles.customTagInputText}
                                         placeholder="+ Añadir etiqueta..."
                                         onSubmitEditing={(e) => addCustomTag(e.nativeEvent.text)}
                                     />
@@ -326,8 +743,9 @@ export default function CreateRecipeScreen() {
                                             </TouchableOpacity>
                                         )}
                                         {imageTab === 'url' && (
-                                            <TextInput
-                                                style={styles.input}
+                                            <EnhancedTextInput
+                                                containerStyle={styles.inputContainer}
+                                                style={styles.inputText}
                                                 placeholder="https://..."
                                                 value={image || ''}
                                                 onChangeText={setImage}
@@ -339,7 +757,7 @@ export default function CreateRecipeScreen() {
                                                 onPress={handleAiGenerateImage}
                                                 disabled={imageAiLoading}
                                             >
-                                                {imageAiLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.aiBtnText}>✨ Generar Imagen</Text>}
+                                                {imageAiLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.aiBtnText}>✨ Sugerir Imagen</Text>}
                                             </TouchableOpacity>
                                         )}
                                     </View>
@@ -365,28 +783,59 @@ export default function CreateRecipeScreen() {
                             <View style={styles.emptyState}>
                                 <Text style={styles.emptyIcon}>🍳</Text>
                                 <Text style={styles.emptyText}>Añade ingredientes para calcular los macros automáticamente</Text>
+                                {name.trim().length >= 3 && (
+                                    <TouchableOpacity
+                                        style={styles.emptyAiBtn}
+                                        onPress={handleAiSuggestRecipe}
+                                        disabled={aiLoading}
+                                    >
+                                        {aiLoading ? (
+                                            <ActivityIndicator size="small" color="#8b5cf6" />
+                                        ) : (
+                                            <>
+                                                <Ionicons name="sparkles" size={16} color="#8b5cf6" />
+                                                <Text style={styles.emptyAiBtnText}>Sugerir con IA</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         ) : (
                             <View style={{ gap: 10 }}>
                                 {ingredients.map((ing, index) => {
                                     const qty = parseFloat(ing.quantity) || 0;
                                     const ratio = qty / 100;
-                                    const cals = Math.round((ing.item.nutrients?.kcal || 0) * ratio);
-                                    const p = Math.round((ing.item.nutrients?.protein || 0) * ratio);
-                                    const c = Math.round((ing.item.nutrients?.carbs || 0) * ratio);
-                                    const f = Math.round((ing.item.nutrients?.fat || 0) * ratio);
+                                    const cals = Math.round((ing.item?.nutrients?.kcal || 0) * ratio);
+                                    const p = Math.round((ing.item?.nutrients?.protein || 0) * ratio);
+                                    const c = Math.round((ing.item?.nutrients?.carbs || 0) * ratio);
+                                    const f = Math.round((ing.item?.nutrients?.fat || 0) * ratio);
+                                    const isVirtual = ing.isVirtual || ing.item?.isVirtual;
 
                                     return (
-                                        <View key={ing.id} style={styles.ingredientCard}>
+                                        <View key={ing.id} style={[styles.ingredientCard, isVirtual && styles.ingredientCardVirtual]}>
                                             {/* Image */}
-                                            <Image
-                                                source={ing.item.image ? { uri: ing.item.image } : { uri: 'https://via.placeholder.com/50' }}
-                                                style={styles.ingImage}
-                                            />
+                                            {ing.item?.image ? (
+                                                <Image
+                                                    source={{ uri: ing.item.image }}
+                                                    style={styles.ingImage}
+                                                />
+                                            ) : (
+                                                <View style={[styles.ingImage, styles.ingImagePlaceholder]}>
+                                                    <Ionicons name="nutrition-outline" size={20} color="#94a3b8" />
+                                                </View>
+                                            )}
 
                                             {/* Content */}
                                             <View style={{ flex: 1, justifyContent: 'center' }}>
-                                                <Text style={styles.ingName} numberOfLines={1}>{ing.item.name}</Text>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                    <Text style={styles.ingName} numberOfLines={1}>{ing.item?.name || 'Ingrediente'}</Text>
+                                                    {isVirtual && (
+                                                        <View style={styles.virtualBadge}>
+                                                            <Ionicons name="sparkles" size={10} color="#8b5cf6" />
+                                                            <Text style={styles.virtualBadgeText}>IA</Text>
+                                                        </View>
+                                                    )}
+                                                </View>
                                                 <Text style={styles.ingMacros}>
                                                     {cals} kcal • P: {p}g • C: {c}g • G: {f}g
                                                 </Text>
@@ -394,8 +843,9 @@ export default function CreateRecipeScreen() {
 
                                             {/* Input */}
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                                <TextInput
-                                                    style={styles.qtyInput}
+                                                <EnhancedTextInput
+                                                    containerStyle={styles.qtyInputContainer}
+                                                    style={styles.qtyInputText}
                                                     value={ing.quantity}
                                                     onChangeText={(t) => updateQuantity(index, t)}
                                                     keyboardType="numeric"
@@ -412,20 +862,56 @@ export default function CreateRecipeScreen() {
                                         </View>
                                     );
                                 })}
+
+                                {/* Button to add images to ingredients without images */}
+                                {ingredientsWithoutImagesCount > 0 && (
+                                    <TouchableOpacity
+                                        style={[styles.ingredientImageBtn, ingredientImagesLoading && { opacity: 0.7 }]}
+                                        onPress={handleAiGenerateIngredientImages}
+                                        disabled={ingredientImagesLoading}
+                                    >
+                                        {ingredientImagesLoading ? (
+                                            <ActivityIndicator size="small" color="#8b5cf6" />
+                                        ) : (
+                                            <>
+                                                <Ionicons name="images-outline" size={16} color="#8b5cf6" />
+                                                <Text style={styles.ingredientImageBtnText}>
+                                                    Añadir imágenes ({ingredientsWithoutImagesCount} sin imagen)
+                                                </Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
                     </View>
 
-                    {/* Instructions */}
+                    {/* Instructions - Simple editable field */}
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Preparación / Instrucciones</Text>
-                        <TextInput
-                            style={[styles.input, { height: 100, textAlignVertical: 'top', paddingTop: 10 }]}
-                            placeholder="1. Hervir el arroz...&#10;2. Cortar el pollo..." // multiline hint
+                        <EnhancedTextInput
+                            containerStyle={[styles.inputContainer, { minHeight: 100, paddingTop: 10 }]}
+                            style={[styles.inputText, { textAlignVertical: 'top' }]}
+                            placeholder="1. Mezclar los ingredientes...&#10;2. Cocinar a fuego medio..."
+                            placeholderTextColor="#94a3b8"
                             multiline
                             value={instructions}
                             onChangeText={setInstructions}
                         />
+                        {/* Small indicator of detected ingredients */}
+                        {instructions && ingredients.length > 0 && (() => {
+                            const detected = ingredients.filter(ing =>
+                                ing.item?.name && instructions.toLowerCase().includes(ing.item.name.toLowerCase())
+                            ).length;
+                            return detected > 0 ? (
+                                <View style={styles.ingredientDetectedBadge}>
+                                    <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
+                                    <Text style={styles.ingredientDetectedText}>
+                                        {detected} ingrediente{detected > 1 ? 's' : ''} mencionado{detected > 1 ? 's' : ''} en las instrucciones
+                                    </Text>
+                                </View>
+                            ) : null;
+                        })()}
                     </View>
 
                 </ScrollView>
@@ -478,9 +964,12 @@ const styles = StyleSheet.create({
 
     section: { marginBottom: 24, backgroundColor: '#fff', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
     label: { fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 6 },
-    input: {
+    inputContainer: {
         backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1',
-        borderRadius: 8, padding: 10, fontSize: 15, color: '#1e293b'
+        borderRadius: 8, padding: 10,
+    },
+    inputText: {
+        fontSize: 15, color: '#1e293b'
     },
     sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
 
@@ -497,10 +986,13 @@ const styles = StyleSheet.create({
 
     ingName: { fontWeight: '600', color: '#334155', fontSize: 14 },
     ingBrand: { fontSize: 12, color: '#94a3b8' },
-    qtyInput: {
+    qtyInputContainer: {
         backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1',
         borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8,
-        width: 60, textAlign: 'center', fontSize: 14, fontWeight: '600'
+        width: 60,
+    },
+    qtyInputText: {
+        textAlign: 'center', fontSize: 14, fontWeight: '600'
     },
 
     footer: {
@@ -567,8 +1059,148 @@ const styles = StyleSheet.create({
 
     // New Styles
     customTagRow: { width: '100%', marginBottom: 8 },
-    customTagInput: {
+    customTagInputContainer: {
         backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
-        borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13
+        borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    },
+    customTagInputText: {
+        fontSize: 13
+    },
+
+    // AI Magic Button Styles
+    nameInputRow: {
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'center'
+    },
+    nameInput: {
+        flex: 1,
+        marginBottom: 0
+    },
+    magicBtn: {
+        width: 48,
+        height: 48,
+        borderRadius: 10,
+        backgroundColor: '#faf5ff',
+        borderWidth: 2,
+        borderColor: '#e9d5ff',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#8b5cf6',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+        elevation: 3
+    },
+    magicBtnLoading: {
+        backgroundColor: '#f3e8ff',
+        borderColor: '#c4b5fd'
+    },
+    aiStatsBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#faf5ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+        marginTop: 8,
+        alignSelf: 'flex-start'
+    },
+    aiStatsText: {
+        fontSize: 11,
+        color: '#8b5cf6',
+        fontWeight: '500'
+    },
+    aiStatsDivider: {
+        width: 1,
+        height: 12,
+        backgroundColor: '#d8b4fe',
+        marginHorizontal: 4
+    },
+
+    // Virtual/AI-estimated ingredient styles
+    ingredientCardVirtual: {
+        borderColor: '#e9d5ff',
+        backgroundColor: '#fefbff'
+    },
+    ingImagePlaceholder: {
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    virtualBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        backgroundColor: '#faf5ff',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e9d5ff'
+    },
+    virtualBadgeText: {
+        fontSize: 9,
+        color: '#8b5cf6',
+        fontWeight: '600'
+    },
+    emptyAiBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#faf5ff',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+        marginTop: 12
+    },
+    emptyAiBtnText: {
+        fontSize: 13,
+        color: '#8b5cf6',
+        fontWeight: '600'
+    },
+
+    // Button to add images to ingredients
+    ingredientImageBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#faf5ff',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+        marginTop: 12
+    },
+    ingredientImageBtnText: {
+        fontSize: 13,
+        color: '#8b5cf6',
+        fontWeight: '600'
+    },
+
+    // Instructions - detected ingredients badge
+    ingredientDetectedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: '#f0fdf4',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#bbf7d0'
+    },
+    ingredientDetectedText: {
+        fontSize: 12,
+        color: '#15803d',
+        fontWeight: '500'
     }
 });

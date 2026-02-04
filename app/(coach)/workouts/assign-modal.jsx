@@ -8,9 +8,9 @@ import {
     FlatList,
     ActivityIndicator,
     Alert,
-    TextInput,
     Platform
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 
@@ -217,8 +217,9 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
 
                     <View style={styles.searchContainer}>
                         <Ionicons name="search" size={20} color="#94a3b8" />
-                        <TextInput
-                            style={styles.searchInput}
+                        <EnhancedTextInput
+                            style={styles.searchInputText}
+                            containerStyle={styles.searchInputContainer}
                             placeholder={mode === 'selectClient' ? "Buscar cliente..." : "Buscar rutina..."}
                             placeholderTextColor="#94a3b8"
                             value={searchQuery}
@@ -309,11 +310,13 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         marginBottom: 16
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
         marginLeft: 8,
+    },
+    searchInputText: {
         fontSize: 16,
-        color: '#1e293b'
+        color: '#1e293b',
     },
     listContent: {
         paddingBottom: 20

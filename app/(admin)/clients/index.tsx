@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     FlatList,
-    TextInput,
     ActivityIndicator,
     TouchableOpacity,
     Alert,
@@ -13,6 +12,7 @@ import {
     Modal,
     Pressable
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -250,8 +250,9 @@ export default function ClientsScreen() {
                 {/* Search Bar */}
                 <View style={[styles.searchContainer, { backgroundColor: isDark ? '#374151' : '#f3f4f6' }]}>
                     <Ionicons name="search" size={20} color={isDark ? '#9ca3af' : '#6b7280'} style={styles.searchIcon} />
-                    <TextInput
-                        style={[styles.searchInput, { color: isDark ? '#fff' : '#000' }]}
+                    <EnhancedTextInput
+                        style={[styles.searchInputText, { color: isDark ? '#fff' : '#000' }]}
+                        containerStyle={styles.searchInputContainer}
                         placeholder="Buscar cliente..."
                         placeholderTextColor={isDark ? '#9ca3af' : '#6b7280'}
                         value={searchQuery}
@@ -377,8 +378,10 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 10,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
+    },
+    searchInputText: {
         fontSize: 16,
     },
     filtersScroll: {

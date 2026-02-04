@@ -12,7 +12,6 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    TextInput,
     Platform,
     Modal,
     useWindowDimensions,
@@ -20,12 +19,15 @@ import {
     ActivityIndicator,
     Alert,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
-import MealCard from './MealCard';
+import MealCard, { ImageSelectionModal } from './MealCard';
 import MacroSummaryFooter from './MacroSummaryFooter';
 import SmartFoodDrawer from '../SmartFoodDrawer';
 import ActionsFooter from './ActionsFooter'; // Import Footer
 import axios from 'axios'; // Import Axios
+import FoodCreatorModal from '../../../../../components/FoodCreatorModal'; // 🟢 Import Creator
+import { saveFood } from '../../../../../src/services/foodService'; // 🟢 Import Save Service
 
 // Helper: UUID Generator (Lightweight)
 const uuidv4 = () => {
@@ -190,6 +192,14 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     const [availableTemplates, setAvailableTemplates] = useState([]);
     const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
+    // 🟢 SMART EDIT STATE
+    const [smartEditData, setSmartEditData] = useState(null);
+    const [showSmartEditModal, setShowSmartEditModal] = useState(false);
+
+    // 🟢 GLOBAL IMAGE MODAL (To prevent unmounting issues)
+    // Store complete option object to survive ID regeneration
+    const [imageModalState, setImageModalState] = useState({ visible: false, option: null });
+
     // ═══════════════════════════════════════════════════════════════════════════
     // ACTIONS & LOGIC (CORREGIDO PARA ENVIAR DATOS REALES)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -249,7 +259,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             const payload = buildSmartPayload('draft');
 
             // Llamada API Real
-            const res = await axios.post('http://localhost:3000/api/nutrition-plans', payload);
+            const res = await axios.post('https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans', payload);
 
             if (res.data.success) {
                 if (Platform.OS === 'web') window.alert('✅ Borrador guardado');
@@ -275,7 +285,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                 planType: 'complete'
             };
             // Asegúrate que esta URL es correcta
-            await axios.post('http://localhost:3000/api/nutrition-plans/templates', payload);
+            await axios.post('https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans/templates', payload);
 
             setShowSaveTemplateModal(false);
             setTemplateName('');
@@ -320,7 +330,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             console.log('🚀 Enviando Activación...', payload);
 
             // Llamada API Real
-            const res = await axios.post('http://localhost:3000/api/nutrition-plans', payload);
+            const res = await axios.post('https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans', payload);
 
             if (res.data.success) {
                 console.log('✅ Plan Activado:', res.data.plan);
@@ -344,7 +354,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         setShowImportModal(true);
         setIsLoadingTemplates(true);
         try {
-            const res = await axios.get('http://localhost:3000/api/nutrition-plans/templates/list');
+            const res = await axios.get('https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans/templates/list');
             if (res.data.success) {
                 setAvailableTemplates(res.data.templates);
             }
@@ -358,7 +368,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     const handleImportTemplate = async (templateId) => {
         try {
             setIsLoadingTemplates(true);
-            const res = await axios.get(`http://localhost:3000/api/nutrition-plans/templates/${templateId}`);
+            const res = await axios.get(`https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans/templates/${templateId}`);
             if (res.data.success) {
                 // 🛑 CRITICAL: Hydrate with refreshed IDs to avoid "Zombie Selectors" and collisions
                 const hydratedPlan = hydrateTemplate(res.data.template);
@@ -394,9 +404,18 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         }
     }, []);
 
+    // 🛑 REF SYNC: Reference to track last emitted plan to prevent loops
+    const lastEmittedRef = useRef(null);
+
     // Sync with external initialData updates (e.g. async fetch)
     useEffect(() => {
         if (initialData) {
+            // 🛑 LOOP PROTECTION: Only hydrate if data is DIFFERENT from what we just sent
+            // Simple reference equality check works because parent passes the exact object back
+            if (initialData === lastEmittedRef.current) {
+                return;
+            }
+
             // 🛑 CRITICAL: Re-Hydrate on external updates too to prevent mirror effects if reloading
             // But be careful not to overwrite user edits if this triggers unexpectedly.
             // Usually initialData only changes on mount or explicit reload.
@@ -415,6 +434,10 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     const updatePlan = useCallback((updater) => {
         setPlan(prev => {
             const newPlan = typeof updater === 'function' ? updater(prev) : updater;
+
+            // Store reference before emitting
+            lastEmittedRef.current = newPlan;
+
             // Defer parent update to avoid "Cannot update while rendering" error
             // checks strictly if onDataChange exists
             if (onDataChange) {
@@ -608,6 +631,67 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         }));
     };
 
+    const replaceFoodInMeal = (mealId, optionId, foodIndex, newFoods) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== selectedTemplateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            options: m.options.map(o =>
+                                o.id !== optionId ? o : {
+                                    ...o,
+                                    foods: [
+                                        ...o.foods.slice(0, foodIndex),
+                                        ...newFoods,
+                                        ...o.foods.slice(foodIndex + 1)
+                                    ],
+                                }
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
+    // 💊 SUPPLEMENT HANDLERS (A nivel de Meal, no de Option)
+    const addSupplementToMeal = (mealId, supplement) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== selectedTemplateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            supplements: [...(m.supplements || []), supplement],
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
+    const removeSupplementFromMeal = (mealId, suppIndex) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== selectedTemplateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            supplements: (m.supplements || []).filter((_, i) => i !== suppIndex),
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
     const addOptionToMeal = (mealId) => {
         const meal = currentTemplate?.meals.find(m => m.id === mealId);
         const optionCount = meal?.options?.length || 0;
@@ -750,10 +834,76 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         }));
     };
 
+    // 🟢 HANDLE OPEN IMAGE MODAL
+    // 🟢 HANDLE OPEN IMAGE MODAL
+    const handleOpenImageModal = (mealId, optionId) => {
+        // Find and store the complete option object
+        const meal = currentTemplate?.meals?.find(m => m.id === mealId);
+        const option = meal?.options?.find(o => o.id === optionId);
+
+        if (option) {
+            setImageModalState({
+                visible: true,
+                option: { ...option }, // Clone to prevent mutation issues
+                mealId,
+                optionId
+            });
+        }
+    };
+
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
     const isDesktop = windowWidth >= 1024;
+
+    // 🟢 HANDLER: SMART EDIT (Promote to Recipe)
+    const handleSmartEdit = (option) => {
+        // Convert Option Foods to Creator Ingredients format
+        const ingredients = (option.foods || []).map(f => {
+            // 🟢 RECONSTRUCT FOOD ITEM STRUCTURE
+            // The plan stores flattened data (kcal, protein...), but Creator expects nested { nutrients }
+            const reconstructedItem = {
+                _id: f.sourceId || `temp_${Math.random()}`,
+                name: f.name,
+                image: f.image,
+                brand: 'Planificado',
+                nutrients: {
+                    kcal: f.kcal || 0,
+                    protein: f.protein || 0,
+                    carbs: f.carbs || 0,
+                    fat: f.fat || 0,
+                }
+            };
+
+            return {
+                item: f.food || reconstructedItem, // Use existing if available, else reconstructed
+                quantity: String(f.amount || 100),
+                unit: f.unit || 'g'
+            };
+        });
+
+        setSmartEditData({
+            name: option.name,
+            isComposite: true,
+            ingredients: ingredients,
+            // Fallback empty description
+            instructions: ''
+        });
+        setShowSmartEditModal(true);
+    };
+
+    // 🟢 HANDLER: SAVE SMART RECIPE
+    const handleSaveSmartRecipe = async (foodData) => {
+        try {
+            await saveFood(foodData);
+            Alert.alert('¡Receta Creada!', 'La receta se ha guardado en tu librería.');
+            setShowSmartEditModal(false);
+            setSmartEditData(null);
+        } catch (error) {
+            console.error('Error saving smart recipe:', error);
+            Alert.alert('Error', 'No se pudo guardar la receta.');
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -885,16 +1035,20 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                                 meal={meal}
                                 templateColor={currentTemplate.color}
                                 onAddFood={(optionId) => setActiveModal({ type: 'food', mealId: meal.id, optionId, mealName: meal.name })}
-                                onAddSupplement={() => setActiveModal({ type: 'supplement', mealId: meal.id, optionId: null })}
+                                onAddSupplement={(supplement) => addSupplementToMeal(meal.id, supplement)}
                                 onRemoveFood={(optionId, foodIdx) => removeFoodFromMeal(meal.id, optionId, foodIdx)}
                                 onUpdateFood={(optionId, foodIdx, data) => updateFoodInMeal(meal.id, optionId, foodIdx, data)}
-                                onRemoveSupplement={(optionId, suppIdx) => { }}
+                                onRemoveSupplement={(suppIdx) => removeSupplementFromMeal(meal.id, suppIdx)}
                                 onAddOption={() => addOptionToMeal(meal.id)}
                                 onRemoveOption={(optionId) => removeOptionFromMeal(meal.id, optionId)}
                                 onDuplicateOption={(optionId) => duplicateOption(meal.id, optionId)}
                                 onEditOptionName={(optionId, newName) => updateOptionName(currentTemplate.id, meal.id, optionId, newName)}
                                 onUpdateOptionImage={(optionId, uri) => updateOptionImage(currentTemplate.id, meal.id, optionId, uri)}
                                 onBulkRename={(mode) => bulkRenameOptions(currentTemplate.id, meal.id, mode)}
+                                // 🟢 PASS SMART EDIT HANDLER
+                                onSmartEdit={handleSmartEdit}
+                                // 🟢 PASS IMAGE MODAL HANDLER
+                                onOpenImageModal={(optionId) => handleOpenImageModal(meal.id, optionId)}
                             />
                         ))}
                     </View>
@@ -940,6 +1094,15 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                 onAddFoods={(foodsData) => {
                     // Batch add foods to the meal
                     foodsData.forEach(({ food, amount, unit, calculatedMacros }) => {
+                        // 🟢 FIX: Preserve base nutrients for unit conversion (a_gusto -> gramos)
+                        const baseNutrients = food.nutrients || {};
+                        const savedPer100g = {
+                            kcal: baseNutrients.kcal || 0,
+                            protein: baseNutrients.protein || 0,
+                            carbs: baseNutrients.carbs || 0,
+                            fat: baseNutrients.fat || 0,
+                        };
+
                         addFoodToMeal(activeModal.mealId, activeModal.optionId, {
                             name: food.name,
                             image: food.image, // Include food photo
@@ -951,6 +1114,11 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                             fat: calculatedMacros.fat,
                             sourceType: food.layer || 'local',
                             sourceId: food._id,
+                            // 🟢 RECIPE/COMPOSITE SUPPORT
+                            isComposite: food.isComposite,
+                            ingredients: food.ingredients,
+                            // 🟢 FIX: Save base nutrients for recalculation when switching from a_gusto
+                            _savedPer100g: savedPer100g,
                         });
                     });
                     // Don't close the drawer - let user add more foods
@@ -978,6 +1146,33 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                 templates={availableTemplates}
                 onClose={() => setShowImportModal(false)}
                 onSelect={handleImportTemplate}
+            />
+            {/* 🟢 FOOD CREATOR MODAL (SMART EDIT) */}
+            {showSmartEditModal && (
+                <FoodCreatorModal
+                    visible={showSmartEditModal}
+                    initialData={smartEditData}
+                    onClose={() => setShowSmartEditModal(false)}
+                    onSave={handleSaveSmartRecipe}
+                />
+            )}
+            {/* 🟢 IMAGE SELECTION MODAL */}
+            <ImageSelectionModal
+                visible={imageModalState.visible}
+                option={imageModalState.option}
+                onClose={() => setImageModalState({ visible: false, option: null })}
+                onUpdateImage={(uri) => {
+                    // 1. Update the option in the modal state (for immediate preview)
+                    setImageModalState(prev => ({
+                        ...prev,
+                        option: prev.option ? { ...prev.option, image: uri } : null
+                    }));
+
+                    // 2. Also update the plan (uses stored mealId/optionId)
+                    if (imageModalState.mealId && imageModalState.optionId) {
+                        updateOptionImage(selectedTemplateId, imageModalState.mealId, imageModalState.optionId, uri);
+                    }
+                }}
             />
         </View>
     );
@@ -1021,8 +1216,9 @@ function AddFoodModal({ visible, onClose, onAdd }) {
                         </TouchableOpacity>
                     </View>
 
-                    <TextInput
-                        style={styles.modalInput}
+                    <EnhancedTextInput
+                        containerStyle={styles.modalInputContainer}
+                        style={styles.modalInputText}
                         value={name}
                         onChangeText={setName}
                         placeholder="Nombre del alimento"
@@ -1031,15 +1227,17 @@ function AddFoodModal({ visible, onClose, onAdd }) {
                     />
 
                     <View style={styles.modalRow}>
-                        <TextInput
-                            style={[styles.modalInput, { flex: 1 }]}
+                        <EnhancedTextInput
+                            containerStyle={[styles.modalInputContainer, { flex: 1 }]}
+                            style={styles.modalInputText}
                             value={amount}
                             onChangeText={setAmount}
                             placeholder="100"
                             keyboardType="numeric"
                         />
-                        <TextInput
-                            style={[styles.modalInput, { width: 60, marginLeft: 8 }]}
+                        <EnhancedTextInput
+                            containerStyle={[styles.modalInputContainer, { width: 60, marginLeft: 8 }]}
+                            style={styles.modalInputText}
                             value={unit}
                             onChangeText={setUnit}
                             placeholder="g"
@@ -1050,19 +1248,19 @@ function AddFoodModal({ visible, onClose, onAdd }) {
                     <View style={styles.macrosRow}>
                         <View style={styles.macroInput}>
                             <Text style={styles.macroLabel}>Kcal</Text>
-                            <TextInput style={styles.macroField} value={kcal} onChangeText={setKcal} placeholder="0" keyboardType="numeric" />
+                            <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={kcal} onChangeText={setKcal} placeholder="0" keyboardType="numeric" />
                         </View>
                         <View style={styles.macroInput}>
                             <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>P</Text>
-                            <TextInput style={styles.macroField} value={protein} onChangeText={setProtein} placeholder="0" keyboardType="numeric" />
+                            <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={protein} onChangeText={setProtein} placeholder="0" keyboardType="numeric" />
                         </View>
                         <View style={styles.macroInput}>
                             <Text style={[styles.macroLabel, { color: '#22c55e' }]}>C</Text>
-                            <TextInput style={styles.macroField} value={carbs} onChangeText={setCarbs} placeholder="0" keyboardType="numeric" />
+                            <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbs} onChangeText={setCarbs} placeholder="0" keyboardType="numeric" />
                         </View>
                         <View style={styles.macroInput}>
                             <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>G</Text>
-                            <TextInput style={styles.macroField} value={fat} onChangeText={setFat} placeholder="0" keyboardType="numeric" />
+                            <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fat} onChangeText={setFat} placeholder="0" keyboardType="numeric" />
                         </View>
                     </View>
 
@@ -1159,8 +1357,9 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
                     </View>
 
                     <Text style={styles.modalLabel}>Nombre</Text>
-                    <TextInput
-                        style={styles.modalInput}
+                    <EnhancedTextInput
+                        containerStyle={styles.modalInputContainer}
+                        style={styles.modalInputText}
                         value={name}
                         onChangeText={setName}
                         placeholder="Día de Entrenamiento"
@@ -1228,15 +1427,15 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
                             <View style={styles.macrosRow}>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>Proteína (g)</Text>
-                                    <TextInput style={styles.macroField} value={protein} onChangeText={setProtein} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={protein} onChangeText={setProtein} keyboardType="numeric" />
                                 </View>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#22c55e' }]}>Carbos (g)</Text>
-                                    <TextInput style={styles.macroField} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
                                 </View>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>Grasa (g)</Text>
-                                    <TextInput style={styles.macroField} value={fat} onChangeText={setFat} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fat} onChangeText={setFat} keyboardType="numeric" />
                                 </View>
                             </View>
                         </>
@@ -1245,8 +1444,9 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
                             {/* Mode: Kcal + Percentages */}
                             <View style={styles.kcalInputBox}>
                                 <Text style={styles.kcalInputLabel}>🔥 Kcal Totales</Text>
-                                <TextInput
-                                    style={styles.kcalInputField}
+                                <EnhancedTextInput
+                                    containerStyle={styles.kcalInputFieldContainer}
+                                    style={styles.kcalInputFieldText}
                                     value={kcal}
                                     onChangeText={setKcal}
                                     keyboardType="numeric"
@@ -1258,15 +1458,15 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
                             <View style={styles.macrosRow}>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>P %</Text>
-                                    <TextInput style={styles.macroField} value={proteinPct} onChangeText={setProteinPct} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={proteinPct} onChangeText={setProteinPct} keyboardType="numeric" />
                                 </View>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#22c55e' }]}>C %</Text>
-                                    <TextInput style={styles.macroField} value={carbsPct} onChangeText={setCarbsPct} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbsPct} onChangeText={setCarbsPct} keyboardType="numeric" />
                                 </View>
                                 <View style={styles.macroInput}>
                                     <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>G %</Text>
-                                    <TextInput style={styles.macroField} value={fatPct} onChangeText={setFatPct} keyboardType="numeric" />
+                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fatPct} onChangeText={setFatPct} keyboardType="numeric" />
                                 </View>
                             </View>
 
@@ -1318,6 +1518,7 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
 
                             return (
                                 <View key={mealDef.id} style={styles.mealRow}>
+                                    <View style={styles.mealRowInner}>
                                     {/* Left Column: Meal Label & Tools */}
                                     <View style={styles.mealLabelColumn}>
                                         <View style={styles.mealIconCircle}>
@@ -1350,8 +1551,9 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                                                 <View key={option.id} style={styles.optionCard}>
                                                     {/* Card Header with Editable Title */}
                                                     <View style={styles.optionHeader}>
-                                                        <TextInput
-                                                            style={styles.optionTitleInput}
+                                                        <EnhancedTextInput
+                                                            containerStyle={styles.optionTitleInputContainer}
+                                                            style={styles.optionTitleInputText}
                                                             value={option.name}
                                                             onChangeText={(text) => onUpdateOptionName(template.id, meal.id, option.id, text)}
                                                             placeholder={`Opción ${idx + 1}`}
@@ -1367,34 +1569,53 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                                                     >
                                                         {option.foods && option.foods.length > 0 ? (
                                                             <>
-                                                                {option.foods.slice(0, 4).map((food, fIdx) => (
-                                                                    <View key={fIdx} style={styles.richRow}>
-                                                                        {/* Left: Image or Fallback */}
-                                                                        {food.image ? (
-                                                                            <Image
-                                                                                source={{ uri: food.image }}
-                                                                                style={styles.foodThumb}
-                                                                                resizeMode="cover"
-                                                                            />
-                                                                        ) : (
-                                                                            <View style={styles.foodThumbPlaceholder}>
-                                                                                <Ionicons name="restaurant-outline" size={16} color="#94a3b8" />
-                                                                            </View>
-                                                                        )}
+                                                                {option.foods.slice(0, 4).map((food, fIdx) => {
+                                                                    const isRecipe = food.isRecipe || food.isComposite;
+                                                                    const hasSubIngredients = isRecipe && food.subIngredients?.length > 0;
 
-                                                                        {/* Right: Details */}
-                                                                        <View style={styles.foodInfo}>
-                                                                            <Text style={styles.foodName} numberOfLines={1}>
-                                                                                {food.name}
-                                                                            </Text>
-                                                                            <Text style={styles.foodMeta}>
-                                                                                {food.amount} {food.unit}
-                                                                                {/* Always show calories if > 0 */}
-                                                                                {food.kcal > 0 && ` • 🔥 ${Math.round(food.kcal)}`}
-                                                                            </Text>
+                                                                    return (
+                                                                        <View key={fIdx} style={styles.richRow}>
+                                                                            {/* Left: Image or Fallback */}
+                                                                            {food.image ? (
+                                                                                <View style={{ position: 'relative' }}>
+                                                                                    <Image
+                                                                                        source={{ uri: food.image }}
+                                                                                        style={styles.foodThumb}
+                                                                                        resizeMode="cover"
+                                                                                    />
+                                                                                    {isRecipe && (
+                                                                                        <View style={styles.recipeBadge}>
+                                                                                            <Ionicons name="restaurant" size={10} color="#fff" />
+                                                                                        </View>
+                                                                                    )}
+                                                                                </View>
+                                                                            ) : (
+                                                                                <View style={styles.foodThumbPlaceholder}>
+                                                                                    <Ionicons name={isRecipe ? "restaurant" : "restaurant-outline"} size={16} color={isRecipe ? "#8b5cf6" : "#94a3b8"} />
+                                                                                </View>
+                                                                            )}
+
+                                                                            {/* Right: Details */}
+                                                                            <View style={styles.foodInfo}>
+                                                                                <Text style={[styles.foodName, isRecipe && { color: '#8b5cf6' }]} numberOfLines={1}>
+                                                                                    {food.name} {isRecipe && '🍳'}
+                                                                                </Text>
+                                                                                <Text style={styles.foodMeta}>
+                                                                                    {food.amount} {food.unit}
+                                                                                    {/* Always show calories if > 0 */}
+                                                                                    {food.kcal > 0 && ` • 🔥 ${Math.round(food.kcal)}`}
+                                                                                </Text>
+                                                                                {/* Show subIngredients summary */}
+                                                                                {hasSubIngredients && (
+                                                                                    <Text style={styles.subIngredientsSummary}>
+                                                                                        ↳ {food.subIngredients.slice(0, 3).map(s => s.name).join(', ')}
+                                                                                        {food.subIngredients.length > 3 && ` +${food.subIngredients.length - 3}`}
+                                                                                    </Text>
+                                                                                )}
+                                                                            </View>
                                                                         </View>
-                                                                    </View>
-                                                                ))}
+                                                                    );
+                                                                })}
 
                                                                 {/* Overflow Footer */}
                                                                 {option.foods.length > 4 && (
@@ -1444,7 +1665,22 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                                                 <Text style={styles.emptyMealText}>Sin opciones configuradas</Text>
                                             </View>
                                         )}
+
                                     </View>
+                                    </View>
+
+                                    {/* 💊 Supplements (if any) - full width below options */}
+                                    {meal?.supplements?.length > 0 && (
+                                        <View style={styles.weeklySupplementsRow}>
+                                            {meal.supplements.map((supp, idx) => (
+                                                <View key={supp.id || idx} style={styles.weeklySupplementPill}>
+                                                    <Text style={styles.weeklySupplementText}>
+                                                        💊 {supp.name} — {supp.amount} {supp.unit}
+                                                    </Text>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    )}
                                 </View>
                             );
                         })}
@@ -1483,7 +1719,7 @@ function ImportTemplateModal({ visible, isLoading, templates, onClose, onSelect 
                         <View style={{ padding: 40, alignItems: 'center' }}>
                             <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
                             <Text style={{ marginTop: 12, color: '#64748b', textAlign: 'center' }}>
-                                No se encontraron rutinas en la colección "nutritionroutines"
+                                No se encontraron plantillas guardadas
                             </Text>
                         </View>
                     ) : (
@@ -1513,6 +1749,8 @@ function ImportTemplateModal({ visible, isLoading, templates, onClose, onSelect 
         </Modal>
     );
 }
+
+
 
 const styles = StyleSheet.create({
     container: {
@@ -1575,10 +1813,12 @@ const styles = StyleSheet.create({
         padding: 0,
     },
     mealRow: {
-        flexDirection: 'row',
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
-        minHeight: 120, // Increased for bulk tools
+    },
+    mealRowInner: {
+        flexDirection: 'row',
+        minHeight: 120,
     },
     // Left Column
     mealLabelColumn: {
@@ -1668,6 +1908,17 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: 'transparent', // Show underline only on focus ideally, or subtle always
     },
+    optionTitleInputContainer: {
+        flex: 1,
+        padding: 2,
+        borderBottomWidth: 1,
+        borderBottomColor: 'transparent',
+    },
+    optionTitleInputText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
     primaryBadge: {
         backgroundColor: '#eff6ff',
         paddingHorizontal: 5,
@@ -1746,6 +1997,29 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
     },
 
+    // 💊 Weekly Structure View - Supplements
+    weeklySupplementsRow: {
+        width: '100%',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 8,
+        paddingLeft: 148, // Align with options (past mealLabelColumn)
+    },
+    weeklySupplementPill: {
+        backgroundColor: '#f5f3ff',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderWidth: 1,
+        borderColor: '#e9d5ff',
+    },
+    weeklySupplementText: {
+        fontSize: 11,
+        color: '#7c3aed',
+        fontWeight: '500',
+    },
 
     // Template Tabs (Existing)
     templateTabs: {
@@ -1899,6 +2173,26 @@ const styles = StyleSheet.create({
         color: '#64748b',
         fontWeight: '500',
     },
+    recipeBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        backgroundColor: '#8b5cf6',
+        borderRadius: 8,
+        width: 16,
+        height: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
+        borderColor: '#fff',
+    },
+    subIngredientsSummary: {
+        fontSize: 9,
+        color: '#8b5cf6',
+        fontWeight: '500',
+        marginTop: 2,
+        fontStyle: 'italic',
+    },
     overflowFooter: {
         marginTop: 6,
         paddingHorizontal: 4,
@@ -1979,6 +2273,16 @@ const styles = StyleSheet.create({
         fontSize: 15,
         marginBottom: 12,
     },
+    modalInputContainer: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 12,
+    },
+    modalInputText: {
+        fontSize: 15,
+    },
     modalRow: {
         flexDirection: 'row',
         marginBottom: 12,
@@ -2010,6 +2314,16 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         padding: 10,
         width: '100%',
+        textAlign: 'center',
+    },
+    macroFieldContainer: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        padding: 10,
+        width: '100%',
+    },
+    macroFieldText: {
         textAlign: 'center',
     },
     // Auto-calculated kcal display
@@ -2089,6 +2403,21 @@ const styles = StyleSheet.create({
         color: '#f59e0b',
         textAlign: 'center',
         width: 150,
+    },
+    kcalInputFieldContainer: {
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#f59e0b',
+        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        width: 150,
+    },
+    kcalInputFieldText: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#f59e0b',
+        textAlign: 'center',
     },
     calculatedGramsBox: {
         backgroundColor: '#e0f2fe',

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Animated, Platform, Dimensions, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Animated, Platform, Dimensions, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { BlurView } from 'expo-blur';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -21,7 +22,8 @@ export function PaymentBlockOverlay({
     onCopyBizum,
     onReportPayment,
     onOpenWhatsApp,
-    isReporting
+    isReporting,
+    onDismiss
 }) {
     const [showNoteInput, setShowNoteInput] = useState(false);
     const [note, setNote] = useState('');
@@ -56,16 +58,28 @@ export function PaymentBlockOverlay({
 
     if (!visible) return null;
 
+    const [canDismiss, setCanDismiss] = useState(false);
+
+    useEffect(() => {
+        if (visible) {
+            const timer = setTimeout(() => {
+                setCanDismiss(true);
+            }, 20000); // 20 seconds delay
+            return () => clearTimeout(timer);
+        } else {
+            setCanDismiss(false);
+        }
+    }, [visible]);
+
     const bgColor = isRejected ? '#dc2626' : '#ef4444';
     const headerIcon = isRejected ? 'alert-circle' : 'time-outline';
     const headerTitle = isRejected
         ? 'Pago no verificado'
-        : 'Pago pendiente';
+        : 'ATENCIÓN';
+
     const headerMessage = isRejected
         ? `${coachName} no ha podido verificar tu pago anterior. Por favor, inténtalo de nuevo o contáctale directamente.`
-        : daysOverdue === 1
-            ? 'Tu plan venció ayer. Regularízalo para desbloquear tu rutina.'
-            : `Tu plan venció hace ${daysOverdue} días. Regularízalo para continuar.`;
+        : `Tu pago está pendiente desde hace ${daysOverdue} días. Por favor, contacta con tu entrenador para regularizar tu situación y continuar con el servicio.`;
 
     return (
         <Modal visible={visible} animationType="fade" transparent>
@@ -133,8 +147,9 @@ export function PaymentBlockOverlay({
                                 {/* Note Input (Optional) */}
                                 {showNoteInput ? (
                                     <View style={styles.noteContainer}>
-                                        <TextInput
-                                            style={styles.noteInput}
+                                        <EnhancedTextInput
+                                            style={styles.noteInputText}
+                                            containerStyle={styles.noteInputContainer}
                                             placeholder="Ej: Te hice Bizum desde la cuenta de mi madre"
                                             placeholderTextColor="#94a3b8"
                                             value={note}
@@ -177,10 +192,17 @@ export function PaymentBlockOverlay({
                                 </TouchableOpacity>
                             </>
                         )}
+
+                        {/* Delayed Dismiss Button */}
+                        {!showSuccess && canDismiss && (
+                            <TouchableOpacity style={styles.dismissBtn} onPress={onDismiss}>
+                                <Text style={styles.dismissText}>Omitir por ahora</Text>
+                            </TouchableOpacity>
+                        )}
                     </Animated.View>
                 </KeyboardAvoidingView>
             </View>
-        </Modal>
+        </Modal >
     );
 }
 
@@ -297,17 +319,19 @@ const styles = StyleSheet.create({
         width: '100%',
         marginBottom: 20,
     },
-    noteInput: {
+    noteInputContainer: {
         width: '100%',
         minHeight: 80,
         backgroundColor: '#f8fafc',
         borderRadius: 12,
         padding: 14,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    noteInputText: {
         fontSize: 14,
         color: '#0f172a',
         textAlignVertical: 'top',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
     },
     noteHint: {
         fontSize: 12,
@@ -364,6 +388,16 @@ const styles = StyleSheet.create({
         color: '#64748b',
         textAlign: 'center',
         lineHeight: 22,
+    },
+    dismissBtn: {
+        marginTop: 16,
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+    },
+    dismissText: {
+        fontSize: 14,
+        color: '#94a3b8',
+        textDecorationLine: 'underline',
     },
 });
 

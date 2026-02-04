@@ -1,6 +1,6 @@
 /* app/index.jsx - HOME SCREEN CON MODAL DE UPGRADE PARA FREE */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,11 @@ import {
   Platform,
   Modal,
   Pressable,
-  ScrollView,
   useWindowDimensions,
   SafeAreaView,
+  ScrollView,
 } from 'react-native';
+import { EnhancedScrollView } from '../../components/ui';
 import { Link, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,7 +35,7 @@ if (Platform.OS !== 'web') {
   HomeMobileLayout = require('../../components/HomeMobileLayout').default;
 }
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 const FRASES = [
   "La disciplina es el puente entre metas y logros.",
@@ -50,13 +51,16 @@ const FRASES = [
 ];
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.1.4';
+const APP_VERSION = '1.1.5';
 
 const CAMBIOS_112 = [
-  '💳 Google Pay: Solucionado problema con pagos fuera de la app.',
-  '💬 Chat Multimedia: Ahora puedes enviar fotos y videos.',
-  '📈 Feedbacks: Mejoras visuales y corrección de bugs.',
-  '✨ UI/UX: Nueva interfaz más limpia para todos.',
+  '🍎 Sistema Integral de Nutrición: Control total de dietas y macros.',
+  '📲 Importación Automática: Base de datos de alimentos mejorada.',
+  '🧑‍🍳 Creador Pro & IA: Recetas inteligentes con importación artificial.',
+  '💊 Suplementación Avanzada: Nuevo módulo de gestión de suplementos.',
+  '🛒 Lista Inteligente: Genera tu compra automáticamente.',
+  '👥 Nuevo Panel de Clientes: Gestión visual y eficiente.',
+  '✨ UI/UX Renovado: Mejor experiencia en nutrición y entrenos.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -120,7 +124,7 @@ export default function HomeScreen() {
       return () => {
         hasRefreshedThisFocus.current = false;
       };
-    }, [token]) // Quitamos refreshUser de las dependencias - es estable
+    }, []) // Sin deps - solo al ganar foco, evita loop si backend renueva tokens
   );
 
   // Mostrar tooltip promocional para FREEUSER (solo una vez por sesión)
@@ -205,11 +209,15 @@ export default function HomeScreen() {
           }),
           fetch(`${API_URL}/api/feedback-reports/unread-count`, {
             headers: { Authorization: `Bearer ${token}` }
-          }).catch(() => ({ json: () => ({ success: false }) }))
+          }).catch(() => null)
         ]);
 
-        const chatData = await chatRes.json();
-        const feedbackData = await feedbackRes.json();
+        // Validar que las respuestas sean JSON antes de parsear
+        const isJsonResponse = (res) =>
+          res && res.ok && res.headers?.get('content-type')?.includes('application/json');
+
+        const chatData = isJsonResponse(chatRes) ? await chatRes.json() : { success: false };
+        const feedbackData = isJsonResponse(feedbackRes) ? await feedbackRes.json() : { success: false };
 
         if (chatData.success) {
           setUnreadChatCount(chatData.totalUnread || 0);
@@ -250,10 +258,15 @@ export default function HomeScreen() {
   }, []);
 
   // Cargar estado de suscripción para usuarios premium/cliente/entrenador
+  // NOTA: Dependencias son solo valores primitivos para evitar re-ejecuciones
+  // innecesarias cuando 'user' cambia de referencia (refreshUser, etc.)
+  const userSubscriptionExpiry = user?.subscriptionExpiry;
+  const userTipoUsuario = user?.tipoUsuario;
+
   useEffect(() => {
     const checkSubscriptionStatus = async () => {
       // Solo para usuarios no FREEUSER que tengan token
-      if (!token || user?.tipoUsuario === 'FREEUSER' || !user) return;
+      if (!token || userTipoUsuario === 'FREEUSER' || !userTipoUsuario) return;
 
       try {
         const response = await fetch(`${API_URL}/api/subscription/status`, {
@@ -262,32 +275,17 @@ export default function HomeScreen() {
             Authorization: `Bearer ${token}`,
           },
         });
+        const contentType = response.headers.get('content-type');
+        if (!response.ok || !contentType?.includes('application/json')) {
+          throw new Error(`Server returned ${response.status}`);
+        }
         const data = await response.json();
         if (data.success && data.subscription) {
           setSubscriptionData(data.subscription);
-        } else {
+        } else if (userSubscriptionExpiry) {
           // FALLBACK: Si no hay suscripción formal pero el usuario tiene subscriptionExpiry
           // (caso de códigos gratuitos / períodos de prueba)
-          if (user.subscriptionExpiry) {
-            const expiryDate = new Date(user.subscriptionExpiry);
-            const now = new Date();
-            const diffTime = expiryDate.getTime() - now.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            setSubscriptionData({
-              daysRemaining: diffDays,
-              status: diffDays <= 0 ? 'expired' : 'trial', // 'trial' para códigos gratuitos
-              active: diffDays > 0,
-              expiresAt: user.subscriptionExpiry,
-              isCodeBased: true, // Flag para identificar que es un código gratuito
-            });
-          }
-        }
-      } catch (error) {
-        console.error('[Home] Error fetching subscription status:', error);
-        // FALLBACK en caso de error: usar subscriptionExpiry del usuario
-        if (user?.subscriptionExpiry) {
-          const expiryDate = new Date(user.subscriptionExpiry);
+          const expiryDate = new Date(userSubscriptionExpiry);
           const now = new Date();
           const diffTime = expiryDate.getTime() - now.getTime();
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -296,7 +294,24 @@ export default function HomeScreen() {
             daysRemaining: diffDays,
             status: diffDays <= 0 ? 'expired' : 'trial',
             active: diffDays > 0,
-            expiresAt: user.subscriptionExpiry,
+            expiresAt: userSubscriptionExpiry,
+            isCodeBased: true,
+          });
+        }
+      } catch (error) {
+        console.warn('[Home] Subscription status unavailable, using fallback:', error.message);
+        // FALLBACK en caso de error: usar subscriptionExpiry del usuario
+        if (userSubscriptionExpiry) {
+          const expiryDate = new Date(userSubscriptionExpiry);
+          const now = new Date();
+          const diffTime = expiryDate.getTime() - now.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          setSubscriptionData({
+            daysRemaining: diffDays,
+            status: diffDays <= 0 ? 'expired' : 'trial',
+            active: diffDays > 0,
+            expiresAt: userSubscriptionExpiry,
             isCodeBased: true,
           });
         }
@@ -304,7 +319,7 @@ export default function HomeScreen() {
     };
 
     checkSubscriptionStatus();
-  }, [token, user?.tipoUsuario, user, user?.subscriptionExpiry]);
+  }, [token, userTipoUsuario, userSubscriptionExpiry]);
 
   // Lógica de trigger para el modal de retención
   useEffect(() => {
@@ -415,6 +430,18 @@ export default function HomeScreen() {
     : 'rgba(255, 255, 255, 0.60)';
   const bannerBg = isDark ? '#1E293B' : '#0F172A';
 
+  // Estilos dinámicos memoizados para optimización
+  const dynamicStyles = useMemo(() => ({
+    titleText: {
+      color: theme.text,
+      ...(isSmallHeight && { fontSize: 20 }),
+    },
+    subtitleText: {
+      color: theme.textSecondary,
+      ...(isSmallHeight && { marginBottom: 12 }),
+    },
+  }), [theme.text, theme.textSecondary, isSmallHeight]);
+
   // ═══════════════════════════════════════════════════════════════
   // MÓVIL: Usa el layout flotante separado
   // WEB: Usa el layout clásico con card (definido abajo)
@@ -506,28 +533,28 @@ export default function HomeScreen() {
             2. Si es ENTRENADOR sin entrenador propio → su brandName
             3. Fallback → TotalGains
         */}
-        <Text style={[styles.title, { color: theme.text }, isSmallHeight ? { fontSize: 20 } : null]}>
+        <Text style={[styles.title, dynamicStyles.titleText]}>
           {currentTrainer?.profile?.brandName || currentTrainer?.nombre ||
             (user?.trainerProfile?.brandName && !user?.currentTrainerId ? user.trainerProfile.brandName : 'TotalGains')}
         </Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }, isSmallHeight ? { marginBottom: 12 } : null]}>Tu progreso, bien medido.</Text>
+        <Text style={[styles.subtitle, dynamicStyles.subtitleText]}>Tu progreso, bien medido.</Text>
 
         {/* Botón Principal */}
         <Link href="/entreno" asChild>
           <ActionButton title="Empezar entreno" icon="barbell-outline" variant="secondary" compact={isSmallHeight} />
         </Link>
-        <View style={{ height: isSmallHeight ? 10 : 12 }} />
+        <View style={isSmallHeight ? styles.spacer10 : styles.spacer12} />
 
         {/* Grid para botones secundarios en pantallas pequeñas, Lista en grandes */}
         {isSmallHeight ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', width: '100%', gap: 10 }}>
+          <View style={styles.gridContainer}>
             {/* Fila 1 */}
-            <View style={{ width: '48%' }}>
+            <View style={styles.gridColumn}>
               <Link href="/rutinas" asChild>
-                <ActionButton title="Rutina" icon="construct-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+                <ActionButton title="Rutina" icon="construct-outline" variant="secondary" compact={true} style={styles.compactButton} />
               </Link>
             </View>
-            <View style={{ width: '48%', position: 'relative' }}>
+            <View style={styles.gridColumnRelative}>
               <Link href="/seguimiento" asChild>
                 <ActionButton
                   title="Seguimiento"
@@ -535,7 +562,7 @@ export default function HomeScreen() {
                   variant="secondary"
                   compact={true}
                   style={[
-                    { height: 50, justifyContent: 'center' },
+                    styles.compactButton,
                     unreadFeedbackReports > 0 ? styles.seguimientoBtnGolden : null
                   ]}
                 />
@@ -548,19 +575,19 @@ export default function HomeScreen() {
             </View>
 
             {/* Fila 2 */}
-            <View style={{ width: '48%' }}>
+            <View style={styles.gridColumn}>
               <Link href="/nutricion" asChild>
-                <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" compact={true} style={{ height: 50, justifyContent: 'center' }} />
+                <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" compact={true} style={styles.compactButton} />
               </Link>
             </View>
-            <View style={{ width: '48%' }}>
+            <View style={styles.gridColumn}>
               <ActionButton
                 title="Perfil"
                 icon="person-outline"
                 variant="secondary"
                 onPress={handlePerfilPress}
                 compact={true}
-                style={{ height: 50, justifyContent: 'center' }}
+                style={styles.compactButton}
               />
             </View>
           </View>
@@ -569,8 +596,8 @@ export default function HomeScreen() {
             <Link href="/rutinas" asChild>
               <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
             </Link>
-            <View style={{ height: 10 }} />
-            <View style={{ position: 'relative', width: '100%', alignItems: 'center' }}>
+            <View style={styles.spacer10} />
+            <View style={styles.badgeContainer}>
               <Link href="/seguimiento" asChild>
                 <ActionButton
                   title="Seguimiento"
@@ -585,11 +612,11 @@ export default function HomeScreen() {
                 </View>
               )}
             </View>
-            <View style={{ height: 10 }} />
+            <View style={styles.spacer10} />
             <Link href="/nutricion" asChild>
               <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
             </Link>
-            <View style={{ height: 10 }} />
+            <View style={styles.spacer10} />
             <ActionButton
               title="Perfil"
               icon="person-outline"
@@ -599,7 +626,7 @@ export default function HomeScreen() {
           </>
         )}
 
-        <View style={{ height: isSmallHeight ? 8 : 10 }} />
+        <View style={isSmallHeight ? styles.spacer8 : styles.spacer10} />
 
         <Text style={styles.version}>v{APP_VERSION} • TotalGains</Text>
         {/* Enlace a la web */}
@@ -634,9 +661,13 @@ export default function HomeScreen() {
         />
 
         {/* Botón Mode Select para Admin/Entrenador - Solo emoji de flechas */}
-        {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode) && (
+        {/* Solo mostrar si el usuario ES actualmente ADMINISTRADOR o ENTRENADOR (no basarse en trainerCode residual) */}
+        {(user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR') && (
           <Link href="/mode-select" asChild>
-            <Pressable style={styles.modeSelectorButtonCompact}>
+            <Pressable
+              style={styles.modeSelectorButtonCompact}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <LinearGradient
                 colors={['#3B82F6', '#2563EB']}
                 start={{ x: 0, y: 0 }}
@@ -652,7 +683,10 @@ export default function HomeScreen() {
         {/* Botón de FAQs - A la izquierda de Subir de Nivel */}
         {showPaymentButton && (
           <Link href="/coach-help" asChild>
-            <Pressable style={styles.faqButton}>
+            <Pressable
+              style={styles.faqButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <LinearGradient
                 colors={['#6B7280', '#4B5563']}
                 start={{ x: 0, y: 0 }}
@@ -668,7 +702,10 @@ export default function HomeScreen() {
         {/* Botón Payment - Solo corona */}
         {showPaymentButton && (
           <Link href="/payment" asChild>
-            <Pressable style={styles.paymentButtonCompact}>
+            <Pressable
+              style={styles.paymentButtonCompact}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <LinearGradient
                 colors={['#FFD700', '#FFA500', '#FF8C00']}
                 start={{ x: 0, y: 0 }}
@@ -713,16 +750,15 @@ export default function HomeScreen() {
           </Pressable>
         )}
 
-        <ScrollView
+        <EnhancedScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
           bounces={true}
         >
           <SafeAreaView style={styles.contentContainer}>
             {renderContent()}
           </SafeAreaView>
-        </ScrollView>
+        </EnhancedScrollView>
 
         <Modal
           visible={showChangelog}
@@ -830,6 +866,7 @@ export default function HomeScreen() {
         <Pressable
           style={styles.chatFab}
           onPress={() => router.push('/chat')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <LinearGradient
             colors={['#8B5CF6', '#6366F1']}
@@ -1383,5 +1420,39 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 12,
     fontWeight: '800',
+  },
+  // Espaciadores reutilizables
+  spacer8: {
+    height: 8,
+  },
+  spacer10: {
+    height: 10,
+  },
+  spacer12: {
+    height: 12,
+  },
+  // Grid layout para pantallas pequeñas
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+  },
+  gridColumn: {
+    width: '48%',
+  },
+  gridColumnRelative: {
+    width: '48%',
+    position: 'relative',
+  },
+  compactButton: {
+    height: 50,
+    justifyContent: 'center',
+  },
+  badgeContainer: {
+    position: 'relative',
+    width: '100%',
+    alignItems: 'center',
   },
 });

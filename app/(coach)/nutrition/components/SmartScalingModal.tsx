@@ -5,10 +5,10 @@ import {
     StyleSheet,
     Modal,
     TouchableOpacity,
-    TextInput,
     Platform,
     ScrollView
 } from 'react-native';
+import { EnhancedTextInput } from '../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 
 /**
@@ -24,11 +24,12 @@ import { Ionicons } from '@expo/vector-icons';
  */
 export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
     const [factor, setFactor] = useState('1.0');
+    const [overrides, setOverrides] = useState({}); // { [index]: string_qty }
 
     // Safe Macros Access
     const baseMacros = useMemo(() => recipe?.nutrients || { kcal: 0, protein: 0, carbs: 0, fat: 0 }, [recipe]);
 
-    // Calculate Scaled Macros
+    // Calculate Scaled Macros (Global Factor Only - for preview base)
     const scaledMacros = useMemo(() => {
         const mul = parseFloat(factor) || 0;
         return {
@@ -39,39 +40,121 @@ export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
         };
     }, [baseMacros, factor]);
 
+    // Helper: Get final quantity for an ingredient (Override > Factor)
+    const getFinalQty = (ing, idx) => {
+        if (overrides[idx] !== undefined) return parseFloat(overrides[idx]) || 0;
+        const base = parseFloat(ing.quantity) || 0;
+        const mul = parseFloat(factor) || 1;
+        return Math.round(base * mul * 10) / 10;
+    };
+
+    // Calculate Total Macros dynamically (taking overrides into account)
+    const totalCurrentMacros = useMemo(() => {
+        if (!recipe?.ingredients) return scaledMacros; // Fallback
+
+        // Sum of all ingredients with current quantities
+        let total = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+
+        recipe.ingredients.forEach((ing, idx) => {
+            const qty = getFinalQty(ing, idx);
+            // Nutrients per 100g usually
+            const cached = ing.cachedMacros || ing.item?.nutrients || {};
+            const ratio = qty / 100;
+
+            total.kcal += (cached.kcal || 0) * ratio;
+            total.protein += (cached.protein || 0) * ratio;
+            total.carbs += (cached.carbs || 0) * ratio;
+            total.fat += (cached.fat || 0) * ratio;
+        });
+
+        return {
+            kcal: Math.round(total.kcal),
+            protein: Math.round(total.protein * 10) / 10,
+            carbs: Math.round(total.carbs * 10) / 10,
+            fat: Math.round(total.fat * 10) / 10,
+        };
+    }, [recipe, factor, overrides, scaledMacros]);
+
     // Handle Quick Factor Buttons
-    const setFactorValue = (val) => setFactor(String(val));
+    const setFactorValue = (val) => {
+        setFactor(String(val));
+        setOverrides({}); // Reset overrides on factory change? Yes, safer.
+    };
+
+    // Handle Ingredient Override
+    const handleOverride = (amount, idx) => {
+        setOverrides(prev => ({ ...prev, [idx]: amount }));
+    };
+
+    const hasOverrides = Object.keys(overrides).length > 0;
 
     // Handle Add (Block Mode)
     const handleAddBlock = () => {
+        if (hasOverrides) {
+            // Block mode technically should ignore overrides or be disabled.
+            // We'll trust the UI to handle visual disablement, but here we enforce standard scaling.
+        }
         const mul = parseFloat(factor) || 1;
         if (mul <= 0) return;
 
-        // Create a single item (The Recipe itself) with scaled values
-        const blockItem = {
-            ...recipe,
-            isBlock: true, // Marker
-            // Scale the "amount" representation if needed, usually we just keep 1 unit of recipe but scaled nutrients?
-            // Actually, in the plan, usually we store portions. 
-            // If the recipe is "1 Bowl", scaling 1.5 means "1.5 Bowls".
-            // So we set amount = 1.5, unit = "ración" (or whatever usage unit it has)
-            // But for macros, the system usually recalculates from base. 
-            // To ensure compatibility, we should return the Item with the *Correct Quantity*.
-            // If the base recipe is 1 serving = 100g (unlikely for recipes).
-            // Recipes usually have servingSize. 
-            // Let's assume we treat it as "1.0 x Recipe".
+        // 🧠 SMART UNIT LOGIC
+        // For recipes/composite foods: use 'Ración' as the natural unit
+        // For regular foods: use servingSize unit or default to grams
 
-            // For the callback structure expected by SmartFoodDrawer:
-            // { food, amount, unit, calculatedMacros }
+        let finalAmount = mul;
+        let finalUnit = (recipe.isComposite || recipe.isRecipe)
+            ? (recipe.servingSize?.unit || 'Ración')
+            : (recipe.servingSize?.unit || 'g');
 
-            // We pass the RAW food, and the amount = factor.
-        };
+        // Normalize unit check
+        const isWeightUnit = ['g', 'gramos', 'gramo'].includes(finalUnit.toLowerCase());
+
+        // Deep clone food to avoid mutating original and to scale ingredients
+        const scaledFood = JSON.parse(JSON.stringify(recipe));
+
+        if (isWeightUnit) {
+            // Calculate total weight from ingredients
+            const totalWeight = recipe.ingredients?.reduce((sum, ing) => {
+                return sum + (parseFloat(ing.quantity) || 0);
+            }, 0) || 100;
+
+            finalAmount = totalWeight * mul;
+            finalUnit = 'gramos';
+        }
+
+        // 🟢 CRITICAL: Scale Ingredients Snapshot
+        if (scaledFood.ingredients) {
+            scaledFood.ingredients.forEach(ing => {
+                // Determine base quantity (support 'amount' or 'quantity' prop)
+                const baseQty = parseFloat(ing.quantity || ing.amount) || 0;
+                const newQty = baseQty * mul;
+
+                // Update quantity/amount
+                ing.quantity = newQty;
+                ing.amount = newQty; // Ensure 'amount' prop exists for MealCard compatibility
+
+                // Update cached macros
+                if (ing.cachedMacros) {
+                    ing.cachedMacros.kcal *= mul;
+                    ing.cachedMacros.protein *= mul;
+                    ing.cachedMacros.carbs *= mul;
+                    ing.cachedMacros.fat *= mul;
+                }
+                // Update direct nutrients if present (snapshot)
+                if (ing.nutrients) {
+                    ing.nutrients.kcal *= mul;
+                    ing.nutrients.protein *= mul;
+                    ing.nutrients.carbs *= mul;
+                    ing.nutrients.fat *= mul;
+                }
+            });
+        }
 
         onAdd([
             {
-                food: recipe,
-                amount: mul,
-                unit: recipe.servingSize?.unit || 'ración',
+                food: scaledFood,
+                amount: Math.round(finalAmount * 10) / 10,
+                unit: finalUnit,
                 calculatedMacros: scaledMacros
             }
         ], 'block');
@@ -79,38 +162,23 @@ export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
 
     // Handle Add (Explode Mode)
     const handleAddExplode = () => {
-        const mul = parseFloat(factor) || 1;
-        if (mul <= 0) return;
-
-        // Iterate ingredients
         if (!recipe.ingredients || recipe.ingredients.length === 0) {
-            // Fallback to block if no ingredients (shouldn't happen for valid recipes)
             handleAddBlock();
             return;
         }
 
-        const explodedItems = recipe.ingredients.map(ing => {
-            // ing structure: { item: FoodItem, quantity: number, unit: string, cachedName... }
-            // We need to return an array of { food, amount, unit, calculatedMacros }
-
-            // Reconstruct the "Food" object from the ingredient
-            // Use cached data to ensure robustness
+        const explodedItems = recipe.ingredients.map((ing, idx) => {
             const foodItem = {
-                _id: ing.item?._id || ing.item, // Handle populated vs unpopulated
+                _id: ing.item?._id || ing.item,
                 name: ing.cachedName || ing.item?.name || 'Ingrediente desconocido',
                 nutrients: ing.cachedMacros || ing.item?.nutrients || {},
-                // Carry over other props if available
                 image: ing.item?.image,
                 brand: ing.item?.brand
             };
 
-            const baseQty = parseFloat(ing.quantity) || 0;
-            const scaledQty = baseQty * mul;
+            const finalQty = getFinalQty(ing, idx);
 
-            // Calculate macros for this specific ingredient portion
-            // Assuming cachedMacros are per 100g (standard)
-            // Formula: (Qty / 100) * Per100
-            const ratio = scaledQty / 100;
+            const ratio = finalQty / 100;
             const itemMacros = {
                 kcal: (foodItem.nutrients.kcal || 0) * ratio,
                 protein: (foodItem.nutrients.protein || 0) * ratio,
@@ -120,7 +188,7 @@ export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
 
             return {
                 food: foodItem,
-                amount: scaledQty,
+                amount: finalQty,
                 unit: ing.unit || 'g',
                 calculatedMacros: itemMacros
             };
@@ -154,8 +222,9 @@ export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
                                 <Ionicons name="remove" size={20} color="#3b82f6" />
                             </TouchableOpacity>
 
-                            <TextInput
-                                style={styles.factorInput}
+                            <EnhancedTextInput
+                                containerStyle={styles.factorInputContainer}
+                                style={styles.factorInputText}
                                 value={factor}
                                 onChangeText={setFactor}
                                 keyboardType="numeric"
@@ -186,52 +255,104 @@ export default function SmartScalingModal({ visible, recipe, onClose, onAdd }) {
                         <View style={styles.macrosPreview}>
                             <View style={styles.macroCol}>
                                 <Text style={styles.macroLabel}>Kcal</Text>
-                                <Text style={styles.macroValue}>{Math.round(scaledMacros.kcal)}</Text>
+                                <Text style={styles.macroValue}>{Math.round(totalCurrentMacros.kcal)}</Text>
                             </View>
                             <View style={styles.macroCol}>
                                 <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>Prot</Text>
-                                <Text style={styles.macroValue}>{Math.round(scaledMacros.protein)}</Text>
+                                <Text style={styles.macroValue}>{Math.round(totalCurrentMacros.protein)}</Text>
                             </View>
                             <View style={styles.macroCol}>
                                 <Text style={[styles.macroLabel, { color: '#22c55e' }]}>Carb</Text>
-                                <Text style={styles.macroValue}>{Math.round(scaledMacros.carbs)}</Text>
+                                <Text style={styles.macroValue}>{Math.round(totalCurrentMacros.carbs)}</Text>
                             </View>
                             <View style={styles.macroCol}>
                                 <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>Grasa</Text>
-                                <Text style={styles.macroValue}>{Math.round(scaledMacros.fat)}</Text>
+                                <Text style={styles.macroValue}>{Math.round(totalCurrentMacros.fat)}</Text>
                             </View>
                         </View>
+
+                        {/* 2b. INGREDIENTS EDITOR */}
+                        {recipe.ingredients && recipe.ingredients.length > 0 && (
+                            <View style={styles.ingredientsSection}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <Text style={styles.label}>Ingredientes ({recipe.ingredients.length})</Text>
+                                    {hasOverrides && (
+                                        <TouchableOpacity onPress={() => setOverrides({})}>
+                                            <Text style={{ fontSize: 11, color: '#3b82f6', fontWeight: '600' }}>Restablecer</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+
+                                <ScrollView style={styles.ingredientsList} nestedScrollEnabled>
+                                    {recipe.ingredients.map((ing, idx) => {
+                                        const finalQty = getFinalQty(ing, idx);
+                                        const name = ing.cachedName || ing.item?.name || ing.name || 'Ingrediente';
+                                        const isOverridden = overrides[idx] !== undefined;
+
+                                        return (
+                                            <View key={idx} style={[styles.ingredientRow, isOverridden && { backgroundColor: '#eff6ff' }]}>
+                                                <Text style={[styles.ingName, isOverridden && { color: '#1e40af', fontWeight: '600' }]} numberOfLines={1}>
+                                                    • {name}
+                                                </Text>
+
+                                                <View style={styles.ingInputContainer}>
+                                                    <EnhancedTextInput
+                                                        containerStyle={styles.ingInputContainer}
+                                                        style={[styles.ingInputText, isOverridden && { color: '#2563eb', fontWeight: '700' }]}
+                                                        value={String(finalQty)}
+                                                        onChangeText={(v) => handleOverride(v, idx)}
+                                                        keyboardType="numeric"
+                                                        selectTextOnFocus
+                                                    />
+                                                    <Text style={styles.ingUnit}>{ing.unit || 'g'}</Text>
+                                                </View>
+                                            </View>
+                                        );
+                                    })}
+                                </ScrollView>
+                            </View>
+                        )}
 
                         {/* 3. ACTIONS FORK */}
                         <Text style={[styles.label, { marginTop: 24 }]}>Modo de Asignación</Text>
                         <View style={styles.actionsBranch}>
 
-                            {/* Option A: BLOCK */}
-                            <TouchableOpacity style={styles.optionBtnPrimary} onPress={handleAddBlock}>
+                            {/* Option A: BLOCK (Disabled if Overrides exist) */}
+                            <TouchableOpacity
+                                style={[styles.optionBtnPrimary, hasOverrides && { opacity: 0.5, backgroundColor: '#f1f5f9' }]}
+                                onPress={() => hasOverrides ? alert('Restablece los ingredientes para añadir como bloque, o usa Desglosar.') : handleAddBlock()}
+                            >
                                 <View style={styles.optionIconContainer}>
                                     <Text style={{ fontSize: 24 }}>📦</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.optionTitle}>Añadir como Bloque</Text>
+                                    <Text style={[styles.optionTitle, hasOverrides && { color: '#94a3b8' }]}>Añadir como Bloque</Text>
                                     <Text style={styles.optionDesc}>
-                                        Añade "{recipe.name}" como un solo ítem. Ideal para ocultar la receta exacta.
+                                        {hasOverrides
+                                            ? "No disponible con ediciones manuales"
+                                            : `Añade "${recipe.name}" como un solo ítem.`}
                                     </Text>
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+                                {!hasOverrides && <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />}
                             </TouchableOpacity>
 
-                            {/* Option B: EXPLODE */}
-                            <TouchableOpacity style={styles.optionBtnSecondary} onPress={handleAddExplode}>
-                                <View style={styles.optionIconContainerSec}>
+                            {/* Option B: EXPLODE (Primary if Overrides exist) */}
+                            <TouchableOpacity
+                                style={[styles.optionBtnSecondary, hasOverrides && { borderColor: '#3b82f6', backgroundColor: '#f0f9ff' }]}
+                                onPress={handleAddExplode}
+                            >
+                                <View style={[styles.optionIconContainerSec, hasOverrides && { backgroundColor: '#dbeafe' }]}>
                                     <Text style={{ fontSize: 24 }}>📝</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.optionTitleSec}>Desglosar Ingredientes</Text>
-                                    <Text style={styles.optionDescSec}>
-                                        Añade {recipe.ingredients?.length || 0} ingredientes por separado, escalados x{factor}.
+                                    <Text style={[styles.optionTitleSec, hasOverrides && { color: '#1e40af', fontWeight: '700' }]}>
+                                        {hasOverrides ? 'Añadir Personalizado' : 'Desglosar Ingredientes'}
+                                    </Text>
+                                    <Text style={[styles.optionDescSec, hasOverrides && { color: '#1e3a8a' }]}>
+                                        Añade {recipe.ingredients?.length || 0} ingredientes con tus cantidades.
                                     </Text>
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+                                <Ionicons name="chevron-forward" size={20} color={hasOverrides ? '#3b82f6' : "#cbd5e1"} />
                             </TouchableOpacity>
 
                         </View>
@@ -269,6 +390,14 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8fafc', fontSize: 32, fontWeight: '800',
         color: '#1e293b', textAlign: 'center', width: 120, height: 60,
         borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0'
+    },
+    factorInputContainer: {
+        backgroundColor: '#f8fafc', width: 120, height: 60,
+        borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0'
+    },
+    factorInputText: {
+        fontSize: 32, fontWeight: '800',
+        color: '#1e293b', textAlign: 'center',
     },
     stepBtn: {
         width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff',
@@ -318,4 +447,27 @@ const styles = StyleSheet.create({
     optionDesc: { fontSize: 12, color: '#64748b', marginTop: 2, lineHeight: 16 },
     optionTitleSec: { fontSize: 16, fontWeight: '600', color: '#475569' },
     optionDescSec: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+
+    // Ingredients List (Enhanced)
+    ingredientsSection: { marginTop: 16, maxHeight: 150 },
+    ingredientsList: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 12 },
+    ingredientRow: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
+        borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 6, paddingTop: 2,
+        paddingHorizontal: 4, borderRadius: 6
+    },
+    ingName: { fontSize: 13, color: '#475569', flex: 1, marginRight: 8 },
+    ingInputContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    ingInput: {
+        backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6,
+        width: 60, height: 28, textAlign: 'center', fontSize: 13, color: '#334155', padding: 0
+    },
+    ingInputContainer: {
+        backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6,
+        width: 60, height: 28, padding: 0
+    },
+    ingInputText: {
+        textAlign: 'center', fontSize: 13, color: '#334155',
+    },
+    ingUnit: { fontSize: 11, color: '#64748b', width: 40 },
 });

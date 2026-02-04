@@ -27,10 +27,15 @@ import { ThemeProvider as CustomThemeProvider, useTheme } from '../../context/Th
 // AÑADIDO: Chat Theme Provider (aislado del tema general)
 import { ChatThemeProvider } from '../../context/ChatThemeContext';
 
+// AÑADIDO: Floating Tab Bar (navegación flotante premium)
+import { FloatingTabBarProvider } from '../../context/FloatingTabBarContext';
+import FloatingTabBar from '../../src/components/shared/FloatingTabBar';
+
 import AchievementToast from '../../components/AchievementToast';
 import { AchievementsProvider, useAchievements } from '../../context/AchievementsContext';
 import { useAuth } from '../../context/AuthContext';
 import { MealTrackingProvider } from '../../src/context/MealTrackingContext';
+import { ShoppingListProvider } from '../../src/context/ShoppingListContext';
 
 // --- 3. CLAVES Y FUNCIÓN DE SEEDING (¡ACTUALIZADA!) ---
 const RUTINAS_LIST_KEY = 'rutinas'; // Clave para la lista de metadatos
@@ -237,14 +242,17 @@ export default function RootLayout() {
   return (
     // AÑADIDO: Envolvemos todo con CustomThemeProvider
     <CustomThemeProvider>
-      <MealTrackingProvider>
-        <AchievementsProvider>
-          <AchievementsSyncWrapper>
-            <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-              <SafeAreaProvider>
-                <ChatThemeProvider>
-                  <ThemedSafeAreaView>
-                    <Stack
+      {/* AÑADIDO: FloatingTabBarProvider para navegación flotante */}
+      <FloatingTabBarProvider>
+        <MealTrackingProvider>
+        <ShoppingListProvider>
+          <AchievementsProvider>
+            <AchievementsSyncWrapper>
+              <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+                <SafeAreaProvider>
+                  <ChatThemeProvider>
+                    <ThemedSafeAreaView>
+                      <Stack
                       screenOptions={{
                         headerShown: false,
                         // Habilitar gesto de swipe back en iOS
@@ -286,19 +294,35 @@ export default function RootLayout() {
                       />
                       <Stack.Screen name="perfil/evolucion" />
                       <Stack.Screen name="videos" />
+
+                      {/* 🥗 NUTRICIÓ */}
+                      <Stack.Screen
+                        name="nutricion/meal/[id]"
+                        options={{
+                          headerShown: false,
+                          gestureEnabled: true,
+                          animation: 'slide_from_right'
+                        }}
+                      />
+
                       <Stack.Screen name="+not-found" />
 
                     </Stack>
                   </ThemedSafeAreaView>
-                </ChatThemeProvider>
+                  </ChatThemeProvider>
 
-                {/* 🏆 Toast de logros estilo Steam */}
-                <AchievementToast />
-              </SafeAreaProvider>
-            </View>
-          </AchievementsSyncWrapper>
-        </AchievementsProvider>
-      </MealTrackingProvider>
-    </CustomThemeProvider >
+                  {/* 🏆 Toast de logros estilo Steam */}
+                  <AchievementToast />
+
+                  {/* 📱 Tab Bar Flotante Premium (solo móviles) */}
+                  <FloatingTabBar />
+                </SafeAreaProvider>
+              </View>
+            </AchievementsSyncWrapper>
+          </AchievementsProvider>
+        </ShoppingListProvider>
+        </MealTrackingProvider>
+      </FloatingTabBarProvider>
+    </CustomThemeProvider>
   );
 }

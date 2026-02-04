@@ -4,15 +4,11 @@ import {
   View,
   Text,
   SectionList,
-  TouchableOpacity,
   StyleSheet,
-  TextInput,
   Alert,
   ActivityIndicator,
   Platform,
   Modal,
-  ScrollView,
-  Pressable,
   ActionSheetIOS,
   Image,
   Dimensions
@@ -23,6 +19,13 @@ import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ExerciseSearchModal from '../../../components/ExerciseSearchModal';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedTouchable as TouchableOpacity,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 const EXTRA_OPCIONES = ['Ninguno', 'Descendentes', 'Mio Reps', 'Parciales', 'Biserie'];
 

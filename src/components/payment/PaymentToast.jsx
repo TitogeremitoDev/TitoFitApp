@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
  * Friendly reminder 2 days before payment
  * Dismissible banner that appears at the top
  */
-export function PaymentToast({ visible, userName, daysUntil, onDismiss }) {
+export function PaymentToast({ visible, level = 1, userName, daysUntil, daysOverdue, onDismiss }) {
     const slideAnim = useRef(new Animated.Value(-100)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -57,7 +57,40 @@ export function PaymentToast({ visible, userName, daysUntil, onDismiss }) {
     if (!visible) return null;
 
     const firstName = userName?.split(' ')[0] || 'Atleta';
-    const daysText = daysUntil === 1 ? 'mañana' : `en ${daysUntil} días`;
+
+    let messageContent;
+
+    if (level === 1) {
+        // Upcoming (2 days before)
+        const daysText = daysUntil === 1 ? 'mañana' : `en ${daysUntil} días`;
+        messageContent = (
+            <>
+                Hola <Text style={styles.bold}>{firstName}</Text>, recuerda que en {daysText} dias tocar renovar tu plan con tu entrenador.
+                ¡Prepárate para seguir subiendo de nivel! 💪
+            </>
+        );
+    } else if (level === 2) {
+        // Due Today
+        messageContent = (
+            <>
+                Hola <Text style={styles.bold}>{firstName}</Text>, hoy toca pagar a tu entrenador. ¡Hazlo hoy para mantener tu plan al día y seguir dándole caña! 🔥
+            </>
+        );
+    } else if (level === 3) {
+        // Overdue 1-5 days
+        messageContent = (
+            <>
+                Recordatorio: hace {daysOverdue} días que tenías que pagar a tu entrenador. ¡Hazlo pronto para seguir con tu ritmo de entrenamiento! ⚡️
+            </>
+        );
+    } else {
+        // Default / Fallback
+        messageContent = (
+            <>
+                Hola <Text style={styles.bold}>{firstName}</Text>, recuerda renovar tu plan con tu entrenador.
+            </>
+        );
+    }
 
     return (
         <Animated.View
@@ -74,7 +107,7 @@ export function PaymentToast({ visible, userName, daysUntil, onDismiss }) {
                     <Ionicons name="calendar-outline" size={20} color="#10b981" />
                 </View>
                 <Text style={styles.message}>
-                    Hola <Text style={styles.bold}>{firstName}</Text>, {daysText} renovamos tu plan. ¡Prepárate para el siguiente bloque! 💪
+                    {messageContent}
                 </Text>
                 <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
                     <Ionicons name="close" size={18} color="#64748b" />

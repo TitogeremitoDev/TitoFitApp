@@ -8,14 +8,15 @@ import {
     SafeAreaView,
     ScrollView,
     TouchableOpacity,
-    TextInput,
     Alert,
     ActivityIndicator,
     Modal,
     FlatList,
     Platform,
     useWindowDimensions,
+    Image,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -52,8 +53,9 @@ const MacroInput = ({ label, value, onChange, placeholder, suffix, color = '#647
     <View style={styles.macroInputContainer}>
         <Text style={styles.macroInputLabel}>{label}</Text>
         <View style={styles.macroInputRow}>
-            <TextInput
-                style={[styles.macroInput, { borderColor: color + '40' }]}
+            <EnhancedTextInput
+                containerStyle={[styles.macroInputContainer, { borderColor: color + '40' }]}
+                style={styles.macroInputText}
                 value={value != null ? String(value) : ''}
                 onChangeText={onChange}
                 placeholder={placeholder}
@@ -128,8 +130,9 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
             </View>
 
             <View style={styles.dayTargetHeader}>
-                <TextInput
-                    style={[styles.dayTargetName, { borderLeftColor: dayColor }]}
+                <EnhancedTextInput
+                    containerStyle={[styles.dayTargetNameContainer, { borderLeftColor: dayColor }]}
+                    style={styles.dayTargetNameText}
                     value={dayTarget.name}
                     onChangeText={(v) => onUpdate(index, 'name', v)}
                     placeholder={`Tipo de día ${index + 1}`}
@@ -304,8 +307,9 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
             </View>
 
             {/* Notas */}
-            <TextInput
-                style={styles.notesInput}
+            <EnhancedTextInput
+                containerStyle={styles.notesInputContainer}
+                style={styles.notesInputText}
                 value={dayTarget.notes || ''}
                 onChangeText={(v) => onUpdate(index, 'notes', v)}
                 placeholder="Instrucciones del día (opcional)"
@@ -379,6 +383,95 @@ const WeekSchedulePicker = ({ weekSchedule, dayTargets, onChange }) => {
     );
 };
 
+const CoachNutritionTopRightCard = ({ autoNutrition, clientName, clientData, isWideScreen }) => {
+    // Fallback defaults if autoNutrition is missing (e.g. missing profile data)
+    const defaults = {
+        kcal: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0
+    };
+
+    const data = autoNutrition?.training || defaults;
+    const isVolumen = autoNutrition?.isVolumen ?? true;
+    const isMantener = autoNutrition?.isMantener ?? false;
+    const objetivo = autoNutrition?.objetivo || 'Perfil Incompleto';
+
+    const goalColor = isVolumen ? '#3b82f6' : (isMantener ? '#f59e0b' : '#ef4444');
+
+    // Mobile / Compact View
+    if (!isWideScreen) {
+        return (
+            <View style={[styles.headerCardCompact, { borderColor: goalColor + '40', backgroundColor: goalColor + '10' }]}>
+                <Text style={{ fontSize: 16 }}>🔥</Text>
+                <Text style={[styles.headerCardKcalCompact, { color: goalColor }]}>{data.kcal || '---'}</Text>
+                <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>kcal</Text>
+            </View>
+        );
+    }
+
+    // Desktop / Full View
+    return (
+        <View style={styles.headerCardContainer}>
+            {/* Left: Profile Mini */}
+            <View style={styles.headerCardProfile}>
+                <View style={[styles.headerAvatar, { backgroundColor: goalColor, overflow: 'hidden' }]}>
+                    {clientData?.avatarUrl ? (
+                        <Image
+                            source={{ uri: clientData.avatarUrl }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Text style={styles.headerAvatarText}>
+                            {clientName ? clientName.substring(0, 2).toUpperCase() : 'CL'}
+                        </Text>
+                    )}
+                </View>
+                <View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.headerClientName} numberOfLines={1}>{clientName || 'Cliente'}</Text>
+                        {autoNutrition ? (
+                            <View style={[styles.headerBadge, { backgroundColor: goalColor + '20' }]}>
+                                <Text style={[styles.headerBadgeText, { color: goalColor }]}>
+                                    {objetivo}
+                                </Text>
+                            </View>
+                        ) : (
+                            <View style={[styles.headerBadge, { backgroundColor: '#cbd5e1' }]}>
+                                <Text style={[styles.headerBadgeText, { color: '#64748b', fontSize: 9 }]}>
+                                    PERFIL INCOMPLETO
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                    <Text style={styles.headerSubtext}>
+                        AF {clientData?.af || 1.55} • {clientData?.info_user?.peso || '--'}kg
+                    </Text>
+                </View>
+            </View>
+
+            <View style={styles.headerDivider} />
+
+            {/* Right: Targets */}
+            <View style={styles.headerCardTargets}>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.headerTargetKcal, { color: goalColor }]}>
+                        🎯 {data.kcal ? data.kcal.toLocaleString() : '---'} <Text style={{ fontSize: 14, color: '#64748b' }}>kcal</Text>
+                    </Text>
+                </View>
+                <View style={styles.headerMacrosRow}>
+                    <Text style={styles.headerMacroItem}><Text style={{ fontWeight: '700', color: '#ef4444' }}>P:</Text> {data.protein}g</Text>
+                    <Text style={styles.headerMacroDot}>•</Text>
+                    <Text style={styles.headerMacroItem}><Text style={{ fontWeight: '700', color: '#3b82f6' }}>C:</Text> {data.carbs}g</Text>
+                    <Text style={styles.headerMacroDot}>•</Text>
+                    <Text style={styles.headerMacroItem}><Text style={{ fontWeight: '700', color: '#f59e0b' }}>G:</Text> {data.fat}g</Text>
+                </View>
+            </View>
+        </View>
+    );
+};
+
 export default function ClientNutritionEditor() {
     const router = useRouter();
     const { clientId, clientName } = useLocalSearchParams();
@@ -411,7 +504,7 @@ export default function ClientNutritionEditor() {
     const [loadingTemplates, setLoadingTemplates] = useState(false);
 
     // Force local connection to ensure we hit the user's local DB
-    const API_URL = 'http://localhost:3000';
+    const API_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // 🖥️ Responsive layout
     const { width: windowWidth } = useWindowDimensions();
@@ -478,14 +571,45 @@ export default function ClientNutritionEditor() {
                 });
                 if (planRes.ok) {
                     const planData = await planRes.json();
+
                     if (planData.success && planData.plan) {
-                        setMode(planData.plan.mode || 'auto');
+                        // Force custom mode if planType is flex, otherwise trust mode or default to auto
+                        const resolvedMode = (planData.plan.planType === 'flex') ? 'custom' : (planData.plan.mode || 'auto');
+
+                        setMode(resolvedMode);
                         setPlanName(planData.plan.name || '');
                         setPlanDescription(planData.plan.description || '');
+
                         if (planData.plan.customPlan) {
                             setDayTargets(planData.plan.customPlan.dayTargets || []);
                             setWeekSchedule(planData.plan.customPlan.weekSchedule || {});
+                        } else if (resolvedMode === 'custom' && planData.plan.dayTemplates) {
+                            // 🛑 LEGACY HYDRATION: Fallback for when data is at root (legacy schema)
+                            // Map dayTemplates -> dayTargets
+                            const mappedTargets = planData.plan.dayTemplates.map(dt => {
+                                // Extract macros from targetMacros or root
+                                const macros = dt.targetMacros || {};
+                                return {
+                                    id: dt.id,
+                                    name: dt.name,
+                                    color: dt.color,
+                                    // Use explicit flag if present, otherwise fallback to name guess
+                                    isTrainingDay: (dt.isTraining !== undefined) ? dt.isTraining : (dt.name?.toLowerCase().includes('entreno') || false),
+                                    macroMode: 'grams', // Default to grams for hydration
+                                    kcal: macros.kcal || dt.kcal || '',
+                                    protein_g: macros.protein || dt.protein_g || '',
+                                    carbs_g: macros.carbs || dt.carbs_g || '',
+                                    fat_g: macros.fat || dt.fat_g || '',
+                                    water_ml: macros.water || dt.water_ml || '',
+                                    steps_target: macros.steps || dt.steps_target || '',
+                                    fiber_g: macros.fiber || dt.fiber_g || '',
+                                    notes: dt.notes || ''
+                                };
+                            });
+                            setDayTargets(mappedTargets);
+                            setWeekSchedule(planData.plan.weekMap || {});
                         }
+
                         // Load mealPlan data for 'mealplan' mode
                         if (planData.plan.mealPlan) {
                             setMealPlan(planData.plan.mealPlan);
@@ -539,29 +663,42 @@ export default function ClientNutritionEditor() {
         if (!clientData?.info_user) return null;
         const info = clientData.info_user;
         if (!info.edad || !info.peso || !info.altura || !info.genero) return null;
-        return calculateFullNutrition(info, info.objetivos, clientData.af || 1.55);
+        return calculateFullNutrition(info, info.objetivoPrincipal || info.objetivos || 'volumen', clientData.af || 1.55);
     }, [clientData]);
 
     // Add new day target
-    const addDayTarget = () => {
-        const newTarget = {
-            id: `day_${Date.now()}`,
-            name: dayTargets.length === 0 ? 'Día de entrenamiento' : 'Día de descanso',
-            isTrainingDay: dayTargets.length === 0,
-            macroMode: 'grams', // 'grams' o 'percent'
-            color: DAY_COLORS[dayTargets.length % DAY_COLORS.length],
-            kcal: '',
-            protein_g: '',
-            carbs_g: '',
-            fat_g: '',
-            protein_pct: '',
-            carbs_pct: '',
-            fat_pct: '',
-            water_ml: '',
-            steps_target: '',
-            fiber_g: '',
-            notes: '',
-        };
+    const addDayTarget = (copyFrom = null) => {
+        let newTarget;
+
+        if (copyFrom) {
+            newTarget = {
+                ...copyFrom,
+                id: `day_${Date.now()}`,
+                name: `${copyFrom.name} (Copia)`,
+                meals: [] // Don't copy meals, just targets
+            };
+        } else {
+            const isTraining = dayTargets.length % 2 === 0; // Alternar simple
+            newTarget = {
+                id: `day_${Date.now()}`,
+                name: isTraining ? 'Día de entrenamiento' : 'Día de descanso',
+                color: DAY_COLORS[dayTargets.length % DAY_COLORS.length],
+                // Modo macros: gramos por defecto
+                macroMode: 'grams',
+                // Valores iniciales vacíos o por defecto
+                kcal: '',
+                protein_g: '',
+                carbs_g: '',
+                fat_g: '',
+                // Manual input fields
+                water_ml: '',
+                steps_target: '',
+                fiber_g: '',
+
+                notes: '',
+                meals: []
+            };
+        }
         setDayTargets([...dayTargets, newTarget]);
     };
 
@@ -737,6 +874,10 @@ export default function ClientNutritionEditor() {
                                 protein: Math.round((kcal * (pPct / 100)) / 4),
                                 carbs: Math.round((kcal * (cPct / 100)) / 4),
                                 fat: Math.round((kcal * (fPct / 100)) / 9),
+                                // Include extras
+                                water: parseFloat(dt.water_ml) || 0,
+                                steps: parseFloat(dt.steps_target) || 0,
+                                fiber: parseFloat(dt.fiber_g) || 0
                             };
                         } else {
                             macros = {
@@ -744,6 +885,10 @@ export default function ClientNutritionEditor() {
                                 protein: parseFloat(dt.protein_g) || 0,
                                 carbs: parseFloat(dt.carbs_g) || 0,
                                 fat: parseFloat(dt.fat_g) || 0,
+                                // Include extras
+                                water: parseFloat(dt.water_ml) || 0,
+                                steps: parseFloat(dt.steps_target) || 0,
+                                fiber: parseFloat(dt.fiber_g) || 0
                             };
                             // Auto calc kcal if missing? Backend might not care for flex but good to have
                             if (!macros.kcal && (macros.protein || macros.carbs || macros.fat)) {
@@ -755,6 +900,8 @@ export default function ClientNutritionEditor() {
                             id: dt.id,
                             name: dt.name,
                             color: dt.color || DAY_COLORS[idx % DAY_COLORS.length],
+                            // Pass isTraining flag explicitly
+                            isTraining: dt.isTrainingDay || false,
                             targetMacros: macros,
                             meals: [], // Empty for flex/custom
                             notes: dt.notes || ''
@@ -890,6 +1037,7 @@ export default function ClientNutritionEditor() {
             const rawPayload = {
                 target: clientId,
                 mode: finalMode,
+                planType: (mode === 'custom') ? 'flex' : (rootData.planType || 'daily'),
                 status,
                 name: planName.trim(),
                 description: planDescription.trim(),
@@ -985,18 +1133,20 @@ export default function ClientNutritionEditor() {
                 <View style={styles.headerCenter}>
                     {isEditingName ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <TextInput
+                            <EnhancedTextInput
                                 value={planName}
                                 onChangeText={setPlanName}
+                                containerStyle={{
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: '#22c55e',
+                                    minWidth: 150,
+                                    paddingVertical: 0,
+                                }}
                                 style={{
                                     fontSize: 18,
                                     fontWeight: '700',
                                     color: '#1e293b',
-                                    borderBottomWidth: 1,
-                                    borderBottomColor: '#22c55e',
-                                    minWidth: 150,
                                     textAlign: 'center',
-                                    paddingVertical: 0
                                 }}
                                 autoFocus
                                 onBlur={() => setIsEditingName(false)}
@@ -1017,9 +1167,19 @@ export default function ClientNutritionEditor() {
                             <Ionicons name="create-outline" size={18} color="#94a3b8" />
                         </TouchableOpacity>
                     )}
-                    <Text style={styles.headerSubtitle}>{clientName || 'Cliente'}</Text>
+                    {/* Subtitle hidden on mobile if needed or kept simple */}
+                    {!isWideScreen && <Text style={styles.headerSubtitle}>{clientName || 'Cliente'}</Text>}
                 </View>
-                <View style={styles.headerRight} />
+
+                {/* Right Area: Nutrition Card */}
+                <View style={styles.headerRight}>
+                    <CoachNutritionTopRightCard
+                        autoNutrition={autoNutrition}
+                        clientName={clientName}
+                        clientData={clientData}
+                        isWideScreen={isWideScreen}
+                    />
+                </View>
             </View>
 
             {/* 🖥️ Main layout with Sidebar + Content */}
@@ -1195,15 +1355,17 @@ export default function ClientNutritionEditor() {
                                     {/* Plan Name & Description */}
                                     <View style={styles.planInfoSection}>
                                         <Text style={styles.sectionTitle}>📝 Información del Plan</Text>
-                                        <TextInput
-                                            style={styles.planNameInput}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.planNameInputContainer}
+                                            style={styles.planNameInputText}
                                             value={planName}
                                             onChangeText={setPlanName}
                                             placeholder="Nombre del plan (ej: Dieta definición Juan)"
                                             placeholderTextColor="#94a3b8"
                                         />
-                                        <TextInput
-                                            style={styles.planDescInput}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.planDescInputContainer}
+                                            style={styles.planDescInputText}
                                             value={planDescription}
                                             onChangeText={setPlanDescription}
                                             placeholder="Descripción opcional..."
@@ -1430,7 +1592,106 @@ const styles = StyleSheet.create({
         color: '#64748b',
     },
     headerRight: {
-        width: 40,
+        // Allow it to take necessary width
+        minWidth: 40,
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
+    // New Header Card Styles
+    headerCardContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        paddingVertical: 6,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        gap: 16,
+        // Shadow for "pop"
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    headerCardProfile: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    headerAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    headerAvatarText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    headerClientName: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+        maxWidth: 120,
+    },
+    headerBadge: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    headerBadgeText: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    headerSubtext: {
+        fontSize: 11,
+        color: '#64748b',
+    },
+    headerDivider: {
+        width: 1,
+        height: 24,
+        backgroundColor: '#cbd5e1',
+    },
+    headerCardTargets: {
+        alignItems: 'flex-end',
+    },
+    headerTargetKcal: {
+        fontSize: 18,
+        fontWeight: '800',
+        lineHeight: 22,
+    },
+    headerMacrosRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    headerMacroItem: {
+        fontSize: 11,
+        color: '#475569',
+        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    },
+    headerMacroDot: {
+        fontSize: 10,
+        color: '#cbd5e1',
+    },
+
+    // Compact Header
+    headerCardCompact: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        gap: 6,
+    },
+    headerCardKcalCompact: {
+        fontSize: 14,
+        fontWeight: '700',
     },
     scroll: {
         flex: 1,
@@ -1597,6 +1858,18 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         marginRight: 8,
     },
+    dayTargetNameContainer: {
+        flex: 1,
+        padding: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        marginRight: 8,
+    },
+    dayTargetNameText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
     deleteBtn: {
         padding: 8,
     },
@@ -1721,6 +1994,20 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         textAlign: 'center',
     },
+    macroInputContainer: {
+        width: '100%',
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        borderWidth: 1.5,
+    },
+    macroInputText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#1e293b',
+        textAlign: 'center',
+    },
     macroInputSuffix: {
         fontSize: 10,
         fontWeight: '600',
@@ -1736,6 +2023,17 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#1e293b',
         minHeight: 50,
+        textAlignVertical: 'top',
+    },
+    notesInputContainer: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        padding: 10,
+        minHeight: 50,
+    },
+    notesInputText: {
+        fontSize: 13,
+        color: '#1e293b',
         textAlignVertical: 'top',
     },
 
@@ -1875,6 +2173,18 @@ const styles = StyleSheet.create({
         color: '#1e293b',
         borderWidth: 1,
         borderColor: '#e2e8f0',
+    },
+    planNameInputContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    planNameInputText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b',
         marginTop: 8,
         marginBottom: 8,
     },
@@ -1887,6 +2197,19 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e2e8f0',
         minHeight: 50,
+        textAlignVertical: 'top',
+    },
+    planDescInputContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        minHeight: 50,
+    },
+    planDescInputText: {
+        fontSize: 14,
+        color: '#1e293b',
         textAlignVertical: 'top',
     },
 

@@ -3,14 +3,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
-  Pressable,
   ActivityIndicator,
   Alert,
   Platform,
   KeyboardAvoidingView,
-  ScrollView,
   Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../components/ui';
 
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';

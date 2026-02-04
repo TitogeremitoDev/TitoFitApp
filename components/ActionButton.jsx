@@ -23,6 +23,8 @@ export default function ActionButton({
   icon,
   variant = 'primary',
   compact = false,
+  onPressIn: onPressInProp,
+  onPressOut: onPressOutProp,
   ...pressableProps // Acepta onPress, onPressIn, onPressOut, etc.
 }) {
   const { theme } = useTheme();
@@ -35,6 +37,17 @@ export default function ActionButton({
       speed: 25,
       bounciness: 6,
     }).start();
+
+  // Preservar handlers originales (importante para Link asChild en iOS)
+  const handlePressIn = (e) => {
+    animate(0.98);
+    onPressInProp?.(e);
+  };
+
+  const handlePressOut = (e) => {
+    animate(1);
+    onPressOutProp?.(e);
+  };
 
   // Determina qué estilos usar (Primario o Secundario)
   const isPrimary = variant === 'primary';
@@ -59,12 +72,17 @@ export default function ActionButton({
   const iconColor = isPrimary ? (theme.primaryText || '#FFFFFF') : theme.text;
 
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, compact ? { width: '100%' } : null]}>
+    <Animated.View
+      style={[{ transform: [{ scale }] }, compact ? { width: '100%' } : null]}
+      pointerEvents="box-none"
+    >
       <Pressable
-        {...pressableProps} // Pasa el onPress (de Link o normal)
-        onPressIn={() => animate(0.98)}
-        onPressOut={() => animate(1)}
+        {...pressableProps}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
         android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        delayPressIn={Platform.OS === 'ios' ? 0 : undefined}
         style={({ pressed }) => [
           baseStyle,
           compactStyle,

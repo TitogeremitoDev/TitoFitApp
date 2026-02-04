@@ -10,13 +10,13 @@ import {
     StyleSheet,
     Modal,
     TouchableOpacity,
-    TextInput,
     ScrollView,
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     Linking
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useFeedbackDraft } from '../context/FeedbackDraftContext';
@@ -25,7 +25,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { Image } from 'expo-image';
 import ConfirmModal from './ConfirmModal';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VIDEO PREVIEW PLAYER (expo-video wrapper)
@@ -146,8 +146,9 @@ const ItemInput = ({ items, setItems, placeholder, color, onViewMedia }) => {
 
             {/* Add New */}
             <View style={styles.addItemRow}>
-                <TextInput
-                    style={styles.addItemInput}
+                <EnhancedTextInput
+                    containerStyle={styles.addItemInputContainer}
+                    style={styles.addItemInputText}
                     value={newItem}
                     onChangeText={setNewItem}
                     placeholder={placeholder}
@@ -253,8 +254,9 @@ const TechnicalNoteInput = ({ items, setItems, placeholder, color, onViewMedia }
 
             {/* Add New */}
             <View style={styles.addItemRow}>
-                <TextInput
-                    style={styles.addItemInput}
+                <EnhancedTextInput
+                    containerStyle={styles.addItemInputContainer}
+                    style={styles.addItemInputText}
                     value={newItem}
                     onChangeText={setNewItem}
                     placeholder={placeholder}
@@ -592,8 +594,9 @@ export default function FeedbackReportModal({ visible, onClose, client, prefillD
                             {/* Week Number */}
                             <View style={styles.weekInputRow}>
                                 <Text style={styles.weekLabel}>Semana del plan:</Text>
-                                <TextInput
-                                    style={styles.weekInput}
+                                <EnhancedTextInput
+                                    containerStyle={styles.weekInputContainer}
+                                    style={styles.weekInputText}
                                     value={weekNumber}
                                     onChangeText={setWeekNumber}
                                     placeholder="Ej: 4 de 12"
@@ -925,15 +928,17 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#1e293b'
     },
-    weekInput: {
+    weekInputContainer: {
         flex: 1,
         backgroundColor: '#fff',
         borderRadius: 12,
         padding: 12,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+    },
+    weekInputText: {
         fontSize: 14,
-        color: '#1e293b'
+        color: '#1e293b',
     },
 
     // Traffic Light
@@ -1038,15 +1043,17 @@ const styles = StyleSheet.create({
         gap: 12,
         marginTop: 12
     },
-    addItemInput: {
+    addItemInputContainer: {
         flex: 1,
         backgroundColor: '#f8fafc',
         borderRadius: 12,
         padding: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    addItemInputText: {
         fontSize: 14,
         color: '#1e293b',
-        borderWidth: 1,
-        borderColor: '#e2e8f0'
     },
     addItemBtn: {
         width: 44,

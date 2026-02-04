@@ -7,24 +7,68 @@ import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Sentry from '@sentry/react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { FeedbackDraftProvider } from '../context/FeedbackDraftContext';
 import { CoachBrandingProvider } from '../context/CoachBrandingContext';
 import { AlertProvider } from '../src/hooks/useAlert';
+import { SupplementInventoryProvider } from '../src/context/SupplementInventoryContext';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
+
+// Inicializar Sentry (debe estar antes de cualquier otro código)
+Sentry.init({
+  dsn: 'https://eada1174d268233f129af26ac9aa67d9@o4510812278816768.ingest.de.sentry.io/4510812311912528',
+  // Solo enviar errores en producción
+  enabled: !__DEV__,
+  // Release para tracking de versiones
+  release: 'totalgains@1.1.4',
+  environment: __DEV__ ? 'development' : 'production',
+  // Configuración de rendimiento
+  tracesSampleRate: 1.0,
+  // Capturar errores de navegación
+  enableAutoSessionTracking: true,
+  sessionTrackingIntervalMillis: 30000,
+  // Adjuntar stack traces a todos los mensajes
+  attachStacktrace: true,
+});
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
 
-// CSS global para scrollbar estilizado en web
+// CSS global para scrollbar estilizado y fix de inputs en web
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const styleId = 'custom-scrollbar-styles';
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
+      /* ════════════════════════════════════════════════════════════════════════
+       * FIX: Quitar outline/borde feo en inputs y elementos focusables
+       * React Native Web añade outline por defecto que no se ve bien
+       * ════════════════════════════════════════════════════════════════════════ */
+      input, textarea, [data-focusable="true"] {
+        outline: none !important;
+        outline-width: 0 !important;
+        -webkit-appearance: none;
+      }
+
+      input:focus, textarea:focus, [data-focusable="true"]:focus {
+        outline: none !important;
+        outline-width: 0 !important;
+        box-shadow: none !important;
+      }
+
+      /* Fix para Pressable y otros elementos de React Native Web */
+      [tabindex], button, [role="button"] {
+        outline: none !important;
+      }
+
+      [tabindex]:focus, button:focus, [role="button"]:focus {
+        outline: none !important;
+      }
+
       /* Scrollbar estilizado para elementos con scroll horizontal */
       .custom-scrollbar::-webkit-scrollbar {
         height: 6px;
@@ -40,7 +84,7 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: linear-gradient(90deg, #818cf8, #a78bfa);
       }
-      
+
       /* Scrollbar global más delgado */
       ::-webkit-scrollbar {
         width: 8px;
@@ -75,8 +119,8 @@ function RootLayoutNav() {
 
   // ====== IN-APP UPDATES (Android & iOS) ======
   useEffect(() => {
-    // Solo ejecutar en plataformas nativas, no en web
-    if (Platform.OS === 'web') return;
+    // No ejecutar en web ni en desarrollo
+    if (Platform.OS === 'web' || __DEV__) return;
 
     const checkForUpdates = async () => {
       try {
@@ -186,45 +230,53 @@ function RootLayoutNav() {
 
     // Usuario con sesión en auth o root → redirigir según rol
     if (token && (inAuthGroup || isRoot)) {
-      // Acceso coach: es admin, tiene tipo ENTRENADOR, O tiene código de entrenador configurado
-      const isAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' || user?.tipoUsuario === 'ENTRENADOR' || !!user?.trainerProfile?.trainerCode;
+      // SIEMPRE obtener datos frescos del backend para evitar problemas con cache local
+      (async () => {
+        try {
+          const freshUser = await refreshUser();
 
-      if (isAdminOrCoach) {
-        // Admin/Coach → mode-select para elegir
-        if (__DEV__) {
-          console.log('[Navigation] Redirecting admin/coach to mode-select');
-        }
-        router.replace('/mode-select');
-      } else {
-        // Usuario normal → verificar onboarding SOLO contra el backend (nube)
-        (async () => {
-          try {
-            // Obtener datos frescos del usuario desde el backend
-            const freshUser = await refreshUser();
+          // Verificar con datos FRESCOS si es admin/coach
+          const isFreshAdminOrCoach = freshUser?.tipoUsuario === 'ADMINISTRADOR' ||
+                                       freshUser?.tipoUsuario === 'ENTRENADOR';
 
-            // Verificar el campo onboardingCompleted del backend
-            // Si es true, el usuario ya completó (o saltó) el onboarding
-            if (freshUser?.onboardingCompleted === true) {
-              if (__DEV__) {
-                console.log('[Navigation] Redirecting to home (onboardingCompleted=true)');
-              }
-              router.replace('/home');
-            } else {
-              // onboardingCompleted es false o undefined → mostrar onboarding
-              if (__DEV__) {
-                console.log('[Navigation] Redirecting to onboarding (onboardingCompleted !== true)');
-              }
-              router.replace('/onboarding');
+          // Usuarios que ya tienen cuenta establecida (CLIENTE, PREMIUM) van directo a home
+          // No necesitan onboarding porque ya pasaron por un proceso de vinculación/pago
+          const isEstablishedUser = freshUser?.tipoUsuario === 'CLIENTE' ||
+                                     freshUser?.tipoUsuario === 'PREMIUM';
+
+          if (isFreshAdminOrCoach) {
+            // Admin/Coach → mode-select para elegir
+            if (__DEV__) {
+              console.log('[Navigation] Redirecting admin/coach to mode-select (fresh data)');
             }
-          } catch (error) {
-            console.error('[Navigation] Error verificando onboarding:', error);
-            // Si hay error obteniendo datos, ir a home para no bloquear
+            router.replace('/mode-select');
+          } else if (freshUser?.onboardingCompleted === true || isEstablishedUser) {
+            // Usuario con onboarding completado O usuario establecido (CLIENTE/PREMIUM) → home
+            if (__DEV__) {
+              console.log('[Navigation] Redirecting to home (onboardingCompleted=true or established user)');
+            }
+            router.replace('/home');
+          } else {
+            // Usuario FREEUSER sin onboarding → onboarding
+            if (__DEV__) {
+              console.log('[Navigation] Redirecting to onboarding (FREEUSER without onboarding)');
+            }
+            router.replace('/onboarding');
+          }
+        } catch (error) {
+          console.error('[Navigation] Error verificando usuario:', error);
+          // Si hay error obteniendo datos, verificar con datos locales como fallback
+          const isLocalAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' ||
+                                       user?.tipoUsuario === 'ENTRENADOR';
+          if (isLocalAdminOrCoach) {
+            router.replace('/mode-select');
+          } else {
             router.replace('/home');
           }
-        })();
-      }
+        }
+      })();
     }
-  }, [token, isLoading, navState?.key, segments, router, user]);
+  }, [token, isLoading, navState?.key, segments, router, user?.tipoUsuario, user?.onboardingCompleted]);
 
   if (isLoading || !navState?.key || !fontsLoaded) {
     return (
@@ -282,14 +334,16 @@ export default function RootLayout() {
         <AlertProvider>
           <ThemeProvider>
             <FeedbackDraftProvider>
-              <StripeProvider
-                publishableKey={publishableKey}
-                merchantIdentifier="merchant.com.totalgains"
-              >
-                <ThemedRootView>
-                  <RootLayoutNav />
-                </ThemedRootView>
-              </StripeProvider>
+              <SupplementInventoryProvider>
+                <StripeProvider
+                  publishableKey={publishableKey}
+                  merchantIdentifier="merchant.com.totalgains"
+                >
+                  <ThemedRootView>
+                    <RootLayoutNav />
+                  </ThemedRootView>
+                </StripeProvider>
+              </SupplementInventoryProvider>
             </FeedbackDraftProvider>
           </ThemeProvider>
         </AlertProvider>

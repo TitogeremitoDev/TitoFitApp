@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
-    TouchableOpacity,
-    TextInput,
     Alert,
     ActivityIndicator,
     Modal,
     Platform,
+    Image,
+    Animated,
+    BackHandler,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,12 @@ import axios from 'axios';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAlert } from '../src/hooks/useAlert';
 import { useCoachBranding } from '../context/CoachBrandingContext';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../components/ui';
 
 // Simple Slider Component
 const SimpleSlider = ({ value, onValueChange, min, max, labels }: any) => {
@@ -50,12 +56,89 @@ const SimpleSlider = ({ value, onValueChange, min, max, labels }: any) => {
 
 export default function Onboarding() {
     const router = useRouter();
-    const { theme } = useTheme();
-    const { refreshUser } = useAuth();
-    const { refresh: refreshBranding } = useCoachBranding();
+    const { theme, isDark } = useTheme();
+    const { user, refreshUser } = useAuth();
+    const { branding, activeTheme, refresh: refreshBranding } = useCoachBranding();
     const insets = useSafeAreaInsets();
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TRAINER BRANDING - Use trainer colors when user is a client with assigned trainer
+    // ═══════════════════════════════════════════════════════════════════════════
+    const isClientWithTrainer = user?.tipoUsuario === 'CLIENTE' && user?.currentTrainerId;
+    const brandedPrimary = activeTheme?.colors?.primary || theme.primary;
+    const brandedBackground = activeTheme?.colors?.background || theme.background;
+    // For properties not in activeTheme, use regular theme
+    const brandedCardBg = theme.cardBackground;
+    const brandedText = theme.text;
+    const brandedTextSecondary = theme.textSecondary;
+    const brandedBorder = theme.border;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WELCOME SCREEN STATE (Step 0 - Luxury White Label)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const [trainerData, setTrainerData] = useState<{
+        nombre?: string;
+        profile?: { brandName?: string; logoUrl?: string };
+    } | null>(null);
+    const slideAnim = useRef(new Animated.Value(0)).current;
+
+    // Fetch trainer data if user has a trainer assigned (for branding)
+    useEffect(() => {
+        const fetchTrainer = async () => {
+            if (!user?.currentTrainerId) return;
+            try {
+                const response = await axios.get('/clients/my-trainer');
+                if (response.data.success && response.data.trainer) {
+                    setTrainerData(response.data.trainer);
+                }
+            } catch (err) {
+                console.log('[Onboarding] Trainer fetch skipped - using TotalGains branding');
+            }
+        };
+        fetchTrainer();
+    }, [user?.currentTrainerId]);
+
+    // Smooth transition when moving from Welcome Screen to Data Form
+    const handleWelcomeContinue = () => {
+        Animated.timing(slideAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+        }).start(() => {
+            setCurrentStep(2); // Go to Data Form (Step 2)
+            slideAnim.setValue(0);
+        });
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ANDROID BACK BUTTON HANDLER
+    // Step 0 (Role Selector): Let app close (return false)
+    // Step 1 (Welcome Screen): Go back to Role Selector (return true)
+    // Step 2+ (Data Form): Go to previous step
+    // ═══════════════════════════════════════════════════════════════════════════
+    useEffect(() => {
+        if (Platform.OS !== 'android') return;
+
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            if (currentStep === 0) {
+                // Role Selector: allow app to close (default behavior)
+                return false;
+            } else if (currentStep === 1) {
+                // Welcome Screen: go back to Role Selector
+                setCurrentStep(0);
+                return true; // Prevent default (don't close app)
+            } else if (currentStep > 1) {
+                // Data form and beyond: go to previous step
+                setCurrentStep(currentStep - 1);
+                return true;
+            }
+            return false;
+        });
+
+        return () => backHandler.remove();
+    }, [currentStep]);
 
     // Estado para el código de invitación universal (legacy, mantenemos por compatibilidad)
     const [invitationCode, setInvitationCode] = useState('');
@@ -108,6 +191,7 @@ export default function Onboarding() {
         ejerciciosFavoritos: [] as string[],
         ejerciciosEvitados: [] as string[],
         lesiones: [] as string[],
+        tieneAlergias: false,
         alergias: '',
         cocina: 'si',
     });
@@ -117,6 +201,19 @@ export default function Onboarding() {
         setFormData(prev => {
             const current = prev[field] || [];
             const isSelected = current.includes(item);
+
+            // Special logic for lesiones: "Ninguna" is mutually exclusive
+            if (field === 'lesiones') {
+                if (item === 'Ninguna') {
+                    // If selecting Ninguna, clear all and just set Ninguna
+                    return { ...prev, [field]: isSelected ? [] : ['Ninguna'] };
+                } else {
+                    // If selecting another option, remove Ninguna if present
+                    const filtered = current.filter((i: string) => i !== 'Ninguna' && i !== item);
+                    return { ...prev, [field]: isSelected ? filtered : [...filtered, item] };
+                }
+            }
+
             return {
                 ...prev,
                 [field]: isSelected
@@ -126,20 +223,30 @@ export default function Onboarding() {
         });
     };
 
-    const totalSteps = 7;
+    const totalSteps = 8;
 
     const handleNext = () => {
-        if (currentStep === 1) {
+        // Validation now at step 2 (was step 1 before Welcome Screen)
+        if (currentStep === 2) {
             if (!formData.edad || !formData.peso || !formData.altura || !formData.objetivos || !formData.genero) {
                 showAlert('Campos requeridos', 'Por favor completa todos los campos');
                 return;
             }
         }
+
+        // Skip Premium Upsell (Step 6) for users who already have access
+        // Only FREEUSER sees the upsell - everyone else already has full access
+        if (currentStep === 5 && user?.tipoUsuario !== 'FREEUSER') {
+            setCurrentStep(7); // Skip to final step
+            return;
+        }
+
         setCurrentStep(currentStep + 1);
     };
 
     const handleBack = () => {
-        if (currentStep > 0) setCurrentStep(currentStep - 1);
+        // Don't go back from Role Selector (step 1) - Welcome Screen doesn't need back button
+        if (currentStep > 1) setCurrentStep(currentStep - 1);
     };
 
     const handleFinish = async () => {
@@ -333,7 +440,7 @@ export default function Onboarding() {
                 await refreshUser();
                 await refreshBranding();
                 console.log('[Onboarding] ✅ Usuario y branding actualizados');
-                // Navegar directamente al siguiente paso
+                // Navegar a Welcome Screen (Step 1)
                 setCurrentStep(1);
             }
         } catch (error: any) {
@@ -407,7 +514,7 @@ export default function Onboarding() {
     // Handler: Canjear código premium para usuario libre
     const handleRedeemFreePromoCode = async () => {
         if (!freePromoCode.trim()) {
-            // Sin código, simplemente continuar al cuestionario
+            // Sin código, continuar a Welcome Screen (Step 1)
             setCurrentStep(1);
             return;
         }
@@ -445,7 +552,89 @@ export default function Onboarding() {
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 0: ROLE SELECTOR
+    // STEP 1: WELCOME SCREEN (Luxury White Label - AFTER Role Selection)
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (currentStep === 1) {
+        // Determine branding: trainer logo/name if CLIENTE, otherwise TotalGains
+        const displayName = trainerData?.profile?.brandName ||
+            trainerData?.nombre ||
+            'TotalGains';
+        const logoUrl = trainerData?.profile?.logoUrl || null;
+        const primaryColor = activeTheme?.colors?.primary || brandedPrimary;
+
+        return (
+            <Animated.View
+                style={[
+                    styles.container,
+                    { backgroundColor: theme.background },
+                    {
+                        transform: [{
+                            translateY: slideAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, -50]
+                            })
+                        }],
+                        opacity: slideAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 0]
+                        })
+                    }
+                ]}
+            >
+                <View style={styles.luxuryWelcomeContent}>
+                    {/* ZONA SUPERIOR: BRANDING */}
+                    <View style={styles.luxuryWelcomeBranding}>
+                        {logoUrl ? (
+                            <Image
+                                source={{ uri: logoUrl }}
+                                style={styles.luxuryWelcomeLogo}
+                                resizeMode="contain"
+                            />
+                        ) : (
+                            <Image
+                                source={require('../assets/logo.png')}
+                                style={styles.luxuryWelcomeLogo}
+                                resizeMode="contain"
+                            />
+                        )}
+                        <Text style={[styles.luxuryWelcomeTrainerName, { color: theme.text }]}>
+                            {displayName}
+                        </Text>
+                    </View>
+
+                    {/* ZONA CENTRAL: WELCOME CARD */}
+                    <View style={[
+                        styles.luxuryWelcomeCard,
+                        {
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+                            borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
+                        }
+                    ]}>
+                        <Text style={[styles.luxuryWelcomeTitle, { color: theme.text }]}>
+                            Bienvenido al equipo de {displayName}
+                        </Text>
+                        <Text style={[styles.luxuryWelcomeBody, { color: theme.textSecondary }]}>
+                            Tu transformación empieza ahora. Para diseñarte la experiencia
+                            más cercana y eficiente posible, necesito calibrar unos datos rápidos.
+                        </Text>
+                    </View>
+
+                    {/* ZONA INFERIOR: CTA */}
+                    <TouchableOpacity
+                        style={[styles.luxuryWelcomeButton, { backgroundColor: primaryColor }]}
+                        onPress={handleWelcomeContinue}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={styles.luxuryWelcomeButtonText}>¡Vamos a ello!</Text>
+                        <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                </View>
+            </Animated.View>
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 0: ROLE SELECTOR (First step - choose user type)
     // ═══════════════════════════════════════════════════════════════════════════
     if (currentStep === 0) {
         return (
@@ -458,7 +647,7 @@ export default function Onboarding() {
                     <View style={styles.roleSelectorContent}>
                         {/* Header */}
                         <View style={styles.roleSelectorHeader}>
-                            <Ionicons name="fitness" size={50} color={theme.primary} />
+                            <Ionicons name="fitness" size={50} color={brandedPrimary} />
                             <Text style={[styles.roleSelectorTitle, { color: theme.text }]}>
                                 ¿Cómo vas a usar TotalGains?
                             </Text>
@@ -793,7 +982,7 @@ export default function Onboarding() {
 
                             {/* Botón cerrar */}
                             <TouchableOpacity
-                                style={[styles.errorModalButton, { backgroundColor: theme.primary }]}
+                                style={[styles.errorModalButton, { backgroundColor: brandedPrimary }]}
                                 onPress={() => setTrainerErrorModal({ visible: false, errorCode: null })}
                             >
                                 <Text style={styles.errorModalButtonText}>Entendido</Text>
@@ -805,15 +994,20 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 1: BASIC INFO
-    if (currentStep === 1) {
+    // STEP 2: BASIC INFO (age, weight, height, goals, gender)
+    if (currentStep === 2) {
         const objetivos = [
-            'Perder grasa',
-            'Ganar músculo',
-            'Rendimiento deportivo',
-            'Salud y bienestar',
+            { label: 'Perder grasa', icon: 'flame' },
+            { label: 'Ganar músculo', icon: 'barbell' },
+            { label: 'Rendimiento deportivo', icon: 'trophy' },
+            { label: 'Salud y bienestar', icon: 'heart' },
         ];
-        const generos = ['Hombre', 'Mujer', 'No quiero definirlo'];
+        const generos = [
+            { label: 'Hombre', icon: 'male' },
+            { label: 'Mujer', icon: 'female' },
+            { label: 'Otro', icon: 'person' },
+        ];
+        const primaryColor = activeTheme?.colors?.primary || brandedPrimary;
 
         return (
             <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -822,91 +1016,164 @@ export default function Onboarding() {
                 </View>
 
                 <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
-                    <Text style={[styles.screenTitle, { color: theme.text }]}>Vamos a ajustar la app a ti</Text>
-                    <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Solo 3 cosas rápidas</Text>
+                    <Text style={[styles.screenTitle, { color: theme.text }]}>Tus datos básicos</Text>
+                    <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Para personalizar tu experiencia</Text>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>Tu edad</Text>
-                        <TextInput
-                            style={[styles.numericInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.cardBackground }]}
-                            placeholder="Ej: 25"
-                            placeholderTextColor={theme.textSecondary}
-                            keyboardType="numeric"
-                            value={formData.edad}
-                            onChangeText={(text) => setFormData({ ...formData, edad: text.replace(/[^0-9]/g, '') })}
-                        />
-                        <Text style={[styles.inputHint, { color: theme.textSecondary }]}>años</Text>
+                    {/* BIG DATA ROW: Edad / Peso / Altura */}
+                    <View style={styles.bigDataRow}>
+                        {/* EDAD */}
+                        <TouchableOpacity
+                            style={[
+                                styles.bigDataCard,
+                                {
+                                    backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
+                                    borderColor: formData.edad ? primaryColor : (isDark ? '#334155' : '#E5E7EB'),
+                                    borderWidth: formData.edad ? 2 : 1,
+                                }
+                            ]}
+                            activeOpacity={0.9}
+                        >
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Edad</Text>
+                            <View style={styles.bigDataValueRow}>
+                                <TextInput
+                                    style={[styles.bigDataInput, { color: theme.text }]}
+                                    placeholder="--"
+                                    placeholderTextColor={theme.textSecondary}
+                                    keyboardType="numeric"
+                                    maxLength={2}
+                                    value={formData.edad}
+                                    onChangeText={(text) => setFormData({ ...formData, edad: text.replace(/[^0-9]/g, '') })}
+                                />
+                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>años</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* PESO */}
+                        <TouchableOpacity
+                            style={[
+                                styles.bigDataCard,
+                                {
+                                    backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
+                                    borderColor: formData.peso ? primaryColor : (isDark ? '#334155' : '#E5E7EB'),
+                                    borderWidth: formData.peso ? 2 : 1,
+                                }
+                            ]}
+                            activeOpacity={0.9}
+                        >
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Peso</Text>
+                            <View style={styles.bigDataValueRow}>
+                                <TextInput
+                                    style={[styles.bigDataInput, { color: theme.text }]}
+                                    placeholder="--"
+                                    placeholderTextColor={theme.textSecondary}
+                                    keyboardType="decimal-pad"
+                                    maxLength={5}
+                                    value={formData.peso}
+                                    onChangeText={(text) => setFormData({ ...formData, peso: text })}
+                                />
+                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>kg</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* ALTURA */}
+                        <TouchableOpacity
+                            style={[
+                                styles.bigDataCard,
+                                {
+                                    backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
+                                    borderColor: formData.altura ? primaryColor : (isDark ? '#334155' : '#E5E7EB'),
+                                    borderWidth: formData.altura ? 2 : 1,
+                                }
+                            ]}
+                            activeOpacity={0.9}
+                        >
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Altura</Text>
+                            <View style={styles.bigDataValueRow}>
+                                <TextInput
+                                    style={[styles.bigDataInput, { color: theme.text }]}
+                                    placeholder="--"
+                                    placeholderTextColor={theme.textSecondary}
+                                    keyboardType="decimal-pad"
+                                    maxLength={4}
+                                    value={formData.altura}
+                                    onChangeText={(text) => setFormData({ ...formData, altura: text.replace(/,/g, '.') })}
+                                />
+                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>m</Text>
+                            </View>
+                        </TouchableOpacity>
                     </View>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>Tu peso</Text>
-                        <TextInput
-                            style={[styles.numericInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.cardBackground }]}
-                            placeholder="Ej: 75.5"
-                            placeholderTextColor={theme.textSecondary}
-                            keyboardType="decimal-pad"
-                            value={formData.peso}
-                            onChangeText={(text) => setFormData({ ...formData, peso: text })}
-                        />
-                        <Text style={[styles.inputHint, { color: theme.textSecondary }]}>kg</Text>
-                    </View>
-
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>Tu altura</Text>
-                        <TextInput
-                            style={[styles.numericInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.cardBackground }]}
-                            placeholder="Ej: 1.75"
-                            placeholderTextColor={theme.textSecondary}
-                            keyboardType="decimal-pad"
-                            value={formData.altura}
-                            onChangeText={(text) => setFormData({ ...formData, altura: text.replace(/,/g, '.') })}
-                        />
-                        <Text style={[styles.inputHint, { color: theme.textSecondary }]}>metros</Text>
-                    </View>
-
+                    {/* GÉNERO - Square Tinted Buttons */}
                     <View style={styles.section}>
                         <Text style={[styles.fieldLabel, { color: theme.text }]}>Tu género</Text>
-                        <View style={styles.chipGrid}>
-                            {generos.map((gen) => (
-                                <TouchableOpacity
-                                    key={gen}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.genero === gen ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.genero === gen ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, genero: gen })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.genero === gen ? theme.primary : theme.text }]}>
-                                        {gen}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        <View style={styles.genderButtonsRow}>
+                            {generos.map((gen) => {
+                                const isSelected = formData.genero === gen.label;
+                                return (
+                                    <TouchableOpacity
+                                        key={gen.label}
+                                        style={[
+                                            styles.genderButton,
+                                            {
+                                                backgroundColor: isSelected ? primaryColor + '15' : (isDark ? '#1e293b' : '#FFFFFF'),
+                                                borderColor: isSelected ? primaryColor : (isDark ? '#334155' : '#E5E7EB'),
+                                                borderWidth: isSelected ? 2 : 1,
+                                            },
+                                        ]}
+                                        onPress={() => setFormData({ ...formData, genero: gen.label })}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons
+                                            name={gen.icon as any}
+                                            size={28}
+                                            color={isSelected ? primaryColor : theme.textSecondary}
+                                        />
+                                        <Text style={[
+                                            styles.genderButtonText,
+                                            { color: isSelected ? primaryColor : theme.text }
+                                        ]}>
+                                            {gen.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
 
+                    {/* OBJETIVO - Tinted Cards */}
                     <View style={styles.section}>
                         <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué quieres lograr?</Text>
-                        <View style={styles.chipGrid}>
-                            {objetivos.map((obj) => (
-                                <TouchableOpacity
-                                    key={obj}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.objetivos === obj ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.objetivos === obj ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, objetivos: obj })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.objetivos === obj ? theme.primary : theme.text }]}>
-                                        {obj}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        <View style={styles.objectiveGrid}>
+                            {objetivos.map((obj) => {
+                                const isSelected = formData.objetivos === obj.label;
+                                return (
+                                    <TouchableOpacity
+                                        key={obj.label}
+                                        style={[
+                                            styles.objectiveCard,
+                                            {
+                                                backgroundColor: isSelected ? primaryColor + '15' : (isDark ? '#1e293b' : '#FFFFFF'),
+                                                borderColor: isSelected ? primaryColor : (isDark ? '#334155' : '#E5E7EB'),
+                                                borderWidth: isSelected ? 2 : 1,
+                                            },
+                                        ]}
+                                        onPress={() => setFormData({ ...formData, objetivos: obj.label })}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons
+                                            name={obj.icon as any}
+                                            size={24}
+                                            color={isSelected ? primaryColor : theme.textSecondary}
+                                        />
+                                        <Text style={[
+                                            styles.objectiveText,
+                                            { color: isSelected ? primaryColor : theme.text }
+                                        ]}>
+                                            {obj.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
                 </ScrollView>
@@ -918,7 +1185,7 @@ export default function Onboarding() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: theme.primary }]}
+                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: brandedPrimary }]}
                         onPress={handleNext}
                     >
                         <Text style={styles.primaryButtonText}>Siguiente</Text>
@@ -929,8 +1196,8 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 2: LEVEL & COMMITMENT
-    if (currentStep === 2) {
+    // STEP 3: LEVEL & COMMITMENT
+    if (currentStep === 3) {
         const experienciaOpts = [
             { label: 'Estoy empezando (0–1 años)', value: 2 },
             { label: 'Voy en serio (1–3 años)', value: 5 },
@@ -952,61 +1219,122 @@ export default function Onboarding() {
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Tu nivel y compromiso</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Sin presión, solo para ajustarte mejor</Text>
 
+                    {/* EXPERIENCIA - Slim Cards (más finas) */}
                     <View style={styles.section}>
                         <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Cuánto tiempo llevas entrenando?</Text>
-                        <View style={styles.chipGrid}>
-                            {experienciaOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt.value}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.experiencia === opt.value ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.experiencia === opt.value ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, experiencia: opt.value })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.experiencia === opt.value ? theme.primary : theme.text }]}>
-                                        {opt.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        <View style={styles.luxuryCardStack}>
+                            {experienciaOpts.map((opt) => {
+                                const isSelected = formData.experiencia === opt.value;
+                                return (
+                                    <TouchableOpacity
+                                        key={opt.value}
+                                        style={[
+                                            styles.slimCard,
+                                            {
+                                                backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
+                                                borderColor: isSelected ? brandedPrimary : (isDark ? '#334155' : '#E5E7EB'),
+                                                borderWidth: isSelected ? 2 : 1,
+                                            },
+                                        ]}
+                                        onPress={() => setFormData({ ...formData, experiencia: opt.value })}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={[
+                                            styles.slimCardText,
+                                            { color: isSelected ? brandedPrimary : theme.text }
+                                        ]}>
+                                            {opt.label}
+                                        </Text>
+                                        <Ionicons
+                                            name="checkmark-circle"
+                                            size={22}
+                                            color={isSelected ? brandedPrimary : (isDark ? '#475569' : '#D1D5DB')}
+                                        />
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
 
-                    <View style={styles.section}>
+                    {/* COMPROMISO - Horizontal 3 Square Cards with Icons */}
+                    <View style={[styles.section, { marginTop: 32 }]}>
                         <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Cuánto te quieres comprometer ahora mismo?</Text>
-                        <View style={styles.chipGrid}>
-                            {compromisoOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt.value}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.compromiso === opt.value ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.compromiso === opt.value ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, compromiso: opt.value })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.compromiso === opt.value ? theme.primary : theme.text }]}>
-                                        {opt.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        <View style={styles.commitmentRow}>
+                            {[
+                                { label: 'Tranquilo', value: 'bajo', icon: '🐢' },
+                                { label: 'Constante', value: 'medio', icon: '🏃' },
+                                { label: 'A tope', value: 'alto', icon: '🚀' },
+                            ].map((opt) => {
+                                const isSelected = formData.compromiso === opt.value;
+                                return (
+                                    <TouchableOpacity
+                                        key={opt.value}
+                                        style={[
+                                            styles.commitmentSquare,
+                                            {
+                                                backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#1e293b' : '#FFFFFF'),
+                                                borderColor: isSelected ? brandedPrimary : (isDark ? '#334155' : '#E5E7EB'),
+                                                borderWidth: isSelected ? 2 : 1,
+                                            },
+                                        ]}
+                                        onPress={() => setFormData({ ...formData, compromiso: opt.value })}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={styles.commitmentIcon}>{opt.icon}</Text>
+                                        <Text style={[
+                                            styles.commitmentLabel,
+                                            { color: isSelected ? brandedPrimary : theme.text }
+                                        ]}>
+                                            {opt.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
 
-                    <View style={styles.section}>
+                    {/* HERO NUMBER CONTROL - Technical Knowledge */}
+                    <View style={[styles.section, { marginTop: 32 }]}>
                         <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué tanto control tienes de ejercicios, técnica, etc.?</Text>
-                        <SimpleSlider
-                            value={formData.conocimientoTecnico}
-                            onValueChange={(val: number) => setFormData({ ...formData, conocimientoTecnico: val })}
-                            min={1}
-                            max={5}
-                            labels={['Casi cero', 'Básico', 'Me defiendo', 'Bueno', 'Nivel friki del gym']}
-                        />
+                        <View style={[styles.heroNumberContainer, { backgroundColor: isDark ? '#1e293b' : '#F9FAFB' }]}>
+                            {/* Minus Button */}
+                            <TouchableOpacity
+                                style={[
+                                    styles.heroNumberBtn,
+                                    {
+                                        backgroundColor: isDark ? '#334155' : '#FFFFFF',
+                                        borderColor: isDark ? '#475569' : '#E5E7EB',
+                                    }
+                                ]}
+                                onPress={() => setFormData({ ...formData, conocimientoTecnico: Math.max(1, formData.conocimientoTecnico - 1) })}
+                            >
+                                <Ionicons name="remove" size={28} color={theme.text} />
+                            </TouchableOpacity>
+
+                            {/* Hero Number */}
+                            <View style={styles.heroNumberCenter}>
+                                <Text style={[styles.heroNumber, { color: brandedPrimary }]}>
+                                    {formData.conocimientoTecnico}
+                                </Text>
+                                <Text style={[styles.heroNumberLabel, { color: theme.textSecondary }]}>
+                                    {['Novato', 'Básico', 'Me defiendo', 'Soy bueno', 'Pro total'][formData.conocimientoTecnico - 1] || 'Medio'}
+                                </Text>
+                            </View>
+
+                            {/* Plus Button */}
+                            <TouchableOpacity
+                                style={[
+                                    styles.heroNumberBtn,
+                                    {
+                                        backgroundColor: isDark ? '#334155' : '#FFFFFF',
+                                        borderColor: isDark ? '#475569' : '#E5E7EB',
+                                    }
+                                ]}
+                                onPress={() => setFormData({ ...formData, conocimientoTecnico: Math.min(5, formData.conocimientoTecnico + 1) })}
+                            >
+                                <Ionicons name="add" size={28} color={theme.text} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </ScrollView>
 
@@ -1017,7 +1345,7 @@ export default function Onboarding() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: theme.primary }]}
+                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: brandedPrimary }]}
                         onPress={handleNext}
                     >
                         <Text style={styles.primaryButtonText}>Siguiente</Text>
@@ -1028,8 +1356,8 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 3: STYLE, CARDIO, DIET
-    if (currentStep === 3) {
+    // STEP 4: STYLE, CARDIO, DIET
+    if (currentStep === 4) {
         const tipoOpts = [
             { label: 'Hipertrofia', value: 'hipertrofia' },
             { label: 'Fuerza', value: 'fuerza' },
@@ -1060,129 +1388,200 @@ export default function Onboarding() {
                     <Text style={[styles.screenTitle, { color: theme.text }]}>Tu estilo de entreno y dieta</Text>
                     <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>Unas pocas más y ya está</Text>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué tipo de entreno te va más?</Text>
-                        <View style={styles.chipGrid}>
-                            {tipoOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt.value}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.tipoEntreno === opt.value ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.tipoEntreno === opt.value ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, tipoEntreno: opt.value })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.tipoEntreno === opt.value ? theme.primary : theme.text }]}>
-                                        {opt.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                    {/* ══════════════ TARJETA 1: BLOQUE ENTRENAMIENTO ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF' }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>🏋️ Entrenamiento</Text>
+
+                        {/* Tipo de entreno */}
+                        <View style={styles.luxuryContainerSection}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>¿Qué tipo de entreno te va más?</Text>
+                            <View style={styles.luxuryGrid2Col}>
+                                {tipoOpts.map((opt) => {
+                                    const isSelected = formData.tipoEntreno === opt.value;
+                                    return (
+                                        <TouchableOpacity
+                                            key={opt.value}
+                                            style={[
+                                                styles.luxuryGridItem,
+                                                {
+                                                    backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                    borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                    borderWidth: isSelected ? 2 : 1,
+                                                },
+                                            ]}
+                                            onPress={() => setFormData({ ...formData, tipoEntreno: opt.value })}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text style={[styles.luxuryGridText, { color: isSelected ? brandedPrimary : theme.text }]}>
+                                                {opt.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        </View>
+
+                        {/* Cardio */}
+                        <View style={[styles.luxuryContainerSection, { marginTop: 20 }]}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>Sobre el cardio…</Text>
+                            <View style={styles.luxuryCardStack}>
+                                {cardioOpts.map((opt) => {
+                                    const isSelected = formData.cardio === opt.value;
+                                    return (
+                                        <TouchableOpacity
+                                            key={opt.value}
+                                            style={[
+                                                styles.luxuryOptionCard,
+                                                {
+                                                    backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                    borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                    borderWidth: isSelected ? 2 : 1,
+                                                },
+                                            ]}
+                                            onPress={() => setFormData({ ...formData, cardio: opt.value })}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text style={[styles.luxuryOptionText, { color: isSelected ? brandedPrimary : theme.text }]}>
+                                                {opt.label}
+                                            </Text>
+                                            {isSelected && <Ionicons name="checkmark-circle" size={22} color={brandedPrimary} />}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
                     </View>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>Sobre el cardio…</Text>
-                        <View style={styles.chipGrid}>
-                            {cardioOpts.map((opt) => (
+                    {/* ══════════════ TARJETA 2: BLOQUE NUTRICIÓN ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', marginTop: 20 }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>🥗 Nutrición</Text>
+
+                        {/* Estilo de dieta */}
+                        <View style={styles.luxuryContainerSection}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>Tu estilo de dieta ahora mismo es…</Text>
+                            <View style={styles.luxuryCardStack}>
+                                {dietaOpts.map((opt) => {
+                                    const isSelected = formData.dieta === opt.value;
+                                    return (
+                                        <TouchableOpacity
+                                            key={opt.value}
+                                            style={[
+                                                styles.luxuryOptionCard,
+                                                {
+                                                    backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                    borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                    borderWidth: isSelected ? 2 : 1,
+                                                },
+                                            ]}
+                                            onPress={() => setFormData({ ...formData, dieta: opt.value })}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text style={[styles.luxuryOptionText, { color: isSelected ? brandedPrimary : theme.text }]}>
+                                                {opt.label}
+                                            </Text>
+                                            {isSelected && <Ionicons name="checkmark-circle" size={22} color={brandedPrimary} />}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        </View>
+
+                        {/* Comidas al día - Hero Number */}
+                        <View style={[styles.luxuryContainerSection, { marginTop: 20 }]}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>¿Cuántas comidas haces al día?</Text>
+                            <View style={[styles.heroNumberContainer, { backgroundColor: isDark ? '#334155' : '#F9FAFB' }]}>
                                 <TouchableOpacity
-                                    key={opt.value}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.cardio === opt.value ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.cardio === opt.value ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, cardio: opt.value })}
+                                    style={[styles.heroNumberBtn, { backgroundColor: isDark ? '#475569' : '#FFFFFF', borderColor: isDark ? '#64748b' : '#E5E7EB' }]}
+                                    onPress={() => setFormData({ ...formData, comidasDia: Math.max(2, formData.comidasDia - 1) })}
                                 >
-                                    <Text style={[styles.chipText, { color: formData.cardio === opt.value ? theme.primary : theme.text }]}>
-                                        {opt.label}
-                                    </Text>
+                                    <Ionicons name="remove" size={28} color={theme.text} />
                                 </TouchableOpacity>
-                            ))}
+                                <View style={styles.heroNumberCenter}>
+                                    <Text style={[styles.heroNumber, { color: brandedPrimary }]}>{formData.comidasDia}</Text>
+                                    <Text style={[styles.heroNumberLabel, { color: theme.textSecondary }]}>comidas</Text>
+                                </View>
+                                <TouchableOpacity
+                                    style={[styles.heroNumberBtn, { backgroundColor: isDark ? '#475569' : '#FFFFFF', borderColor: isDark ? '#64748b' : '#E5E7EB' }]}
+                                    onPress={() => setFormData({ ...formData, comidasDia: Math.min(6, formData.comidasDia + 1) })}
+                                >
+                                    <Ionicons name="add" size={28} color={theme.text} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>Tu estilo de dieta ahora mismo es…</Text>
-                        <View style={styles.chipGrid}>
-                            {dietaOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt.value}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.dieta === opt.value ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.dieta === opt.value ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => setFormData({ ...formData, dieta: opt.value })}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.dieta === opt.value ? theme.primary : theme.text }]}>
-                                        {opt.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                    {/* ══════════════ TARJETA 3: BLOQUE PREFERENCIAS ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', marginTop: 20, marginBottom: 20 }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>💪 Preferencias</Text>
+
+                        {/* Ejercicios que disfrutas - Grid 2 cols con checkmarks */}
+                        <View style={styles.luxuryContainerSection}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>¿Qué ejercicios disfrutas más?</Text>
+                            <View style={styles.luxuryGrid2Col}>
+                                {ejerciciosFavOpts.map((opt) => {
+                                    const isSelected = formData.ejerciciosFavoritos.includes(opt);
+                                    return (
+                                        <TouchableOpacity
+                                            key={opt}
+                                            style={[
+                                                styles.luxuryGridItemMulti,
+                                                {
+                                                    backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                    borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                    borderWidth: isSelected ? 2 : 1,
+                                                },
+                                            ]}
+                                            onPress={() => toggleArrayItem('ejerciciosFavoritos', opt)}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Ionicons
+                                                name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                                                size={18}
+                                                color={isSelected ? brandedPrimary : (isDark ? '#475569' : '#D1D5DB')}
+                                                style={{ marginRight: 8 }}
+                                            />
+                                            <Text style={[styles.luxuryGridText, { color: isSelected ? brandedPrimary : theme.text, flex: 1 }]}>
+                                                {opt}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
-                    </View>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Cuántas comidas haces al día?</Text>
-                        <SimpleSlider
-                            value={formData.comidasDia}
-                            onValueChange={(val: number) => setFormData({ ...formData, comidasDia: val })}
-                            min={2}
-                            max={6}
-                            labels={null}
-                        />
-                    </View>
-
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué ejercicios disfrutas más? (puedes elegir varios)</Text>
-                        <View style={styles.chipGrid}>
-                            {ejerciciosFavOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.ejerciciosFavoritos.includes(opt) ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.ejerciciosFavoritos.includes(opt) ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => toggleArrayItem('ejerciciosFavoritos', opt)}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.ejerciciosFavoritos.includes(opt) ? theme.primary : theme.text }]}>
-                                        {opt}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Qué sueles evitar? (puedes elegir varios)</Text>
-                        <View style={styles.chipGrid}>
-                            {ejerciciosEvitOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.ejerciciosEvitados.includes(opt) ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.ejerciciosEvitados.includes(opt) ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => toggleArrayItem('ejerciciosEvitados', opt)}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.ejerciciosEvitados.includes(opt) ? theme.primary : theme.text }]}>
-                                        {opt}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        {/* Ejercicios que evitas */}
+                        <View style={[styles.luxuryContainerSection, { marginTop: 20 }]}>
+                            <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>¿Qué sueles evitar?</Text>
+                            <View style={styles.luxuryGrid2Col}>
+                                {ejerciciosEvitOpts.map((opt) => {
+                                    const isSelected = formData.ejerciciosEvitados.includes(opt);
+                                    return (
+                                        <TouchableOpacity
+                                            key={opt}
+                                            style={[
+                                                styles.luxuryGridItemMulti,
+                                                {
+                                                    backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                    borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                    borderWidth: isSelected ? 2 : 1,
+                                                },
+                                            ]}
+                                            onPress={() => toggleArrayItem('ejerciciosEvitados', opt)}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Ionicons
+                                                name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                                                size={18}
+                                                color={isSelected ? brandedPrimary : (isDark ? '#475569' : '#D1D5DB')}
+                                                style={{ marginRight: 8 }}
+                                            />
+                                            <Text style={[styles.luxuryGridText, { color: isSelected ? brandedPrimary : theme.text, flex: 1 }]}>
+                                                {opt}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
                     </View>
                 </ScrollView>
@@ -1194,7 +1593,7 @@ export default function Onboarding() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: theme.primary }]}
+                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: brandedPrimary }]}
                         onPress={handleNext}
                     >
                         <Text style={styles.primaryButtonText}>Siguiente</Text>
@@ -1205,10 +1604,9 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 4: HEALTH & HABITS
-    if (currentStep === 4) {
-        const lesionesOpts = ['Rodilla', 'Espalda baja', 'Hombro', 'Codo/Muñeca', 'Ninguna'];
-        const cocinaOpts = ['Sí, casi siempre', 'No, casi nunca'];
+    // STEP 5: HEALTH & HABITS
+    if (currentStep === 5) {
+        const lesionesGrid = ['Rodilla', 'Espalda baja', 'Hombro', 'Codo/Muñeca'];
 
         return (
             <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -1222,63 +1620,205 @@ export default function Onboarding() {
                         Esto es importante para cuidarte, no para juzgarte
                     </Text>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Tienes alguna lesión o molestia habitual? (puedes elegir varios)</Text>
-                        <View style={styles.chipGrid}>
-                            {lesionesOpts.map((opt) => (
-                                <TouchableOpacity
-                                    key={opt}
-                                    style={[
-                                        styles.chip,
-                                        {
-                                            backgroundColor: formData.lesiones.includes(opt) ? theme.primary + '20' : theme.cardBackground,
-                                            borderColor: formData.lesiones.includes(opt) ? theme.primary : theme.border,
-                                        },
-                                    ]}
-                                    onPress={() => toggleArrayItem('lesiones', opt)}
-                                >
-                                    <Text style={[styles.chipText, { color: formData.lesiones.includes(opt) ? theme.primary : theme.text }]}>
-                                        {opt}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
+                    {/* ══════════════ TARJETA 1: LESIONES ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF' }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>🩹 Lesiones o Molestias</Text>
 
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Alguna alergia o intolerancia importante?</Text>
-                        <TextInput
-                            style={[styles.textInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.cardBackground }]}
-                            placeholder="Ninguna relevante"
-                            placeholderTextColor={theme.textSecondary}
-                            value={formData.alergias}
-                            onChangeText={(text) => setFormData({ ...formData, alergias: text })}
-                        />
-                    </View>
-
-                    <View style={styles.section}>
-                        <Text style={[styles.fieldLabel, { color: theme.text }]}>¿Sueles cocinar tú?</Text>
-                        <View style={styles.chipGrid}>
-                            {cocinaOpts.map((opt) => {
-                                const val = opt.includes('Sí') ? 'si' : 'no';
+                        <View style={styles.luxuryGrid2Col}>
+                            {lesionesGrid.map((opt) => {
+                                const isSelected = formData.lesiones.includes(opt);
                                 return (
                                     <TouchableOpacity
                                         key={opt}
                                         style={[
-                                            styles.chip,
+                                            styles.luxuryGridItemMulti,
                                             {
-                                                backgroundColor: formData.cocina === val ? theme.primary + '20' : theme.cardBackground,
-                                                borderColor: formData.cocina === val ? theme.primary : theme.border,
+                                                backgroundColor: isSelected ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                                borderColor: isSelected ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                                borderWidth: isSelected ? 2 : 1,
                                             },
                                         ]}
-                                        onPress={() => setFormData({ ...formData, cocina: val })}
+                                        onPress={() => toggleArrayItem('lesiones', opt)}
+                                        activeOpacity={0.8}
                                     >
-                                        <Text style={[styles.chipText, { color: formData.cocina === val ? theme.primary : theme.text }]}>
+                                        <Ionicons
+                                            name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                                            size={18}
+                                            color={isSelected ? brandedPrimary : (isDark ? '#475569' : '#D1D5DB')}
+                                            style={{ marginRight: 8 }}
+                                        />
+                                        <Text style={[styles.luxuryGridText, { color: isSelected ? brandedPrimary : theme.text, flex: 1 }]}>
                                             {opt}
                                         </Text>
                                     </TouchableOpacity>
                                 );
                             })}
+                        </View>
+
+                        {/* Ninguna - Full Width at bottom */}
+                        <TouchableOpacity
+                            style={[
+                                styles.slimCard,
+                                {
+                                    marginTop: 10,
+                                    backgroundColor: formData.lesiones.includes('Ninguna') ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                    borderColor: formData.lesiones.includes('Ninguna') ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                    borderWidth: formData.lesiones.includes('Ninguna') ? 2 : 1,
+                                },
+                            ]}
+                            onPress={() => toggleArrayItem('lesiones', 'Ninguna')}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[
+                                styles.slimCardText,
+                                { color: formData.lesiones.includes('Ninguna') ? brandedPrimary : theme.text }
+                            ]}>
+                                ✨ Ninguna, estoy perfecto
+                            </Text>
+                            <Ionicons
+                                name={formData.lesiones.includes('Ninguna') ? "checkmark-circle" : "ellipse-outline"}
+                                size={22}
+                                color={formData.lesiones.includes('Ninguna') ? brandedPrimary : (isDark ? '#475569' : '#D1D5DB')}
+                            />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* ══════════════ TARJETA 2: ALERGIAS ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', marginTop: 12 }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>⚠️ Intolerancias</Text>
+
+                        <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>
+                            ¿Tienes alguna alergia alimentaria?
+                        </Text>
+
+                        {/* Yes/No Selection */}
+                        <View style={styles.commitmentRow}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.commitmentSquare,
+                                    {
+                                        backgroundColor: !formData.tieneAlergias ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                        borderColor: !formData.tieneAlergias ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                        borderWidth: !formData.tieneAlergias ? 2 : 1,
+                                        aspectRatio: undefined,
+                                        paddingVertical: 14,
+                                    },
+                                ]}
+                                onPress={() => setFormData({ ...formData, tieneAlergias: false, alergias: '' })}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={{ fontSize: 22, marginBottom: 4 }}>😊</Text>
+                                <Text style={[
+                                    styles.commitmentLabel,
+                                    { color: !formData.tieneAlergias ? brandedPrimary : theme.text }
+                                ]}>
+                                    No
+                                </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.commitmentSquare,
+                                    {
+                                        backgroundColor: formData.tieneAlergias ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                        borderColor: formData.tieneAlergias ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                        borderWidth: formData.tieneAlergias ? 2 : 1,
+                                        aspectRatio: undefined,
+                                        paddingVertical: 14,
+                                    },
+                                ]}
+                                onPress={() => setFormData({ ...formData, tieneAlergias: true })}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={{ fontSize: 22, marginBottom: 4 }}>⚠️</Text>
+                                <Text style={[
+                                    styles.commitmentLabel,
+                                    { color: formData.tieneAlergias ? brandedPrimary : theme.text }
+                                ]}>
+                                    Sí
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Conditional Text Input */}
+                        {formData.tieneAlergias && (
+                            <TextInput
+                                style={[
+                                    styles.textInput,
+                                    {
+                                        marginTop: 16,
+                                        color: theme.text,
+                                        borderColor: 'transparent',
+                                        backgroundColor: isDark ? '#334155' : '#F5F5F5',
+                                        borderRadius: 16,
+                                        minHeight: 60,
+                                        textAlignVertical: 'top',
+                                        paddingTop: 14,
+                                    }
+                                ]}
+                                placeholder="Ej: Gluten, Lactosa, Frutos secos..."
+                                placeholderTextColor={theme.textSecondary}
+                                value={formData.alergias}
+                                onChangeText={(text) => setFormData({ ...formData, alergias: text })}
+                                multiline
+                            />
+                        )}
+                    </View>
+
+                    {/* ══════════════ TARJETA 3: COCINA ══════════════ */}
+                    <View style={[styles.luxuryContainerCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', marginTop: 12, marginBottom: 16 }]}>
+                        <Text style={[styles.luxuryContainerTitle, { color: theme.text }]}>👨‍🍳 Cocina</Text>
+
+                        <Text style={[styles.luxuryContainerLabel, { color: theme.textSecondary }]}>
+                            ¿Sueles cocinar tú?
+                        </Text>
+
+                        <View style={styles.commitmentRow}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.commitmentSquare,
+                                    {
+                                        backgroundColor: formData.cocina === 'si' ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                        borderColor: formData.cocina === 'si' ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                        borderWidth: formData.cocina === 'si' ? 2 : 1,
+                                        aspectRatio: undefined,
+                                        paddingVertical: 14,
+                                    },
+                                ]}
+                                onPress={() => setFormData({ ...formData, cocina: 'si' })}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={[styles.commitmentIcon, { fontSize: 22, marginBottom: 4 }]}>🔥</Text>
+                                <Text style={[
+                                    styles.commitmentLabel,
+                                    { color: formData.cocina === 'si' ? brandedPrimary : theme.text }
+                                ]}>
+                                    Casi siempre
+                                </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.commitmentSquare,
+                                    {
+                                        backgroundColor: formData.cocina === 'no' ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
+                                        borderColor: formData.cocina === 'no' ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
+                                        borderWidth: formData.cocina === 'no' ? 2 : 1,
+                                        aspectRatio: undefined,
+                                        paddingVertical: 14,
+                                    },
+                                ]}
+                                onPress={() => setFormData({ ...formData, cocina: 'no' })}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={[styles.commitmentIcon, { fontSize: 22, marginBottom: 4 }]}>🛵</Text>
+                                <Text style={[
+                                    styles.commitmentLabel,
+                                    { color: formData.cocina === 'no' ? brandedPrimary : theme.text }
+                                ]}>
+                                    Casi nunca
+                                </Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
                 </ScrollView>
@@ -1290,7 +1830,7 @@ export default function Onboarding() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: theme.primary }]}
+                        style={[styles.footerButton, styles.footerButtonPrimary, { backgroundColor: brandedPrimary }]}
                         onPress={handleNext}
                     >
                         <Text style={styles.primaryButtonText}>Siguiente</Text>
@@ -1301,13 +1841,17 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 5: PREMIUM UPSELL
-    if (currentStep === 5) {
+    // STEP 6: PREMIUM UPSELL
+    if (currentStep === 6) {
         return (
             <View style={[styles.container, { backgroundColor: theme.background }]}>
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                    style={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.centeredScrollContent}
+                >
                     <View style={styles.upsellContent}>
-                        <Ionicons name="trophy" size={80} color={theme.primary} />
+                        <Ionicons name="trophy" size={80} color={brandedPrimary} />
                         <Text style={[styles.welcomeTitle, { color: theme.text }]}>
                             Para sacarle TODO el jugo a la app…
                         </Text>
@@ -1317,25 +1861,25 @@ export default function Onboarding() {
 
                         <View style={styles.benefitsList}>
                             <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                                <Ionicons name="checkmark-circle" size={24} color={brandedPrimary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
                                     Rutinas personalizadas actualizadas por tu entrenador
                                 </Text>
                             </View>
                             <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                                <Ionicons name="checkmark-circle" size={24} color={brandedPrimary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
                                     Histórico de cargas y seguimiento de progreso
                                 </Text>
                             </View>
                             <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                                <Ionicons name="checkmark-circle" size={24} color={brandedPrimary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
                                     Acceso prioritario a soporte y ajustes de rutina
                                 </Text>
                             </View>
                             <View style={styles.benefitItem}>
-                                <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                                <Ionicons name="checkmark-circle" size={24} color={brandedPrimary} />
                                 <Text style={[styles.benefitText, { color: theme.text }]}>
                                     Más herramientas de análisis y métricas de rendimiento
                                 </Text>
@@ -1343,7 +1887,7 @@ export default function Onboarding() {
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+                            style={[styles.primaryButton, { backgroundColor: brandedPrimary }]}
                             onPress={() => router.push('/(app)/payment')}
                         >
                             <Text style={styles.primaryButtonText}>Ver beneficios Premium</Text>
@@ -1364,13 +1908,17 @@ export default function Onboarding() {
         );
     }
 
-    // STEP 6: FINAL MESSAGE
-    if (currentStep === 6) {
+    // STEP 7: FINAL MESSAGE
+    if (currentStep === 7) {
         return (
             <View style={[styles.container, { backgroundColor: theme.background }]}>
-                <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                    style={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.centeredScrollContent}
+                >
                     <View style={styles.finishContent}>
-                        <Ionicons name="rocket" size={80} color={theme.primary} />
+                        <Ionicons name="rocket" size={80} color={brandedPrimary} />
                         <Text style={[styles.welcomeTitle, { color: theme.text }]}>
                             Listo. Ya tengo lo que necesito para entrenarte mejor.
                         </Text>
@@ -1382,7 +1930,7 @@ export default function Onboarding() {
                         </Text>
 
                         <TouchableOpacity
-                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+                            style={[styles.primaryButton, { backgroundColor: brandedPrimary }]}
                             onPress={handleFinish}
                             disabled={loading}
                         >
@@ -1417,11 +1965,17 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     scrollContent: {
-        // Sin flex: 1 para que no se expanda
+        flex: 1,
     },
     scrollContentContainer: {
         padding: 20,
         paddingBottom: 20,
+    },
+    centeredScrollContent: {
+        flexGrow: 1,
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 40,
     },
     welcomeContent: {
         flex: 1,
@@ -1430,10 +1984,8 @@ const styles = StyleSheet.create({
         paddingVertical: 40,
     },
     upsellContent: {
-        flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
-        paddingVertical: 40,
+        paddingHorizontal: 20,
     },
     welcomeTitle: {
         fontSize: 28,
@@ -1605,10 +2157,8 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     finishContent: {
-        flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
-        paddingVertical: 80,
+        paddingHorizontal: 20,
     },
     footer: {
         flexDirection: 'row',
@@ -1701,7 +2251,8 @@ const styles = StyleSheet.create({
     // ═══════════════════════════════════════════════════════════════════════════
     roleSelectorContent: {
         flex: 1,
-        paddingVertical: 40,
+        paddingTop: 60,
+        paddingBottom: 40,
         paddingHorizontal: 16,
     },
     roleSelectorHeader: {
@@ -1884,6 +2435,312 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: 'bold',
     },
+    // LUXURY ROLE SELECTOR STYLES
+    luxuryInputGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 12,
+        backgroundColor: '#FFFFFF',
+        overflow: 'hidden',
+        height: 56,
+    },
+    luxuryInput: {
+        flex: 1,
+        height: '100%',
+        paddingHorizontal: 16,
+        fontSize: 15,
+        color: '#1e293b',
+    },
+    luxuryInputBtn: {
+        width: 56,
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderLeftWidth: 1,
+        borderLeftColor: 'rgba(0,0,0,0.05)',
+    },
+    luxuryTrialContainer: {
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: 'rgba(0,0,0,0.1)',
+        backgroundColor: 'rgba(0,0,0,0.02)',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    luxuryTrialText: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 12,
+        color: '#1e293b',
+    },
+    luxuryPillButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 20,
+        borderRadius: 100,
+        minWidth: 140,
+        alignItems: 'center',
+    },
+    luxuryPillText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#FFF',
+    },
+    // BIG DATA STYLES (Step 2 redesign)
+    bigDataRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 24,
+        marginTop: 8,
+    },
+    bigDataCard: {
+        flex: 1,
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    bigDataLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginBottom: 8,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    bigDataValueRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        gap: 4,
+    },
+    bigDataInput: {
+        flex: 1,
+        fontSize: 32,
+        fontWeight: '800',
+        textAlign: 'center',
+        minWidth: 50,
+        padding: 0,
+    },
+    bigDataUnit: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    genderButtonsRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    genderButton: {
+        flex: 1,
+        aspectRatio: 1,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    genderButtonText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    objectiveGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 12,
+    },
+    objectiveCard: {
+        width: '47%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        padding: 16,
+        borderRadius: 14,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    objectiveText: {
+        fontSize: 13,
+        fontWeight: '600',
+        flex: 1,
+    },
+    // LUXURY CARD STACK STYLES (Step 3 redesign)
+    luxuryCardStack: {
+        gap: 10,
+    },
+    // SLIM CARD STYLES (más finas)
+    slimCard: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+    },
+    slimCardText: {
+        fontSize: 14,
+        fontWeight: '500',
+        flex: 1,
+    },
+    // COMMITMENT SQUARE STYLES (horizontal row)
+    commitmentRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    commitmentSquare: {
+        flex: 1,
+        aspectRatio: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 16,
+        padding: 12,
+    },
+    commitmentIcon: {
+        fontSize: 32,
+        marginBottom: 8,
+    },
+    commitmentLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    luxuryOptionCard: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 18,
+        paddingHorizontal: 20,
+        borderRadius: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 1,
+    },
+    luxuryOptionText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    // HERO NUMBER CONTROL STYLES
+    heroNumberContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 24,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        gap: 24,
+    },
+    heroNumberBtn: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    heroNumberCenter: {
+        alignItems: 'center',
+        minWidth: 80,
+    },
+    heroNumber: {
+        fontSize: 56,
+        fontWeight: '800',
+        lineHeight: 64,
+    },
+    heroNumberLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+        marginTop: 4,
+    },
+    // LUXURY CONTAINER CARD STYLES (Step 4 redesign)
+    luxuryContainerCard: {
+        padding: 18,
+        borderRadius: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 3,
+    },
+    luxuryContainerTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        marginBottom: 14,
+    },
+    luxuryContainerSection: {
+        // Container section wrapper
+    },
+    luxuryContainerLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        marginBottom: 10,
+    },
+    luxuryGrid2Col: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+    },
+    luxuryGridItem: {
+        width: '47%',
+        paddingVertical: 16,
+        paddingHorizontal: 14,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    luxuryGridItemMulti: {
+        width: '48%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+    },
+    luxuryGridText: {
+        fontSize: 13,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    recommendedBadge: {
+        position: 'absolute',
+        top: -10,
+        right: 16,
+        backgroundColor: '#10B981',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 100,
+        zIndex: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    recommendedText: {
+        color: '#FFF',
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
     // Modal de error para vinculación con entrenador
     errorModalOverlay: {
         flex: 1,
@@ -1933,5 +2790,80 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LUXURY WELCOME SCREEN STYLES (Step 0 - White Label Premium)
+    // ═══════════════════════════════════════════════════════════════════════════
+    luxuryWelcomeContent: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 40,
+    },
+    luxuryWelcomeBranding: {
+        alignItems: 'center',
+        marginBottom: 32,
+    },
+    luxuryWelcomeLogo: {
+        width: 120,
+        height: 120,
+        borderRadius: 24,
+        marginBottom: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 24,
+        elevation: 12,
+    },
+    luxuryWelcomeTrainerName: {
+        fontSize: 28,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        textAlign: 'center',
+    },
+    luxuryWelcomeCard: {
+        width: '100%',
+        maxWidth: 400,
+        padding: 28,
+        borderRadius: 24,
+        borderWidth: 1,
+        marginBottom: 32,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        elevation: 4,
+    },
+    luxuryWelcomeTitle: {
+        fontSize: 22,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    luxuryWelcomeBody: {
+        fontSize: 16,
+        lineHeight: 24,
+        textAlign: 'center',
+    },
+    luxuryWelcomeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 36,
+        borderRadius: 16,
+        gap: 8,
+        minWidth: 200,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    luxuryWelcomeButtonText: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '700',
     },
 });

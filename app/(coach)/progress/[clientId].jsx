@@ -34,6 +34,7 @@ import MediaFeedbackResponseModal from '../../../src/components/coach/MediaFeedb
 import InlineAudioPlayer from '../../../src/components/coach/InlineAudioPlayer';
 import ActionToast from '../../../src/components/shared/ActionToast';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import { getAccuracyBadgeStyle, getAccuracyTextStyle } from '../../../src/utils/styleHelpers';
 
 // KPI Utilities
 import {
@@ -136,13 +137,29 @@ export default function ClientProgressDetail() {
         onAction: null
     });
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // 🖥️ SIDEBAR: States for collapsible client list on wide screens
     const [sidebarClients, setSidebarClients] = useState([]);
     const [sidebarLoading, setSidebarLoading] = useState(true);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const sidebarCollapsedState = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = sidebarCollapsedState;
     const isWideScreen = windowWidth >= 1024;
+
+    // 📊 Calcular ancho dinámico para gráficos
+    const chartWidth = useMemo(() => {
+        let w = windowWidth;
+        // Restar sidebar si está visible
+        if (isWideScreen) {
+            w -= sidebarCollapsed ? 60 : 200;
+        }
+        // Restar panel derecho si está visible
+        if (isLargeScreen && selectedFeedback) {
+            w -= 420;
+        }
+        // Restar padding del contenedor (aprox 32-48px)
+        return Math.max(w - 32, 300);
+    }, [windowWidth, isWideScreen, sidebarCollapsed, isLargeScreen, selectedFeedback]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CARGAR CLIENTES PARA SIDEBAR
@@ -1328,7 +1345,7 @@ export default function ClientProgressDetail() {
                 <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#1e293b" />
                 </Pressable>
-                <View style={{ flex: 1 }}>
+                <View style={styles.flex1}>
                     <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
                     <Text style={styles.headerSubtitle}>Análisis de progreso</Text>
                 </View>
@@ -1445,7 +1462,7 @@ export default function ClientProgressDetail() {
                                         <View style={styles.kpiSelectorIconWrap}>
                                             <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
                                         </View>
-                                        <View style={{ flex: 1 }}>
+                                        <View style={styles.flex1}>
                                             <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
                                             <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
                                         </View>
@@ -1555,7 +1572,7 @@ export default function ClientProgressDetail() {
                                             </View>
                                             <LineChart
                                                 data={volumeData}
-                                                width={screenWidth - 32}
+                                                width={chartWidth}
                                                 height={220}
                                                 chartConfig={{
                                                     ...chartConfig,
@@ -1590,7 +1607,7 @@ export default function ClientProgressDetail() {
                                             </View>
                                             <LineChart
                                                 data={intensityData}
-                                                width={screenWidth - 32}
+                                                width={chartWidth}
                                                 height={220}
                                                 chartConfig={chartConfig}
                                                 bezier
@@ -1620,7 +1637,7 @@ export default function ClientProgressDetail() {
                                             </View>
                                             <LineChart
                                                 data={complianceWeeklyData}
-                                                width={screenWidth - 32}
+                                                width={chartWidth}
                                                 height={220}
                                                 chartConfig={{
                                                     ...chartConfig,
@@ -2464,7 +2481,7 @@ export default function ClientProgressDetail() {
                                                                                         {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
                                                                                         {audioMedia && (
                                                                                             <View style={styles.audioRowContainer}>
-                                                                                                <View style={{ flex: 1 }}>
+                                                                                                <View style={styles.flex1}>
                                                                                                     <InlineAudioPlayer
                                                                                                         feedback={audioMedia}
                                                                                                         onViewed={markFeedbackAsViewed}
@@ -2548,8 +2565,8 @@ export default function ClientProgressDetail() {
                                                                                                                 </Text>
                                                                                                                 {/* 🆕 Accuracy Score */}
                                                                                                                 {typeof audioMedia.accuracy === 'number' && (
-                                                                                                                    <View style={{ backgroundColor: audioMedia.accuracy >= 80 ? '#dcfce7' : audioMedia.accuracy >= 50 ? '#fef9c3' : '#fee2e2', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 }}>
-                                                                                                                        <Text style={{ fontSize: 9, fontWeight: '700', color: audioMedia.accuracy >= 80 ? '#166534' : audioMedia.accuracy >= 50 ? '#854d0e' : '#991b1b' }}>
+                                                                                                                    <View style={getAccuracyBadgeStyle(audioMedia.accuracy)}>
+                                                                                                                        <Text style={[getAccuracyTextStyle(audioMedia.accuracy), { fontSize: 9 }]}>
                                                                                                                             {audioMedia.accuracy}% Fiabilidad
                                                                                                                         </Text>
                                                                                                                     </View>
@@ -2687,7 +2704,7 @@ export default function ClientProgressDetail() {
                             </View>
                         )}
 
-                        <View style={{ height: 40 }} />
+                        <View style={styles.spacer40} />
                     </ScrollView>
 
                     {/* 🖥️ Panel lateral - solo visible en pantallas grandes con feedback seleccionado */}
@@ -4838,6 +4855,23 @@ const styles = StyleSheet.create({
         backgroundColor: '#0a0a14',
         borderLeftWidth: 1,
         borderLeftColor: '#1e293b',
+    },
+    // Estilos reutilizables
+    flex1: {
+        flex: 1,
+    },
+    spacer40: {
+        height: 40,
+    },
+    rowCenterGap4: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    rowCenterGap8: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
 });
 

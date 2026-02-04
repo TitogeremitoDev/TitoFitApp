@@ -13,7 +13,6 @@ import {
     View,
     Text,
     Modal,
-    TextInput,
     FlatList,
     TouchableOpacity,
     StyleSheet,
@@ -24,6 +23,7 @@ import {
     Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from './ui';
 import Fuse from 'fuse.js';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -180,9 +180,10 @@ const FoodSearchModal = ({
                 {/* Barra de Búsqueda */}
                 <View style={styles.searchContainer}>
                     <Ionicons name="search" size={20} color="#9ca3af" style={styles.searchIcon} />
-                    <TextInput
+                    <EnhancedTextInput
                         ref={inputRef}
-                        style={styles.searchInput}
+                        style={styles.searchInputText}
+                        containerStyle={styles.searchInputContainer}
                         placeholder="Pollo, Arroz, Manzana..."
                         placeholderTextColor="#9ca3af"
                         value={query}
@@ -288,8 +289,10 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 8,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
+    },
+    searchInputText: {
         fontSize: 16,
         color: '#111827',
     },

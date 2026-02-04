@@ -9,11 +9,11 @@ import {
     TouchableOpacity,
     Pressable,
     Image,
-    TextInput,
     ActivityIndicator,
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STATUS HELPERS
@@ -218,8 +218,9 @@ export default function ClientSidebar({
                     {/* Search input */}
                     <View style={styles.searchContainer}>
                         <Ionicons name="search" size={14} color="#94a3b8" />
-                        <TextInput
-                            style={styles.searchInput}
+                        <EnhancedTextInput
+                            containerStyle={styles.searchInputContainer}
+                            style={styles.searchInputText}
                             placeholder="Buscar..."
                             placeholderTextColor="#94a3b8"
                             value={searchQuery}
@@ -388,12 +389,14 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         gap: 4,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
-        fontSize: 12,
-        color: '#1e293b',
         padding: 0,
         minWidth: 0,
+    },
+    searchInputText: {
+        fontSize: 12,
+        color: '#1e293b',
     },
     clearBtn: {
         padding: 2,

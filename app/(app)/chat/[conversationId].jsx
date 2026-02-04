@@ -10,8 +10,6 @@ import {
     StyleSheet,
     SafeAreaView,
     FlatList,
-    TextInput,
-    TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
@@ -19,7 +17,6 @@ import {
     Linking,
     Image,
     Modal,
-    ScrollView,
     Alert,
     BackHandler
 } from 'react-native';
@@ -31,8 +28,14 @@ import { useChatTheme } from '../../../context/ChatThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ChatAudioPlayer from '../../../src/components/chat/ChatAudioPlayer';
 import * as ImagePicker from 'expo-image-picker'; // 🆕 For gallery/camera
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FEEDBACK PREVIEW MODAL (Improved v2)

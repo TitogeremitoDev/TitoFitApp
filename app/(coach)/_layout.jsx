@@ -273,7 +273,7 @@ export default function CoachLayout() {
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [showOverQuotaModal, setShowOverQuotaModal] = useState(false);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // Mostrar sidebar solo en pantallas grandes (900px+)
     const showSidebar = Platform.OS === 'web' && width >= 900;
@@ -314,7 +314,7 @@ export default function CoachLayout() {
             Alert.alert('Acceso denegado', 'Solo administradores y entrenadores pueden acceder');
             router.replace('/(app)');
         }
-    }, [user]);
+    }, [user?._id, user?.tipoUsuario]);
 
     // Redirigir a billing si está congelado y no está ya en billing/settings
     // Redirigir si está congelado y no está en una ruta permitida (pago)
@@ -330,7 +330,7 @@ export default function CoachLayout() {
                 router.replace('/(app)/payment');
             }
         }
-    }, [isFrozen, pathname, user]);
+    }, [isFrozen, pathname, user?.tipoUsuario]);
 
     // Cargar perfil del entrenador desde la API para obtener el logoUrl
     useEffect(() => {

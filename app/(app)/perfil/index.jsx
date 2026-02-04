@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, ScrollView, Modal, Pressable, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert, Share, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Modal, Image, ActivityIndicator, Alert, Share, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,13 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedPressable as Pressable,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 import ActionButton from '../../../components/ActionButton';
 import CoachHelpButton from '../../../components/CoachHelpButton';
@@ -97,7 +104,7 @@ export default function PerfilScreen() {
         trainerName: ''
     });
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // Determinar si es usuario premium
     const isPremiumUser = user?.tipoUsuario === 'CLIENTE' ||
@@ -135,7 +142,7 @@ export default function PerfilScreen() {
             return () => {
                 hasRefreshedThisFocus.current = false;
             };
-        }, [token]) // Quitamos refreshUser - es estable y causa re-renders
+        }, []) // Sin dependencias - solo se ejecuta al ganar/perder foco
     );
 
     // 🔄 Detectar cambios en tipoUsuario para depuración y actualización de UI
@@ -771,24 +778,38 @@ export default function PerfilScreen() {
 
                     <View style={[styles.divider, { marginVertical: 20 }]} />
 
-                    {/* Coach Help Button - Only shows if user has a trainer */}
-                    <CoachHelpButton style={{ marginBottom: 16 }} />
+                    {/* Buttons Row */}
+                    <View style={{
+                        flexDirection: 'row',
+                        gap: 12,
+                        width: '100%',
+                        maxWidth: 600, // Match effectiveWidth logic approximately or keep it contained
+                        paddingHorizontal: 0 // Already inside menuContainer which might handle padding
+                    }}>
+                        {/* Coach Help Button - Only shows if user has a trainer */}
+                        <View style={{ flex: 1 }}>
+                            <CoachHelpButton />
+                        </View>
 
-                    {/* Logout Button - Full Width */}
-                    <TouchableOpacity
-                        style={[
-                            styles.logoutButton,
-                            {
-                                backgroundColor: '#EF4444',
-                                borderColor: '#EF4444',
-                            }
-                        ]}
-                        onPress={handleLogout}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
-                        <Text style={[styles.logoutButtonText, { color: '#FFFFFF' }]}>Cerrar Sesión</Text>
-                    </TouchableOpacity>
+                        {/* Logout Button */}
+                        <TouchableOpacity
+                            style={[
+                                styles.logoutButton,
+                                {
+                                    backgroundColor: '#EF4444',
+                                    borderColor: '#EF4444',
+                                    flex: 1, // Make it expand
+                                    width: 'auto', // Override specific width if any
+                                    maxWidth: undefined // Remove max width constraint
+                                }
+                            ]}
+                            onPress={handleLogout}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+                            <Text style={[styles.logoutButtonText, { color: '#FFFFFF' }]}>Salir</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
             </ScrollView>
@@ -1246,7 +1267,7 @@ const styles = StyleSheet.create({
     },
     scrollContainer: {
         alignItems: 'center',
-        paddingBottom: 40,
+        paddingBottom: 100,
     },
     blob: {
         position: 'absolute',
@@ -1477,7 +1498,7 @@ const styles = StyleSheet.create({
         }),
     },
     menuCard: {
-        marginVertical: 16,
+        marginVertical: 6,
         borderRadius: 16,
         borderWidth: 1,
         paddingVertical: 16,
@@ -1546,7 +1567,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     menuItemWrapper: {
-        marginBottom: 12,
+        marginBottom: 6,
     },
 
     /* Modal */

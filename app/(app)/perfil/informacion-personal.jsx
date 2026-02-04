@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, PanResponder, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, PanResponder, Platform } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -212,7 +213,7 @@ export default function InformacionPersonal() {
                 setValue(key, val);
             });
         }
-    }, [user, setValue]);
+    }, [user?._id, setValue]);
 
     const onSubmit = async (data) => {
         setLoading(true);
@@ -250,9 +251,13 @@ export default function InformacionPersonal() {
             />
 
             <View style={styles.header}>
-                <Text style={styles.headerTitle}
-                    colors={theme.primary}
-                >Información Personal</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color={theme.text} />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: theme.text }]}>INFORMACIÓN PERSONAL</Text>
+                </View>
+
                 <TouchableOpacity
                     style={[styles.saveButton, { backgroundColor: theme.primary }]}
                     onPress={handleSubmit(onSubmit)}
@@ -280,8 +285,9 @@ export default function InformacionPersonal() {
 
                     <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
                         <Text style={[styles.label, { color: theme.text }]}>Nombre Completo</Text>
-                        <TextInput
-                            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+                        <EnhancedTextInput
+                            style={[styles.inputText, { color: theme.text }]}
+                            containerStyle={[styles.inputLayout, { borderColor: theme.border }]}
                             value={user?.nombre || ''}
                             editable={false}
                         />
@@ -296,8 +302,9 @@ export default function InformacionPersonal() {
                                 name="edad"
                                 rules={{ required: 'Requerido', pattern: { value: /^[0-9]+$/, message: 'Solo números' } }}
                                 render={({ field: { onChange, value } }) => (
-                                    <TextInput
-                                        style={[styles.input, { color: theme.text, borderColor: errors.edad ? 'red' : theme.border }]}
+                                    <EnhancedTextInput
+                                        style={[styles.inputText, { color: theme.text }]}
+                                        containerStyle={[styles.inputLayout, { borderColor: errors.edad ? 'red' : theme.border }]}
                                         placeholder="Ej: 25"
                                         placeholderTextColor={theme.textSecondary}
                                         keyboardType="numeric"
@@ -315,8 +322,9 @@ export default function InformacionPersonal() {
                                 name="peso"
                                 rules={{ required: 'Requerido', pattern: { value: /^[0-9.]+$/, message: 'Solo números' } }}
                                 render={({ field: { onChange, value } }) => (
-                                    <TextInput
-                                        style={[styles.input, { color: theme.text, borderColor: errors.peso ? 'red' : theme.border }]}
+                                    <EnhancedTextInput
+                                        style={[styles.inputText, { color: theme.text }]}
+                                        containerStyle={[styles.inputLayout, { borderColor: errors.peso ? 'red' : theme.border }]}
                                         placeholder="Ej: 75.5"
                                         placeholderTextColor={theme.textSecondary}
                                         keyboardType="numeric"
@@ -337,8 +345,9 @@ export default function InformacionPersonal() {
                                 name="altura"
                                 rules={{ required: 'Requerido', pattern: { value: /^[0-9.]+$/, message: 'Solo números' } }}
                                 render={({ field: { onChange, value } }) => (
-                                    <TextInput
-                                        style={[styles.input, { color: theme.text, borderColor: errors.altura ? 'red' : theme.border }]}
+                                    <EnhancedTextInput
+                                        style={[styles.inputText, { color: theme.text }]}
+                                        containerStyle={[styles.inputLayout, { borderColor: errors.altura ? 'red' : theme.border }]}
                                         placeholder="Ej: 1.75"
                                         placeholderTextColor={theme.textSecondary}
                                         keyboardType="numeric"
@@ -382,8 +391,9 @@ export default function InformacionPersonal() {
 
                     <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
                         <Text style={[styles.label, { color: theme.text }]}>Email</Text>
-                        <TextInput
-                            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+                        <EnhancedTextInput
+                            style={[styles.inputText, { color: theme.text }]}
+                            containerStyle={[styles.inputLayout, { borderColor: theme.border }]}
                             value={user?.email || ''}
                             editable={false}
                         />
@@ -400,8 +410,9 @@ export default function InformacionPersonal() {
                             control={control}
                             name="objetivos"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.textArea, { color: theme.text, borderColor: theme.border }]}
+                                <EnhancedTextInput
+                                    style={[styles.textAreaText, { color: theme.text }]}
+                                    containerStyle={[styles.textAreaLayout, { borderColor: theme.border }]}
                                     placeholder="Ej: Ganar masa muscular, perder grasa, mejorar resistencia..."
                                     placeholderTextColor={theme.textSecondary}
                                     multiline
@@ -603,8 +614,9 @@ export default function InformacionPersonal() {
                             name="comidasDia"
                             rules={{ pattern: { value: /^[0-9]+$/, message: 'Solo números' } }}
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+                                <EnhancedTextInput
+                                    style={[styles.inputText, { color: theme.text }]}
+                                    containerStyle={[styles.inputLayout, { borderColor: theme.border }]}
                                     placeholder="Ej: 4"
                                     placeholderTextColor={theme.textSecondary}
                                     keyboardType="numeric"
@@ -621,8 +633,9 @@ export default function InformacionPersonal() {
                             control={control}
                             name="alergias"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[styles.textArea, { color: theme.text, borderColor: theme.border }]}
+                                <EnhancedTextInput
+                                    style={[styles.textAreaText, { color: theme.text }]}
+                                    containerStyle={[styles.textAreaLayout, { borderColor: theme.border }]}
                                     placeholder="Ej: Lactosa, Gluten, Nueces..."
                                     placeholderTextColor={theme.textSecondary}
                                     multiline
@@ -674,7 +687,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 60,
+        paddingTop: 10,
         paddingHorizontal: 20,
         paddingBottom: 20,
     },
@@ -694,7 +707,7 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 16,
-        paddingBottom: 24,
+        paddingBottom: 100,
     },
     card: {
         padding: 16,
@@ -736,19 +749,23 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginBottom: 6,
     },
-    input: {
-        fontSize: 16,
+    inputLayout: {
         borderBottomWidth: 1,
         paddingVertical: 12,
-        minHeight: 44, // iOS área táctil
+        minHeight: 44, // iOS area tactil
     },
-    textArea: {
-        fontSize: 15,
+    inputText: {
+        fontSize: 16,
+    },
+    textAreaLayout: {
         borderWidth: 1,
         borderRadius: 8,
         padding: 10,
-        textAlignVertical: 'top',
         minHeight: 60,
+    },
+    textAreaText: {
+        fontSize: 15,
+        textAlignVertical: 'top',
     },
     helperText: {
         fontSize: 12,

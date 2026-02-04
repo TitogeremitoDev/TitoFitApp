@@ -9,7 +9,6 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    TextInput,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -17,6 +16,7 @@ import {
     ActivityIndicator,
     useWindowDimensions
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import Video from 'react-native-video';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';

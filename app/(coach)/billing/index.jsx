@@ -56,7 +56,7 @@ export default function BillingScreen() {
     const [churnRisks, setChurnRisks] = useState({}); // { clientId: { riskLevel, message } }
     const [toastState, setToastState] = useState({ visible: false, message: '', undoData: null });
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     const fetchData = useCallback(async () => {
         try {

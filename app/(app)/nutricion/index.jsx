@@ -11,7 +11,7 @@ import {
     Dimensions,
     ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../../context/AuthContext';
@@ -21,6 +21,7 @@ import {
     calculateFullNutrition,
     ACTIVITY_FACTORS,
 } from '../../../src/utils/nutritionCalculator';
+import { getContrastColor } from '../../../utils/colors';
 
 const { width } = Dimensions.get('window');
 
@@ -99,13 +100,14 @@ export default function NutricionScreen() {
     const [todayTarget, setTodayTarget] = useState(null);
     const [planMode, setPlanMode] = useState('auto'); // 'auto' | 'custom'
     const [selectedDayIndex, setSelectedDayIndex] = useState(null); // Para ver otros días
+    const [coachInfo, setCoachInfo] = useState(null); // Coach branding for PDF export
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     const isPremium = useMemo(() => {
         if (!user) return false;
         return ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMINISTRADOR'].includes(user.tipoUsuario);
-    }, [user]);
+    }, [user?.tipoUsuario]);
 
     useEffect(() => {
         const loadUserData = async () => {
@@ -126,16 +128,20 @@ export default function NutricionScreen() {
                         // ACEPTAR 'custom' (Flex), 'complete' (Meal Plan) O 'mealplan'
                         if (data.success && data.plan && (data.mode === 'custom' || data.mode === 'complete' || data.mode === 'mealplan')) {
                             console.log('[Nutricion] ✅ Plan del coach encontrado:', data.mode);
-                            console.log('[Nutricion] ✅ Plan del coach encontrado:', data.mode);
                             setCoachPlan(data.plan);
                             setClientSettings(data.clientSettings || {});
                             setTodayTarget(data.todayTarget);
+                            setCoachInfo(data.coachInfo || null); // Coach branding from API
 
                             const newMode = (data.mode === 'complete' || data.mode === 'mealplan') ? 'mealplan' : 'custom';
                             setPlanMode(newMode);
                             currentMode = newMode;
 
                             setDataSource('coach');
+                        } else if (data.success && data.plan && data.plan.planType === 'auto') {
+                            // Plan automático asignado por el coach
+                            console.log('[Nutricion] ✅ Plan AUTO del coach encontrado');
+                            currentMode = 'autoCoach';
                         } else {
                             console.log('[Nutricion] No hay plan activo compatible, usando auto');
                         }
@@ -149,8 +155,12 @@ export default function NutricionScreen() {
                 setUserInfo(user?.info_user || {});
                 setActivityFactor(user?.info_user?.af || 1.55);
 
-                // Only set to cloud if we didn't just set it to coach
+                // Solo mostrar auto si NO es CLIENTE (los clientes ven mensaje de espera)
+                // Si el coach asignó un plan auto, el cliente ve el modo auto en vez de espera
                 if (currentMode !== 'custom' && currentMode !== 'mealplan') {
+                    if (user?.tipoUsuario === 'CLIENTE' && currentMode !== 'autoCoach') {
+                        setPlanMode('waiting');
+                    }
                     setDataSource('cloud');
                 }
                 console.log('[Nutricion] Datos cargados. currentMode:', currentMode);
@@ -166,7 +176,7 @@ export default function NutricionScreen() {
         };
 
         loadUserData();
-    }, [user, isPremium, token]);
+    }, [user?._id, user?.tipoUsuario, token]);
 
 
 
@@ -260,16 +270,7 @@ export default function NutricionScreen() {
     if (planMode === 'mealplan' && coachPlan) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-                {/* Header for Meal Plan View */}
-                <View style={[styles.compactHeader, { borderBottomColor: theme.cardBorder }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.cardBackground }]}>
-                        <Ionicons name="arrow-back" size={22} color={theme.textSecondary} />
-                    </TouchableOpacity>
-                    <View style={styles.headerCenter}>
-                        <Text style={[styles.headerTitle, { color: theme.text }]}>🍽️ Plan de Comidas</Text>
-                    </View>
-                    <View style={styles.headerRight} />
-                </View>
+                <Stack.Screen options={{ headerShown: false }} />
 
                 <ClientMealPlanView
                     plan={coachPlan}
@@ -277,7 +278,51 @@ export default function NutricionScreen() {
                     theme={theme}
                     user={user}
                     clientSettings={clientSettings}
+                    coachInfo={coachInfo}
                 />
+            </SafeAreaView>
+        );
+    }
+
+    // 🔒 CLIENTE sin plan asignado: mostrar mensaje de espera
+    if (planMode === 'waiting') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <View style={styles.waitingContainer}>
+                    <Ionicons name="nutrition-outline" size={80} color={theme.textSecondary} />
+                    <Text style={[styles.waitingTitle, { color: theme.text }]}>
+                        Sin plan de nutrición
+                    </Text>
+                    <Text style={[styles.waitingText, { color: theme.textSecondary }]}>
+                        Tu entrenador aún no te ha generado una rutina de nutrición. Sé paciente o contacta con él.
+                    </Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    // 🔒 CLIENTE con plan auto pero sin datos de perfil: pedir que rellene datos
+    if (user?.tipoUsuario === 'CLIENTE' && planMode === 'auto' && !hasData) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <View style={styles.waitingContainer}>
+                    <Ionicons name="body-outline" size={80} color={theme.textSecondary} />
+                    <Text style={[styles.waitingTitle, { color: theme.text }]}>
+                        Completa tu perfil
+                    </Text>
+                    <Text style={[styles.waitingText, { color: theme.textSecondary }]}>
+                        Para ver tu rutina de nutrición, rellena tus datos personales.
+                    </Text>
+                    <TouchableOpacity
+                        style={[styles.emptyButton, { backgroundColor: theme.primary }]}
+                        onPress={() => router.push('/perfil/informacion-personal')}
+                    >
+                        <Ionicons name="person-add" size={20} color={getContrastColor(theme.primary)} />
+                        <Text style={[styles.emptyButtonText, { color: getContrastColor(theme.primary) }]}>Rellenar Datos</Text>
+                    </TouchableOpacity>
+                </View>
             </SafeAreaView>
         );
     }
@@ -341,8 +386,8 @@ export default function NutricionScreen() {
                             style={[styles.emptyButton, { backgroundColor: theme.primary }]}
                             onPress={() => router.push('/perfil/informacion-personal')}
                         >
-                            <Ionicons name="person-add" size={20} color="#fff" />
-                            <Text style={styles.emptyButtonText}>Completar Perfil</Text>
+                            <Ionicons name="person-add" size={20} color={getContrastColor(theme.primary)} />
+                            <Text style={[styles.emptyButtonText, { color: getContrastColor(theme.primary) }]}>Completar Perfil</Text>
                         </TouchableOpacity>
                     </View>
                 ) : planMode === 'custom' && todayTarget ? (
@@ -369,12 +414,20 @@ export default function NutricionScreen() {
                             const todayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
                             const activeIdx = selectedDayIndex !== null ? selectedDayIndex : todayIdx;
 
-                            const dayId = coachPlan?.customPlan?.weekSchedule?.[WEEK_KEYS[activeIdx]];
-                            const activeDay = coachPlan?.customPlan?.dayTargets?.find(d => d.id === dayId) || todayTarget;
+                            // Soportar tanto complete (customPlan.weekSchedule/dayTargets) como flex (weekMap/dayTemplates)
+                            const weekSchedule = coachPlan?.customPlan?.weekSchedule || coachPlan?.weekMap;
+                            const dayTargets = coachPlan?.customPlan?.dayTargets || coachPlan?.dayTemplates;
+
+                            const dayId = weekSchedule?.[WEEK_KEYS[activeIdx]];
+                            const rawDay = dayTargets?.find(d => d.id === dayId);
+                            // Para flex, mapear targetMacros al formato esperado
+                            const activeDay = rawDay?.targetMacros
+                                ? { ...rawDay, kcal: rawDay.targetMacros.kcal, protein_g: rawDay.targetMacros.protein, carbs_g: rawDay.targetMacros.carbs, fat_g: rawDay.targetMacros.fat, water_ml: rawDay.targetMacros.water, steps_target: rawDay.targetMacros.steps, fiber_g: rawDay.targetMacros.fiber }
+                                : (rawDay || todayTarget);
 
                             // Unique day types for legend
                             const dayTypes = [...new Map(
-                                coachPlan?.customPlan?.dayTargets?.map(d => [d.id, d]) || []
+                                dayTargets?.map(d => [d.id, d]) || []
                             ).values()];
 
                             return (
@@ -395,9 +448,9 @@ export default function NutricionScreen() {
                                         {/* Week row - clickable */}
                                         <View style={styles.weekPreviewRow}>
                                             {WEEK_LABELS.map((day, idx) => {
-                                                const dayIdForIdx = coachPlan?.customPlan?.weekSchedule?.[WEEK_KEYS[idx]];
-                                                const dayData = coachPlan?.customPlan?.dayTargets?.find(d => d.id === dayIdForIdx);
-                                                const dayTargetIdx = coachPlan?.customPlan?.dayTargets?.findIndex(d => d.id === dayIdForIdx) ?? 0;
+                                                const dayIdForIdx = weekSchedule?.[WEEK_KEYS[idx]];
+                                                const dayData = dayTargets?.find(d => d.id === dayIdForIdx);
+                                                const dayTargetIdx = dayTargets?.findIndex(d => d.id === dayIdForIdx) ?? 0;
                                                 const dayColor = dayData?.color || DAY_COLORS[dayTargetIdx % DAY_COLORS.length];
                                                 const isToday = idx === todayIdx;
                                                 const isSelected = idx === activeIdx;
@@ -413,8 +466,8 @@ export default function NutricionScreen() {
                                                         ]}
                                                         onPress={() => setSelectedDayIndex(idx)}
                                                     >
-                                                        <Text style={styles.weekPreviewDayLabel}>{day}</Text>
-                                                        <Text style={styles.weekPreviewDayName}>
+                                                        <Text style={[styles.weekPreviewDayLabel, { color: getContrastColor(dayColor) }]}>{day}</Text>
+                                                        <Text style={[styles.weekPreviewDayName, { color: getContrastColor(dayColor) }]}>
                                                             {dayData?.name?.charAt(0) || '?'}
                                                         </Text>
                                                     </TouchableOpacity>
@@ -429,11 +482,11 @@ export default function NutricionScreen() {
                                             <Ionicons
                                                 name={activeDay?.isTrainingDay ? 'barbell' : 'bed'}
                                                 size={24}
-                                                color="#fff"
+                                                color={getContrastColor(activeDay?.color || '#22c55e')}
                                             />
                                             <View>
-                                                <Text style={styles.coachDayTitle}>{activeDay?.name || 'Sin asignar'}</Text>
-                                                <Text style={styles.coachDaySubtitle}>
+                                                <Text style={[styles.coachDayTitle, { color: getContrastColor(activeDay?.color || '#22c55e') }]}>{activeDay?.name || 'Sin asignar'}</Text>
+                                                <Text style={[styles.coachDaySubtitle, { color: getContrastColor(activeDay?.color || '#22c55e') }]}>
                                                     {selectedDayIndex !== null
                                                         ? ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][activeIdx]
                                                         : 'Hoy'}
@@ -753,7 +806,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scrollContent: {
-        paddingBottom: 32,
+        paddingBottom: 100,
     },
 
     // Compact Header
@@ -1396,6 +1449,26 @@ const styles = StyleSheet.create({
         marginTop: 16,
         textAlign: 'center',
         fontStyle: 'italic',
+    },
+
+    // Waiting (CLIENTE sin plan)
+    waitingContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 40,
+    },
+    waitingTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+        marginTop: 24,
+        textAlign: 'center',
+    },
+    waitingText: {
+        fontSize: 15,
+        textAlign: 'center',
+        marginTop: 12,
+        lineHeight: 24,
     },
 
     // Info Footer

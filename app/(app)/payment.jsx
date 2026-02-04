@@ -12,9 +12,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  Pressable,
-  TextInput,
   Alert,
   ActivityIndicator,
   Platform,
@@ -28,6 +25,12 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../context/AuthContext';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../components/ui';
 import { useStripe } from '../../utils/stripeWrapper';
 import SyncProgressModal from '../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../src/lib/dataSyncService';
@@ -355,7 +358,7 @@ export default function PaymentScreen() {
 
   useEffect(() => {
     cargarPlanes();
-  }, [user]); // Recargar si cambia el usuario
+  }, [user?._id, user?.tipoUsuario]); // Recargar si cambia el usuario
 
   // Efecto para seleccionar el plan correcto cuando cambia el tipo de usuario
   useEffect(() => {

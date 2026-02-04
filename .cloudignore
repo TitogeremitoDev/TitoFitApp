@@ -1,0 +1,30 @@
+# Dependencias (El culpable nº1 de la RAM)
+node_modules/
+
+# Archivos de sistema y Git
+.git/
+.vscode/
+.idea/
+.DS_Store
+
+# React Native - Carpetas Nativas (Pesan GBs)
+# Si solo tocas JavaScript/React, déjalas aquí.
+# Si tienes que tocar código nativo Java/Swift, comenta estas dos líneas con #
+android/
+ios/
+
+# Archivos temporales de Metro y Expo
+.expo/
+.metro/
+npm-debug.log
+yarn-error.log
+
+# Bloqueos de versiones (Son miles de líneas de texto inútil para la IA)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Carpetas de compilación web/otros
+dist/
+build/
+coverage/

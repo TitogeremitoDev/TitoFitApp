@@ -12,10 +12,10 @@ import {
     RefreshControl,
     Image,
     useWindowDimensions,
-    TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
@@ -84,7 +84,7 @@ export default function CoachSeguimientoScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'daily'
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR DATOS
@@ -329,8 +329,9 @@ export default function CoachSeguimientoScreen() {
             <View style={styles.searchSortBar}>
                 <View style={styles.searchContainer}>
                     <Ionicons name="search" size={18} color="#94a3b8" />
-                    <TextInput
-                        style={styles.searchInput}
+                    <EnhancedTextInput
+                        containerStyle={styles.searchInputContainer}
+                        style={styles.searchInputText}
                         placeholder="Buscar cliente..."
                         placeholderTextColor="#94a3b8"
                         value={searchQuery}
@@ -412,8 +413,10 @@ const styles = StyleSheet.create({
         height: 38,
         gap: 8,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
+    },
+    searchInputText: {
         fontSize: 14,
         color: '#1e293b',
     },

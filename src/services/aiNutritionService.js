@@ -1,8 +1,8 @@
 // src/services/aiNutritionService.js
 import { Platform } from 'react-native';
 
-export const uploadDietPdf = async (fileResult, token) => {
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+export const uploadDietPdf = async (fileResult, token, signal = null) => {
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // Extract file asset from Expo Document Picker result
     const fileAsset = fileResult.assets ? fileResult.assets[0] : fileResult; // Handle both full object or direct asset
@@ -39,13 +39,20 @@ export const uploadDietPdf = async (fileResult, token) => {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/ai/parse-diet`, {
+        const fetchOptions = {
             method: 'POST',
             body: formData,
             headers: {
                 'Authorization': `Bearer ${token}`,
             },
-        });
+        };
+
+        // Añadir signal si se proporciona y no está ya abortado
+        if (signal && !signal.aborted) {
+            fetchOptions.signal = signal;
+        }
+
+        const response = await fetch(`${API_URL}/api/ai/parse-diet`, fetchOptions);
 
         // Safe parsing: Check for JSON content-type or status
         const contentType = response.headers.get('content-type');
@@ -81,7 +88,7 @@ export const uploadDietPdf = async (fileResult, token) => {
  * The backend now handles food creation, deduplication, and schema mapping.
  */
 export const saveImportedDiet = async (plan, token) => {
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     try {
         console.log('[AI Service] Sending plan to backend adapter...');

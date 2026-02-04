@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode } from 'react';
 import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCoachBranding } from './CoachBrandingContext';
+import { isDarkColor, adjustColor, adjustOpacity } from '../utils/colors';
 
 // expo-navigation-bar es opcional - solo funciona en Android native builds
 let NavigationBar: typeof import('expo-navigation-bar') | null = null;
@@ -40,6 +41,7 @@ export type Theme = {
   cardBackground: string;
   cardBorder: string;
   cardHeaderBorder: string;
+  cardHeaderBg: string;
   sectionHeader: string;
   iconButton: string;
   premium: string;
@@ -182,6 +184,7 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
     cardBackground,
     cardBorder: cardBorderAccent, // 🎨 Borde colorido según el tema (antes era border neutral)
     cardHeaderBorder: borderLight,
+    cardHeaderBg: hexToRgba(primary, isDark ? 0.15 : 0.08),
 
     sectionHeader: isDark ? backgroundTertiary : '#f3f4f6',
     iconButton: isDark ? backgroundTertiary : '#f3f4f6',
@@ -203,47 +206,7 @@ const createTheme = (def: SimpleThemeDefinition): Theme => {
   };
 };
 
-/* Helper para ajustar brillo de color hex */
-function adjustColor(color: string, amount: number): string {
-  if (!color.startsWith('#')) return color;
 
-  const hex = color.replace('#', '');
-  const num = parseInt(hex, 16);
-
-  let r = (num >> 16) + amount;
-  let g = ((num >> 8) & 0x00FF) + amount;
-  let b = (num & 0x0000FF) + amount;
-
-  r = Math.max(0, Math.min(255, r));
-  g = Math.max(0, Math.min(255, g));
-  b = Math.max(0, Math.min(255, b));
-
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
-function adjustOpacity(color: string, opacity: number): string {
-  if (color.startsWith('#')) {
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-  }
-  return color;
-}
-
-function isDarkColor(color: string): boolean {
-  if (!color.startsWith('#')) return false;
-
-  const hex = color.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-
-  // Calculate brightness (YIQ formula)
-  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-  return yiq < 128;
-}
 
 // --- CATALOGO DE TEMAS ---
 
@@ -368,6 +331,10 @@ type ThemeContextType = {
   availableThemes: ThemeInfo[];
   fontSelection: FontSelectionType;
   setFontSelection: (font: FontSelectionType) => Promise<void>;
+  // Modo inmersivo Android (oculta barra de navegación del sistema)
+  enableImmersiveMode: () => Promise<void>;
+  disableImmersiveMode: () => Promise<void>;
+  isImmersiveModeEnabled: boolean;
 };
 
 const THEME_STORAGE_KEY = 'app_theme_id';
@@ -383,6 +350,9 @@ const ThemeContext = createContext<ThemeContextType>({
   availableThemes: AVAILABLE_THEMES,
   fontSelection: 'default',
   setFontSelection: async () => { },
+  enableImmersiveMode: async () => { },
+  disableImmersiveMode: async () => { },
+  isImmersiveModeEnabled: false,
 });
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
@@ -398,8 +368,17 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   // Font Selection State
   const [fontSelection, setFontSelectionState] = useState<FontSelectionType>('default');
 
+  // Modo inmersivo Android (oculta barra de navegación del sistema)
+  const [isImmersiveModeEnabled, setIsImmersiveModeEnabled] = useState(false);
+
   // Obtener los colores efectivos del branding
   const brandingColors = activeTheme?.colors || coachBranding?.colors;
+  // Extract primitive values for stable useMemo dependencies
+  const brandPrimary = brandingColors?.primary;
+  const brandBackground = brandingColors?.background;
+  const brandText = brandingColors?.text;
+  const brandSurface = (brandingColors as any)?.surface;
+  const brandSecondary = (brandingColors as any)?.secondary;
 
   // Derivados del tema base
   const shouldUseCoachTheme = hasCoachBranding && coachThemeEnabled && !!brandingColors;
@@ -424,101 +403,45 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   else if (fontSelection === 'monospace') effectiveFontFamily = 'monospace';
   // Si es 'default', usamos la del tema (que puede ser custom font definida en themeDef o System)
 
-  // ═══════════════════════════════════════════════════════════════
-  // CALCULAR textSecondary CON CONTRASTE ADECUADO PARA COACH THEMES
-  // ═══════════════════════════════════════════════════════════════
-  const calculateTextSecondary = (textColor: string, bgColor: string): string => {
-    const bgIsDark = isDarkColor(bgColor);
-
-    if (bgIsDark) {
-      // Fondo oscuro → texto secundario más claro con opacidad
-      return adjustOpacity(textColor, 0.7);
-    } else {
-      // Fondo claro → necesitamos un gris oscuro para contraste
-      // En lugar de reducir opacidad (que haría el texto invisible),
-      // usamos un gris oscuro fijo que garantiza legibilidad
-      return '#4b5563'; // Tailwind gray-600, excelente contraste en fondos claros
-    }
-  };
-
-  // ═══════════════════════════════════════════════════════════════
-  // CALCULAR TEXT COLOR CON CONTRASTE GARANTIZADO
-  // Si el fondo es claro pero el texto definido es también claro,
-  // forzamos un texto oscuro para garantizar legibilidad
-  // ═══════════════════════════════════════════════════════════════
-  const calculateTextColor = (textColor: string, bgColor: string): string => {
-    const bgIsDark = isDarkColor(bgColor);
-    const textIsDark = isDarkColor(textColor || '#000000');
-
-    if (!bgIsDark && !textIsDark) {
-      // ⚠️ Fondo claro + Texto claro = MAL CONTRASTE
-      // Forzar texto oscuro
-      return '#111827'; // Tailwind gray-900
-    }
-
-    if (bgIsDark && textIsDark) {
-      // ⚠️ Fondo oscuro + Texto oscuro = MAL CONTRASTE  
-      // Forzar texto claro
-      return '#f1f5f9'; // Tailwind slate-100
-    }
-
-    // Contraste OK
-    return textColor;
-  };
-  // ═══════════════════════════════════════════════════════════════
-  // 🔍 DEBUG: Log para ver qué colores tiene el coach
-  // ═══════════════════════════════════════════════════════════════
-  if (shouldUseCoachTheme && brandingColors) {
-    console.log('[ThemeContext] 🎨 Coach Theme Colors:', {
-      background: brandingColors.background,
-      text: brandingColors.text,
-      isCoachThemeDark,
-      bgBrightness: brandingColors.background ? (() => {
-        const hex = brandingColors.background.replace('#', '');
-        const r = parseInt(hex.substring(0, 2), 16);
-        const g = parseInt(hex.substring(2, 4), 16);
-        const b = parseInt(hex.substring(4, 6), 16);
-        return ((r * 299) + (g * 587) + (b * 114)) / 1000;
-      })() : 'N/A'
-    });
-  }
-
   // Aplicar branding del coach si está activo
   // ⚠️ SIMPLIFICADO: Para temas claros del coach, forzamos colores oscuros
-  const theme: Theme = (shouldUseCoachTheme && brandingColors)
-    ? {
-      ...baseTheme,
-      primary: brandingColors.primary || baseTheme.primary,
-      primaryText: isDarkColor(brandingColors.primary || baseTheme.primary) ? '#ffffff' : '#111827', // Fix: Ensure contrast logic applies to coach theme
-      background: brandingColors.background || baseTheme.background,
-      backgroundSecondary: isCoachThemeDark
-        ? adjustColor(brandingColors.background || baseTheme.background, 10)
-        : '#ffffff',
-      cardBackground: isCoachThemeDark
-        ? (brandingColors.surface || baseTheme.cardBackground)
-        : '#ffffff',
-      // ⚠️ FORZAR COLORES DE TEXTO SEGUROS
-      text: isCoachThemeDark
-        ? (brandingColors.text || '#f1f5f9')  // Modo oscuro: texto claro
-        : '#111827',                           // Modo claro: SIEMPRE texto oscuro
-      textSecondary: isCoachThemeDark
-        ? 'rgba(255,255,255,0.7)'              // Modo oscuro: blanco con opacidad
-        : '#4b5563',                           // Modo claro: SIEMPRE gris oscuro
-      textTertiary: isCoachThemeDark ? 'rgba(255,255,255,0.5)' : '#6b7280',
-      inputBackground: isCoachThemeDark
-        ? adjustColor(brandingColors.background || baseTheme.background, 15)
-        : '#ffffff',
-      inputBorder: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#d1d5db',
-      placeholder: isCoachThemeDark ? 'rgba(255,255,255,0.4)' : '#9ca3af',
-      border: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb',
-      primaryBorder: adjustOpacity(brandingColors.primary || baseTheme.primary, 0.3),
-      accentBorder: adjustOpacity(brandingColors.secondary || baseTheme.primary, 0.3),
-      fontFamily: effectiveFontFamily, // Override con la lógica de fuentes
+  const theme: Theme = useMemo(() => {
+    if (shouldUseCoachTheme && brandingColors) {
+      return {
+        ...baseTheme,
+        primary: brandPrimary || baseTheme.primary,
+        primaryText: isDarkColor(brandPrimary || baseTheme.primary) ? '#ffffff' : '#111827',
+        background: brandBackground || baseTheme.background,
+        backgroundSecondary: isCoachThemeDark
+          ? adjustColor(brandBackground || baseTheme.background, 10)
+          : '#ffffff',
+        cardBackground: isCoachThemeDark
+          ? (brandSurface || baseTheme.cardBackground)
+          : '#ffffff',
+        text: isCoachThemeDark
+          ? (brandText || '#f1f5f9')
+          : '#111827',
+        textSecondary: isCoachThemeDark
+          ? 'rgba(255,255,255,0.7)'
+          : '#4b5563',
+        textTertiary: isCoachThemeDark ? 'rgba(255,255,255,0.5)' : '#6b7280',
+        inputBackground: isCoachThemeDark
+          ? adjustColor(brandBackground || baseTheme.background, 15)
+          : '#ffffff',
+        inputBorder: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#d1d5db',
+        placeholder: isCoachThemeDark ? 'rgba(255,255,255,0.4)' : '#9ca3af',
+        border: isCoachThemeDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb',
+        primaryBorder: adjustOpacity(brandPrimary || baseTheme.primary, 0.3),
+        accentBorder: adjustOpacity(brandSecondary || baseTheme.primary, 0.3),
+        cardHeaderBg: adjustOpacity(brandPrimary || baseTheme.primary, isCoachThemeDark ? 0.15 : 0.08),
+        fontFamily: effectiveFontFamily,
+      };
     }
-    : {
+    return {
       ...baseTheme,
-      fontFamily: effectiveFontFamily // Override en tema base también
+      fontFamily: effectiveFontFamily,
     };
+  }, [shouldUseCoachTheme, brandPrimary, brandBackground, brandText, brandSurface, brandSecondary, baseTheme, isCoachThemeDark, effectiveFontFamily]);
 
   const themeMode: ThemeMode = effectiveThemeId === 'default_light' ? 'light' : (effectiveThemeId === 'default_dark' ? 'dark' : (isDark ? 'dark' : 'light'));
 
@@ -570,7 +493,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     updateNavigationBar();
   }, [theme.background, isDark]);
 
-  const setThemeId = async (id: ThemeId) => {
+  const setThemeId = useCallback(async (id: ThemeId) => {
     try {
       setCoachThemeEnabled(false);
       await AsyncStorage.setItem('totalgains_coach_theme_enabled', 'false');
@@ -579,39 +502,85 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.warn('Error saving theme:', error);
     }
-  };
+  }, []);
 
-  const enableCoachTheme = async () => {
+  const enableCoachTheme = useCallback(async () => {
     try {
       setCoachThemeEnabled(true);
       await AsyncStorage.setItem('totalgains_coach_theme_enabled', 'true');
     } catch (error) {
       console.warn('Error enabling coach theme:', error);
     }
-  };
+  }, []);
 
-  const setFontSelection = async (font: FontSelectionType) => {
+  const setFontSelection = useCallback(async (font: FontSelectionType) => {
     try {
       setFontSelectionState(font);
       await AsyncStorage.setItem(FONT_SELECTION_KEY, font);
     } catch (error) {
       console.warn('Error saving font selection:', error);
     }
-  };
+  }, []);
+
+  const enableImmersiveMode = useCallback(async () => {
+    if (Platform.OS !== 'android' || !NavigationBar) return;
+    try {
+      await NavigationBar.setVisibilityAsync('hidden');
+      await NavigationBar.setBehaviorAsync('overlay-swipe');
+      setIsImmersiveModeEnabled(true);
+    } catch (error) {
+      console.warn('[ThemeContext] Error enabling immersive mode:', error);
+    }
+  }, []);
+
+  const disableImmersiveMode = useCallback(async () => {
+    if (Platform.OS !== 'android' || !NavigationBar) return;
+    try {
+      await NavigationBar.setVisibilityAsync('visible');
+      setIsImmersiveModeEnabled(false);
+    } catch (error) {
+      console.warn('[ThemeContext] Error disabling immersive mode:', error);
+    }
+  }, []);
+
+  // Activar modo inmersivo automáticamente en Android al iniciar
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      enableImmersiveMode();
+    }
+  }, [enableImmersiveMode]);
+
+  const contextValue = useMemo(() => ({
+    theme,
+    isDark,
+    themeMode,
+    currentThemeId,
+    setThemeId,
+    enableCoachTheme,
+    coachThemeEnabled,
+    availableThemes: AVAILABLE_THEMES,
+    fontSelection,
+    setFontSelection,
+    enableImmersiveMode,
+    disableImmersiveMode,
+    isImmersiveModeEnabled,
+  }), [
+    theme,
+    isDark,
+    themeMode,
+    currentThemeId,
+    setThemeId,
+    enableCoachTheme,
+    coachThemeEnabled,
+    fontSelection,
+    setFontSelection,
+    enableImmersiveMode,
+    disableImmersiveMode,
+    isImmersiveModeEnabled,
+  ]);
 
   return (
-    <ThemeContext.Provider value={{
-      theme,
-      isDark,
-      themeMode,
-      currentThemeId,
-      setThemeId,
-      enableCoachTheme,
-      coachThemeEnabled,
-      availableThemes: AVAILABLE_THEMES,
-      fontSelection,
-      setFontSelection
-    }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

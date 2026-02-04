@@ -5,11 +5,7 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
-    TouchableOpacity,
-    TextInput,
     Modal,
-    Pressable,
     Platform,
     useWindowDimensions,
     Alert,
@@ -28,11 +24,18 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import FeedbackHistoryModal from '../../../components/FeedbackHistoryModal';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedPressable as Pressable,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, useFocusEffect } from 'expo-router';
 import PhotoTaggingModal from '../../../src/components/shared/PhotoTaggingModal';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTES REUTILIZABLES
@@ -646,7 +649,7 @@ export default function SeguimientoScreen() {
     const isPremium = useMemo(() => {
         if (!user) return false;
         return ['PREMIUM', 'CLIENTE', 'ENTRENADOR', 'ADMINISTRADOR'].includes(user.tipoUsuario);
-    }, [user]);
+    }, [user?.tipoUsuario]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // NAVEGACIÓN DE FECHAS
@@ -735,13 +738,14 @@ export default function SeguimientoScreen() {
     }, [token, hasTrainer]);
 
     // 🔄 Refrescar usuario al cargar para obtener currentTrainerId actualizado
+    // Solo al montar - sin dep de token para evitar loop si el backend renueva tokens
     useEffect(() => {
         if (token && refreshUser) {
             refreshUser().catch(err =>
                 console.log('[Seguimiento] Error refreshing user:', err.message)
             );
         }
-    }, [token]);
+    }, []);
 
     useEffect(() => {
         loadUnreadFeedback();
@@ -909,7 +913,7 @@ export default function SeguimientoScreen() {
         };
 
         loadNutritionAndData();
-    }, [user, token, isPremium, selectedDate]);
+    }, [user?._id, user?.tipoUsuario, token, isPremium, selectedDate]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR FECHAS PARA EL CALENDARIO
@@ -1000,7 +1004,7 @@ export default function SeguimientoScreen() {
         if (user) {
             loadCalendarDates();
         }
-    }, [user, token, calendarRefreshTrigger]);
+    }, [user?._id, token, calendarRefreshTrigger]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR DATOS SEMANALES AL EXPANDIR (lazy loading)
@@ -1102,7 +1106,7 @@ export default function SeguimientoScreen() {
         };
 
         loadWeeklyData();
-    }, [semanalExpanded, user, token, semanalExistente]);
+    }, [semanalExpanded, user?.tipoUsuario, token, semanalExistente]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // GUARDAR DATOS MÍNIMOS

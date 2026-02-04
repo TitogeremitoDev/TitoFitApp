@@ -45,7 +45,7 @@ export function MealTrackingProvider({ children }) {
      * @param {string} optionId 
      */
     const toggleMealCompletion = useCallback((dateKey, mealId, optionId) => {
-        if (!dateKey || !mealId) return;
+        if (!dateKey || mealId === undefined || mealId === null) return;
 
         setCompletedMeals(prev => {
             const dayData = prev[dateKey] || {};

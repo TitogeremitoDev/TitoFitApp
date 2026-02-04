@@ -8,13 +8,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
-    TextInput,
     TouchableOpacity,
     StyleSheet,
     Platform,
     useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 
 function normalizeText(text) {
     return text
@@ -142,8 +142,9 @@ export default function SmartFeedbackInput({
     return (
         <View style={[styles.container, style]}>
             {/* Input */}
-            <TextInput
-                style={styles.input}
+            <EnhancedTextInput
+                containerStyle={styles.inputContainer}
+                style={styles.inputText}
                 value={value}
                 onChangeText={handleChangeText}
                 placeholder={placeholder}
@@ -198,16 +199,18 @@ const styles = StyleSheet.create({
     container: {
         // Sin position relative ni zIndex
     },
-    input: {
+    inputContainer: {
         backgroundColor: '#1a1a2e',
         borderRadius: 12,
         padding: 14,
-        color: '#fff',
-        fontSize: 15,
         minHeight: 100,
-        textAlignVertical: 'top',
         borderWidth: 1,
         borderColor: '#333',
+    },
+    inputText: {
+        color: '#fff',
+        fontSize: 15,
+        textAlignVertical: 'top',
     },
     suggestionsContainer: {
         marginTop: 8,

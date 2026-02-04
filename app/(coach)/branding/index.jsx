@@ -16,12 +16,12 @@ import {
     Dimensions,
     Platform,
     Modal,
-    TextInput,
     Image,
     useWindowDimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,7 +30,7 @@ import { coachLogoService } from '../../../src/services/coachLogoService';
 import { useCoachBranding } from '../../../context/CoachBrandingContext';
 import PhonePreview from './PhonePreview';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 export default function BrandingScreen() {
     const router = useRouter();
@@ -501,8 +501,9 @@ export default function BrandingScreen() {
                                 {officialLogoSource === 'url' ? (
                                     <View style={styles.urlInputContainer}>
                                         <Ionicons name="link-outline" size={20} color="#94a3b8" />
-                                        <TextInput
-                                            style={styles.textInput}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.textInputContainer}
+                                            style={styles.textInputText}
                                             value={officialLogoUrl}
                                             onChangeText={setOfficialLogoUrl}
                                             placeholder="https://ejemplo.com/mi-logo.png"
@@ -580,8 +581,9 @@ export default function BrandingScreen() {
                                 {iaImageSource === 'url' ? (
                                     <View style={styles.urlInputContainer}>
                                         <Ionicons name="link-outline" size={20} color="#94a3b8" />
-                                        <TextInput
-                                            style={styles.textInput}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.textInputContainer}
+                                            style={styles.textInputText}
                                             value={iaImageUrl}
                                             onChangeText={setIaImageUrl}
                                             placeholder="https://ejemplo.com/imagen.png"
@@ -1123,12 +1125,13 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         gap: 12,
     },
-    textInput: {
+    textInputContainer: {
         flex: 1,
+        height: '100%',
+    },
+    textInputText: {
         fontSize: 15,
         color: '#1e293b',
-        // outline: 'none',
-        height: '100%',
     },
     uploadBox: {
         borderWidth: 2,

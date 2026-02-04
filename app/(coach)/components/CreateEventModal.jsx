@@ -1,0 +1,612 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Platform, Switch, ActivityIndicator } from 'react-native';
+import { EnhancedTextInput as TextInput } from '../../../components/ui';
+import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker'; // Should be installed
+import DateTimePicker from '@react-native-community/datetimepicker'; // Or custom implementation for web
+import { RRule } from 'rrule';
+import moment from 'moment';
+
+const EVENT_TYPES = [
+    { id: 'rutina', label: 'Rutina', icon: 'barbell' },
+    { id: 'dieta', label: 'Dieta', icon: 'nutrition' },
+    { id: 'llamada', label: 'Llamada de Seguimiento', icon: 'call' },
+    { id: 'presencial', label: 'Sesión Presencial', icon: 'people' },
+    { id: 'seguimiento', label: 'Revisión de Progreso', icon: 'analytics' },
+    { id: 'recordatorio', label: 'Recordatorio', icon: 'alarm' },
+    { id: 'otro', label: 'Otro', icon: 'calendar' },
+];
+
+const RECURRENCE_OPTIONS = [
+    { label: 'No repetir', value: 'none' },
+    { label: 'Diariamente', value: 'daily' },
+    { label: 'Semanalmente', value: 'weekly' },
+    { label: 'Cada 14 días (Bi-semanal)', value: 'biweekly' },
+    { label: 'Días 1 y 15 del mes', value: 'biweekly_1_15' },
+    { label: 'Mensualmente', value: 'monthly' },
+];
+
+const CreateEventModal = ({ visible, onClose, onSave, onDelete, clients = [], initialDate = new Date(), initialClient = null, initialType = 'rutina', initialEvent = null }) => {
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
+    const [type, setType] = useState(initialType);
+    const [selectedClient, setSelectedClient] = useState(initialClient?._id || (clients.length > 0 ? clients[0]._id : ''));
+    const [startDate, setStartDate] = useState(initialDate);
+    const [endDate, setEndDate] = useState(moment(initialDate).add(1, 'hour').toDate());
+    const [isVisibleToAthlete, setIsVisibleToAthlete] = useState(true);
+    const [recurrence, setRecurrence] = useState('none');
+
+    // Edit/Delete flow
+    const [deleteStep, setDeleteStep] = useState('none'); // 'none', 'confirm'
+
+    // RRULE State
+    const [recurrenceEndMode, setRecurrenceEndMode] = useState('never'); // 'never', 'date'
+    const [recurrenceEndDate, setRecurrenceEndDate] = useState(moment().add(3, 'months').toDate());
+
+    const [isSaving, setIsSaving] = useState(false);
+
+    // DateTimePicker visibility (Android/iOS)
+    const [showStartPicker, setShowStartPicker] = useState(false);
+    const [showEndPicker, setShowEndPicker] = useState(false);
+
+    // Track previous visibility to detect "open" transition
+    const prevVisible = React.useRef(false);
+
+    useEffect(() => {
+        // Only run initialization when opening (visible goes from false -> true)
+        // or if props change meaningfully while open (less common for "Create" flow)
+        if (visible && !prevVisible.current) {
+            if (initialEvent) {
+                // Edit Mode
+                setTitle(initialEvent.title || '');
+                setDescription(initialEvent.description || '');
+                setType(initialEvent.type || 'rutina');
+                setStartDate(new Date(initialEvent.startDate));
+                setEndDate(initialEvent.endDate ? new Date(initialEvent.endDate) : moment(initialEvent.startDate).add(1, 'hour').toDate());
+                setIsVisibleToAthlete(initialEvent.visibleToAthlete);
+                setSelectedClient(initialEvent.athleteId?._id || initialEvent.athleteId);
+                setRecurrence(initialEvent.recurrenceRule ? 'custom' : 'none');
+                setDeleteStep('none');
+            } else {
+                // Create Mode
+                setType(initialType);
+                setRecurrence('none');
+                setTitle('');
+                setDescription('');
+                setStartDate(initialDate || new Date());
+                setEndDate(moment(initialDate || new Date()).add(1, 'hour').toDate());
+                setIsVisibleToAthlete(true);
+                // Reset client selection based on prop
+                setSelectedClient(initialClient?._id || (clients.length > 0 ? clients[0]._id : ''));
+                setDeleteStep('none');
+            }
+        }
+        prevVisible.current = visible;
+    }, [visible, initialEvent, initialClient, clients, initialType, initialDate]);
+
+    // Web handling for date/time
+    const handleStartDateChange = (event, date) => {
+        setShowStartPicker(Platform.OS === 'ios');
+        if (date) {
+            setStartDate(date);
+            // Default end to +1 hour
+            setEndDate(moment(date).add(1, 'hour').toDate());
+        }
+    };
+
+    const handleDeleteClick = () => {
+        // If it's a recurring event (series or virtual), we must ask user for clarification
+        // Web alerts are weak, so we use in-modal UI (deleteStep='confirm')
+        if (initialEvent && (initialEvent.recurrenceRule || initialEvent.isVirtual)) {
+            setDeleteStep('confirm'); // Show in-modal UI
+        } else {
+            // Standard simple event delete
+            if (Platform.OS === 'web') {
+                // Simple confirm for non-recurring is fine, or use modal UI for consistency
+                if (confirm('¿Eliminar este evento?')) {
+                    onDelete(false);
+                }
+            } else {
+                Alert.alert('Eliminar', '¿Eliminar este evento?', [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(false) }
+                ]);
+            }
+        }
+    };
+
+    const handleSave = async () => {
+        if (!title.trim()) {
+            alert('Por favor añade un título');
+            return;
+        }
+        if (!selectedClient) {
+            alert('Selecciona un cliente');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            // Construct RRULE
+            let rruleString = null;
+            if (recurrence && recurrence !== 'none') {
+                const ruleOptions = {
+                    freq: RRule.WEEKLY, // Default
+                    dtstart: startDate,
+                };
+
+                if (recurrence === 'daily') ruleOptions.freq = RRule.DAILY;
+                if (recurrence === 'weekly') ruleOptions.freq = RRule.WEEKLY;
+                if (recurrence === 'biweekly') {
+                    ruleOptions.freq = RRule.WEEKLY;
+                    ruleOptions.interval = 2;
+                }
+                if (recurrence === 'monthly') ruleOptions.freq = RRule.MONTHLY;
+                if (recurrence === 'biweekly_1_15') {
+                    ruleOptions.freq = RRule.MONTHLY;
+                    ruleOptions.bymonthday = [1, 15];
+                }
+
+                if (recurrenceEndMode === 'date') {
+                    ruleOptions.until = recurrenceEndDate;
+                } else {
+                    // Default cap for 'never' to avoid infinite loops if backend cap fails, 
+                    // but pure RRULE 'never' just has no UNTIL/COUNT.
+                    // Backend usually caps at 6 mo - 2 yrs generated.
+                    // Let's set a reasonable 'never' cap of 1 year for safety? 
+                    // Or leave it open and let backend expansion handle the view window.
+                    // Backend expansion is window-based, so open is fine.
+                }
+
+                const rule = new RRule(ruleOptions);
+                rruleString = rule.toString();
+            }
+
+            await onSave({
+                title,
+                description,
+                type,
+                athleteId: selectedClient,
+                startDate,
+                endDate,
+                visibleToAthlete: isVisibleToAthlete,
+                recurrence, // Keep for legacy/UI state if needed, or backend can ignore
+                recurrenceRule: rruleString // RFC 5545 string
+            });
+            onClose();
+            // Reset form
+            setTitle('');
+            setDescription('');
+        } catch (error) {
+            console.error(error);
+            alert('Error al guardar evento');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <Modal
+            visible={visible}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={onClose}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    <View style={styles.header}>
+                        <Text style={styles.modalTitle}>{initialEvent ? 'Editar Evento' : 'Nuevo Evento'}</Text>
+                        <TouchableOpacity onPress={onClose}>
+                            <Ionicons name="close" size={24} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {deleteStep === 'confirm' ? (
+                        <View style={{ padding: 30, alignItems: 'center' }}>
+                            <Ionicons name="trash-outline" size={48} color="#ef4444" style={{ marginBottom: 20 }} />
+                            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' }}>
+                                ¿Qué deseas eliminar?
+                            </Text>
+                            <Text style={{ textAlign: 'center', color: '#64748b', marginBottom: 30 }}>
+                                Este es un evento recurrente. Puedes eliminar solo esta ocurrencia o toda la serie.
+                            </Text>
+
+                            <TouchableOpacity
+                                style={[styles.saveButton, { backgroundColor: '#ef4444', marginBottom: 10, width: '100%' }]}
+                                onPress={() => onDelete(false)} // Delete Instance
+                            >
+                                <Text style={styles.saveButtonText}>Solo este evento</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.saveButton, { backgroundColor: '#0f172a', marginBottom: 10, width: '100%' }]}
+                                onPress={() => onDelete(true)} // Delete Series
+                            >
+                                <Text style={styles.saveButtonText}>Toda la serie</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.cancelButton, { width: '100%' }]}
+                                onPress={() => setDeleteStep('none')}
+                            >
+                                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <>
+                            <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: 20 }}>
+                                {/* Title */}
+                                <Text style={styles.label}>Título del Evento</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Ej: Revisión Mensual, Nueva Rutina..."
+                                    value={title}
+                                    onChangeText={setTitle}
+                                />
+
+                                {/* Client Selector */}
+                                <Text style={styles.label}>Cliente</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={selectedClient}
+                                        onValueChange={(itemValue) => setSelectedClient(itemValue)}
+                                        style={styles.picker}
+                                    >
+                                        {clients.map(client => (
+                                            <Picker.Item key={client._id} label={client.nombre || client.email} value={client._id} />
+                                        ))}
+                                    </Picker>
+                                </View>
+
+                                {/* Type Selector - Chips */}
+                                <Text style={styles.label}>Tipo de Evento</Text>
+                                <View style={styles.typeContainer}>
+                                    {EVENT_TYPES.map(t => (
+                                        <TouchableOpacity
+                                            key={t.id}
+                                            style={[
+                                                styles.typeChip,
+                                                type === t.id && styles.typeChipActive
+                                            ]}
+                                            onPress={() => setType(t.id)}
+                                        >
+                                            <Ionicons
+                                                name={t.icon}
+                                                size={16}
+                                                color={type === t.id ? '#fff' : '#64748b'}
+                                            />
+                                            <Text style={[
+                                                styles.typeText,
+                                                type === t.id && styles.typeTextActive
+                                            ]}>{t.label}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                {/* Date & Time */}
+                                <Text style={styles.label}>Fecha y Hora</Text>
+                                {Platform.OS === 'web' ? (
+                                    <View style={styles.webDateContainer}>
+                                        {React.createElement('input', {
+                                            type: 'datetime-local',
+                                            value: moment(startDate).format('YYYY-MM-DDTHH:mm'),
+                                            onChange: (e) => setStartDate(new Date(e.target.value)),
+                                            style: {
+                                                padding: 12,
+                                                borderRadius: 8,
+                                                border: '1px solid #e2e8f0',
+                                                fontSize: 14,
+                                                color: '#1e293b',
+                                                width: '100%',
+                                                backgroundColor: '#f8fafc',
+                                                outline: 'none',
+                                                fontFamily: 'inherit',
+                                                boxSizing: 'border-box'
+                                            }
+                                        })}
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity
+                                        style={styles.dateButton}
+                                        onPress={() => setShowStartPicker(true)}
+                                    >
+                                        <Ionicons name="calendar-outline" size={20} color="#64748b" />
+                                        <Text style={styles.dateText}>
+                                            {moment(startDate).format('LLL')}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                {Platform.OS !== 'web' && showStartPicker && (
+                                    <DateTimePicker
+                                        value={startDate}
+                                        mode="datetime"
+                                        is24Hour={true}
+                                        display="default"
+                                        onChange={handleStartDateChange}
+                                    />
+                                )}
+
+                                {/* Recurrence */}
+                                <Text style={styles.label}>Repetir</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={recurrence}
+                                        onValueChange={(itemValue) => setRecurrence(itemValue)}
+                                        style={styles.picker}
+                                    >
+                                        {RECURRENCE_OPTIONS.map(opt => (
+                                            <Picker.Item key={opt.value} label={opt.label} value={opt.value} />
+                                        ))}
+                                    </Picker>
+                                </View>
+
+                                {/* Recurrence End Date (Conditional) */}
+                                {recurrence !== 'none' && (
+                                    <View style={{ marginTop: 15, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: '#2563EB' }}>
+                                        <Text style={styles.label}>Termina</Text>
+                                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                                            <TouchableOpacity
+                                                onPress={() => setRecurrenceEndMode('never')}
+                                                style={[styles.typeChip, recurrenceEndMode === 'never' && styles.typeChipActive]}
+                                            >
+                                                <Text style={[styles.typeText, recurrenceEndMode === 'never' && styles.typeTextActive]}>Nunca</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                onPress={() => setRecurrenceEndMode('date')}
+                                                style={[styles.typeChip, recurrenceEndMode === 'date' && styles.typeChipActive]}
+                                            >
+                                                <Text style={[styles.typeText, recurrenceEndMode === 'date' && styles.typeTextActive]}>En fecha</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        {recurrenceEndMode === 'date' && (
+                                            Platform.OS === 'web' ? (
+                                                <View style={styles.webDateContainer}>
+                                                    {React.createElement('input', {
+                                                        type: 'date',
+                                                        value: moment(recurrenceEndDate).format('YYYY-MM-DD'),
+                                                        onChange: (e) => setRecurrenceEndDate(new Date(e.target.value)),
+                                                        style: { padding: 10, borderRadius: 8, border: '1px solid #ddd' }
+                                                    })}
+                                                </View>
+                                            ) : (
+                                                <TouchableOpacity onPress={() => setShowEndPicker(true)} style={styles.dateButton}>
+                                                    <Ionicons name="calendar" size={18} color="#64748b" />
+                                                    <Text>{moment(recurrenceEndDate).format('LL')}</Text>
+                                                </TouchableOpacity>
+                                            )
+                                        )}
+
+                                        {Platform.OS !== 'web' && showEndPicker && (
+                                            <DateTimePicker
+                                                value={recurrenceEndDate}
+                                                mode="date"
+                                                display="default"
+                                                onChange={(event, date) => {
+                                                    setShowEndPicker(false);
+                                                    if (date) setRecurrenceEndDate(date);
+                                                }}
+                                            />
+                                        )}
+                                    </View>
+                                )}
+
+                                {/* Description */}
+                                <Text style={styles.label}>Descripción (Opcional)</Text>
+                                <TextInput
+                                    style={[styles.input, styles.textArea]}
+                                    placeholder="Detalles adicionales..."
+                                    value={description}
+                                    onChangeText={setDescription}
+                                    multiline
+                                    numberOfLines={3}
+                                />
+
+                                {/* Visibility Switch */}
+                                <View style={styles.switchRow}>
+                                    <Text style={styles.label}>Visible para el Atleta</Text>
+                                    <Switch
+                                        value={isVisibleToAthlete}
+                                        onValueChange={setIsVisibleToAthlete}
+                                        trackColor={{ false: "#767577", true: "#bfdbfe" }}
+                                        thumbColor={isVisibleToAthlete ? "#2563EB" : "#f4f3f4"}
+                                    />
+                                </View>
+
+                                <Text style={styles.hint}>
+                                    Si está activo, el cliente verá este evento en su agenda.
+                                </Text>
+                            </ScrollView>
+
+                            <View style={styles.footer}>
+                                {initialEvent && (
+                                    <TouchableOpacity style={[styles.cancelButton, { borderColor: '#ef4444', marginRight: 10 }]} onPress={handleDeleteClick}>
+                                        <Text style={{ color: '#ef4444', fontWeight: '600' }}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                )}
+                                <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+                                    <Text style={styles.cancelButtonText}>Cancelar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.saveButton, isSaving && styles.disabledButton]}
+                                    onPress={handleSave}
+                                    disabled={isSaving}
+                                >
+                                    {isSaving ? (
+                                        <ActivityIndicator color="#fff" size="small" />
+                                    ) : (
+                                        <Text style={styles.saveButtonText}>{initialEvent ? 'Actualizar' : 'Guardar'}</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </>
+                    )}
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
+const styles = StyleSheet.create({
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContent: {
+        width: '100%',
+        maxWidth: 500,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        maxHeight: '90%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9'
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b'
+    },
+    form: {
+        padding: 20
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: 8,
+        marginTop: 12
+    },
+    input: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 14,
+        color: '#1e293b',
+        backgroundColor: '#f8fafc',
+        width: '100%'
+    },
+    textArea: {
+        height: 80,
+        textAlignVertical: 'top'
+    },
+    pickerContainer: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        backgroundColor: '#f8fafc',
+        overflow: 'hidden',
+        width: '100%'
+    },
+    picker: {
+        height: 50,
+        width: '100%'
+    },
+    typeContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8
+    },
+    typeChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        backgroundColor: '#fff',
+        gap: 6
+    },
+    typeChipActive: {
+        backgroundColor: '#2563EB',
+        borderColor: '#2563EB'
+    },
+    typeText: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500'
+    },
+    typeTextActive: {
+        color: '#fff'
+    },
+    dateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        backgroundColor: '#f8fafc',
+        gap: 8
+    },
+    dateText: {
+        fontSize: 14,
+        color: '#1e293b'
+    },
+    switchRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 16
+    },
+    hint: {
+        fontSize: 12,
+        color: '#94a3b8',
+        marginTop: 4,
+        fontStyle: 'italic'
+    },
+    footer: {
+        flexDirection: 'row',
+        padding: 20,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        gap: 12
+    },
+    cancelButton: {
+        flex: 1,
+        padding: 14,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    cancelButtonText: {
+        color: '#64748b',
+        fontWeight: '600'
+    },
+    saveButton: {
+        flex: 2,
+        padding: 14,
+        borderRadius: 8,
+        backgroundColor: '#2563EB',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    disabledButton: {
+        opacity: 0.7
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 16
+    }
+});
+
+export default CreateEventModal;

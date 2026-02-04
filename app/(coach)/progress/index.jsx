@@ -17,8 +17,8 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
-    TextInput,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -38,7 +38,7 @@ export default function ProgressDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'sessions'
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CARGAR CLIENTES Y SU PROGRESO
@@ -380,8 +380,9 @@ export default function ProgressDashboard() {
             <View style={styles.searchSortBar}>
                 <View style={styles.searchContainer}>
                     <Ionicons name="search" size={18} color="#94a3b8" />
-                    <TextInput
+                    <EnhancedTextInput
                         style={styles.searchInput}
+                        containerStyle={{ flex: 1 }}
                         placeholder="Buscar cliente..."
                         placeholderTextColor="#94a3b8"
                         value={searchQuery}
@@ -460,7 +461,6 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     searchInput: {
-        flex: 1,
         fontSize: 14,
         color: '#1e293b',
     },

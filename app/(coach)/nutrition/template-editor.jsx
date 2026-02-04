@@ -8,11 +8,11 @@ import {
     SafeAreaView,
     ScrollView,
     TouchableOpacity,
-    TextInput,
     Alert,
     ActivityIndicator,
     Platform,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -44,8 +44,9 @@ const MacroInput = ({ label, value, onChange, placeholder, suffix, color = '#647
     <View style={styles.macroInputContainer}>
         <Text style={styles.macroInputLabel}>{label}</Text>
         <View style={styles.macroInputRow}>
-            <TextInput
-                style={[styles.macroInput, { borderColor: color + '40' }]}
+            <EnhancedTextInput
+                containerStyle={[styles.macroInputContainer, { borderColor: color + '40' }]}
+                style={styles.macroInputText}
                 value={value != null ? String(value) : ''}
                 onChangeText={onChange}
                 placeholder={placeholder}
@@ -114,8 +115,9 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
             </View>
 
             <View style={styles.dayTargetHeader}>
-                <TextInput
-                    style={[styles.dayTargetName, { borderLeftColor: dayColor }]}
+                <EnhancedTextInput
+                    containerStyle={[styles.dayTargetNameContainer, { borderLeftColor: dayColor }]}
+                    style={styles.dayTargetNameText}
                     value={dayTarget.name}
                     onChangeText={(v) => onUpdate(index, 'name', v)}
                     placeholder={`Tipo de día ${index + 1}`}
@@ -290,8 +292,9 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
             </View>
 
             {/* Notas */}
-            <TextInput
-                style={styles.notesInput}
+            <EnhancedTextInput
+                containerStyle={styles.notesInputContainer}
+                style={styles.notesInputText}
                 value={dayTarget.notes || ''}
                 onChangeText={(v) => onUpdate(index, 'notes', v)}
                 placeholder="Instrucciones del día (opcional)"
@@ -381,7 +384,7 @@ export default function TemplateEditorScreen() {
         friday: null, saturday: null, sunday: null
     });
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
     const isEditing = !!templateId;
 
     useEffect(() => {
@@ -620,15 +623,17 @@ export default function TemplateEditorScreen() {
                 {/* Nombre y descripción */}
                 <View style={styles.templateInfoSection}>
                     <Text style={styles.sectionTitle}>📝 Información</Text>
-                    <TextInput
-                        style={styles.templateNameInput}
+                    <EnhancedTextInput
+                        containerStyle={styles.templateNameInputContainer}
+                        style={styles.templateNameInputText}
                         value={templateName}
                         onChangeText={setTemplateName}
                         placeholder="Nombre del plan (ej: Dieta volumen 3000kcal)"
                         placeholderTextColor="#94a3b8"
                     />
-                    <TextInput
-                        style={styles.templateDescInput}
+                    <EnhancedTextInput
+                        containerStyle={styles.templateDescInputContainer}
+                        style={styles.templateDescInputText}
                         value={templateDescription}
                         onChangeText={setTemplateDescription}
                         placeholder="Descripción opcional..."
@@ -665,8 +670,9 @@ export default function TemplateEditorScreen() {
                                     <Text style={styles.folderOptionText}>{f}</Text>
                                 </TouchableOpacity>
                             ))}
-                            <TextInput
-                                style={styles.newFolderInput}
+                            <EnhancedTextInput
+                                containerStyle={styles.newFolderInputContainer}
+                                style={styles.newFolderInputText}
                                 placeholder="Nueva carpeta..."
                                 placeholderTextColor="#94a3b8"
                                 onSubmitEditing={(e) => {
@@ -795,6 +801,19 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0',
         marginBottom: 10,
     },
+    templateNameInputContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginBottom: 10,
+    },
+    templateNameInputText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
     templateDescInput: {
         backgroundColor: '#fff',
         borderRadius: 12,
@@ -806,6 +825,20 @@ const styles = StyleSheet.create({
         minHeight: 60,
         textAlignVertical: 'top',
         marginBottom: 10,
+    },
+    templateDescInputContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        minHeight: 60,
+        marginBottom: 10,
+    },
+    templateDescInputText: {
+        fontSize: 14,
+        color: '#1e293b',
+        textAlignVertical: 'top',
     },
     folderPickerBtn: {
         flexDirection: 'row',
@@ -848,6 +881,14 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#1e293b',
         backgroundColor: '#f8fafc',
+    },
+    newFolderInputContainer: {
+        padding: 12,
+        backgroundColor: '#f8fafc',
+    },
+    newFolderInputText: {
+        fontSize: 14,
+        color: '#1e293b',
     },
 
     // Sections
@@ -928,6 +969,18 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8fafc',
         borderRadius: 8,
         marginRight: 8,
+    },
+    dayTargetNameContainer: {
+        flex: 1,
+        padding: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        marginRight: 8,
+    },
+    dayTargetNameText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
     },
     deleteBtn: {
         padding: 8,
@@ -1053,6 +1106,20 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         textAlign: 'center',
     },
+    macroInputContainer: {
+        width: '100%',
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        borderWidth: 1.5,
+    },
+    macroInputText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#1e293b',
+        textAlign: 'center',
+    },
     macroInputSuffix: {
         fontSize: 10,
         fontWeight: '600',
@@ -1068,6 +1135,17 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#1e293b',
         minHeight: 50,
+        textAlignVertical: 'top',
+    },
+    notesInputContainer: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        padding: 10,
+        minHeight: 50,
+    },
+    notesInputText: {
+        fontSize: 13,
+        color: '#1e293b',
         textAlignVertical: 'top',
     },
 

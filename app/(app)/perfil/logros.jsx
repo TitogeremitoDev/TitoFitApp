@@ -15,6 +15,7 @@ import {
     ScrollView,
     Pressable,
     Dimensions,
+    Platform,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -189,28 +190,25 @@ export default function Logros() {
 
     return (
         <View style={[styles.container, { backgroundColor: theme.background }]}>
-            <Stack.Screen
-                options={{
-                    title: 'Logros',
-                    headerTitleStyle: { color: theme.text, fontWeight: '800' },
-                    headerStyle: { backgroundColor: theme.background },
-                    headerTintColor: theme.text,
-                    headerLeft: () => (
-                        <Pressable
-                            onPress={() => router.back()}
-                            style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
-                        >
-                            <Ionicons name="arrow-back" size={24} color={theme.text} />
-                        </Pressable>
-                    ),
-                }}
-            />
+            <Stack.Screen options={{ headerShown: false }} />
+
+            {/* CUSTOM HEADER */}
+            <View style={[styles.customHeader, { paddingTop: Platform.OS === 'android' ? 10 : 0 }]}>
+                <Pressable
+                    onPress={() => router.back()}
+                    style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
+                >
+                    <Ionicons name="arrow-back" size={24} color={theme.text} />
+                </Pressable>
+                <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase', marginLeft: 4 }}>LOGROS</Text>
+            </View>
 
             <ScrollView
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
+
                 {/* CABECERA CON PROGRESO GLOBAL */}
                 <View style={[styles.header, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                     <View style={styles.headerTop}>
@@ -318,11 +316,17 @@ export default function Logros() {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     scrollView: { flex: 1 },
-    scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
+    scrollContent: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 32 },
     headerButton: { padding: 10 },
     headerButtonPressed: { opacity: 0.6 },
 
     // Cabecera
+    customHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingBottom: 16,
+    },
     header: { borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
     headerTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
     trophyContainer: {

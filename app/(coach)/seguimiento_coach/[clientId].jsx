@@ -222,7 +222,7 @@ export default function ClientSeguimientoDetailScreen() {
     // Responsive: show sidebar only on wide screens (>1024px)
     const isWideScreen = windowWidth >= 1024;
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR DATOS Y MARCAR COMO VISTO

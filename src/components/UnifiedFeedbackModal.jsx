@@ -9,7 +9,6 @@ import {
     View,
     Text,
     Modal,
-    TextInput,
     TouchableOpacity,
     Pressable,
     StyleSheet,
@@ -19,6 +18,7 @@ import {
     Animated,
     Alert,
 } from 'react-native';
+import { EnhancedTextInput } from '../../components/ui';
 
 // Importar react-native-share y FileSystem solo en native (no web)
 let RNShare, FileSystem;
@@ -594,12 +594,14 @@ export default function UnifiedFeedbackModal({
 
             {/* ─────────── NOTA DE TEXTO + VOZ ─────────── */}
             <View style={styles.inputRow}>
-                <TextInput
-                    style={[styles.input, {
+                <EnhancedTextInput
+                    containerStyle={[styles.inputContainer, {
                         backgroundColor: theme?.inputBackground || '#1a1a2e',
                         borderColor: theme?.inputBorder || '#333',
-                        color: theme?.inputText || '#fff',
                         flex: 1,
+                    }]}
+                    style={[styles.inputText, {
+                        color: theme?.inputText || '#fff',
                     }]}
                     placeholder="Añade un comentario..."
                     placeholderTextColor={theme?.placeholder || '#666'}
@@ -862,11 +864,13 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         gap: 8,
     },
-    input: {
+    inputContainer: {
         borderWidth: 1,
         borderRadius: 10,
         padding: 12,
         minHeight: 60,
+    },
+    inputText: {
         textAlignVertical: 'top',
         fontSize: 14,
     },

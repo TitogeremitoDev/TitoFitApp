@@ -21,8 +21,8 @@ import {
     UIManager,
     Modal,
     FlatList,
-    TextInput,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
@@ -184,7 +184,7 @@ export default function ClientDetailScreen() {
     const [feedbackType, setFeedbackType] = useState('general');
     const [sendingFeedback, setSendingFeedback] = useState(false);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // Enviar feedback al cliente
     const handleSendFeedback = async () => {
@@ -882,8 +882,9 @@ export default function ClientDetailScreen() {
                         </View>
 
                         {/* Message Input */}
-                        <TextInput
-                            style={styles.feedbackInput}
+                        <EnhancedTextInput
+                            style={styles.feedbackInputText}
+                            containerStyle={styles.feedbackInputContainer}
                             placeholder="Escribe tu mensaje para el cliente..."
                             placeholderTextColor="#94a3b8"
                             value={feedbackMessage}
@@ -1584,16 +1585,18 @@ const styles = StyleSheet.create({
     feedbackTypeLabelActive: {
         color: '#fff',
     },
-    feedbackInput: {
+    feedbackInputContainer: {
         backgroundColor: '#f8fafc',
         borderRadius: 12,
         padding: 16,
-        fontSize: 15,
-        color: '#1e293b',
         minHeight: 120,
         borderWidth: 1,
         borderColor: '#e2e8f0',
         marginBottom: 16,
+    },
+    feedbackInputText: {
+        fontSize: 15,
+        color: '#1e293b',
     },
     sendFeedbackBtn: {
         flexDirection: 'row',

@@ -13,9 +13,9 @@ import LOCAL_FOODS from '../constants/localFoods.json';
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const USE_BACKEND = true; // ✅ Connected to Local
-const USE_OPENFOODFACTS = true;
+const USE_OPENFOODFACTS = true; // ✅ ENABLED for Async Loading
 // const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app').replace(/\/+$/, '') + '/api';
 
 // ─────────────────────────────────────────────────────────
 // TYPES
@@ -63,9 +63,13 @@ export const LAYER_ICONS = {
 // ─────────────────────────────────────────────────────────
 export const searchFoods = async (
     query: string,
-    options: { layer?: 'LOCAL' | 'CLOUD' | 'API' | 'ALL'; tag?: string } = {}
+    options: {
+        layer?: 'LOCAL' | 'CLOUD' | 'API' | 'ALL' | 'RECIPE' | 'RAW';
+        tag?: string;
+        skipExternal?: boolean; // New Flag for async loading
+    } = {}
 ): Promise<FoodItem[]> => {
-    const { layer = 'ALL', tag } = options;
+    const { layer = 'ALL', tag, skipExternal = false } = options;
     const normalizedQuery = query.toLowerCase().trim();
 
     let results: FoodItem[] = [];
@@ -94,11 +98,12 @@ export const searchFoods = async (
     // ───────────────────────────────────────────────────────
     // 2. CLOUD LAYER (Backend MongoDB)
     // ───────────────────────────────────────────────────────
-    if ((layer === 'ALL' || layer === 'CLOUD') && USE_BACKEND) {
+    if ((layer === 'ALL' || layer === 'CLOUD' || layer === 'RECIPE') && USE_BACKEND) {
         try {
             const params = new URLSearchParams();
             if (normalizedQuery) params.append('q', normalizedQuery);
             if (tag) params.append('tag', tag);
+            if (layer !== 'ALL') params.append('layer', layer); // Pass layer to backend
 
             // Get auth token
             const AsyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -122,12 +127,13 @@ export const searchFoods = async (
 
     // ───────────────────────────────────────────────────────
     // 3. API LAYER (OpenFoodFacts - Fallback)
+    // Only if NOT skipped
     // ───────────────────────────────────────────────────────
-    if ((layer === 'ALL' || layer === 'API') && USE_OPENFOODFACTS && normalizedQuery) {
+    if (!skipExternal && (layer === 'ALL' || layer === 'API') && USE_OPENFOODFACTS && normalizedQuery) {
         // Only fetch if we have less than 10 local/cloud results
         if (results.length < 10) {
             try {
-                const apiResults = await searchOpenFoodFacts(normalizedQuery);
+                const apiResults = await searchExternalFoods(normalizedQuery);
                 results.push(...apiResults);
             } catch (error) {
                 console.error('[API] OpenFoodFacts failed:', error);
@@ -142,6 +148,20 @@ export const searchFoods = async (
     results = sortByPriority(results);
 
     return results;
+};
+
+// ─────────────────────────────────────────────────────────
+// EXPORTED EXTERNAL SEARCH (For Lazy Loading)
+// ─────────────────────────────────────────────────────────
+export const searchExternalFoods = async (query: string): Promise<FoodItem[]> => {
+    if (!USE_OPENFOODFACTS) return [];
+
+    try {
+        return await searchOpenFoodFacts(query);
+    } catch (e) {
+        console.error("External search failed", e);
+        return [];
+    }
 };
 
 // ─────────────────────────────────────────────────────────

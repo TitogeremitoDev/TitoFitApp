@@ -1,6 +1,6 @@
 /* app/(coach)/nutrition/templates.jsx - Gestión de Planes Nutricionales */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,13 +8,13 @@ import {
     SafeAreaView,
     FlatList,
     TouchableOpacity,
-    TextInput,
     Alert,
     ActivityIndicator,
     Modal,
     SectionList,
     Platform,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -47,7 +47,13 @@ export default function NutritionTemplatesScreen() {
     const [showStagingModal, setShowStagingModal] = useState(false);
     const [parsedPlan, setParsedPlan] = useState(null);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    // AI Progress State
+    const [aiProgressMessage, setAiProgressMessage] = useState('');
+    const [aiShowRetry, setAiShowRetry] = useState(false);
+    const [lastPickedFile, setLastPickedFile] = useState(null);
+    const aiAbortControllerRef = useRef(null);
+
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     useFocusEffect(
         useCallback(() => {
@@ -175,49 +181,123 @@ export default function NutritionTemplatesScreen() {
         setShowFolderModal(false);
     };
 
-    const handleImportPdf = async () => {
+    // Mensajes progresivos para la importación de IA (hasta 120s)
+    const AI_PROGRESS_MESSAGES = [
+        { time: 0, message: 'Subiendo archivo...' },
+        { time: 3000, message: 'Extrayendo texto del documento...' },
+        { time: 8000, message: 'Analizando estructura del plan...' },
+        { time: 15000, message: 'Identificando comidas y alimentos...' },
+        { time: 25000, message: 'Calculando valores nutricionales...' },
+        { time: 40000, message: 'Procesando con IA (esto puede tardar)...' },
+        { time: 60000, message: 'Tardando más de lo esperado...' },
+        { time: 80000, message: 'Casi listo, un momento más...' },
+        { time: 100000, message: 'Finalizando proceso...' },
+    ];
+
+    const handleImportPdf = async (retryFile = null) => {
         try {
-            console.log('Pick document...');
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-                copyToCacheDirectory: true
+            let result = retryFile;
+
+            if (!retryFile) {
+                console.log('Pick document...');
+                result = await DocumentPicker.getDocumentAsync({
+                    type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                    copyToCacheDirectory: true
+                });
+
+                if (result.canceled) return;
+            }
+
+            // Guardar archivo para posible retry
+            setLastPickedFile(result);
+            setAiShowRetry(false);
+
+            // Cancelar petición anterior si existe
+            if (aiAbortControllerRef.current) {
+                aiAbortControllerRef.current.abort();
+            }
+
+            // Crear nuevo AbortController
+            const abortController = new AbortController();
+            aiAbortControllerRef.current = abortController;
+
+            setIsUploading(true);
+            setAiProgressMessage(AI_PROGRESS_MESSAGES[0].message);
+
+            // Configurar mensajes progresivos
+            const progressTimeouts = [];
+            AI_PROGRESS_MESSAGES.slice(1).forEach(({ time, message }) => {
+                const timeout = setTimeout(() => {
+                    if (!abortController.signal.aborted) {
+                        setAiProgressMessage(message);
+                    }
+                }, time);
+                progressTimeouts.push(timeout);
             });
 
-            if (result.canceled) return;
-
-            const file = result.assets[0];
-            setIsUploading(true);
+            // Timeout de 120 segundos (el proceso de IA es muy largo)
+            const timeoutId = setTimeout(() => {
+                abortController.abort();
+            }, 120000);
 
             // Upload and Parse - We pass the full result object now
-            const response = await uploadDietPdf(result, token);
+            const response = await uploadDietPdf(result, token, abortController.signal);
+
+            // Limpiar timeouts
+            clearTimeout(timeoutId);
+            progressTimeouts.forEach(t => clearTimeout(t));
 
             if (response.success) {
                 setParsedPlan(response.plan);
                 setShowStagingModal(true);
+                setLastPickedFile(null);
             } else {
+                setAiShowRetry(true);
                 Alert.alert('Error', response.message || 'No se pudo importar el plan.');
             }
 
         } catch (error) {
             console.error('Import Error:', error);
-            Alert.alert('Error', 'Falló la importación del archivo.');
+
+            if (error.name === 'AbortError') {
+                setAiShowRetry(true);
+                Alert.alert(
+                    'Timeout',
+                    'La solicitud ha tardado demasiado. ¿Quieres intentarlo de nuevo?',
+                    [
+                        { text: 'Cancelar', style: 'cancel', onPress: () => setAiShowRetry(false) },
+                        { text: 'Reintentar', onPress: () => handleImportPdf(lastPickedFile) }
+                    ]
+                );
+            } else {
+                setAiShowRetry(true);
+                Alert.alert('Error', 'Falló la importación del archivo.');
+            }
         } finally {
             setIsUploading(false);
+            setAiProgressMessage('');
+            aiAbortControllerRef.current = null;
         }
     };
 
-    const handleConfirmImport = async () => {
-        // Real Save Logic
-        try {
-            setIsSaving(true); // Pass this to modal if needed, or manage modal prop
-            // Note: Since dietStagingModal has its own isSaving prop, 
-            // we should probably just set a state here that is passed down to it.
-            // Oh wait, I am in templates.jsx scope. I need a state here usually.
-            // But let's check current state definitions. 
-            // Ah, I don't have isSaving state defined in templates.jsx yet, only isUploading.
+    const handleCancelImport = () => {
+        if (aiAbortControllerRef.current) {
+            aiAbortControllerRef.current.abort();
+        }
+        setIsUploading(false);
+        setAiProgressMessage('');
+        setAiShowRetry(false);
+    };
 
-            // Calling the new service
-            const response = await saveImportedDiet(parsedPlan, token);
+    const handleConfirmImport = async (finalPlan) => {
+        // Use the edited plan from the staging modal (includes auto-fetched images)
+        const planToSave = finalPlan || parsedPlan;
+
+        try {
+            setIsSaving(true);
+
+            // Calling the new service with the edited plan
+            const response = await saveImportedDiet(planToSave, token);
 
             if (response.success) {
                 Alert.alert('Éxito', 'Plan guardado correctamente.');
@@ -346,15 +426,39 @@ export default function NutritionTemplatesScreen() {
 
                 <TouchableOpacity
                     style={[styles.createFolderBtn, { flex: 1, marginHorizontal: 0, backgroundColor: '#22c55e15', borderColor: '#22c55e30' }]}
-                    onPress={handleImportPdf}
+                    onPress={() => handleImportPdf()}
                     disabled={isUploading}
                 >
                     {isUploading ? <ActivityIndicator size="small" color="#22c55e" /> : <Ionicons name="cloud-upload-outline" size={18} color="#22c55e" />}
                     <Text style={[styles.createFolderBtnText, { color: '#22c55e' }]}>
-                        {isUploading ? 'Analizando...' : 'Importar PDF'}
+                        {isUploading ? 'Procesando...' : 'Importar PDF'}
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            {/* AI Progress Banner */}
+            {isUploading && aiProgressMessage && (
+                <View style={styles.aiProgressBanner}>
+                    <View style={styles.aiProgressContent}>
+                        <ActivityIndicator size="small" color="#22c55e" style={{ marginRight: 10 }} />
+                        <Text style={styles.aiProgressText}>{aiProgressMessage}</Text>
+                    </View>
+                    <TouchableOpacity onPress={handleCancelImport} style={styles.aiCancelBtn}>
+                        <Text style={styles.aiCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Retry Banner */}
+            {!isUploading && aiShowRetry && lastPickedFile && (
+                <View style={styles.aiRetryBanner}>
+                    <Text style={styles.aiRetryText}>La importación falló</Text>
+                    <TouchableOpacity onPress={() => handleImportPdf(lastPickedFile)} style={styles.aiRetryBtn}>
+                        <Ionicons name="refresh" size={14} color="#22c55e" />
+                        <Text style={styles.aiRetryBtnText}>Reintentar</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {templates.length === 0 ? (
                 renderEmpty()
@@ -389,8 +493,9 @@ export default function NutritionTemplatesScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Nueva Carpeta</Text>
-                        <TextInput
-                            style={styles.modalInput}
+                        <EnhancedTextInput
+                            containerStyle={styles.modalInputContainer}
+                            style={styles.modalInputText}
                             value={newFolderName}
                             onChangeText={setNewFolderName}
                             placeholder="Nombre de la carpeta"
@@ -617,6 +722,18 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0',
         marginBottom: 16,
     },
+    modalInputContainer: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginBottom: 16,
+    },
+    modalInputText: {
+        fontSize: 15,
+        color: '#1e293b',
+    },
     modalButtons: {
         flexDirection: 'row',
         gap: 12,
@@ -644,5 +761,74 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#fff',
+    },
+
+    // AI Progress Styles
+    aiProgressBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#f0fdf4',
+        marginHorizontal: 16,
+        marginTop: 12,
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#bbf7d0',
+    },
+    aiProgressContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    aiProgressText: {
+        fontSize: 13,
+        color: '#166534',
+        fontWeight: '500',
+        flex: 1,
+    },
+    aiCancelBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 8,
+        backgroundColor: '#dcfce7',
+    },
+    aiCancelText: {
+        fontSize: 12,
+        color: '#15803d',
+        fontWeight: '600',
+    },
+    aiRetryBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#fef2f2',
+        marginHorizontal: 16,
+        marginTop: 12,
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#fecaca',
+    },
+    aiRetryText: {
+        fontSize: 13,
+        color: '#dc2626',
+        fontWeight: '500',
+    },
+    aiRetryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 8,
+        backgroundColor: '#f0fdf4',
+        borderWidth: 1,
+        borderColor: '#bbf7d0',
+    },
+    aiRetryBtnText: {
+        fontSize: 12,
+        color: '#22c55e',
+        fontWeight: '600',
     },
 });

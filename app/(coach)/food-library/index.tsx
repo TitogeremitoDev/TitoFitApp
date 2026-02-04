@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    TextInput,
     FlatList,
     Alert,
     ActivityIndicator,
@@ -15,6 +14,7 @@ import {
     Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, router } from 'expo-router';
 import CoachHeader from '../components/CoachHeader';
@@ -79,10 +79,31 @@ export default function FoodLibraryScreen() {
     const loadFoods = async (query: string) => {
         setLoading(true);
         try {
-            const results = await searchFoods(query);
-            setFoods(results as FoodItem[]);
-        } catch (error) { console.error(error); }
-        finally { setLoading(false); }
+            // 1. Fast Load (Local + Cloud)
+            const internalResults = await searchFoods(query, { skipExternal: true });
+            setFoods(internalResults);
+
+            setLoading(false); // Show results immediately
+
+            // 2. Slow Load (External API - Background)
+            // Only trigger if we have few results
+            if (internalResults.length < 10) {
+                const { searchExternalFoods } = require('../../../src/services/foodService');
+                const externalResults = await searchExternalFoods(query);
+
+                if (externalResults.length > 0) {
+                    setFoods(prev => {
+                        // Deduplicate (External shouldn't override Local/Cloud if exists)
+                        const existingIds = new Set(prev.map(p => p.name.toLowerCase()));
+                        const newItems = externalResults.filter(e => !existingIds.has(e.name.toLowerCase()));
+                        return [...prev, ...newItems];
+                    });
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            setLoading(false);
+        }
     };
 
     // ─────────────────────────────────────────────────────────
@@ -149,8 +170,24 @@ export default function FoodLibraryScreen() {
         setLoading(true);
         try {
             const savedFood = await saveFood(foodData);
-            setFoods(prev => [savedFood as FoodItem, ...prev]);
-            setInitialFoods(prev => [savedFood as FoodItem, ...prev]);
+
+            // Helper to Upsert (Update if exists, Insert if new)
+            const upsertFood = (list: FoodItem[]) => {
+                const index = list.findIndex(f => f._id === savedFood._id);
+                if (index !== -1) {
+                    // Update existing
+                    const newList = [...list];
+                    newList[index] = savedFood as FoodItem;
+                    return newList;
+                } else {
+                    // Insert new
+                    return [savedFood as FoodItem, ...list];
+                }
+            };
+
+            setFoods(prev => upsertFood(prev));
+            setInitialFoods(prev => upsertFood(prev));
+
             setCreatorVisible(false);
             Alert.alert("Guardado", "El plato se ha guardado correctamente.");
         } catch (error) {
@@ -321,8 +358,9 @@ export default function FoodLibraryScreen() {
                     <View style={styles.topBar}>
                         <View style={styles.searchContainer}>
                             <Ionicons name="search" size={20} color="#94a3b8" />
-                            <TextInput
-                                style={styles.searchInput}
+                            <EnhancedTextInput
+                                containerStyle={styles.searchInputContainer}
+                                style={styles.searchInputText}
                                 placeholder="Buscar (e.g. Arroz, Pollo)..."
                                 value={searchQuery}
                                 onChangeText={setSearchQuery}
@@ -474,7 +512,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12, height: 44, borderRadius: 10,
         borderWidth: 1, borderColor: '#e2e8f0'
     },
-    searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
+    searchInputContainer: { flex: 1, marginLeft: 10 },
+    searchInputText: { fontSize: 15 },
     iconButton: {
         width: 44, height: 44, borderRadius: 10, backgroundColor: '#fff',
         alignItems: 'center', justifyContent: 'center',

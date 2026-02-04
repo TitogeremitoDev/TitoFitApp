@@ -18,10 +18,10 @@ import {
     Platform,
     UIManager,
     Modal,
-    TextInput,
     useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubeIframe from 'react-native-youtube-iframe';
 import { useAuth } from '../../../context/AuthContext';
@@ -71,7 +71,7 @@ export default function VideosScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     // Cargar ejercicios desde MongoDB al montar
     useEffect(() => {
@@ -255,23 +255,22 @@ export default function VideosScreen() {
         <View style={[styles.container, { backgroundColor: theme.background }]}>
             <Stack.Screen
                 options={{
-                    headerTitle: () => (
-                        <View style={styles.headerTitleContainer}>
-                            <Text style={[styles.headerTitle, { color: theme.text }]}>VIDEOTECA</Text>
-                            <View style={[styles.titleDot, { backgroundColor: theme.primary }]} />
-                        </View>
-                    ),
-                    headerTitleAlign: 'center',
+                    headerShown: true,
+                    headerTransparent: false,
+                    safeAreaInsets: { top: 0 },
+                    title: '',
                     headerStyle: { backgroundColor: theme.background },
-                    headerTintColor: theme.text,
                     headerShadowVisible: false,
                     headerLeft: () => (
-                        <Pressable
-                            onPress={() => router.back()}
-                            style={({ pressed }) => [styles.headerButton, { backgroundColor: theme.backgroundSecondary }, pressed && styles.headerButtonPressed]}
-                        >
-                            <Ionicons name="chevron-back" size={20} color={theme.text} />
-                        </Pressable>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Pressable
+                                onPress={() => router.back()}
+                                style={({ pressed }) => [styles.headerButton, { backgroundColor: theme.backgroundSecondary }, pressed && styles.headerButtonPressed]}
+                            >
+                                <Ionicons name="arrow-back" size={24} color={theme.text} />
+                            </Pressable>
+                            <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase' }}>VIDEOTECA</Text>
+                        </View>
                     ),
                 }}
             />
@@ -279,8 +278,9 @@ export default function VideosScreen() {
             <View style={styles.searchContainer}>
                 <View style={[styles.searchWrapper, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
                     <Ionicons name="search" size={20} color={theme.textTertiary} />
-                    <TextInput
-                        style={[styles.searchInput, { color: theme.text }]}
+                    <EnhancedTextInput
+                        style={{ fontSize: 20, fontWeight: '1000' }}
+                        containerStyle={{ flex: 1, marginLeft: 10 }}
                         placeholder="Buscar ejercicio o músculo..."
                         placeholderTextColor={theme.textTertiary}
                         value={searchQuery}

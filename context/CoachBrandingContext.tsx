@@ -3,7 +3,7 @@
 // CONTEXTO PARA BRANDING DE COACH (aplicado a clientes)
 // ═══════════════════════════════════════════════════════════════════════════
 
-import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useMemo, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 
@@ -80,10 +80,10 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
     }, []);
 
     // Guardar preferencia del cliente
-    const setClientPreference = async (variantId: string) => {
+    const setClientPreference = useCallback(async (variantId: string) => {
         setClientPreferenceState(variantId);
         await AsyncStorage.setItem(STORAGE_KEY, variantId);
-    };
+    }, []);
 
     // ═══════════════════════════════════════════════════════════════
     // TEMA ACTIVO: Con fallback al default si la preferencia es inválida
@@ -199,15 +199,19 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
         fetchBranding();
     }, [user?.currentTrainerId, user?.tipoUsuario, token]);
 
-    const value: CoachBrandingContextType = {
+    const refresh = useCallback(() => fetchBranding(true), [token, user?.currentTrainerId, user?.tipoUsuario]);
+
+    const hasCoachBranding = !!branding && branding.isActive;
+
+    const value = useMemo<CoachBrandingContextType>(() => ({
         branding,
         activeTheme,
         loading,
-        hasCoachBranding: !!branding && branding.isActive,
+        hasCoachBranding,
         clientPreference,
         setClientPreference,
-        refresh: () => fetchBranding(true),
-    };
+        refresh,
+    }), [branding, activeTheme, loading, hasCoachBranding, clientPreference, setClientPreference, refresh]);
 
     return (
         <CoachBrandingContext.Provider value={value}>

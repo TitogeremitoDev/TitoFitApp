@@ -6,17 +6,18 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
     Platform, useWindowDimensions, Animated, Clipboard
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 const CATEGORIES = {
     nutricion: { name: '🍎 Nutrición', color: '#22c55e' },
@@ -539,8 +540,9 @@ export default function FAQManagerScreen() {
                             </View>
 
                             <Text style={styles.inputLabel}>Pregunta *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formQuestion}
                                 onChangeText={setFormQuestion}
                                 placeholder="Ej: ¿Qué puedo comer en volumen?"
@@ -549,8 +551,9 @@ export default function FAQManagerScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Respuesta *</Text>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, styles.textAreaContainer]}
+                                style={[styles.inputText, styles.textAreaText]}
                                 value={formAnswer}
                                 onChangeText={setFormAnswer}
                                 placeholder="Tu respuesta detallada..."
@@ -560,8 +563,9 @@ export default function FAQManagerScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Tags (separados por coma)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formTags}
                                 onChangeText={setFormTags}
                                 placeholder="volumen, hambre, calorías"
@@ -751,11 +755,16 @@ const styles = StyleSheet.create({
     catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     catOption: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 4 },
     catOptionText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-    input: {
-        backgroundColor: '#f8fafc', color: '#1e293b', padding: 14, borderRadius: 12, fontSize: 15,
-        borderWidth: 1, borderColor: '#e2e8f0', ...(Platform.OS === 'web' && { outlineStyle: 'none' })
+    inputContainer: {
+        backgroundColor: '#f8fafc', padding: 14, borderRadius: 12,
+        borderWidth: 1, borderColor: '#e2e8f0',
     },
-    textArea: { minHeight: 100, maxHeight: 200, textAlignVertical: 'top' },
+    inputText: {
+        color: '#1e293b', fontSize: 15,
+        ...(Platform.OS === 'web' && { outlineStyle: 'none' })
+    },
+    textAreaContainer: { minHeight: 100, maxHeight: 200 },
+    textAreaText: { textAlignVertical: 'top' },
 
     saveButton: { backgroundColor: '#06b6d4', padding: 16, margin: 20, borderRadius: 12, alignItems: 'center' },
     saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },

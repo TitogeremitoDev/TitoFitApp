@@ -14,14 +14,16 @@ import {
     TouchableOpacity,
     Modal,
     Image,
-    TextInput,
     Dimensions,
     Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useTheme } from '../../../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../../context/AuthContext'; // Import useAuth
+import axios from 'axios'; // Import axios
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -56,6 +58,51 @@ function TutorialEntrenoModal({ visible, onComplete }) {
         if (repsNum > 12) return '#bfdbfe'; // azul - supera
         return '#bbf7d0'; // verde - en rango
     };
+
+    const { user, token } = useAuth();
+    const [coachLogo, setCoachLogo] = useState(null);
+
+    useEffect(() => {
+        const fetchCoachLogo = async () => {
+            // 1. Si soy entrenador, uso mi propio perfil
+            if (user?.tipoUsuario === 'ENTRENADOR' && user.trainerProfile?.logoUrl) {
+                setCoachLogo(user.trainerProfile.logoUrl);
+                return;
+            }
+
+            // 2. Si soy cliente O tengo entrenador (más robusto via currentTrainerId)
+            const hasTrainer = user?.tipoUsuario === 'CLIENTE' || user?.currentTrainerId;
+
+            if (hasTrainer && visible) {
+                try {
+                    // Si ya tenemos el logo en contexto (poco probable si es cliente, pero por si acaso)
+                    if (user?.trainerProfile?.logoUrl) {
+                        setCoachLogo(user.trainerProfile.logoUrl);
+                    }
+
+                    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+                    console.log('Fetching coach logo for tutorial (tutoriales.jsx)...');
+
+                    const res = await axios.get(`${API_URL}/api/clients/my-trainer`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+
+                    if (res.data && res.data.success && res.data.trainer && res.data.trainer.logoUrl) {
+                        console.log('Coach logo found (API):', res.data.trainer.logoUrl);
+                        setCoachLogo(res.data.trainer.logoUrl);
+                    } else {
+                        console.log('No coach logo found in API response');
+                    }
+                } catch (e) {
+                    console.log('Error fetching coach logo for tutorial:', e);
+                }
+            }
+        };
+
+        if (visible) {
+            fetchCoachLogo();
+        }
+    }, [visible, user?.tipoUsuario, user?.trainerProfile?.logoUrl, token]);
 
     const goToSlide = (index) => {
         if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;
@@ -101,7 +148,7 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                     >
                         <Ionicons name="close" size={24} color={theme.text} />
                     </TouchableOpacity>
-                    <Text style={[tutorialStyles.headerTitle, { color: theme.text }]}>Tutorial de Entrenamiento</Text>
+                    <Text style={[tutorialStyles.headerTitle, { color: theme.text }]}>Tutorial de Entrenamiento .</Text>
                     <View style={{ width: 40 }} />
                 </View>
 
@@ -135,8 +182,12 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                         <View style={tutorialStyles.slideContent}>
                             <View style={tutorialStyles.logoContainer}>
                                 <Image
-                                    source={require('../../../assets/logo.png')}
-                                    style={tutorialStyles.logo}
+                                    source={
+                                        coachLogo
+                                            ? { uri: coachLogo }
+                                            : require('../../../assets/logo.png')
+                                    }
+                                    style={[tutorialStyles.logo, coachLogo && { borderRadius: 50 }]}
                                     resizeMode="contain"
                                 />
                             </View>
@@ -197,12 +248,21 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                                         {/* Input Reps */}
                                         <View style={tutorialStyles.interactiveInputCol}>
                                             <Text style={[tutorialStyles.interactiveColLabel, { color: theme.textSecondary }]}>Reps</Text>
-                                            <TextInput
-                                                style={[tutorialStyles.interactiveInput, {
+                                            <EnhancedTextInput
+                                                style={{
+                                                    textAlign: 'center',
+                                                    fontSize: 16,
+                                                    fontWeight: '700',
+                                                    color: theme.inputText
+                                                }}
+                                                containerStyle={{
+                                                    width: '100%',
+                                                    height: 44,
+                                                    borderRadius: 10,
+                                                    borderWidth: 1,
                                                     borderColor: theme.inputBorder,
                                                     backgroundColor: theme.inputBackground,
-                                                    color: theme.inputText
-                                                }]}
+                                                }}
                                                 placeholder="10"
                                                 placeholderTextColor={theme.placeholder}
                                                 keyboardType="numeric"
@@ -214,12 +274,21 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                                         {/* Input Kg */}
                                         <View style={tutorialStyles.interactiveInputCol}>
                                             <Text style={[tutorialStyles.interactiveColLabel, { color: theme.textSecondary }]}>Kg</Text>
-                                            <TextInput
-                                                style={[tutorialStyles.interactiveInput, {
+                                            <EnhancedTextInput
+                                                style={{
+                                                    textAlign: 'center',
+                                                    fontSize: 16,
+                                                    fontWeight: '700',
+                                                    color: theme.inputText
+                                                }}
+                                                containerStyle={{
+                                                    width: '100%',
+                                                    height: 44,
+                                                    borderRadius: 10,
+                                                    borderWidth: 1,
                                                     borderColor: theme.inputBorder,
                                                     backgroundColor: theme.inputBackground,
-                                                    color: theme.inputText
-                                                }]}
+                                                }}
                                                 placeholder="60"
                                                 placeholderTextColor={theme.placeholder}
                                                 keyboardType="numeric"
@@ -279,21 +348,18 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
                                     {/* C */}
                                     <View style={[tutorialStyles.miniCard, { backgroundColor: theme.success + '20', borderColor: theme.success + '40', flex: 1, paddingVertical: 16 }]}>
-                                        <Ionicons name="checkmark-circle" size={28} color={theme.success} />
-                                        <Text style={[tutorialStyles.miniCardTitle, { color: theme.success }]}>C</Text>
-                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Completado</Text>
+                                        <Ionicons name="checkmark-circle" size={40} color={theme.success} />
+                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Completado</Text>
                                     </View>
                                     {/* NC */}
                                     <View style={[tutorialStyles.miniCard, { backgroundColor: '#ef4444' + '20', borderColor: '#ef4444' + '40', flex: 1, paddingVertical: 16 }]}>
-                                        <Ionicons name="close-circle" size={28} color="#ef4444" />
-                                        <Text style={[tutorialStyles.miniCardTitle, { color: '#ef4444' }]}>NC</Text>
-                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>No Completado</Text>
+                                        <Ionicons name="close-circle" size={40} color="#ef4444" />
+                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Fallado</Text>
                                     </View>
                                     {/* OE */}
                                     <View style={[tutorialStyles.miniCard, { backgroundColor: '#f59e0b' + '20', borderColor: '#f59e0b' + '40', flex: 1, paddingVertical: 16 }]}>
-                                        <Ionicons name="swap-horizontal" size={28} color="#f59e0b" />
-                                        <Text style={[tutorialStyles.miniCardTitle, { color: '#f59e0b' }]}>OE</Text>
-                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Otro Ejercicio</Text>
+                                        <Ionicons name="swap-horizontal" size={40} color="#f59e0b" />
+                                        <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Alternativa</Text>
                                     </View>
                                 </View>
 
@@ -391,7 +457,11 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                         <View style={tutorialStyles.slideContent}>
                             <View style={tutorialStyles.finalImageContainer}>
                                 <Image
-                                    source={require('../../../assets/images/fitness/IMAGEN1.jpg')}
+                                    source={
+                                        coachLogo
+                                            ? { uri: coachLogo }
+                                            : require('../../../assets/images/fitness/IMAGEN1.jpg')
+                                    }
                                     style={tutorialStyles.finalImage}
                                     resizeMode="cover"
                                 />
@@ -432,7 +502,11 @@ function TutorialEntrenoModal({ visible, onComplete }) {
                         <View style={tutorialStyles.coachAvatarContainer}>
                             <View style={[tutorialStyles.coachAvatarGlow, { backgroundColor: theme.primary + '20' }]} />
                             <Image
-                                source={require('../../../assets/images/fitness/IMAGEN1.jpg')}
+                                source={
+                                    coachLogo
+                                        ? { uri: coachLogo }
+                                        : require('../../../assets/images/fitness/IMAGEN1.jpg')
+                                }
                                 style={tutorialStyles.coachAvatar}
                                 resizeMode="cover"
                             />
@@ -906,15 +980,17 @@ export default function TutorialesScreen() {
     return (
         <View style={[styles.container, { backgroundColor: theme.background }]}>
             {/* Header */}
-            <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-                <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={[styles.backButton, { backgroundColor: theme.iconButton }]}
-                >
-                    <Ionicons name="arrow-back" size={24} color={theme.text} />
-                </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: theme.text }]}>Tutoriales</Text>
-                <View style={{ width: 44 }} />
+            {/* Header */}
+            <View style={[styles.header, { paddingTop: insets.top + 16, paddingBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <TouchableOpacity
+                        onPress={() => router.back()}
+                        style={[styles.backButton, { backgroundColor: theme.iconButton }]}
+                    >
+                        <Ionicons name="arrow-back" size={24} color={theme.text} />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 18, fontWeight: '900', color: theme.text, textTransform: 'uppercase' }}>TUTORIALES</Text>
+                </View>
             </View>
 
             <ScrollView

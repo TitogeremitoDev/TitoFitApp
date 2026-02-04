@@ -10,8 +10,6 @@ import {
     StyleSheet,
     SafeAreaView,
     FlatList,
-    TouchableOpacity,
-    TextInput,
     ActivityIndicator,
     RefreshControl
 } from 'react-native';
@@ -21,8 +19,13 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import FeedbackReportModal from '../../../components/FeedbackReportModal';
+// Componentes mejorados para iOS
+import {
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TRAFFIC LIGHT BADGE

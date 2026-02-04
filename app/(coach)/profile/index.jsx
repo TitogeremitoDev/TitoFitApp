@@ -6,7 +6,6 @@ import {
     SafeAreaView,
     TouchableOpacity,
     ScrollView,
-    TextInput,
     Switch,
     Alert,
     ActivityIndicator,
@@ -16,6 +15,7 @@ import {
     Modal,
     Pressable
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -62,7 +62,7 @@ export default function ProfileScreen() {
     const [tempLogoUri, setTempLogoUri] = useState(null);
     const [showPhotoOptions, setShowPhotoOptions] = useState(false);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     useEffect(() => {
         fetchProfile();
@@ -357,8 +357,9 @@ export default function ProfileScreen() {
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Nombre de Marca / Empresa</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={brandName}
                                 onChangeText={setBrandName}
                                 placeholder="Ej: TitoFit Coaching"
@@ -369,8 +370,9 @@ export default function ProfileScreen() {
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Código de Entrenador (Único)</Text>
                             <View style={styles.codeInputRow}>
-                                <TextInput
-                                    style={[styles.input, styles.codeInput]}
+                                <EnhancedTextInput
+                                    containerStyle={[styles.inputContainer, styles.codeInput]}
+                                    style={styles.inputText}
                                     value={trainerCode}
                                     onChangeText={setTrainerCode}
                                     placeholder="EJ: TITO-1234"
@@ -412,8 +414,9 @@ export default function ProfileScreen() {
 
                             {logoSource === 'url' ? (
                                 /* URL Input */
-                                <TextInput
-                                    style={styles.input}
+                                <EnhancedTextInput
+                                    containerStyle={styles.inputContainer}
+                                    style={styles.inputText}
                                     value={logoUrl}
                                     onChangeText={setLogoUrl}
                                     placeholder="https://..."
@@ -465,8 +468,9 @@ export default function ProfileScreen() {
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Instagram (sin @)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={instagramHandle}
                                 onChangeText={setInstagramHandle}
                                 placeholder="usuario_fit"
@@ -482,8 +486,9 @@ export default function ProfileScreen() {
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Biografía</Text>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, styles.textArea]}
+                                style={[styles.inputText, { textAlignVertical: 'top' }]}
                                 value={bio}
                                 onChangeText={setBio}
                                 placeholder="Cuéntales a tus clientes sobre tu experiencia y metodología..."
@@ -497,8 +502,9 @@ export default function ProfileScreen() {
                         <View style={styles.row}>
                             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
                                 <Text style={styles.label}>Precio Mensual (€)</Text>
-                                <TextInput
-                                    style={styles.input}
+                                <EnhancedTextInput
+                                    containerStyle={styles.inputContainer}
+                                    style={styles.inputText}
                                     value={pricePerMonth}
                                     onChangeText={setPricePerMonth}
                                     placeholder="0.00"
@@ -509,8 +515,9 @@ export default function ProfileScreen() {
 
                             <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
                                 <Text style={styles.label}>Máx. Clientes</Text>
-                                <TextInput
-                                    style={styles.input}
+                                <EnhancedTextInput
+                                    containerStyle={styles.inputContainer}
+                                    style={styles.inputText}
                                     value={maxClients}
                                     onChangeText={setMaxClients}
                                     placeholder="5"
@@ -522,8 +529,9 @@ export default function ProfileScreen() {
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Teléfono Bizum (para pagos)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={bizumPhone}
                                 onChangeText={setBizumPhone}
                                 placeholder="600123456"
@@ -571,8 +579,9 @@ export default function ProfileScreen() {
 
                         {/* Custom Specialty */}
                         <View style={styles.customSpecialtyContainer}>
-                            <TextInput
-                                style={styles.customInput}
+                            <EnhancedTextInput
+                                containerStyle={styles.customInputContainer}
+                                style={styles.customInputText}
                                 value={customSpecialty}
                                 onChangeText={setCustomSpecialty}
                                 placeholder="Otra especialidad..."
@@ -736,6 +745,17 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#e2e8f0',
     },
+    inputContainer: {
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    inputText: {
+        fontSize: 16,
+        color: '#1e293b',
+    },
     textArea: {
         minHeight: 100,
     },
@@ -792,6 +812,18 @@ const styles = StyleSheet.create({
         color: '#1e293b',
         borderWidth: 1,
         borderColor: '#e2e8f0',
+    },
+    customInputContainer: {
+        flex: 1,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    customInputText: {
+        fontSize: 14,
+        color: '#1e293b',
     },
     addButton: {
         width: 48,

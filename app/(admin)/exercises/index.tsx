@@ -5,7 +5,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    TextInput,
     Modal,
     Alert,
     ActivityIndicator,
@@ -13,6 +12,7 @@ import {
     Dimensions,
     Platform,
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -298,8 +298,9 @@ export default function ExercisesAdmin() {
             <View style={styles.filtersContainer}>
                 <View style={styles.searchContainer}>
                     <Ionicons name="search" size={20} color="#9CA3AF" />
-                    <TextInput
-                        style={styles.searchInput}
+                    <EnhancedTextInput
+                        style={styles.searchInputText}
+                        containerStyle={styles.searchInputContainer}
                         placeholder="Buscar por nombre..."
                         placeholderTextColor="#9CA3AF"
                         value={searchQuery}
@@ -389,8 +390,9 @@ export default function ExercisesAdmin() {
 
                         <ScrollView style={styles.modalBody}>
                             <Text style={styles.label}>Nombre *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                style={styles.inputText}
+                                containerStyle={styles.inputContainer}
                                 placeholder="Ej: Press Banca"
                                 placeholderTextColor="#6B7280"
                                 value={formName}
@@ -398,8 +400,9 @@ export default function ExercisesAdmin() {
                             />
 
                             <Text style={styles.label}>Músculo *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                style={styles.inputText}
+                                containerStyle={styles.inputContainer}
                                 placeholder="Ej: Pecho"
                                 placeholderTextColor="#6B7280"
                                 value={formMuscle}
@@ -407,8 +410,9 @@ export default function ExercisesAdmin() {
                             />
 
                             <Text style={styles.label}>Técnica Correcta (1 por línea)</Text>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
+                            <EnhancedTextInput
+                                style={[styles.inputText, styles.textAreaText]}
+                                containerStyle={[styles.inputContainer, styles.textAreaContainer]}
                                 placeholder={"Ej: Mantén la espalda recta\nControla el descenso"}
                                 placeholderTextColor="#6B7280"
                                 value={formTips}
@@ -418,8 +422,9 @@ export default function ExercisesAdmin() {
                             />
 
                             <Text style={styles.label}>Video ID (YouTube)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                style={styles.inputText}
+                                containerStyle={styles.inputContainer}
                                 placeholder="Ej: dQw4w9WgXcQ"
                                 placeholderTextColor="#6B7280"
                                 value={formVideoId}
@@ -487,9 +492,11 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         marginBottom: 15,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
         marginLeft: 10,
+    },
+    searchInputText: {
         color: '#E5E7EB',
         fontSize: 16,
     },
@@ -694,18 +701,22 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         marginTop: 12,
     },
-    input: {
+    inputContainer: {
         backgroundColor: '#111827',
         borderRadius: 10,
         paddingHorizontal: 15,
         paddingVertical: 12,
-        color: '#E5E7EB',
-        fontSize: 16,
         borderWidth: 1,
         borderColor: '#374151',
     },
-    textArea: {
+    inputText: {
+        color: '#E5E7EB',
+        fontSize: 16,
+    },
+    textAreaContainer: {
         height: 100,
+    },
+    textAreaText: {
         textAlignVertical: 'top',
     },
     modalFooter: {

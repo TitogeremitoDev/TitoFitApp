@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
+    View, Text, StyleSheet, Modal, TouchableOpacity,
     Platform, ScrollView, Image, KeyboardAvoidingView,
     TouchableWithoutFeedback, Keyboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../../components/ui';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../../../context/AuthContext';
 
@@ -118,7 +119,7 @@ export default function PaymentModal({ visible, onClose, onSave, editingSubscrip
 
     const fetchClients = async () => {
         try {
-            const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/api/trainers/clients-extended`, {
+            const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app'}/api/trainers/clients-extended`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = await response.json();
@@ -260,8 +261,9 @@ export default function PaymentModal({ visible, onClose, onSave, editingSubscrip
                                             <Ionicons name="close" size={14} color="#1e40af" />
                                         </TouchableOpacity>
                                     ))}
-                                    <TextInput
-                                        style={styles.ghostInput}
+                                    <EnhancedTextInput
+                                        containerStyle={styles.ghostInputContainer}
+                                        style={styles.ghostInputText}
                                         value={clientSearch}
                                         onChangeText={(text) => {
                                             setClientSearch(text);
@@ -325,8 +327,9 @@ export default function PaymentModal({ visible, onClose, onSave, editingSubscrip
 
                             {/* 2. Concept & Amount */}
                             <Text style={styles.label}>Concepto / Plan</Text>
-                            <TextInput
-                                style={[styles.input, focusedField === 'concept' && styles.inputFocused]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, focusedField === 'concept' && styles.inputFocused]}
+                                style={styles.inputText}
                                 value={concept}
                                 onChangeText={setConcept}
                                 onFocus={() => setFocusedField('concept')}
@@ -334,8 +337,9 @@ export default function PaymentModal({ visible, onClose, onSave, editingSubscrip
                             />
 
                             <Text style={styles.label}>Importe Mensual (€)</Text>
-                            <TextInput
-                                style={[styles.input, focusedField === 'amount' && styles.inputFocused]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, focusedField === 'amount' && styles.inputFocused]}
+                                style={styles.inputText}
                                 value={amount}
                                 onChangeText={setAmount}
                                 placeholder="0.00"
@@ -523,14 +527,16 @@ const styles = StyleSheet.create({
     },
 
     // Inputs
-    input: {
+    inputContainer: {
         borderWidth: 1,
         borderColor: '#e2e8f0', // Inactive (Gray Light)
         borderRadius: 12,
         padding: 14,
+        backgroundColor: '#fff',
+    },
+    inputText: {
         fontSize: 15,
         color: '#1e293b',
-        backgroundColor: '#fff',
     },
     inputFocused: {
         borderColor: '#3b82f6', // Active (Blue)
@@ -568,12 +574,14 @@ const styles = StyleSheet.create({
         color: '#1e40af',
         fontWeight: '500',
     },
-    ghostInput: {
+    ghostInputContainer: {
         flex: 1,
         minWidth: 100,
+        paddingVertical: 4,
+    },
+    ghostInputText: {
         fontSize: 15,
         color: '#1e293b',
-        paddingVertical: 4,
     },
 
     // Dropdown

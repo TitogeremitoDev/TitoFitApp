@@ -7,13 +7,13 @@ import {
     StyleSheet,
     Modal,
     TouchableOpacity,
-    TextInput,
     ScrollView,
     ActivityIndicator,
     Platform,
     Alert,
     Dimensions
 } from 'react-native';
+import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -100,8 +100,9 @@ const ExercisePreviewItem = ({ exercise, onSelectExercise, allExercises, searchQ
                             {/* Buscador */}
                             <View style={styles.searchContainer}>
                                 <Ionicons name="search" size={16} color="#94a3b8" />
-                                <TextInput
-                                    style={styles.searchInput}
+                                <EnhancedTextInput
+                                    style={styles.searchInputText}
+                                    containerStyle={styles.searchInputContainer}
                                     placeholder="Buscar ejercicio..."
                                     placeholderTextColor="#94a3b8"
                                     value={localSearch}
@@ -611,8 +612,9 @@ export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
                                         <Text style={styles.textInputLabel}>
                                             Escribe o pega el contenido de tu rutina:
                                         </Text>
-                                        <TextInput
-                                            style={styles.textArea}
+                                        <EnhancedTextInput
+                                            style={styles.textAreaText}
+                                            containerStyle={styles.textAreaContainer}
                                             multiline
                                             numberOfLines={8}
                                             placeholder="Ejemplo:
@@ -642,8 +644,9 @@ Remo con barra 4x10..."
 
                                 <View style={styles.nameInputContainer}>
                                     <Text style={styles.inputLabel}>Nombre de la rutina (opcional)</Text>
-                                    <TextInput
-                                        style={styles.nameInput}
+                                    <EnhancedTextInput
+                                        style={styles.nameInputText}
+                                        containerStyle={styles.nameInputContainer}
                                         placeholder="Se detectará automáticamente"
                                         placeholderTextColor="#94a3b8"
                                         value={routineName}
@@ -663,8 +666,9 @@ Remo con barra 4x10..."
                             <View style={styles.previewSection}>
                                 {/* Nombre de la rutina */}
                                 <View style={styles.routineNameRow}>
-                                    <TextInput
-                                        style={styles.routineNameInput}
+                                    <EnhancedTextInput
+                                        style={styles.routineNameInputText}
+                                        containerStyle={styles.routineNameInputContainer}
                                         value={parsedRoutine?.nombre || ''}
                                         onChangeText={(text) => setParsedRoutine(prev => ({ ...prev, nombre: text }))}
                                         placeholder="Nombre de la rutina"
@@ -903,7 +907,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         fontWeight: '500'
     },
-    textArea: {
+    textAreaContainer: {
         width: '100%',
         minHeight: 180,
         backgroundColor: '#f8fafc',
@@ -911,9 +915,12 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0',
         borderRadius: 8,
         padding: 12,
+        marginBottom: 16,
+    },
+    textAreaText: {
         fontSize: 14,
         color: '#1e293b',
-        marginBottom: 16
+        textAlignVertical: 'top',
     },
     selectFileBtn: {
         flexDirection: 'row',
@@ -954,14 +961,16 @@ const styles = StyleSheet.create({
         color: '#374151',
         marginBottom: 8
     },
-    nameInput: {
+    nameInputContainer: {
         backgroundColor: '#f8fafc',
         borderWidth: 1,
         borderColor: '#e2e8f0',
         borderRadius: 8,
         padding: 12,
+    },
+    nameInputText: {
         fontSize: 16,
-        color: '#1e293b'
+        color: '#1e293b',
     },
     errorContainer: {
         flexDirection: 'row',
@@ -982,15 +991,17 @@ const styles = StyleSheet.create({
     routineNameRow: {
         marginBottom: 16
     },
-    routineNameInput: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#1e293b',
+    routineNameInputContainer: {
         backgroundColor: '#f8fafc',
         borderWidth: 1,
         borderColor: '#e2e8f0',
         borderRadius: 8,
-        padding: 12
+        padding: 12,
+    },
+    routineNameInputText: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1e293b',
     },
     statsRow: {
         flexDirection: 'row',
@@ -1134,11 +1145,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
         marginBottom: 8
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
         padding: 8,
+    },
+    searchInputText: {
         fontSize: 14,
-        color: '#1e293b'
+        color: '#1e293b',
     },
     suggestionLabel: {
         fontSize: 11,

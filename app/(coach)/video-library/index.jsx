@@ -6,16 +6,17 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
     Platform, useWindowDimensions, Image, Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../../../components/ui';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 export default function VideoLibraryScreen() {
     const router = useRouter();
@@ -313,8 +314,9 @@ export default function VideoLibraryScreen() {
             {/* Search Bar */}
             <View style={styles.searchBar}>
                 <Ionicons name="search" size={20} color="#94a3b8" />
-                <TextInput
-                    style={styles.searchInput}
+                <EnhancedTextInput
+                    containerStyle={styles.searchInputContainer}
+                    style={styles.searchInputText}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     placeholder="Buscar por título o tags..."
@@ -406,8 +408,9 @@ export default function VideoLibraryScreen() {
 
                         <ScrollView style={styles.modalBody}>
                             <Text style={styles.inputLabel}>URL de YouTube *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formUrl}
                                 onChangeText={handleUrlChange}
                                 placeholder="Pega el enlace de YouTube aquí..."
@@ -417,8 +420,9 @@ export default function VideoLibraryScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Título *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formTitle}
                                 onChangeText={setFormTitle}
                                 placeholder="Ej: Cómo corregir el Butt Wink"
@@ -427,8 +431,9 @@ export default function VideoLibraryScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
-                            <TextInput
-                                style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, { minHeight: 80 }]}
+                                style={[styles.inputText, { textAlignVertical: 'top' }]}
                                 value={formDescription}
                                 onChangeText={setFormDescription}
                                 placeholder="Notas o descripción del video..."
@@ -470,8 +475,9 @@ export default function VideoLibraryScreen() {
                             </Text>
 
                             <Text style={styles.inputLabel}>Tags (separados por coma)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formTags}
                                 onChangeText={setFormTags}
                                 placeholder="sentadilla, movilidad, cadera"
@@ -564,8 +570,11 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
         paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', gap: 12
     },
-    searchInput: {
-        flex: 1, fontSize: 15, color: '#1e293b',
+    searchInputContainer: {
+        flex: 1,
+    },
+    searchInputText: {
+        fontSize: 15, color: '#1e293b',
         ...(Platform.OS === 'web' && { outlineStyle: 'none' })
     },
 
@@ -617,9 +626,13 @@ const styles = StyleSheet.create({
 
     inputLabel: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 8, marginTop: 16 },
     inputHint: { fontSize: 12, color: '#94a3b8', marginTop: 4 },
-    input: {
-        backgroundColor: '#f8fafc', color: '#1e293b', padding: 14, borderRadius: 12, fontSize: 15,
-        borderWidth: 1, borderColor: '#e2e8f0', ...(Platform.OS === 'web' && { outlineStyle: 'none' })
+    inputContainer: {
+        backgroundColor: '#f8fafc', padding: 14, borderRadius: 12,
+        borderWidth: 1, borderColor: '#e2e8f0',
+    },
+    inputText: {
+        color: '#1e293b', fontSize: 15,
+        ...(Platform.OS === 'web' && { outlineStyle: 'none' })
     },
 
     saveButton: { backgroundColor: '#8b5cf6', padding: 16, margin: 20, borderRadius: 12, alignItems: 'center' },

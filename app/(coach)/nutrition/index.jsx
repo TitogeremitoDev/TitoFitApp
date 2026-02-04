@@ -7,10 +7,7 @@ import {
     FlatList,
     RefreshControl,
     ActivityIndicator,
-    TouchableOpacity,
-    TextInput,
     Platform,
-    Pressable,
     Switch,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -19,6 +16,12 @@ import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
+// Componentes mejorados para iOS
+import {
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedPressable as Pressable,
+    EnhancedTextInput as TextInput,
+} from '../../../components/ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PHASE BADGE HELPER
@@ -124,7 +127,7 @@ export default function NutritionClientsScreen() {
     const [hoveredClientId, setHoveredClientId] = useState(null);
     const [hoveredTCAId, setHoveredTCAId] = useState(null);
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     useFocusEffect(
         useCallback(() => {

@@ -15,7 +15,6 @@ import {
     View,
     Text,
     Modal,
-    TextInput,
     FlatList,
     TouchableOpacity,
     StyleSheet,
@@ -24,6 +23,7 @@ import {
     Keyboard,
     ActivityIndicator,
 } from 'react-native';
+import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import Fuse from 'fuse.js';
 
@@ -233,9 +233,10 @@ const ExerciseSearchModal = ({
                 {/* Barra de Búsqueda */}
                 <View style={styles.searchContainer}>
                     <Ionicons name="search" size={20} color="#9ca3af" style={styles.searchIcon} />
-                    <TextInput
+                    <EnhancedTextInput
                         ref={inputRef}
-                        style={styles.searchInput}
+                        containerStyle={styles.searchInputContainer}
+                        style={styles.searchInputText}
                         placeholder="Buscar ejercicio..."
                         placeholderTextColor="#9ca3af"
                         value={query}
@@ -362,8 +363,10 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 8,
     },
-    searchInput: {
+    searchInputContainer: {
         flex: 1,
+    },
+    searchInputText: {
         fontSize: 16,
         color: '#111827',
     },

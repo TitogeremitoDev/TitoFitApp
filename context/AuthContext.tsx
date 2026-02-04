@@ -1,11 +1,11 @@
 // context/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { syncRoutinesFromServer } from '../src/lib/syncRoutines';
 import { handlePlanTransition, getSyncDirection, SyncResult } from '../src/lib/dataSyncService';
 
-const DEFAULT_KOYEB = 'http://localhost:3000'; // 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+const DEFAULT_KOYEB = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app'; // 'http://localhost:3000';
 const API_BASE = ((process.env.EXPO_PUBLIC_API_URL as string) || DEFAULT_KOYEB).replace(/\/+$/, '');
 axios.defaults.baseURL = `${API_BASE}/api`;
 
@@ -118,8 +118,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setLoading] = useState(true);
-  // 🔄 Estado para resultado de sincronización pendiente
   const [pendingSyncResult, setPendingSyncResult] = useState<SyncResult | null>(null);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // REFS: Permiten que las funciones accedan a valores actuales
+  // sin necesidad de recrearse cuando user/token cambian.
+  // Esto rompe la cascada de re-renders que causaba el API storm.
+  // ═══════════════════════════════════════════════════════════════════════
+  const tokenRef = useRef(token);
+  const userRef = useRef(user);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => {
     (async () => {
@@ -127,220 +136,242 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const s = await loadSession();
         setToken(s.token);
         setUser(s.user);
-        // Sesión restaurada silenciosamente
       } catch (error) {
         console.error('[Auth] Error cargando sesión:', error);
       } finally {
         setLoading(false);
       }
     })();
+
+    const interceptorId = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (error.response?.status === 401) {
+          console.warn('[Auth] 401 detectado, cerrando sesión...');
+          await clearSession();
+          setToken(null);
+          setUser(null);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      axios.interceptors.response.eject(interceptorId);
+    };
   }, []);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // FUNCIONES ESTABLES: useCallback con [] = nunca cambian de referencia.
+  // Usan tokenRef/userRef para leer valores actuales.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const login = useCallback(async (emailOrUsername: string, password: string) => {
+    const { data } = await axios.post<User & { token: string }>(
+      '/users/login',
+      { emailOrUsername, password }
+    );
+    const s = await persistSession(data);
+    setToken(s.token);
+    setUser(s.user);
+    try {
+      await syncRoutinesFromServer(API_BASE, s.token);
+    } catch (syncError) {
+      console.error('[Auth] Error sincronizando rutinas:', syncError);
+    }
+    return { ...s.user, token: s.token };
+  }, []);
+
+  const register = useCallback(async (nombre: string, email: string, username: string, password: string, clientCode?: string) => {
+    const payload: any = { nombre, email, username, password };
+    if (clientCode && clientCode.trim()) payload.clientCode = clientCode.trim();
+    const { data } = await axios.post<User & { token: string }>('/users/signup', payload);
+    const s = await persistSession(data);
+    setToken(s.token);
+    setUser(s.user);
+    try {
+      await syncRoutinesFromServer(API_BASE, s.token);
+    } catch (syncError) {
+      console.error('[Auth] Error sincronizando rutinas:', syncError);
+    }
+    return { ...s.user, token: s.token };
+  }, []);
+
+  const upgradeByCode = useCallback(async (clientCode: string) => {
+    const { data } = await axios.post<User & { token: string }>(
+      '/users/upgrade',
+      { clientCode: clientCode.trim() }
+    );
+    const s = await persistSession(data);
+    setToken(s.token);
+    setUser(s.user);
+    try {
+      await syncRoutinesFromServer(API_BASE, s.token);
+    } catch (syncError) {
+      console.error('[Auth] Error sincronizando rutinas:', syncError);
+    }
+    return { ...s.user, token: s.token };
+  }, []);
+
+  const loginWithGoogle = useCallback(async (googleAccessToken: string) => {
+    const { data } = await axios.post<User & { token: string }>(
+      '/users/google-login',
+      { accessToken: googleAccessToken }
+    );
+    const s = await persistSession(data);
+    setToken(s.token);
+    setUser(s.user);
+    try {
+      await syncRoutinesFromServer(API_BASE, s.token);
+    } catch (syncError) {
+      console.error('[Auth] Error sincronizando rutinas:', syncError);
+    }
+    return { ...s.user, token: s.token };
+  }, []);
+
+  const loginWithApple = useCallback(async (identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) => {
+    const { data } = await axios.post<User & { token: string }>(
+      '/users/apple-login',
+      {
+        identityToken,
+        fullName: fullName ? {
+          givenName: fullName.givenName || '',
+          familyName: fullName.familyName || ''
+        } : null
+      }
+    );
+    const s = await persistSession(data);
+    setToken(s.token);
+    setUser(s.user);
+    try {
+      await syncRoutinesFromServer(API_BASE, s.token);
+    } catch (syncError) {
+      console.error('[Auth] Error sincronizando rutinas:', syncError);
+    }
+    return { ...s.user, token: s.token };
+  }, []);
+
+  const logout = useCallback(async () => {
+    await clearSession();
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const currentToken = tokenRef.current;
+    if (!currentToken) {
+      return undefined;
+    }
+    try {
+      const { data } = await axios.get<User>('/users/me');
+
+      const freshUser: User = {
+        _id: data._id,
+        nombre: data.nombre,
+        email: data.email,
+        username: data.username,
+        tipoUsuario: data.tipoUsuario,
+        onboardingCompleted: data.onboardingCompleted,
+        info_user: data.info_user ? { ...data.info_user } : undefined,
+        trainerProfile: data.trainerProfile ? { ...data.trainerProfile } : undefined,
+        currentTrainerId: data.currentTrainerId,
+        referralCode: data.referralCode,
+        subscriptionExpiry: data.subscriptionExpiry,
+        referralPremiumDays: data.referralPremiumDays,
+        referredUsersCount: data.referredUsersCount,
+        af: data.af,
+        subscriptionStatus: data.subscriptionStatus,
+        overQuota: data.overQuota,
+        avatarUrl: data.avatarUrl,
+      };
+
+      // Si el servidor devuelve token renovado, actualizar storage y headers
+      // pero NO llamar setToken() para evitar cascada de re-renders.
+      // El estado token solo cambia en login/logout (null ↔ valor).
+      if ((data as any).token) {
+        const newToken = (data as any).token;
+        if (newToken !== tokenRef.current) {
+          tokenRef.current = newToken;
+          await AsyncStorage.setItem(TOKEN_KEY, newToken);
+          axios.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+        }
+      }
+
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
+
+      // Solo actualizar estado si los datos realmente cambiaron
+      setUser(prevUser => {
+        const prevJson = JSON.stringify(prevUser);
+        const newJson = JSON.stringify(freshUser);
+        if (prevJson === newJson) return prevUser;
+        return freshUser;
+      });
+
+      return freshUser;
+    } catch (error: any) {
+      console.warn('[Auth] Error refrescando usuario:', error.message);
+
+      if (error.response?.status === 401) {
+        console.warn('[Auth] Token expirado (401), cerrando sesión...');
+        await clearSession();
+        setToken(null);
+        setUser(null);
+        return undefined;
+      }
+
+      if (!error.response) {
+        return userRef.current || undefined;
+      }
+
+      throw error;
+    }
+  }, []);
+
+  const syncDataOnPlanChange = useCallback(async (previousType: string | undefined, newType: string) => {
+    const currentToken = tokenRef.current;
+    if (!currentToken) {
+      return null;
+    }
+    try {
+      const result = await handlePlanTransition(previousType, newType, currentToken);
+      if (result) {
+        setPendingSyncResult(result);
+      }
+      return result;
+    } catch (error) {
+      console.error('[Auth] Error en sincronización:', error);
+      return null;
+    }
+  }, []);
+
+  const clearSyncResult = useCallback(() => {
+    setPendingSyncResult(null);
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CONTEXT VALUE: Solo cambia cuando los DATOS cambian.
+  // Las funciones son estables (useCallback []) → no causan re-renders
+  // innecesarios en los consumidores.
+  // ═══════════════════════════════════════════════════════════════════════
   const value = useMemo<AuthContextData>(
     () => ({
       user,
       token,
       isLoading,
-
-      async login(emailOrUsername: string, password: string) {
-
-        const { data } = await axios.post<User & { token: string }>(
-          '/users/login',
-          { emailOrUsername, password }
-        );
-        const s = await persistSession(data);
-        setToken(s.token);
-        setUser(s.user);
-
-        // Sincroniza rutinas desde servidor
-        try {
-          await syncRoutinesFromServer(API_BASE, s.token);
-
-        } catch (syncError) {
-          console.error('[Auth] Error sincronizando rutinas:', syncError);
-        }
-
-        return { ...s.user, token: s.token };
-      },
-
-      async register(nombre: string, email: string, username: string, password: string, clientCode?: string) {
-
-        const payload: any = { nombre, email, username, password };
-        if (clientCode && clientCode.trim()) payload.clientCode = clientCode.trim();
-        const { data } = await axios.post<User & { token: string }>('/users/signup', payload);
-        const s = await persistSession(data);
-        setToken(s.token);
-        setUser(s.user);
-
-        // Sincroniza rutinas tras registrarse
-        try {
-          await syncRoutinesFromServer(API_BASE, s.token);
-
-        } catch (syncError) {
-          console.error('[Auth] Error sincronizando rutinas:', syncError);
-        }
-
-        return { ...s.user, token: s.token };
-      },
-
-      async upgradeByCode(clientCode: string) {
-
-        const { data } = await axios.post<User & { token: string }>(
-          '/users/upgrade',
-          { clientCode: clientCode.trim() }
-        );
-        const s = await persistSession(data);
-        setToken(s.token);
-        setUser(s.user);
-
-        // Re-sincroniza por si el upgrade asigna rutinas
-        try {
-          await syncRoutinesFromServer(API_BASE, s.token);
-
-        } catch (syncError) {
-          console.error('[Auth] Error sincronizando rutinas:', syncError);
-        }
-
-        return { ...s.user, token: s.token };
-      },
-
-      async loginWithGoogle(googleAccessToken: string) {
-
-        const { data } = await axios.post<User & { token: string }>(
-          '/users/google-login',
-          { accessToken: googleAccessToken }
-        );
-        const s = await persistSession(data);
-        setToken(s.token);
-        setUser(s.user);
-
-        // Sincroniza rutinas al entrar con Google
-        try {
-          await syncRoutinesFromServer(API_BASE, s.token);
-
-        } catch (syncError) {
-          console.error('[Auth] Error sincronizando rutinas:', syncError);
-        }
-
-        return { ...s.user, token: s.token };
-      },
-
-      async loginWithApple(identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) {
-
-        const { data } = await axios.post<User & { token: string }>(
-          '/users/apple-login',
-          {
-            identityToken,
-            fullName: fullName ? {
-              givenName: fullName.givenName || '',
-              familyName: fullName.familyName || ''
-            } : null
-          }
-        );
-        const s = await persistSession(data);
-        setToken(s.token);
-        setUser(s.user);
-
-        // Sincroniza rutinas al entrar con Apple
-        try {
-          await syncRoutinesFromServer(API_BASE, s.token);
-
-        } catch (syncError) {
-          console.error('[Auth] Error sincronizando rutinas:', syncError);
-        }
-
-        return { ...s.user, token: s.token };
-      },
-
-      async logout() {
-
-        await clearSession();
-        setToken(null);
-        setUser(null);
-      },
-
-      async refreshUser() {
-        if (!token) {
-          console.warn('[Auth] No hay token, no se puede refrescar usuario');
-          return undefined;
-        }
-        try {
-          const { data } = await axios.get<User>('/users/me');
-
-          // Crear un objeto completamente nuevo para forzar re-render
-          const freshUser: User = {
-            _id: data._id,
-            nombre: data.nombre,
-            email: data.email,
-            username: data.username,
-            tipoUsuario: data.tipoUsuario,
-            onboardingCompleted: data.onboardingCompleted,
-            info_user: data.info_user ? { ...data.info_user } : undefined,
-            trainerProfile: data.trainerProfile ? { ...data.trainerProfile } : undefined,
-            currentTrainerId: data.currentTrainerId,
-            referralCode: data.referralCode,
-            subscriptionExpiry: data.subscriptionExpiry,
-            referralPremiumDays: data.referralPremiumDays,
-            referredUsersCount: data.referredUsersCount,
-            af: data.af,
-            // 🛑 CRITICAL: Add subscription fields for frozen/over-quota check
-            subscriptionStatus: data.subscriptionStatus,
-            overQuota: data.overQuota,
-            avatarUrl: data.avatarUrl, // Persist avatarUrl
-          };
-
-          // Persistir y actualizar estado
-          await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
-
-          // IMPORTANTE: Crear nuevo objeto con spread para forzar re-render
-          setUser({ ...freshUser });
-
-
-          return freshUser;
-        } catch (error: any) {
-          console.error('[Auth] ❌ Error refrescando usuario:', error);
-
-          // Si el token expiró (401), cerrar sesión silenciosamente para redirigir al login
-          if (error.response?.status === 401) {
-            console.warn('[Auth] Token expirado (401), cerrando sesión...');
-            await clearSession();
-            setToken(null);
-            setUser(null);
-            return undefined;
-          }
-
-          // Otros errores sí se lanzan
-          throw error;
-        }
-      },
-
-      // 🔄 Sincronización de datos al cambiar de plan
-      async syncDataOnPlanChange(previousType: string | undefined, newType: string) {
-        if (!token) {
-          console.warn('[Auth] No hay token para sincronizar');
-          return null;
-        }
-        try {
-
-          const result = await handlePlanTransition(previousType, newType, token);
-          if (result) {
-            setPendingSyncResult(result);
-          }
-          return result;
-        } catch (error) {
-          console.error('[Auth] Error en sincronización:', error);
-          return null;
-        }
-      },
-
+      login,
+      register,
+      upgradeByCode,
+      loginWithGoogle,
+      loginWithApple,
+      logout,
+      refreshUser,
+      syncDataOnPlanChange,
       pendingSyncResult,
-
-      clearSyncResult() {
-        setPendingSyncResult(null);
-      },
+      clearSyncResult,
     }),
-    [user, token, isLoading, pendingSyncResult]
-
+    [user, token, isLoading, pendingSyncResult,
+     login, register, upgradeByCode, loginWithGoogle, loginWithApple,
+     logout, refreshUser, syncDataOnPlanChange, clearSyncResult]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

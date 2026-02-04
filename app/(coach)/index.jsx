@@ -4,8 +4,6 @@ import {
     View,
     Text,
     StyleSheet,
-    TouchableOpacity,
-    ScrollView,
     SafeAreaView,
     Image,
     ActivityIndicator,
@@ -13,7 +11,6 @@ import {
     Platform,
     Modal,
     FlatList,
-    TextInput,
     useWindowDimensions,
     Animated,
     Share,
@@ -27,6 +24,12 @@ import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../compone
 import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
 import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials';
+// Componentes mejorados para iOS
+import {
+    EnhancedScrollView as ScrollView,
+    EnhancedTouchable as TouchableOpacity,
+    EnhancedTextInput as TextInput,
+} from '../../components/ui';
 
 // Configuración de las cajas temáticas
 const THEMED_BOXES = [
@@ -269,7 +272,7 @@ export default function TrainerDashboard() {
         clients: 0
     });
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
     useEffect(() => {
         loadTrainerData();
@@ -337,8 +340,7 @@ export default function TrainerDashboard() {
         }));
     };
 
-    const openMessagesModal = async () => {
-        setMessagesModalVisible(true);
+    const loadMessagesData = async () => {
         try {
             const [clientsRes, summaryRes] = await Promise.all([
                 fetch(`${API_URL}/api/trainers/clients-extended`, {
@@ -357,15 +359,27 @@ export default function TrainerDashboard() {
         }
     };
 
+    const openMessagesModal = () => {
+        setMessagesModalVisible(true);
+        loadMessagesData();
+    };
+
     const openClientChat = (client) => {
         setSelectedClient(client);
-        setMessagesModalVisible(false);
+        // NO cerramos el modal de mensajes para que al volver siga abierto
+        // setMessagesModalVisible(false);
         setChatModalVisible(true);
     };
 
     const closeClientChat = () => {
         setChatModalVisible(false);
         setSelectedClient(null);
+
+        // Si el modal de mensajes está abierto, refrescamos los datos
+        if (messagesModalVisible) {
+            loadMessagesData();
+        }
+
         fetch(`${API_URL}/api/chat/total-unread`, {
             headers: { Authorization: `Bearer ${token}` }
         }).then(res => res.json()).then(data => {

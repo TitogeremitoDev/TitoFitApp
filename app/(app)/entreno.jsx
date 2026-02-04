@@ -25,22 +25,19 @@ import {
   Text,
   StyleSheet,
   Dimensions,
-  TouchableOpacity,
   FlatList,
-  TextInput,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   Modal,
-  ScrollView,
   Animated,
   Image,
+  AppState,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import YoutubeIframe from 'react-native-youtube-iframe';
@@ -48,18 +45,27 @@ import Stopwatch from '../../components/Stopwatch';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+// Componentes mejorados para iOS
+import {
+  EnhancedScrollView as ScrollView,
+  EnhancedTouchable as TouchableOpacity,
+  EnhancedPressable as Pressable,
+  EnhancedTextInput as TextInput,
+} from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useAchievements } from '../../context/AchievementsContext';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
 import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
 import { useVideoFeedback } from '../../src/hooks/useVideoFeedback';
+import { getContrastColor } from '../../utils/colors';
 
 
 const { width } = Dimensions.get('window');
 const ARROW_W = 56;
 const ESTADOS = ['C', 'NC', 'OE']; // ← OJ → OE
 const SEMANAS_MAX = 200;
+const DEBOUNCE_SAVE_MS = 600; // Debounce para guardado de series (evita writes en cada tecla)
 
 const EXTRA_ABBR = {
   Descendentes: 'DESC',
@@ -109,6 +115,31 @@ function normalizeDias(raw) {
     return keys.map((k) => (Array.isArray(raw[k]) ? raw[k] : []));
   }
   return [];
+}
+
+/* ───────── Asegurar IDs únicos en ejercicios ───────── */
+const _uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(4);
+
+/**
+ * Recorre todos los días/ejercicios y garantiza que cada ejercicio tenga un
+ * `id` único.  Si falta o está duplicado, genera uno nuevo con `_uid()`.
+ * Devuelve un NUEVO array (no muta el original).
+ */
+function ensureUniqueExerciseIds(diasArr) {
+  if (!Array.isArray(diasArr)) return diasArr;
+  const globalSeen = new Set();
+  return diasArr.map((dayExercises) => {
+    if (!Array.isArray(dayExercises)) return dayExercises;
+    return dayExercises.map((ej, idx) => {
+      if (ej && (ej.id == null || ej.id === '' || globalSeen.has(ej.id))) {
+        const newEj = { ...ej, id: `ej-${_uid()}` };
+        globalSeen.add(newEj.id);
+        return newEj;
+      }
+      globalSeen.add(ej.id);
+      return ej;
+    });
+  });
 }
 
 /* ───────── Index de ejercicios (por músculo y nombre) ───────── */
@@ -353,7 +384,7 @@ function CollapsibleWeekDaySelector({ semana, diaIdx, totalDias, onSemanaChange,
             selected={semana}
             onChange={onSemanaChange}
           />
-          <View style={{ height: 8 }} />
+          <View style={styles.spacer8} />
           <DaysCarousel
             total={totalDias}
             selected={diaIdx}
@@ -629,7 +660,7 @@ function NotesModal({ visible, onClose, serieKey, initialValue, initialNote, ini
                 style={[notesModalStyles.deleteBtn, { borderColor: theme.border }]}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 16 }}>🗑️</Text>
+                <Text style={styles.fontSize16}>🗑️</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -1384,6 +1415,44 @@ function TutorialModal({ visible, onComplete }) {
     return '#bbf7d0'; // verde - en rango
   };
 
+  const { user, token } = useAuth();
+  const [coachLogo, setCoachLogo] = useState(null);
+
+  useEffect(() => {
+    const fetchCoachLogo = async () => {
+      // 1. Try from user context first (most reliable)
+      if (user?.trainerProfile?.logoUrl) {
+        setCoachLogo(user.trainerProfile.logoUrl);
+        return;
+      }
+
+      // 2. If client, try to fetch fresh (Robust check)
+      if (user?.tipoUsuario === 'CLIENTE' && visible) {
+        try {
+          // Use fetch since axios might not be imported or we want consistent behavior
+          const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+
+          console.log('Fetching coach logo for tutorial (entreno)...');
+          const res = await fetch(`${API_URL}/api/clients/my-trainer`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+
+          if (data.success && data.trainer?.logoUrl) {
+            console.log('Coach logo found:', data.trainer.logoUrl);
+            setCoachLogo(data.trainer.logoUrl);
+          }
+        } catch (e) {
+          console.log('Error fetching coach logo for tutorial:', e);
+        }
+      }
+    };
+
+    if (visible) {
+      fetchCoachLogo();
+    }
+  }, [visible, user?.tipoUsuario, user?.trainerProfile?.logoUrl, token]);
+
   const goToSlide = (index) => {
     if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;
     setCurrentSlide(index);
@@ -1450,8 +1519,12 @@ function TutorialModal({ visible, onComplete }) {
             <View style={tutorialStyles.slideContent}>
               <View style={tutorialStyles.logoContainer}>
                 <Image
-                  source={require('../../assets/logo.png')}
-                  style={tutorialStyles.logo}
+                  source={
+                    coachLogo
+                      ? { uri: coachLogo }
+                      : require('../../assets/logo.png')
+                  }
+                  style={[tutorialStyles.logo, coachLogo && { borderRadius: 50 }]} // Style adjustment for round logos
                   resizeMode="contain"
                 />
               </View>
@@ -1594,21 +1667,18 @@ function TutorialModal({ visible, onComplete }) {
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
                   {/* C */}
                   <View style={[tutorialStyles.miniCard, { backgroundColor: theme.success + '20', borderColor: theme.success + '40', flex: 1, paddingVertical: 16 }]}>
-                    <Ionicons name="checkmark-circle" size={28} color={theme.success} />
-                    <Text style={[tutorialStyles.miniCardTitle, { color: theme.success }]}>C</Text>
-                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Completado</Text>
+                    <Ionicons name="checkmark-circle" size={40} color={theme.success} />
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Completado</Text>
                   </View>
                   {/* NC */}
                   <View style={[tutorialStyles.miniCard, { backgroundColor: '#ef4444' + '20', borderColor: '#ef4444' + '40', flex: 1, paddingVertical: 16 }]}>
-                    <Ionicons name="close-circle" size={28} color="#ef4444" />
-                    <Text style={[tutorialStyles.miniCardTitle, { color: '#ef4444' }]}>NC</Text>
-                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>No Completado</Text>
+                    <Ionicons name="close-circle" size={40} color="#ef4444" />
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Fallado</Text>
                   </View>
                   {/* OE */}
                   <View style={[tutorialStyles.miniCard, { backgroundColor: '#f59e0b' + '20', borderColor: '#f59e0b' + '40', flex: 1, paddingVertical: 16 }]}>
-                    <Ionicons name="swap-horizontal" size={28} color="#f59e0b" />
-                    <Text style={[tutorialStyles.miniCardTitle, { color: '#f59e0b' }]}>OE</Text>
-                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary }]}>Otro Ejercicio</Text>
+                    <Ionicons name="swap-horizontal" size={40} color="#f59e0b" />
+                    <Text style={[tutorialStyles.miniCardSubtitle, { color: theme.textSecondary, marginTop: 8 }]}>Alternativa</Text>
                   </View>
                 </View>
 
@@ -1706,7 +1776,11 @@ function TutorialModal({ visible, onComplete }) {
             <View style={tutorialStyles.slideContent}>
               <View style={tutorialStyles.finalImageContainer}>
                 <Image
-                  source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                  source={
+                    coachLogo
+                      ? { uri: coachLogo }
+                      : require('../../assets/images/fitness/IMAGEN1.jpg')
+                  }
                   style={tutorialStyles.finalImage}
                   resizeMode="cover"
                 />
@@ -1747,7 +1821,11 @@ function TutorialModal({ visible, onComplete }) {
             <View style={tutorialStyles.coachAvatarContainer}>
               <View style={[tutorialStyles.coachAvatarGlow, { backgroundColor: theme.primary + '20' }]} />
               <Image
-                source={require('../../assets/images/fitness/IMAGEN1.jpg')}
+                source={
+                  coachLogo
+                    ? { uri: coachLogo }
+                    : require('../../assets/images/fitness/IMAGEN1.jpg')
+                }
                 style={tutorialStyles.coachAvatar}
                 resizeMode="cover"
               />
@@ -2512,6 +2590,13 @@ export default function Entreno() {
 
   const listRef = useRef(null);
 
+  // ⚡ Refs para debounce del guardado de series (evita AsyncStorage en cada tecla)
+  const saveTimeoutRef = useRef(null);
+  const pendingProgRef = useRef(null);
+
+  // ⚡ Ref para evitar problemas de orden con flushProgress
+  const flushProgressRef = useRef(null);
+
   // 🆕 Estado para ejercicios desde MongoDB
   const [exercises, setExercises] = useState([]);
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -2552,6 +2637,10 @@ export default function Entreno() {
       const response = await fetch(`${API_URL}/api/exercises`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      const contentType = response.headers.get('content-type');
+      if (!response.ok || !contentType?.includes('application/json')) {
+        throw new Error(`Server returned ${response.status}`);
+      }
       const data = await response.json();
       if (data.success) {
         setExercises(data.exercises);
@@ -2707,8 +2796,8 @@ export default function Entreno() {
 
           console.log('[Entreno] ✅ CurrentRoutine encontrada:', currentRoutine.nombre);
 
-          // Convertir diasArr a formato normalizado
-          const diasNorm = normalizeDias(currentRoutine.diasArr || []);
+          // Convertir diasArr a formato normalizado y asegurar IDs únicos
+          const diasNorm = ensureUniqueExerciseIds(normalizeDias(currentRoutine.diasArr || []));
 
           setActiveId(currentRoutine._id);
           setRutina({
@@ -2821,13 +2910,17 @@ export default function Entreno() {
           routineData = {};
 
           // Convertir diasArr a formato {dia1: [], dia2: [], ...}
+          // y asegurar que cada ejercicio tenga un ID único
           if (Array.isArray(serverRoutine.diasArr)) {
             serverRoutine.diasArr.forEach((dayExercises, idx) => {
-              routineData[`dia${idx + 1}`] = dayExercises || [];
+              routineData[`dia${idx + 1}`] = (dayExercises || []).map((ej, ejIdx) => ({
+                ...ej,
+                id: ej?.id || `ej-${_uid()}`,
+              }));
             });
           }
 
-          // Cachear en AsyncStorage para uso futuro
+          // Cachear en AsyncStorage para uso futuro (ya con IDs)
           await AsyncStorage.setItem(`routine_${idAct}`, JSON.stringify(routineData));
           console.log('[Entreno] ✅ Rutina cargada y cacheada:', serverRoutine.nombre);
         }
@@ -2836,7 +2929,7 @@ export default function Entreno() {
       }
     }
 
-    const diasNorm = normalizeDias(routineData || []);
+    const diasNorm = ensureUniqueExerciseIds(normalizeDias(routineData || []));
     // 🆕 Usar nombre guardado como fallback si la rutina no está en la lista
     const metaBase = activa || { id: idAct, nombre: savedRoutineName || 'Rutina Desconocida' };
 
@@ -2908,6 +3001,24 @@ export default function Entreno() {
     };
     checkFirstTime();
   }, [hydrated, rutina]);
+
+  // ⚡ Guardar progreso pendiente cuando la app va a background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // Usar ref para evitar problemas de orden de definición
+        flushProgressRef.current?.();
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+      // Limpiar timeout pendiente al desmontar
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const completeTutorial = async () => {
     try {
@@ -2990,6 +3101,21 @@ export default function Entreno() {
     if (Number.isFinite(metaDias) && metaDias > 0) return metaDias;
     return Array.isArray(diasEj) ? Math.max(1, diasEj.length) : 1;
   }, [rutina, diasEj]);
+
+  // 🚀 OPTIMIZACIÓN: Pre-calcular detalles de ejercicios para evitar lookups en cada render
+  const exerciseDetailsMap = useMemo(() => {
+    const map = new Map();
+    const ejercicios = (diasEj[diaIdx] || []).filter(Boolean);
+    for (const ej of ejercicios) {
+      const details = findExerciseInIndex(ej.musculo, ej.nombre);
+      map.set(ej.id, {
+        hasImage: !!details?.imagenEjercicioId?.trim(),
+        hasVideo: !!details?.videoId?.trim(),
+        details
+      });
+    }
+    return map;
+  }, [diasEj, diaIdx, findExerciseInIndex]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -3543,38 +3669,112 @@ export default function Entreno() {
     }
   };
 
-  const setSerieDato = async (serieKey, campo, val) => {
+  // ⚡ Flush: guarda inmediatamente el progreso pendiente (llamar en onBlur, background, etc.)
+  const flushProgress = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const pendingData = pendingProgRef.current;
+    if (!pendingData) return;
+
+    pendingProgRef.current = null;
+
+    try {
+      if (activeId) {
+        const sessionData = JSON.stringify({
+          lastSemana: semana,
+          lastDiaIdx: diaIdx,
+          updatedAt: Date.now(),
+        });
+        await AsyncStorage.multiSet([
+          ['progress', JSON.stringify(pendingData)],
+          [sessionKeyFor(activeId), sessionData],
+        ]);
+      } else {
+        await AsyncStorage.setItem('progress', JSON.stringify(pendingData));
+      }
+    } catch (e) {
+      console.warn('No se pudo guardar el progreso:', e);
+    }
+  }, [activeId, semana, diaIdx]);
+
+  // Asignar a ref para que AppState listener pueda acceder
+  flushProgressRef.current = flushProgress;
+
+  const setSerieDato = (serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
     // Convertir coma a punto para compatibilidad con separador decimal europeo
     const normalizedVal = typeof val === 'string' ? val.replace(/,/g, '.') : val;
-    const nextProg = {
-      ...prog,
-      [serieKey]: { ...(prog[serieKey] || {}), [campo]: normalizedVal },
-    };
-    setProg(nextProg);
+
+    // ⚡ Actualización funcional del estado (UI instantánea)
+    setProg(prevProg => {
+      const nextProg = {
+        ...prevProg,
+        [serieKey]: { ...(prevProg[serieKey] || {}), [campo]: normalizedVal },
+      };
+      // Guardar referencia para el debounce
+      pendingProgRef.current = nextProg;
+
+      // 🆕 Auto-marcar como Completado si todas las series están rellenas
+      if (ejercicio && totalSeries > 0) {
+        // Extraer el ejerKey del serieKey (quitar el último |idx)
+        const ejerKey = serieKey.split('|').slice(0, 3).join('|');
+
+        // Verificar si TODAS las series tienen reps Y peso
+        let allComplete = true;
+        for (let i = 0; i < totalSeries; i++) {
+          const sKey = `${ejerKey}|${i}`;
+          const serieData = nextProg[sKey] || {};
+          const hasReps = serieData.reps && String(serieData.reps).trim() !== '';
+          const hasPeso = serieData.peso && String(serieData.peso).trim() !== '';
+          if (!hasReps || !hasPeso) {
+            allComplete = false;
+            break;
+          }
+        }
+
+        // Si todas las series están completas, marcar como 'C'
+        if (allComplete && nextProg[ejerKey] !== 'C') {
+          nextProg[ejerKey] = 'C';
+        }
+      }
+
+      return nextProg;
+    });
+
     // 🚪 Marcar que hay cambios sin guardar
     setHasUnsavedChanges(true);
 
-    // Guardado inmediato para las series (mantener comportamiento original)
-    if (activeId) {
-      const sessionData = JSON.stringify({
-        lastSemana: semana,
-        lastDiaIdx: diaIdx,
-        updatedAt: Date.now(),
-      });
+    // ⚡ Debounce: cancelar guardado anterior y programar nuevo
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      const dataToSave = pendingProgRef.current;
+      if (!dataToSave) return;
+
+      pendingProgRef.current = null;
+      saveTimeoutRef.current = null;
 
       try {
-        await AsyncStorage.multiSet([
-          ['progress', JSON.stringify(nextProg)],
-          [sessionKeyFor(activeId), sessionData],
-        ]);
+        if (activeId) {
+          const sessionData = JSON.stringify({
+            lastSemana: semana,
+            lastDiaIdx: diaIdx,
+            updatedAt: Date.now(),
+          });
+          await AsyncStorage.multiSet([
+            ['progress', JSON.stringify(dataToSave)],
+            [sessionKeyFor(activeId), sessionData],
+          ]);
+        } else {
+          await AsyncStorage.setItem('progress', JSON.stringify(dataToSave));
+        }
       } catch (e) {
-        console.warn('No se pudo guardar el dato de serie o la sesión', e);
+        console.warn('No se pudo guardar el dato de serie:', e);
       }
-    } else {
-      try {
-        await AsyncStorage.setItem('progress', JSON.stringify(nextProg));
-      } catch { }
-    }
+    }, DEBOUNCE_SAVE_MS);
   };
 
   const findPrev = (week, d, eId, sIdx, field) => {
@@ -3754,8 +3954,8 @@ export default function Entreno() {
               onPress={exportWeekToExcel}
               activeOpacity={0.85}
             >
-              <Ionicons name="download-outline" size={16} color="#fff" />
-              <Text style={styles.exportTxt}>Excel S</Text>
+              <Ionicons name="download-outline" size={16} color={getContrastColor(theme.primary)} />
+              <Text style={[styles.exportTxt, { color: getContrastColor(theme.primary) }]}>Excel S</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3823,7 +4023,7 @@ export default function Entreno() {
                   )}
 
                   <TouchableOpacity
-                    style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder }]}
+                    style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder, backgroundColor: theme.cardHeaderBg }]}
                     onPress={() => setOpenId(abierto ? null : item.id)}
                   >
                     <Text style={[styles.cardTxt, { color: theme.text }]}>
@@ -3839,30 +4039,59 @@ export default function Entreno() {
                   {/* Estados + Herramientas (TC/Vídeo) */}
                   <View style={styles.stateToolsRow}>
                     <View style={styles.stateRow}>
-                      {ESTADOS.map((e) => (
-                        <TouchableOpacity
-                          key={e}
-                          style={[
-                            styles.radio,
-                            { borderColor: theme.border },
-                            currentState === e && [styles.radioSel, {
-                              backgroundColor: theme.success,
-                              borderColor: theme.success
-                            }]
-                          ]}
-                          onPress={() => setEstadoEjLocal(ejerKey, e)}
-                        >
-                          <Text
-                            style={[
-                              styles.radioTxt,
-                              { color: theme.text },
-                              currentState === e && styles.radioTxtSel,
-                            ]}
-                          >
-                            {e}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                      {/* C - Check (Completado) */}
+                      <TouchableOpacity
+                        style={[
+                          styles.radio,
+                          {
+                            borderColor: currentState === 'C' ? '#22c55e' : '#bbf7d0',
+                            backgroundColor: currentState === 'C' ? '#22c55e' : '#f0fdf4'
+                          }
+                        ]}
+                        onPress={() => setEstadoEjLocal(ejerKey, 'C')}
+                      >
+                        <Ionicons
+                          name="checkmark"
+                          size={16}
+                          color={currentState === 'C' ? '#fff' : '#86efac'}
+                        />
+                      </TouchableOpacity>
+
+                      {/* NC - Cruz (No Completado) */}
+                      <TouchableOpacity
+                        style={[
+                          styles.radio,
+                          {
+                            borderColor: currentState === 'NC' ? '#ef4444' : '#fecaca',
+                            backgroundColor: currentState === 'NC' ? '#ef4444' : '#fef2f2'
+                          }
+                        ]}
+                        onPress={() => setEstadoEjLocal(ejerKey, 'NC')}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={16}
+                          color={currentState === 'NC' ? '#fff' : '#fca5a5'}
+                        />
+                      </TouchableOpacity>
+
+                      {/* OE - Flechas de Cambio (Orden Ejercicio) */}
+                      <TouchableOpacity
+                        style={[
+                          styles.radio,
+                          {
+                            borderColor: currentState === 'OE' ? '#f97316' : '#fed7aa',
+                            backgroundColor: currentState === 'OE' ? '#f97316' : '#fff7ed'
+                          }
+                        ]}
+                        onPress={() => setEstadoEjLocal(ejerKey, 'OE')}
+                      >
+                        <Ionicons
+                          name="swap-horizontal"
+                          size={16}
+                          color={currentState === 'OE' ? '#fff' : '#fdba74'}
+                        />
+                      </TouchableOpacity>
                     </View>
 
                     <View style={styles.toolsRow}>
@@ -3877,45 +4106,35 @@ export default function Entreno() {
                         <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
                       </TouchableOpacity>
 
-                      {(() => {
-                        const ejImg = findExerciseInIndex(item.musculo, item.nombre);
-                        const hasImage = !!ejImg?.imagenEjercicioId?.trim();
-                        return (
-                          <TouchableOpacity
-                            onPress={() => onOpenImage(item)}
-                            style={[styles.toolBtn, styles.toolBtnIcon, {
-                              backgroundColor: theme.backgroundTertiary,
-                              borderColor: theme.border,
-                              opacity: hasImage ? 1 : 0.5
-                            }]}
-                            activeOpacity={0.85}
-                          >
-                            <Text style={{ fontSize: 14 }}>{hasImage ? '🖼️' : '🚫'}</Text>
-                          </TouchableOpacity>
-                        );
-                      })()}
+                      <TouchableOpacity
+                        onPress={() => onOpenImage(item)}
+                        style={[styles.toolBtn, styles.toolBtnIcon, {
+                          backgroundColor: theme.backgroundTertiary,
+                          borderColor: theme.border,
+                          opacity: exerciseDetailsMap.get(item.id)?.hasImage ? 1 : 0.5
+                        }]}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={{ fontSize: 14 }}>
+                          {exerciseDetailsMap.get(item.id)?.hasImage ? '🖼️' : '🚫'}
+                        </Text>
+                      </TouchableOpacity>
 
-                      {(() => {
-                        const ejVid = findExerciseInIndex(item.musculo, item.nombre);
-                        const hasVideo = !!ejVid?.videoId?.trim();
-                        return (
-                          <TouchableOpacity
-                            onPress={() => onOpenVideo(item)}
-                            style={[styles.toolBtn, styles.toolBtnIcon, {
-                              backgroundColor: theme.backgroundTertiary,
-                              borderColor: theme.border,
-                              opacity: hasVideo ? 1 : 0.5
-                            }]}
-                            activeOpacity={0.85}
-                          >
-                            <Ionicons
-                              name={hasVideo ? "videocam-outline" : "videocam-off-outline"}
-                              size={16}
-                              color={theme.text}
-                            />
-                          </TouchableOpacity>
-                        );
-                      })()}
+                      <TouchableOpacity
+                        onPress={() => onOpenVideo(item)}
+                        style={[styles.toolBtn, styles.toolBtnIcon, {
+                          backgroundColor: theme.backgroundTertiary,
+                          borderColor: theme.border,
+                          opacity: exerciseDetailsMap.get(item.id)?.hasVideo ? 1 : 0.5
+                        }]}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons
+                          name={exerciseDetailsMap.get(item.id)?.hasVideo ? "videocam-outline" : "videocam-off-outline"}
+                          size={16}
+                          color={theme.text}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -4011,7 +4230,8 @@ export default function Entreno() {
                                     });
                                   } catch { }
                                 }}
-                                onChangeText={(v) => setSerieDato(serieKey, 'reps', v)}
+                                onChangeText={(v) => setSerieDato(serieKey, 'reps', v, item, (item.series || []).length)}
+                                onBlur={flushProgress}
                               />
                               {iconReps && (
                                 <Ionicons
@@ -4035,7 +4255,8 @@ export default function Entreno() {
                                 placeholderTextColor={theme.placeholder}
                                 keyboardType="numeric"
                                 value={curr.peso || ''}
-                                onChangeText={(v) => setSerieDato(serieKey, 'peso', v)}
+                                onChangeText={(v) => setSerieDato(serieKey, 'peso', v, item, (item.series || []).length)}
+                                onBlur={flushProgress}
                               />
                               {iconKg && (
                                 <Ionicons
@@ -4685,6 +4906,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 10,
     borderBottomWidth: 0.6,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
   },
   cardTxt: { flex: 1, fontSize: 14, fontWeight: '600' },
 
@@ -5283,5 +5506,25 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 20,
     marginTop: -1,
+  },
+  // Espaciadores reutilizables
+  spacer8: {
+    height: 8,
+  },
+  spacer10: {
+    height: 10,
+  },
+  spacer12: {
+    height: 12,
+  },
+  spacer16: {
+    height: 16,
+  },
+  spacer20: {
+    height: 20,
+  },
+  // Estilos de texto comunes
+  fontSize16: {
+    fontSize: 16,
   },
 });

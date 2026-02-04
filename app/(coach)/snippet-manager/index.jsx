@@ -6,17 +6,18 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
     Platform, useWindowDimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import { EnhancedTextInput } from '../../../components/ui';
 import CoachHeader from '../components/CoachHeader';
 import * as Clipboard from 'expo-clipboard';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 // Categorías con colores
 const CATEGORIES = {
@@ -398,8 +399,9 @@ export default function SnippetManagerScreen() {
                             </View>
 
                             <Text style={styles.inputLabel}>Etiqueta corta *</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formShortLabel}
                                 onChangeText={setFormShortLabel}
                                 placeholder="Ej: Rodillas Valgas"
@@ -408,8 +410,9 @@ export default function SnippetManagerScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Texto completo *</Text>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
+                            <EnhancedTextInput
+                                containerStyle={[styles.inputContainer, styles.textAreaContainer]}
+                                style={[styles.inputText, styles.textAreaText]}
                                 value={formText}
                                 onChangeText={setFormText}
                                 placeholder="El texto que se insertará al pulsar..."
@@ -419,8 +422,9 @@ export default function SnippetManagerScreen() {
                             />
 
                             <Text style={styles.inputLabel}>Tags (separados por coma)</Text>
-                            <TextInput
-                                style={styles.input}
+                            <EnhancedTextInput
+                                containerStyle={styles.inputContainer}
+                                style={styles.inputText}
                                 value={formTags}
                                 onChangeText={setFormTags}
                                 placeholder="sentadilla, rodilla, técnica"
@@ -624,11 +628,16 @@ const styles = StyleSheet.create({
     catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     catOption: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 4 },
     catOptionText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-    input: {
-        backgroundColor: '#f8fafc', color: '#1e293b', padding: 14, borderRadius: 12, fontSize: 15,
-        borderWidth: 1, borderColor: '#e2e8f0', ...(Platform.OS === 'web' && { outlineStyle: 'none' })
+    inputContainer: {
+        backgroundColor: '#f8fafc', padding: 14, borderRadius: 12,
+        borderWidth: 1, borderColor: '#e2e8f0'
     },
-    textArea: { minHeight: 100, maxHeight: 200, textAlignVertical: 'top' },
+    inputText: {
+        color: '#1e293b', fontSize: 15,
+        ...(Platform.OS === 'web' && { outlineStyle: 'none' })
+    },
+    textAreaContainer: { minHeight: 100, maxHeight: 200 },
+    textAreaText: { textAlignVertical: 'top' },
 
     saveButton: { backgroundColor: '#f59e0b', padding: 16, margin: 20, borderRadius: 12, alignItems: 'center' },
     saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },

@@ -1,80 +1,59 @@
 // src/utils/recipePlaceholder.js
 
 /**
- * PALETA DE COLORES CULINARIOS
- * Colores vibrantes pero elegantes para fondos de comida.
- */
-const FOOD_COLORS = [
-    '#fca5a5', // Red 300
-    '#fdba74', // Orange 300
-    '#fde047', // Yellow 300
-    '#bef264', // Lime 300
-    '#86efac', // Green 300
-    '#67e8f9', // Cyan 300
-    '#93c5fd', // Blue 300
-    '#c4b5fd', // Violet 300
-    '#f0abfc', // Fuchsia 300
-    '#fda4af', // Rose 300
-];
-
-/**
- * DICCIONARIO SEMÁNTICO
- * Mapea palabras clave a iconos y colores específicos.
- * Orden: Prioridad de arriba a abajo.
- */
-const SEMANTIC_MAP = [
-    { keywords: ['pollo', 'chicken', 'pavo', 'turkey', 'ave'], icon: '🍗', color: '#fb923c' }, // Orange
-    { keywords: ['carne', 'meat', 'ternera', 'beef', 'bistec', 'steak', 'cerdo', 'pork'], icon: '🥩', color: '#f87171' }, // Red
-    { keywords: ['pescado', 'fish', 'salmon', 'salmón', 'atun', 'atún', 'merluza', 'bacalao'], icon: '🐟', color: '#60a5fa' }, // Blue
-    { keywords: ['hamburguesa', 'burger'], icon: '🍔', color: '#fbbf24' }, // Yellow
-    { keywords: ['pizza'], icon: '🍕', color: '#fca5a5' }, // Red Light
-    { keywords: ['ensalada', 'salad', 'verde', 'vegetal', 'vegan', 'tofu'], icon: '🥗', color: '#4ade80' }, // Green
-    { keywords: ['arroz', 'rice', 'paella', 'risotto', 'bowl'], icon: '🍚', color: '#2dd4bf' }, // Teal
-    { keywords: ['pasta', 'espagueti', 'spaghetti', 'macarrones', 'fideos', 'noodle'], icon: '🍝', color: '#fde047' }, // Yellow
-    { keywords: ['huevo', 'egg', 'tortilla', 'revuelto', 'omelette'], icon: '🍳', color: '#fef08a' }, // Yellow Light
-    { keywords: ['pan', 'bread', 'tostada', 'toast', 'bocadillo', 'sandwich'], icon: '🥪', color: '#fdba74' }, // Orange Light
-    { keywords: ['patata', 'potato', 'frito', 'fries'], icon: '🍟', color: '#fcd34d' }, // Amber
-    { keywords: ['sopa', 'soup', 'caldo', 'crema', 'pure', 'puré'], icon: '🥣', color: '#fb923c' },
-    { keywords: ['postre', 'dessert', 'pastel', 'cake', 'dulce', 'sweet', 'chocolate'], icon: '🍰', color: '#f472b6' }, // Pink
-    { keywords: ['fruta', 'fruit', 'manzana', 'apple', 'platano', 'banana'], icon: '🍎', color: '#ef4444' },
-    { keywords: ['batido', 'smoothie', 'shake', 'proteina'], icon: '🥤', color: '#c084fc' }, // Purple
-    { keywords: ['cafe', 'coffee', 'te', 'tea'], icon: '☕', color: '#a8a29e' }, // Brown-ish
-];
-
-/**
- * Genera un placeholder semántico basado en el nombre de la comida.
- * Fallback: Usa un hash del nombre para elegir un color consistente.
+ * Genera un placeholder visual (URL de imagen) basado en el nombre de la comida.
+ * Usa imágenes de alta calidad de Unsplash para dar un toque premium.
  * 
  * @param {string} name - Nombre de la comida/receta
- * @returns {{ icon: string, color: string, backgroundColor: string }}
+ * @returns {string} URL de la imagen (Unsplash)
  */
 export const getRecipePlaceholder = (name) => {
-    if (!name) return { icon: '🍽️', color: '#cbd5e1', backgroundColor: '#f1f5f9' };
+    if (!name) return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'; // Generic Healthy Bowl
+    const n = name.toLowerCase();
 
-    const normalized = name.toLowerCase();
+    // 1. Frutas (Fruits)
+    if (n.includes('manzana') || n.includes('platano') || n.includes('plátano') || n.includes('fruta') || n.includes('naranja') || n.includes('pera') || n.includes('fruit') || n.includes('fresa') || n.includes('piña'))
+        return 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?w=400';
 
-    // 1. Búsqueda Semántica
-    for (const entry of SEMANTIC_MAP) {
-        if (entry.keywords.some(k => normalized.includes(k))) {
-            return {
-                icon: entry.icon,
-                color: '#fff', // Iconos suelen verse bien sobre fondo coloreado, o usamos el color como fondo
-                backgroundColor: entry.color
-            };
-        }
-    }
+    // 2. Ensaladas / Vegetales (Salad/Veg)
+    if (n.includes('ensalada') || n.includes('lechuga') || n.includes('tomate') || n.includes('verdura') || n.includes('pepino') || n.includes('salad') || n.includes('vegetal') || n.includes('aguacate'))
+        return 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400';
 
-    // 2. Fallback Consistente (Hash)
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const index = Math.abs(hash) % FOOD_COLORS.length;
-    const bg = FOOD_COLORS[index];
+    // 3. Proteína / Carne (Protein/Meat)
+    if (n.includes('pollo') || n.includes('pavo') || n.includes('carne') || n.includes('ternera') || n.includes('cerdo') || n.includes('chicken') || n.includes('meat') || n.includes('steak') || n.includes('solomillo'))
+        return 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400';
 
-    return {
-        icon: '🍲',
-        color: '#fff',
-        backgroundColor: bg
-    };
+    // 4. Pescado (Fish)
+    if (n.includes('pescado') || n.includes('atun') || n.includes('atún') || n.includes('salmon') || n.includes('salmón') || n.includes('merluza') || n.includes('fish') || n.includes('lubina') || n.includes('dorada'))
+        return 'https://images.unsplash.com/photo-1519708227418-c8fd9a3a277d?w=400';
+
+    // 5. Carbohidratos (Rice/Pasta/Potato/Bread)
+    if (n.includes('arroz') || n.includes('rice') || n.includes('paella') || n.includes('risotto'))
+        return 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400';
+
+    if (n.includes('pasta') || n.includes('espagueti') || n.includes('macarrones') || n.includes('fideos'))
+        return 'https://images.unsplash.com/photo-1598965675045-45c5e72c77a6?w=400';
+
+    if (n.includes('patata') || n.includes('potato') || n.includes('puré') || n.includes('pure'))
+        return 'https://images.unsplash.com/photo-1518977676601-b53f82a6b696?w=400';
+
+    if (n.includes('pan') || n.includes('bread') || n.includes('tostada') || n.includes('toast') || n.includes('sandwich') || n.includes('bocadillo'))
+        return 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400'; // Toast/Bread
+
+    // 6. Huevos / Desayuno (Eggs)
+    if (n.includes('huevo') || n.includes('clara') || n.includes('tortilla') || n.includes('egg') || n.includes('revuelto') || n.includes('omelette'))
+        return 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=400';
+
+    // 7. Postres / Dulces / Batidos
+    if (n.includes('batido') || n.includes('shake') || n.includes('smoothie') || n.includes('proteína') || n.includes('proteina') || n.includes('whey'))
+        return 'https://images.unsplash.com/photo-1505252585461-04db1eb84625?w=400';
+
+    if (n.includes('yogur') || n.includes('yogurt') || n.includes('kefir'))
+        return 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400';
+
+    if (n.includes('chocolate') || n.includes('cacao') || n.includes('galleta') || n.includes('cookie'))
+        return 'https://images.unsplash.com/photo-1499195333224-3ce974eecb47?w=400';
+
+    // Default Fallback
+    return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400';
 };

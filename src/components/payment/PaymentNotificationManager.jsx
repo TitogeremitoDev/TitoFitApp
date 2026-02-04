@@ -46,28 +46,19 @@ export function PaymentNotificationManager({ children }) {
             {/* Main Content */}
             {children}
 
-            {/* Level 1: Toast Banner (2 days before) */}
+            {/* Level 1-3: Toast Message (Upcoming, Today, Friendly Reminder) */}
             <PaymentToast
-                visible={level === 1}
+                visible={level >= 1 && level <= 3}
+                level={level}
                 userName={userName}
                 daysUntil={daysUntilPayment}
+                daysOverdue={daysOverdue}
                 onDismiss={dismissToday}
             />
 
-            {/* Level 2: Bottom Sheet (Day of payment) */}
-            <PaymentBottomSheet
-                visible={level === 2}
-                amount={amount}
-                bizumPhone={bizumPhone}
-                onCopyBizum={copyBizum}
-                onReportPayment={reportPayment}
-                onDismiss={dismissToday}
-                isReporting={isReporting}
-            />
-
-            {/* Level 3: Blocking Overlay (Overdue/Rejected) */}
+            {/* Level 4: Blocking Overlay (Aggressive > 5 days) */}
             <PaymentBlockOverlay
-                visible={level === 3}
+                visible={level === 4}
                 isRejected={status === 'rejected'}
                 daysOverdue={daysOverdue}
                 amount={amount}
@@ -77,6 +68,7 @@ export function PaymentNotificationManager({ children }) {
                 onReportPayment={reportPayment}
                 onOpenWhatsApp={openWhatsApp}
                 isReporting={isReporting}
+                onDismiss={dismissToday}
             />
         </View>
     );

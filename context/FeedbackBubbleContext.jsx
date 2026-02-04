@@ -11,7 +11,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     Pressable,
-    TextInput,
     Animated,
     PanResponder,
     Dimensions,
@@ -20,6 +19,7 @@ import {
     useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EnhancedTextInput } from '../components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -513,8 +513,9 @@ export function FeedbackBubbleProvider({ children }) {
                                         </View>
                                     ))}
                                     <View style={styles.inputRow}>
-                                        <TextInput
-                                            style={styles.input}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.inputContainer}
+                                            style={styles.inputText}
                                             value={newHighlight}
                                             onChangeText={setNewHighlight}
                                             placeholder="Añadir logro..."
@@ -539,8 +540,9 @@ export function FeedbackBubbleProvider({ children }) {
                                         </View>
                                     ))}
                                     <View style={styles.inputRow}>
-                                        <TextInput
-                                            style={styles.input}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.inputContainer}
+                                            style={styles.inputText}
                                             value={newAnalysis}
                                             onChangeText={setNewAnalysis}
                                             placeholder="Añadir nota técnica..."
@@ -565,8 +567,9 @@ export function FeedbackBubbleProvider({ children }) {
                                         </View>
                                     ))}
                                     <View style={styles.inputRow}>
-                                        <TextInput
-                                            style={styles.input}
+                                        <EnhancedTextInput
+                                            containerStyle={styles.inputContainer}
+                                            style={styles.inputText}
                                             value={newAction}
                                             onChangeText={setNewAction}
                                             placeholder="Añadir acción..."
@@ -746,12 +749,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 8
     },
-    input: {
+    inputContainer: {
         flex: 1,
         backgroundColor: 'rgba(255,255,255,0.08)',
         borderRadius: 10,
         paddingHorizontal: 12,
         paddingVertical: 8,
+    },
+    inputText: {
         color: '#fff',
         fontSize: 13
     },
