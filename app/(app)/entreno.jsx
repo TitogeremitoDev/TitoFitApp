@@ -54,6 +54,7 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useAchievements } from '../../context/AchievementsContext';
+import { useTrainer } from '../../context/TrainerContext';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
 import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
@@ -1415,43 +1416,9 @@ function TutorialModal({ visible, onComplete }) {
     return '#bbf7d0'; // verde - en rango
   };
 
-  const { user, token } = useAuth();
-  const [coachLogo, setCoachLogo] = useState(null);
-
-  useEffect(() => {
-    const fetchCoachLogo = async () => {
-      // 1. Try from user context first (most reliable)
-      if (user?.trainerProfile?.logoUrl) {
-        setCoachLogo(user.trainerProfile.logoUrl);
-        return;
-      }
-
-      // 2. If client, try to fetch fresh (Robust check)
-      if (user?.tipoUsuario === 'CLIENTE' && visible) {
-        try {
-          // Use fetch since axios might not be imported or we want consistent behavior
-          const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-
-          console.log('Fetching coach logo for tutorial (entreno)...');
-          const res = await fetch(`${API_URL}/api/clients/my-trainer`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const data = await res.json();
-
-          if (data.success && data.trainer?.logoUrl) {
-            console.log('Coach logo found:', data.trainer.logoUrl);
-            setCoachLogo(data.trainer.logoUrl);
-          }
-        } catch (e) {
-          console.log('Error fetching coach logo for tutorial:', e);
-        }
-      }
-    };
-
-    if (visible) {
-      fetchCoachLogo();
-    }
-  }, [visible, user?.tipoUsuario, user?.trainerProfile?.logoUrl, token]);
+  const { user } = useAuth();
+  const { trainer } = useTrainer();
+  const coachLogo = trainer?.logoUrl || user?.trainerProfile?.logoUrl || null;
 
   const goToSlide = (index) => {
     if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;

@@ -9,6 +9,8 @@ import { FeedbackBubbleProvider } from '../../context/FeedbackBubbleContext';
 import OverQuotaBanner from '../../components/OverQuotaBanner';
 import OverQuotaModal from '../../components/OverQuotaModal';
 import { useOverQuotaInterceptor } from '../../hooks/useOverQuotaInterceptor';
+import { FloatingTabBarProvider } from '../../context/FloatingTabBarContext';
+import CoachFloatingTabBar from '../../src/components/shared/CoachFloatingTabBar';
 
 // Configuración de secciones del sidebar (coincide con las cajas temáticas del dashboard)
 const SIDEBAR_SECTIONS = [
@@ -288,17 +290,15 @@ export default function CoachLayout() {
 
 
     // Interceptor para mostrar modal automáticamente al recibir 403 OVER_QUOTA
-    const handleOverQuotaError = useCallback((errorData) => {
-        console.log('[CoachLayout] 🚫 Over-quota error intercepted:', errorData);
+    const handleOverQuotaError = useCallback(() => {
         setShowOverQuotaModal(true);
     }, []);
 
     useOverQuotaInterceptor(handleOverQuotaError);
 
-    // 🔄 FORZAR REFRESH CADA VEZ QUE LA PANTALLA GANA FOCO (Counter Back-Button Spam)
+    // Verificar estado de suscripción al ganar foco (Counter Back-Button Spam)
     useFocusEffect(
         useCallback(() => {
-            console.log('[CoachLayout] 🔄 Pantalla enfocada - Verificando estado...');
             refreshUser().then(u => {
                 // Forzar reevaluación si cambió algo
                 if (u?.subscriptionStatus === 'frozen' || u?.overQuota?.isOverQuota) {
@@ -326,7 +326,6 @@ export default function CoachLayout() {
             const isAllowedPath = allowedPaths.some(p => pathname.includes(p));
 
             if (!isAllowedPath) {
-                console.log('[CoachLayout] 🔒 Coach congelado, redirigiendo a suscripción...');
                 router.replace('/(app)/payment');
             }
         }
@@ -361,57 +360,62 @@ export default function CoachLayout() {
 
     return (
         <FeedbackBubbleProvider>
-            <View style={{
-                flex: 1,
-                flexDirection: 'row',
-                backgroundColor: '#0f172a',
-            }}>
-                {/* Sidebar - Solo en pantallas grandes */}
-                {showSidebar && (
-                    <Sidebar
-                        currentPath={pathname}
-                        onNavigate={handleNavigate}
-                        user={user}
-                        trainerProfile={trainerProfile}
-                    />
-                )}
-
-                {/* Contenido principal */}
+            <FloatingTabBarProvider>
                 <View style={{
                     flex: 1,
-                    paddingTop: insets.top,
-                    paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
-                    backgroundColor: '#f1f5f9',
+                    flexDirection: 'row',
+                    backgroundColor: '#0f172a',
                 }}>
-                    {/* Banner de Over-Quota - Visible en todas las pantallas */}
-                    <OverQuotaBanner
+                    {/* Sidebar - Solo en pantallas grandes */}
+                    {showSidebar && (
+                        <Sidebar
+                            currentPath={pathname}
+                            onNavigate={handleNavigate}
+                            user={user}
+                            trainerProfile={trainerProfile}
+                        />
+                    )}
+
+                    {/* Contenido principal */}
+                    <View style={{
+                        flex: 1,
+                        paddingTop: insets.top,
+                        paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
+                        backgroundColor: '#f1f5f9',
+                    }}>
+                        {/* Banner de Over-Quota - Visible en todas las pantallas */}
+                        <OverQuotaBanner
+                            overQuota={overQuota}
+                            onPress={handleBannerPress}
+                        />
+
+                        <Stack
+                            screenOptions={{
+                                headerShown: false,
+                                gestureEnabled: true,
+                                fullScreenGestureEnabled: true,
+                                animation: 'slide_from_right',
+                            }}
+                        >
+                            <Stack.Screen name="index" />
+                            <Stack.Screen name="clients_coach/index" />
+                            <Stack.Screen name="workouts/create" />
+                            <Stack.Screen name="feedbacks/index" />
+                        </Stack>
+                    </View>
+
+                    {/* Modal de Over-Quota - Renderizado directamente sin wrapper bloqueante */}
+                    <OverQuotaModal
+                        visible={(isFrozen || showOverQuotaModal) && !pathname.includes('/payment') && !pathname.includes('/perfil/ajustes')}
                         overQuota={overQuota}
-                        onPress={handleBannerPress}
+                        onClose={isFrozen ? () => { } : () => setShowOverQuotaModal(false)}
+                        canDismiss={!isFrozen}
                     />
 
-                    <Stack
-                        screenOptions={{
-                            headerShown: false,
-                            gestureEnabled: true,
-                            fullScreenGestureEnabled: true,
-                            animation: 'slide_from_right',
-                        }}
-                    >
-                        <Stack.Screen name="index" />
-                        <Stack.Screen name="clients_coach/index" />
-                        <Stack.Screen name="workouts/create" />
-                        <Stack.Screen name="feedbacks/index" />
-                    </Stack>
+                    {/* Tab Bar Flotante para Coach (Solo Móvil) */}
+                    <CoachFloatingTabBar />
                 </View>
-
-                {/* Modal de Over-Quota - Renderizado directamente sin wrapper bloqueante */}
-                <OverQuotaModal
-                    visible={(isFrozen || showOverQuotaModal) && !pathname.includes('/payment') && !pathname.includes('/perfil/ajustes')}
-                    overQuota={overQuota}
-                    onClose={isFrozen ? () => { } : () => setShowOverQuotaModal(false)}
-                    canDismiss={!isFrozen}
-                />
-            </View>
+            </FloatingTabBarProvider>
         </FeedbackBubbleProvider>
     );
 }

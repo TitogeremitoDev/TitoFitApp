@@ -10,7 +10,8 @@ import {
     RefreshControl,
     ScrollView,
     Modal,
-    Pressable
+    Pressable,
+    Platform
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Stack, useRouter } from 'expo-router';
@@ -18,6 +19,8 @@ import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
+import { useImpersonation } from '../../../context/ImpersonationContext';
+import { usePathname } from 'expo-router';
 import moment from 'moment';
 import 'moment/locale/es';
 
@@ -59,6 +62,10 @@ export default function ClientsScreen() {
     const [sortBy, setSortBy] = useState<SortOption>('DATE_DESC');
     const [showSortModal, setShowSortModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
+    const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+    const { startImpersonation } = useImpersonation();
+    const pathname = usePathname();
 
     useEffect(() => {
         fetchClients();
@@ -99,6 +106,96 @@ export default function ClientsScreen() {
     const onRefresh = () => {
         setRefreshing(true);
         fetchClients();
+    };
+
+    const deleteClient = async (clientId: string, clientName: string) => {
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`¿Estás seguro de que quieres eliminar a ${clientName}? Esta acción no se puede deshacer.`);
+            if (confirmed) {
+                await performDelete(clientId);
+            }
+        } else {
+            Alert.alert(
+                "Eliminar Usuario",
+                `¿Estás seguro de que quieres eliminar a ${clientName}? Esta acción no se puede deshacer.`,
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                        text: "Eliminar",
+                        style: "destructive",
+                        onPress: () => performDelete(clientId)
+                    }
+                ]
+            );
+        }
+    };
+
+    const performDelete = async (clientId: string) => {
+        try {
+            const token = await AsyncStorage.getItem('totalgains_token');
+            const response = await fetch(`${API_URL}/api/users/${clientId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                if (Platform.OS !== 'web') Alert.alert("Éxito", "Usuario eliminado correctamente");
+                else window.alert("Usuario eliminado correctamente");
+
+                // Update local state to remove the deleted user
+                setClients(prev => prev.filter(c => c._id !== clientId));
+            } else {
+                const errData = await response.json();
+                const msg = errData.message || "No se pudo eliminar el usuario";
+                if (Platform.OS !== 'web') Alert.alert("Error", msg);
+                else window.alert(`Error: ${msg}`);
+            }
+        } catch (error) {
+            console.error("Delete Error:", error);
+            if (Platform.OS !== 'web') Alert.alert("Error", "Ocurrió un error de red al intentar eliminar");
+            else window.alert("Ocurrió un error de red al intentar eliminar");
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // IMPERSONATION (God Mode)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const handleImpersonate = async (clientId: string, clientName: string) => {
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`¿Entrar como ${clientName}? Podrás ver y editar su cuenta.`);
+            if (!confirmed) return;
+        } else {
+            // En mobile usamos Alert pero no esperamos confirmación inline
+            Alert.alert(
+                "🕵️ Modo Dios",
+                `¿Entrar como ${clientName}? Podrás ver y editar su cuenta.`,
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                        text: "Entrar",
+                        onPress: async () => {
+                            setImpersonatingId(clientId);
+                            const success = await startImpersonation(clientId, pathname);
+                            if (!success) {
+                                Alert.alert("Error", "No se pudo iniciar la impersonación");
+                            }
+                            setImpersonatingId(null);
+                        }
+                    }
+                ]
+            );
+            return;
+        }
+
+        // Web flow (ya confirmó arriba)
+        setImpersonatingId(clientId);
+        const success = await startImpersonation(clientId, pathname);
+        if (!success) {
+            window.alert("Error: No se pudo iniciar la impersonación");
+        }
+        setImpersonatingId(null);
     };
 
     // Advanced Filtering & Sorting Logic
@@ -172,8 +269,25 @@ export default function ClientsScreen() {
                         <Text style={[styles.username, { color: isDark ? '#9ca3af' : '#6b7280' }]}>@{item.username}</Text>
                     </View>
                 </View>
-                <View style={[styles.roleBadge, { backgroundColor: getRoleColor(item.tipoUsuario) + '20' }]}>
-                    <Text style={[styles.roleText, { color: getRoleColor(item.tipoUsuario) }]}>{item.tipoUsuario}</Text>
+                <View style={{ alignItems: 'flex-end', gap: 5 }}>
+                    <View style={[styles.roleBadge, { backgroundColor: getRoleColor(item.tipoUsuario) + '20' }]}>
+                        <Text style={[styles.roleText, { color: getRoleColor(item.tipoUsuario) }]}>{item.tipoUsuario}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <TouchableOpacity
+                            onPress={() => handleImpersonate(item._id, item.nombre || 'Usuario')}
+                            disabled={impersonatingId === item._id}
+                        >
+                            {impersonatingId === item._id ? (
+                                <ActivityIndicator size="small" color="#8B5CF6" />
+                            ) : (
+                                <Ionicons name="eye" size={20} color="#8B5CF6" />
+                            )}
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => deleteClient(item._id, item.nombre || 'Usuario')}>
+                            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
 

@@ -12,8 +12,13 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { FeedbackDraftProvider } from '../context/FeedbackDraftContext';
 import { CoachBrandingProvider } from '../context/CoachBrandingContext';
+import { NotificationProvider } from '../context/NotificationContext';
+import { TrainerProvider } from '../context/TrainerContext';
+import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { AlertProvider } from '../src/hooks/useAlert';
 import { SupplementInventoryProvider } from '../src/context/SupplementInventoryContext';
+import { ImpersonationProvider } from '../context/ImpersonationContext';
+import { GodModeBar } from '../components/GodModeBar';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 
@@ -111,6 +116,14 @@ function RootLayoutNav() {
   const segments = useSegments();
   const navState = useRootNavigationState(); // router listo cuando tiene key
   const splashHidden = useRef(false);
+  const redirectingRef = useRef(false);
+
+  // Reset redirect guard on logout
+  useEffect(() => {
+    if (!token) {
+      redirectingRef.current = false;
+    }
+  }, [token]);
 
   // Cargar fuentes de iconos para web
   const [fontsLoaded] = useFonts({
@@ -194,7 +207,6 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
-    const inModeSelect = (segments[0] as string) === 'mode-select';
     const isRoot = (segments as string[]).length === 0 || ((segments as string[]).length === 1 && (segments[0] as string) === 'index');
     const inLoginPage = segments[0] === '(auth)' && segments[1] === 'login';
 
@@ -228,21 +240,23 @@ function RootLayoutNav() {
       return;
     }
 
+    // Already redirected this session - don't re-run (prevents triple-mount)
+    if (redirectingRef.current) return;
+
     // Usuario con sesión en auth o root → redirigir según rol
     if (token && (inAuthGroup || isRoot)) {
-      // SIEMPRE obtener datos frescos del backend para evitar problemas con cache local
+      redirectingRef.current = true;
       (async () => {
         try {
-          const freshUser = await refreshUser();
+          const freshUser = await refreshUser(true);
+          // Use fresh data when available, fall back to local user (e.g. right after login)
+          const targetUser = freshUser?.tipoUsuario ? freshUser : user;
 
-          // Verificar con datos FRESCOS si es admin/coach
-          const isFreshAdminOrCoach = freshUser?.tipoUsuario === 'ADMINISTRADOR' ||
-                                       freshUser?.tipoUsuario === 'ENTRENADOR';
+          const isFreshAdminOrCoach = targetUser?.tipoUsuario === 'ADMINISTRADOR' ||
+            targetUser?.tipoUsuario === 'ENTRENADOR';
 
-          // Usuarios que ya tienen cuenta establecida (CLIENTE, PREMIUM) van directo a home
-          // No necesitan onboarding porque ya pasaron por un proceso de vinculación/pago
-          const isEstablishedUser = freshUser?.tipoUsuario === 'CLIENTE' ||
-                                     freshUser?.tipoUsuario === 'PREMIUM';
+          const isEstablishedUser = ['CLIENTE', 'PREMIUM', 'ENTRENADOR', 'ADMINISTRADOR']
+            .includes(targetUser?.tipoUsuario || '');
 
           if (isFreshAdminOrCoach) {
             // Admin/Coach → mode-select para elegir
@@ -250,7 +264,7 @@ function RootLayoutNav() {
               console.log('[Navigation] Redirecting admin/coach to mode-select (fresh data)');
             }
             router.replace('/mode-select');
-          } else if (freshUser?.onboardingCompleted === true || isEstablishedUser) {
+          } else if (targetUser?.onboardingCompleted === true || isEstablishedUser) {
             // Usuario con onboarding completado O usuario establecido (CLIENTE/PREMIUM) → home
             if (__DEV__) {
               console.log('[Navigation] Redirecting to home (onboardingCompleted=true or established user)');
@@ -267,7 +281,7 @@ function RootLayoutNav() {
           console.error('[Navigation] Error verificando usuario:', error);
           // Si hay error obteniendo datos, verificar con datos locales como fallback
           const isLocalAdminOrCoach = user?.tipoUsuario === 'ADMINISTRADOR' ||
-                                       user?.tipoUsuario === 'ENTRENADOR';
+            user?.tipoUsuario === 'ENTRENADOR';
           if (isLocalAdminOrCoach) {
             router.replace('/mode-select');
           } else {
@@ -276,7 +290,7 @@ function RootLayoutNav() {
         }
       })();
     }
-  }, [token, isLoading, navState?.key, segments, router, user?.tipoUsuario, user?.onboardingCompleted]);
+  }, [token, isLoading, navState?.key, segments, router]);
 
   if (isLoading || !navState?.key || !fontsLoaded) {
     return (
@@ -330,24 +344,33 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <CoachBrandingProvider>
-        <AlertProvider>
-          <ThemeProvider>
-            <FeedbackDraftProvider>
-              <SupplementInventoryProvider>
-                <StripeProvider
-                  publishableKey={publishableKey}
-                  merchantIdentifier="merchant.com.totalgains"
-                >
-                  <ThemedRootView>
-                    <RootLayoutNav />
-                  </ThemedRootView>
-                </StripeProvider>
-              </SupplementInventoryProvider>
-            </FeedbackDraftProvider>
-          </ThemeProvider>
-        </AlertProvider>
-      </CoachBrandingProvider>
+      <NotificationProvider>
+        <TrainerProvider>
+          <SubscriptionProvider>
+            <CoachBrandingProvider>
+              <AlertProvider>
+                <ThemeProvider>
+                  <FeedbackDraftProvider>
+                    <SupplementInventoryProvider>
+                      <StripeProvider
+                        publishableKey={publishableKey}
+                        merchantIdentifier="merchant.com.totalgains"
+                      >
+                        <ImpersonationProvider>
+                          <ThemedRootView>
+                            <GodModeBar />
+                            <RootLayoutNav />
+                          </ThemedRootView>
+                        </ImpersonationProvider>
+                      </StripeProvider>
+                    </SupplementInventoryProvider>
+                  </FeedbackDraftProvider>
+                </ThemeProvider>
+              </AlertProvider>
+            </CoachBrandingProvider>
+          </SubscriptionProvider>
+        </TrainerProvider>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

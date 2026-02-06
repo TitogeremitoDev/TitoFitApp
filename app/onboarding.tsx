@@ -64,6 +64,31 @@ export default function Onboarding() {
     const [loading, setLoading] = useState(false);
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // SAFEGUARD: Expulsar usuarios que NO deberían estar en onboarding
+    // ADMIN, ENTRENADOR → mode-select
+    // CLIENTE, PREMIUM con onboardingCompleted → home
+    // ═══════════════════════════════════════════════════════════════════════════
+    useEffect(() => {
+        if (!user) return;
+
+        const isAdminOrCoach = user.tipoUsuario === 'ADMINISTRADOR' || user.tipoUsuario === 'ENTRENADOR';
+        const isEstablishedUser = ['CLIENTE', 'PREMIUM'].includes(user.tipoUsuario);
+
+        if (isAdminOrCoach) {
+            console.log('[Onboarding] ⚠️ Usuario ADMIN/COACH detectado, redirigiendo a mode-select');
+            router.replace('/mode-select');
+            return;
+        }
+
+        // CLIENTE/PREMIUM con onboarding ya completado → home
+        if (isEstablishedUser && user.onboardingCompleted) {
+            console.log('[Onboarding] ⚠️ Usuario establecido con onboarding completado, redirigiendo a home');
+            router.replace('/home');
+            return;
+        }
+    }, [user, router]);
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // TRAINER BRANDING - Use trainer colors when user is a client with assigned trainer
     // ═══════════════════════════════════════════════════════════════════════════
     const isClientWithTrainer = user?.tipoUsuario === 'CLIENTE' && user?.currentTrainerId;
@@ -275,7 +300,7 @@ export default function Onboarding() {
             await axios.put('/users/info', { info_user });
             // Refrescar usuario para obtener estado actualizado (incluyendo código canjeado)
             console.log('[Onboarding] ✅ Finalizando, refrescando usuario...');
-            await refreshUser();
+            await refreshUser(true);
             router.replace('/home');
         } catch (error) {
             console.error('Error guardando datos:', error);
@@ -295,7 +320,7 @@ export default function Onboarding() {
             // Si se canjeó un código, refrescar para que los cambios persistan
             if (codeRedeemed) {
                 console.log('[Onboarding] ✅ Saltando con código canjeado, refrescando usuario...');
-                await refreshUser();
+                await refreshUser(true);
             }
 
             router.replace('/home');
@@ -327,7 +352,7 @@ export default function Onboarding() {
                         type: 'trainer',
                         message: `¡Vinculado con ${trainerName}! 🏋️`
                     });
-                    const updatedUser = await refreshUser();
+                    const updatedUser = await refreshUser(true);
                     await refreshBranding();
                     console.log('[Onboarding] ✅ Usuario y branding actualizados tras vincular entrenador:', updatedUser?.tipoUsuario);
                     return;
@@ -347,7 +372,7 @@ export default function Onboarding() {
                         type: 'referral',
                         message: referralResponse.data.message || '¡7 días de Premium gratis! 🎉'
                     });
-                    const updatedUser = await refreshUser();
+                    const updatedUser = await refreshUser(true);
                     console.log('[Onboarding] ✅ Usuario actualizado tras código referido:', updatedUser?.tipoUsuario);
                     return;
                 }
@@ -366,7 +391,7 @@ export default function Onboarding() {
                         type: 'promo',
                         message: promoResponse.data.message || '¡Código VIP canjeado! 🌟'
                     });
-                    const updatedUser = await refreshUser();
+                    const updatedUser = await refreshUser(true);
                     console.log('[Onboarding] ✅ Usuario actualizado tras código promo:', updatedUser?.tipoUsuario);
                     return;
                 }
@@ -398,7 +423,7 @@ export default function Onboarding() {
 
             if (response.data.success) {
                 console.log('[Onboarding] ✅ Trial activado:', response.data.user?.trainerProfile?.trainerCode);
-                await refreshUser();
+                await refreshUser(true);
 
                 // Navegar directamente al dashboard de coach
                 router.replace('/(coach)/profile');
@@ -437,7 +462,7 @@ export default function Onboarding() {
             if (response.data.success) {
                 const trainerName = response.data.trainer?.nombre || response.data.trainer?.profile?.brandName || 'tu entrenador';
                 setLinkedTrainer(trainerName);
-                await refreshUser();
+                await refreshUser(true);
                 await refreshBranding();
                 console.log('[Onboarding] ✅ Usuario y branding actualizados');
                 // Navegar a Welcome Screen (Step 1)
@@ -493,7 +518,7 @@ export default function Onboarding() {
 
             if (response.data.success) {
                 console.log('[Onboarding] ✅ Código de coach canjeado');
-                await refreshUser();
+                await refreshUser(true);
 
                 // Navegar con showAlert (funciona en web y móvil)
                 showAlert(
@@ -528,7 +553,7 @@ export default function Onboarding() {
 
             if (response.data.success) {
                 console.log('[Onboarding] ✅ Código premium canjeado');
-                await refreshUser();
+                await refreshUser(true);
                 showAlert(
                     '¡Código canjeado!',
                     response.data.message || 'Tu cuenta ha sido mejorada.',

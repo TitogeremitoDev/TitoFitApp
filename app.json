@@ -55,6 +55,7 @@
       },
       "package": "com.german92.titofitapp",
       "softwareKeyboardLayoutMode": "resize",
+      "enableEdgeToEdge": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
@@ -148,7 +149,7 @@
       [
         "expo-updates",
         {
-          "runtimeVersion": "1.1.4"
+          "runtimeVersion": "1.1.5"
         }
       ],
       "expo-iap",

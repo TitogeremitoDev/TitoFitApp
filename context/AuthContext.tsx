@@ -82,7 +82,9 @@ type AuthContextData = {
   loginWithGoogle: (googleAccessToken: string) => Promise<User>;
   loginWithApple: (identityToken: string, fullName?: { givenName?: string; familyName?: string } | null) => Promise<User>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<User | undefined>;
+  refreshUser: (force?: boolean) => Promise<User | undefined>;
+  // 🔄 Recarga la sesión desde AsyncStorage (usado por impersonation)
+  reloadSession: () => Promise<void>;
   // 🔄 Sincronización de datos al cambiar de plan
   syncDataOnPlanChange: (previousType: string | undefined, newType: string) => Promise<SyncResult | null>;
   pendingSyncResult: SyncResult | null;
@@ -127,6 +129,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // ═══════════════════════════════════════════════════════════════════════
   const tokenRef = useRef(token);
   const userRef = useRef(user);
+  const lastRefreshRef = useRef(0);
   useEffect(() => { tokenRef.current = token; }, [token]);
   useEffect(() => { userRef.current = user; }, [user]);
 
@@ -257,13 +260,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null);
   }, []);
 
-  const refreshUser = useCallback(async () => {
+  const REFRESH_TTL = 5 * 60 * 1000; // 5 minutes
+
+  const refreshUser = useCallback(async (force?: boolean) => {
     const currentToken = tokenRef.current;
     if (!currentToken) {
       return undefined;
     }
+
+    // If data is fresh and not forced, return cached user
+    const elapsed = Date.now() - lastRefreshRef.current;
+    if (!force && elapsed < REFRESH_TTL && userRef.current) {
+      return userRef.current;
+    }
+
     try {
       const { data } = await axios.get<User>('/users/me');
+      lastRefreshRef.current = Date.now();
 
       const freshUser: User = {
         _id: data._id,
@@ -348,6 +361,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setPendingSyncResult(null);
   }, []);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RELOAD SESSION: Recarga la sesión desde AsyncStorage
+  // Usado por impersonation para sincronizar el estado después del swap
+  // ═══════════════════════════════════════════════════════════════════════════
+  const reloadSession = useCallback(async () => {
+    try {
+      const s = await loadSession();
+      setToken(s.token);
+      setUser(s.user);
+      console.log('[Auth] Session reloaded:', s.user?.email);
+    } catch (error) {
+      console.error('[Auth] Error reloading session:', error);
+    }
+  }, []);
+
   // ═══════════════════════════════════════════════════════════════════════
   // CONTEXT VALUE: Solo cambia cuando los DATOS cambian.
   // Las funciones son estables (useCallback []) → no causan re-renders
@@ -365,13 +393,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loginWithApple,
       logout,
       refreshUser,
+      reloadSession,
       syncDataOnPlanChange,
       pendingSyncResult,
       clearSyncResult,
     }),
     [user, token, isLoading, pendingSyncResult,
-     login, register, upgradeByCode, loginWithGoogle, loginWithApple,
-     logout, refreshUser, syncDataOnPlanChange, clearSyncResult]
+      login, register, upgradeByCode, loginWithGoogle, loginWithApple,
+      logout, refreshUser, reloadSession, syncDataOnPlanChange, clearSyncResult]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,6 @@
 /* app/(coach)/workouts/AIImportModal.jsx - Modal de Importación de Rutinas con IA */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -164,6 +164,7 @@ const ExercisePreviewItem = ({ exercise, onSelectExercise, allExercises, searchQ
 
 export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
     const { token, user } = useAuth();
+    const abortControllerRef = useRef(null);
     const [step, setStep] = useState(1); // 1: Upload, 2: Preview
     const [loading, setLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
@@ -218,6 +219,57 @@ export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
         } catch (err) {
             console.error('Error fetching exercises:', err);
         }
+    };
+
+    // Polling helper: consulta el estado del job cada 2 segundos
+    const pollJobResult = async (jobId, signal) => {
+        const MAX_POLL_TIME = 120000; // 2 minutos máximo
+        const POLL_INTERVAL = 2000; // cada 2 segundos
+        const startTime = Date.now();
+
+        const messages = [
+            { time: 0, msg: 'Analizando con IA...' },
+            { time: 5000, msg: 'Procesando documento...' },
+            { time: 15000, msg: 'Identificando ejercicios...' },
+            { time: 30000, msg: 'Verificando coincidencias...' },
+            { time: 60000, msg: 'Tardando más de lo esperado...' },
+            { time: 90000, msg: 'Casi listo, un momento más...' },
+        ];
+
+        while (Date.now() - startTime < MAX_POLL_TIME) {
+            if (signal?.aborted) throw new Error('Cancelado');
+
+            // Actualizar mensaje de progreso
+            const elapsed = Date.now() - startTime;
+            const currentMsg = [...messages].reverse().find(m => elapsed >= m.time);
+            if (currentMsg) setLoadingMessage(currentMsg.msg);
+
+            const pollRes = await fetch(`${API_URL}/api/ai/jobs/${jobId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal
+            });
+            const pollData = await pollRes.json();
+
+            if (pollData.status === 'completed') {
+                return pollData;
+            }
+            if (pollData.status === 'failed') {
+                throw new Error(pollData.message || 'Error al procesar con IA');
+            }
+
+            // Esperar antes de la siguiente consulta
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(resolve, POLL_INTERVAL);
+                if (signal) {
+                    signal.addEventListener('abort', () => {
+                        clearTimeout(timeout);
+                        reject(new Error('Cancelado'));
+                    }, { once: true });
+                }
+            });
+        }
+
+        throw new Error('Tiempo de espera agotado. Intenta con un archivo más pequeño.');
     };
 
     // Procesar archivo o texto con IA
@@ -283,28 +335,35 @@ export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
                 formData.append('routineName', routineName);
             }
 
-            // Paso 2: Enviar a la API
-            setLoadingMessage('Analizando con IA...');
+            // Paso 2: Enviar a la API (respuesta inmediata con jobId)
+            setLoadingMessage('Subiendo archivo...');
+
+            // Crear AbortController para poder cancelar el polling
+            const abortController = new AbortController();
+            abortControllerRef.current = abortController;
+
             const response = await fetch(`${API_URL}/api/ai/parse-routine`, {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    // No incluir Content-Type, FormData lo maneja
                 },
                 body: formData
             });
 
             const data = await response.json();
 
-            if (!data.success) {
+            if (!data.success || !data.jobId) {
                 throw new Error(data.message || 'Error al procesar el archivo');
             }
 
-            // Paso 3: Cargar ejercicios para el dropdown
+            // Paso 3: Polling hasta que el job termine
+            const result = await pollJobResult(data.jobId, abortController.signal);
+
+            // Paso 4: Cargar ejercicios para el dropdown
             setLoadingMessage('Verificando ejercicios...');
             await fetchAllExercises();
 
-            setParsedRoutine(data.routine);
+            setParsedRoutine(result.routine);
             setStep(2);
 
         } catch (err) {
@@ -487,6 +546,11 @@ export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
 
     // Cerrar y resetear
     const handleClose = () => {
+        // Cancelar polling si está en curso
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
         setStep(1);
         setLoading(false);
         setLoadingMessage('');

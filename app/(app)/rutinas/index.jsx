@@ -742,13 +742,15 @@ export default function RutinasScreen() {
       />
 
       {/* Banner */}
-      <TouchableOpacity style={[styles.promoBanner, { backgroundColor: theme.backgroundSecondary, borderTopColor: theme.border }]} onPress={() => setIsOfferModalVisible(true)} activeOpacity={0.8}>
-        <Ionicons name="sparkles-outline" size={18} color={theme.premium} style={{ marginRight: 8 }} />
-        <Text style={[styles.promoBannerText, { color: theme.premium }]}>
-          Rutinas genéricas... ¿Quieres dar el cambio? ¡Pincha aquí!
-        </Text>
-        <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.premium} style={{ marginLeft: 8 }} />
-      </TouchableOpacity>
+      {(tipoUsuario === PLAN.FREEUSER || tipoUsuario === PLAN.PREMIUM) && (
+        <TouchableOpacity style={[styles.promoBanner, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]} onPress={() => setIsOfferModalVisible(true)} activeOpacity={0.8}>
+          <Ionicons name="sparkles-outline" size={18} color={theme.premium} style={{ marginRight: 8 }} />
+          <Text style={[styles.promoBannerText, { color: theme.premium }]}>
+            Rutinas genéricas... ¿Quieres dar el cambio? ¡Pincha aquí!
+          </Text>
+          <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.premium} style={{ marginLeft: 8 }} />
+        </TouchableOpacity>
+      )}
 
       {/* Create Folder Modal */}
       <Modal
@@ -1137,8 +1139,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  promoBanner: { paddingVertical: 12, paddingHorizontal: 16, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 25 },
-  promoBannerText: { fontSize: 13, fontWeight: '500', textAlign: 'center', flexShrink: 1, marginHorizontal: 5 },
+  promoBanner: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 90,
+    marginHorizontal: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  promoBannerText: { fontSize: 13, fontWeight: '600', textAlign: 'center', flexShrink: 1, marginHorizontal: 5 },
 
   offerModalContainer: { flex: 1, backgroundColor: '#0B1220' },
   offerModalCloseButton: { position: 'absolute', top: Platform.OS === 'android' ? 45 : 60, right: 15, zIndex: 10, padding: 8, backgroundColor: 'rgba(255, 255, 255, 0.15)', borderRadius: 20 },

@@ -386,7 +386,7 @@ export default function TransformacionScreen() {
                 await axios.put('/users/info', {
                     info_user: { ...user.info_user, pesoObjetivo: weight }
                 });
-                await refreshUser();
+                await refreshUser(true);
             } else {
                 // Save locally for FREEUSER
                 await AsyncStorage.setItem('TARGET_WEIGHT', String(weight));

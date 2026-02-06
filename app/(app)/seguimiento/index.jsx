@@ -18,6 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import { useAchievements } from '../../../context/AchievementsContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
@@ -486,6 +487,7 @@ const CompactMacroInput = ({ label, value, target, onChangeText, emoji, theme })
 export default function SeguimientoScreen() {
     const { user, token, refreshUser } = useAuth();
     const { theme, isDark } = useTheme();
+    const { unreadChat: unreadFeedback, unreadFeedbackReports, refreshNotifications } = useNotifications();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
     const router = useRouter();
 
@@ -505,12 +507,10 @@ export default function SeguimientoScreen() {
 
     // Feedback del entrenador
     const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
-    const [unreadFeedback, setUnreadFeedback] = useState(0);
     const feedbackGlowAnim = useRef(new Animated.Value(1)).current;
 
     // Feedback Reports (separado del chat)
     const [feedbackHistoryVisible, setFeedbackHistoryVisible] = useState(false);
-    const [unreadFeedbackReports, setUnreadFeedbackReports] = useState(0);
 
     // Verificar si el usuario tiene entrenador
     const hasTrainer = user?.currentTrainerId != null;
@@ -687,55 +687,28 @@ export default function SeguimientoScreen() {
         setSelectedDate(dateStr);
     };
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // CARGAR FEEDBACK NO LEÍDO
-    // ─────────────────────────────────────────────────────────────────────────────
-    const loadUnreadFeedback = useCallback(async () => {
-        if (!token || !hasTrainer) return;
-        try {
-            // Cargar feedback reports no leídos
-            const [chatRes, reportsRes] = await Promise.all([
-                fetch(`${API_URL}/api/chat/total-unread`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                }),
-                fetch(`${API_URL}/api/feedback-reports/unread-count`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                }).catch(() => ({ json: () => ({ success: false }) }))
-            ]);
+    // Unread counts (chat + feedback) ahora vienen del NotificationContext centralizado
 
-            const chatData = await chatRes.json();
-            const reportsData = await reportsRes.json();
-
-            if (chatData.success) {
-                setUnreadFeedback(chatData.totalUnread || 0);
-            }
-
-            if (reportsData.success) {
-                setUnreadFeedbackReports(reportsData.count || 0);
-            }
-
-            // Animar si hay feedback reports no leídos (sombra dorada)
-            const totalUnread = (chatData.totalUnread || 0) + (reportsData.count || 0);
-            if (totalUnread > 0) {
-                Animated.loop(
-                    Animated.sequence([
-                        Animated.timing(feedbackGlowAnim, {
-                            toValue: 1.05,
-                            duration: 1000,
-                            useNativeDriver: true,
-                        }),
-                        Animated.timing(feedbackGlowAnim, {
-                            toValue: 1,
-                            duration: 1000,
-                            useNativeDriver: true,
-                        }),
-                    ])
-                ).start();
-            }
-        } catch (error) {
-            console.log('[Seguimiento] Error loading unread feedback:', error.message);
+    // Animar si hay feedback no leído (sombra dorada)
+    useEffect(() => {
+        const totalUnread = unreadFeedback + unreadFeedbackReports;
+        if (totalUnread > 0) {
+            Animated.loop(
+                Animated.sequence([
+                    Animated.timing(feedbackGlowAnim, {
+                        toValue: 1.05,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(feedbackGlowAnim, {
+                        toValue: 1,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                ])
+            ).start();
         }
-    }, [token, hasTrainer]);
+    }, [unreadFeedback, unreadFeedbackReports]);
 
     // 🔄 Refrescar usuario al cargar para obtener currentTrainerId actualizado
     // Solo al montar - sin dep de token para evitar loop si el backend renueva tokens
@@ -747,13 +720,9 @@ export default function SeguimientoScreen() {
         }
     }, []);
 
-    useEffect(() => {
-        loadUnreadFeedback();
-    }, [loadUnreadFeedback]);
-
     const handleFeedbackClose = () => {
         setFeedbackModalVisible(false);
-        loadUnreadFeedback(); // Refresh unread count
+        refreshNotifications(); // Refresh unread count from context
     };
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1137,7 +1106,7 @@ export default function SeguimientoScreen() {
                             info_user: { ...user.info_user, peso: parseFloat(minimalData.peso) }
                         });
                         // Refrescar usuario para que otros componentes vean el peso actualizado
-                        if (refreshUser) await refreshUser();
+                        if (refreshUser) await refreshUser(true);
                     } catch (updateErr) {
                         console.log('[SEGUIMIENTO] Error actualizando peso en perfil:', updateErr.message);
                     }
@@ -2268,7 +2237,7 @@ export default function SeguimientoScreen() {
                 visible={feedbackHistoryVisible}
                 onClose={() => {
                     setFeedbackHistoryVisible(false);
-                    loadUnreadFeedback(); // Refresh unread count
+                    refreshNotifications(); // Refresh unread count from context
                 }}
             />
 

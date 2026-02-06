@@ -22,7 +22,8 @@ import { useRouter } from 'expo-router';
 import { EnhancedTextInput } from '../../../components/ui';
 import { useTheme } from '../../../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../../../context/AuthContext'; // Import useAuth
+import { useAuth } from '../../../context/AuthContext';
+import { useTrainer } from '../../../context/TrainerContext';
 import axios from 'axios'; // Import axios
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -59,50 +60,9 @@ function TutorialEntrenoModal({ visible, onComplete }) {
         return '#bbf7d0'; // verde - en rango
     };
 
-    const { user, token } = useAuth();
-    const [coachLogo, setCoachLogo] = useState(null);
-
-    useEffect(() => {
-        const fetchCoachLogo = async () => {
-            // 1. Si soy entrenador, uso mi propio perfil
-            if (user?.tipoUsuario === 'ENTRENADOR' && user.trainerProfile?.logoUrl) {
-                setCoachLogo(user.trainerProfile.logoUrl);
-                return;
-            }
-
-            // 2. Si soy cliente O tengo entrenador (más robusto via currentTrainerId)
-            const hasTrainer = user?.tipoUsuario === 'CLIENTE' || user?.currentTrainerId;
-
-            if (hasTrainer && visible) {
-                try {
-                    // Si ya tenemos el logo en contexto (poco probable si es cliente, pero por si acaso)
-                    if (user?.trainerProfile?.logoUrl) {
-                        setCoachLogo(user.trainerProfile.logoUrl);
-                    }
-
-                    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-                    console.log('Fetching coach logo for tutorial (tutoriales.jsx)...');
-
-                    const res = await axios.get(`${API_URL}/api/clients/my-trainer`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-
-                    if (res.data && res.data.success && res.data.trainer && res.data.trainer.logoUrl) {
-                        console.log('Coach logo found (API):', res.data.trainer.logoUrl);
-                        setCoachLogo(res.data.trainer.logoUrl);
-                    } else {
-                        console.log('No coach logo found in API response');
-                    }
-                } catch (e) {
-                    console.log('Error fetching coach logo for tutorial:', e);
-                }
-            }
-        };
-
-        if (visible) {
-            fetchCoachLogo();
-        }
-    }, [visible, user?.tipoUsuario, user?.trainerProfile?.logoUrl, token]);
+    const { user } = useAuth();
+    const { trainer } = useTrainer();
+    const coachLogo = trainer?.logoUrl || user?.trainerProfile?.logoUrl || null;
 
     const goToSlide = (index) => {
         if (index < 0 || index >= TOTAL_TUTORIAL_SLIDES) return;

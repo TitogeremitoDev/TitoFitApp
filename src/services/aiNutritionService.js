@@ -1,6 +1,57 @@
 // src/services/aiNutritionService.js
 import { Platform } from 'react-native';
 
+const POLL_INTERVAL = 2000; // 2 segundos entre cada consulta
+const MAX_POLL_TIME = 120000; // 2 minutos máximo de polling
+
+/**
+ * Polls an AI job until it completes, fails, or times out.
+ * @param {string} jobId - The job ID to poll
+ * @param {string} token - Auth token
+ * @param {AbortSignal|null} signal - Optional AbortSignal for cancellation
+ * @returns {Promise<Object>} The job result
+ */
+const pollJobResult = async (jobId, token, signal = null) => {
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < MAX_POLL_TIME) {
+        // Check if cancelled
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const pollRes = await fetch(`${API_URL}/api/ai/jobs/${jobId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: signal
+        });
+
+        const pollData = await pollRes.json();
+
+        if (pollData.status === 'completed') {
+            // Return in the same format the caller expects
+            return { success: true, plan: pollData.plan };
+        }
+
+        if (pollData.status === 'failed') {
+            return { success: false, message: pollData.message || 'Error al procesar con IA' };
+        }
+
+        // Wait before next poll
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(resolve, POLL_INTERVAL);
+            if (signal) {
+                signal.addEventListener('abort', () => {
+                    clearTimeout(timeout);
+                    reject(new DOMException('Aborted', 'AbortError'));
+                }, { once: true });
+            }
+        });
+    }
+
+    return { success: false, message: 'Tiempo de espera agotado. Intenta con un archivo más pequeño.' };
+};
+
 export const uploadDietPdf = async (fileResult, token, signal = null) => {
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -39,6 +90,7 @@ export const uploadDietPdf = async (fileResult, token, signal = null) => {
     }
 
     try {
+        // Step 1: Upload file → get jobId (immediate response)
         const fetchOptions = {
             method: 'POST',
             body: formData,
@@ -47,42 +99,40 @@ export const uploadDietPdf = async (fileResult, token, signal = null) => {
             },
         };
 
-        // Añadir signal si se proporciona y no está ya abortado
-        if (signal && !signal.aborted) {
-            fetchOptions.signal = signal;
-        }
-
+        // Don't pass signal to the upload itself - it's fast
+        // We only use signal for the polling phase
         const response = await fetch(`${API_URL}/api/ai/parse-diet`, fetchOptions);
 
         // Safe parsing: Check for JSON content-type or status
-        const contentType = response.headers.get('content-type');
         if (!response.ok) {
             const errorText = await response.text();
             console.error('[Upload Error] Status:', response.status, 'Body:', errorText);
             try {
-                // Try to parse error as JSON if possible
                 const errorJson = JSON.parse(errorText);
                 return { success: false, message: errorJson.message || 'Error del servidor' };
             } catch (e) {
-                // If not JSON (e.g. HTML 500 page), return generic error
                 return { success: false, message: `Error del servidor (${response.status})` };
             }
         }
 
         const data = await response.json();
-        return data;
+
+        if (!data.success || !data.jobId) {
+            return { success: false, message: data.message || 'Error al enviar archivo' };
+        }
+
+        // Step 2: Poll for result (this is where the signal matters for cancellation)
+        return await pollJobResult(data.jobId, token, signal);
+
     } catch (error) {
+        if (error.name === 'AbortError') {
+            throw error; // Re-throw AbortError so the caller can handle it
+        }
         console.error('Error uploading diet PDF:', error);
         return { success: false, message: error.message || 'Error de conexión' };
     }
 };
 
-/**
- * Saves an imported AI diet plan to the database.
- * 1. Deduplicates and creates new foods (Batch).
- * 2. Maps the plan to the final Schema.
- * 3. Saves the template.
- */
 /**
  * Saves an imported AI diet plan using the Backend Adapter.
  * The backend now handles food creation, deduplication, and schema mapping.

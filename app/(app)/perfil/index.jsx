@@ -27,6 +27,7 @@ import { avatarService } from '../../../src/services/avatarService';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import { ImageCropper } from '../../../src/components/shared/ImageCropper';
 import { useCoachBranding } from '../../../context/CoachBrandingContext';
+import { useTrainer } from '../../../context/TrainerContext';
 
 const AVATARS = [
     // Avatares Gratuitos
@@ -54,6 +55,7 @@ export default function PerfilScreen() {
     const { user, logout, token, refreshUser } = useAuth();
     const { theme, isDark } = useTheme();
     const { refresh: refreshBranding } = useCoachBranding();
+    const { trainer: currentTrainer, refreshTrainer } = useTrainer();
     const { updateStats, checkAchievements, userStats } = useAchievements();
 
     const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -66,9 +68,10 @@ export default function PerfilScreen() {
 
     // Trainer code states
     const [trainerCode, setTrainerCode] = useState('');
-    const [currentTrainer, setCurrentTrainer] = useState(null);
+    // Trainer data viene del TrainerContext centralizado
     const [isLinkingTrainer, setIsLinkingTrainer] = useState(false);
-    const [isLoadingTrainer, setIsLoadingTrainer] = useState(true);
+    // isLoadingTrainer: false si ya tenemos trainer o si el usuario no tiene currentTrainerId
+    const isLoadingTrainer = !!user?.currentTrainerId && !currentTrainer;
 
     // Success modal state
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -112,10 +115,9 @@ export default function PerfilScreen() {
         user?.tipoUsuario === 'ADMINISTRADOR' ||
         user?.tipoUsuario === 'PREMIUM';
 
-    // Load saved avatar and fetch trainer on mount
+    // Load saved avatar on mount
     useEffect(() => {
         loadSavedAvatar();
-        fetchCurrentTrainer();
     }, []);
 
     // 🔄 Refrescar datos del usuario cuando la pantalla recibe foco
@@ -259,7 +261,7 @@ export default function PerfilScreen() {
         try {
             const newAvatarUrl = await avatarService.uploadAvatar(uri, token);
             console.log('[Perfil] Avatar uploaded successfully:', newAvatarUrl);
-            await refreshUser(); // Update context with new URL
+            await refreshUser(true); // Update context with new URL
             // Clear fallback emoji avatar from local storage as we now have a photo
             await AsyncStorage.removeItem('user_avatar');
             setSelectedAvatar(null);
@@ -288,7 +290,7 @@ export default function PerfilScreen() {
                         setIsUploadingAvatar(true);
                         try {
                             await avatarService.deleteAvatar(token);
-                            await refreshUser();
+                            await refreshUser(true);
                             setTempAvatarUri(null);
                         } catch (error) {
                             Alert.alert('Error', 'No se pudo eliminar la foto');
@@ -301,23 +303,7 @@ export default function PerfilScreen() {
         );
     };
 
-    const fetchCurrentTrainer = async () => {
-        try {
-            setIsLoadingTrainer(true);
-            const response = await fetch(`${API_URL}/api/clients/my-trainer`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = await response.json();
-
-            if (data.success && data.trainer) {
-                setCurrentTrainer(data.trainer);
-            }
-        } catch (error) {
-            console.error('[Perfil] Error fetching trainer:', error);
-        } finally {
-            setIsLoadingTrainer(false);
-        }
-    };
+    // Trainer data viene del TrainerContext — no necesita fetch manual
 
     const handleLinkTrainer = async () => {
         if (!trainerCode.trim()) {
@@ -355,7 +341,7 @@ export default function PerfilScreen() {
 
                 // Refrescar datos del usuario para actualizar tipoUsuario
                 try {
-                    const updatedUser = await refreshUser();
+                    const updatedUser = await refreshUser(true);
                     // Refrescar branding del coach para actualizar imagen y temas automáticamente
                     await refreshBranding();
                     console.log('[Perfil] ✅ Usuario y branding actualizados tras vincular. Nuevo tipo:', updatedUser?.tipoUsuario);
@@ -397,7 +383,7 @@ export default function PerfilScreen() {
 
     const handleCloseSuccessModal = () => {
         setShowSuccessModal(false);
-        fetchCurrentTrainer();
+        refreshTrainer(true); // Force refresh after linking trainer
     };
 
     // Handle premium code redemption
@@ -437,7 +423,7 @@ export default function PerfilScreen() {
                 setSyncModal(prev => ({ ...prev, visible: false }));
 
                 // Refresh user data to get updated tipoUsuario
-                const updatedUser = await refreshUser();
+                const updatedUser = await refreshUser(true);
                 console.log('[Perfil] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
 
                 setShowPremiumCodeModal(false);
@@ -513,7 +499,7 @@ export default function PerfilScreen() {
                 }
                 setSyncModal(prev => ({ ...prev, visible: false }));
 
-                const updatedUser = await refreshUser();
+                const updatedUser = await refreshUser(true);
                 console.log('[Perfil] ✅ Usuario actualizado tras referido. Nuevo tipo:', updatedUser?.tipoUsuario);
 
                 setShowReferralModal(false);

@@ -1,5 +1,5 @@
 // app/(coach)/index.jsx - Trainer Dashboard Principal - Sistema de Cajas Temáticas v2
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -19,7 +19,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { useRouter } from 'expo-router';
+import { useNotifications } from '../../context/NotificationContext';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useFloatingTabBar } from '../../context/FloatingTabBarContext';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
 import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
@@ -236,15 +238,26 @@ const FAB = ({ onNewAthlete, onNewRoutine }) => {
 
 export default function TrainerDashboard() {
     const { token, user } = useAuth();
+    const { unreadChat: unreadMessages, refreshNotifications } = useNotifications();
     const router = useRouter();
     const { width } = useWindowDimensions();
     const isMobile = width <= 768;
+    const { setIsVisible } = useFloatingTabBar();
+
+    // Ocultar CoachFloatingTabBar al entrar a esta pantalla
+    useFocusEffect(
+        useCallback(() => {
+            setIsVisible(false);
+            return () => {
+                setIsVisible(true);
+            };
+        }, [])
+    );
 
     const [loading, setLoading] = useState(true);
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [currentClients, setCurrentClients] = useState(0);
     const [showOnboarding, setShowOnboarding] = useState(false);
-    const [unreadMessages, setUnreadMessages] = useState(0);
     const [messagesModalVisible, setMessagesModalVisible] = useState(false);
     const [clientsList, setClientsList] = useState([]);
     const [feedbackSummary, setFeedbackSummary] = useState({});
@@ -265,12 +278,12 @@ export default function TrainerDashboard() {
         isMobile ? { athletes: true } : { athletes: true, studio: true, library: true, admin: true }
     );
 
-    // Badges para notificaciones
-    const [badges, setBadges] = useState({
-        messages: 0,
+    // Badges para notificaciones - messages viene del NotificationContext
+    const badges = {
+        messages: unreadMessages,
         progress: 0,
         clients: 0
-    });
+    };
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -299,31 +312,20 @@ export default function TrainerDashboard() {
     const loadTrainerData = async () => {
         try {
             setLoading(true);
-            const [profileRes, clientsRes, unreadRes] = await Promise.all([
+            const [profileRes, clientsRes] = await Promise.all([
                 fetch(`${API_URL}/api/trainers/profile`, {
                     headers: { Authorization: `Bearer ${token}` }
                 }),
                 fetch(`${API_URL}/api/trainers/clients`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                }),
-                fetch(`${API_URL}/api/chat/total-unread`, {
                     headers: { Authorization: `Bearer ${token}` }
                 })
             ]);
 
             const profileData = await profileRes.json();
             const clientsData = await clientsRes.json();
-            const unreadData = await unreadRes.json();
 
             setTrainerProfile(profileData.profile || {});
             setCurrentClients(clientsData.count || 0);
-            setUnreadMessages(unreadData.totalUnread || 0);
-
-            // Actualizar badges
-            setBadges(prev => ({
-                ...prev,
-                messages: unreadData.totalUnread || 0
-            }));
         } catch (error) {
             console.error('Error loading trainer data:', error);
             Alert.alert('Error', 'No se pudieron cargar los datos del entrenador');
@@ -380,12 +382,7 @@ export default function TrainerDashboard() {
             loadMessagesData();
         }
 
-        fetch(`${API_URL}/api/chat/total-unread`, {
-            headers: { Authorization: `Bearer ${token}` }
-        }).then(res => res.json()).then(data => {
-            setUnreadMessages(data.totalUnread || 0);
-            setBadges(prev => ({ ...prev, messages: data.totalUnread || 0 }));
-        }).catch(() => { });
+        refreshNotifications();
     };
 
     const copyCodeToClipboard = () => {

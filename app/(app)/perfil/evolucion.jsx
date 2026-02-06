@@ -2585,7 +2585,7 @@ export default function EvolucionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#0D1B2A', padding: 10, flex: 1 },
+  container: { backgroundColor: '#0D1B2A', padding: 10, paddingBottom: 40, flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: '#E5E7EB' },
 
@@ -2593,7 +2593,8 @@ const styles = StyleSheet.create({
   responsiveContainer: {
     flex: 1,
     paddingHorizontal: 6,
-    maxWidth: '100%'
+    maxWidth: '100%',
+    paddingBottom: 100,
   },
 
   controles: { backgroundColor: '#111827', borderRadius: 30, padding: 16, marginBottom: 24, paddingTop: 5 },

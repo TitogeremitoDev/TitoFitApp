@@ -61,33 +61,59 @@ export default function ProgressDashboard() {
             const clientsList = clientsData.clients || [];
             setClients(clientsList);
 
-            // 2. Para cada cliente, obtener sus últimos workouts
+            // 2. Obtener workouts de TODOS los clientes en una sola llamada (bulk)
+            const fourWeeksAgo = new Date();
+            fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+            const userIds = clientsList.map(c => c._id);
+
             const progressMap = {};
 
-            await Promise.all(
-                clientsList.map(async (client) => {
-                    try {
-                        // Obtener workouts del cliente (últimas 4 semanas)
-                        const fourWeeksAgo = new Date();
-                        fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+            try {
+                const bulkRes = await fetch(`${API_URL}/api/workouts/bulk-by-users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        userIds,
+                        startDate: fourWeeksAgo.toISOString(),
+                        limit: 100,
+                    }),
+                });
+                const bulkData = await bulkRes.json();
 
-                        const workoutsRes = await fetch(
-                            `${API_URL}/api/workouts/by-user/${client._id}?limit=100&startDate=${fourWeeksAgo.toISOString()}`,
-                            { headers: { Authorization: `Bearer ${token}` } }
-                        );
-                        const workoutsData = await workoutsRes.json();
-
-                        if (workoutsData.success) {
-                            progressMap[client._id] = calcularProgreso(workoutsData.workouts || []);
-                        } else {
+                if (bulkData.success && bulkData.workoutsByUser) {
+                    // Procesar todos los workouts agrupados por usuario
+                    for (const client of clientsList) {
+                        const workouts = bulkData.workoutsByUser[client._id] || [];
+                        progressMap[client._id] = calcularProgreso(workouts);
+                    }
+                } else {
+                    throw new Error('Bulk endpoint failed');
+                }
+            } catch (bulkError) {
+                // Fallback: si el bulk falla, usar el método individual
+                if (__DEV__) console.warn('[Progress] Bulk failed, falling back to individual calls:', bulkError.message);
+                await Promise.all(
+                    clientsList.map(async (client) => {
+                        try {
+                            const workoutsRes = await fetch(
+                                `${API_URL}/api/workouts/by-user/${client._id}?limit=100&startDate=${fourWeeksAgo.toISOString()}`,
+                                { headers: { Authorization: `Bearer ${token}` } }
+                            );
+                            const workoutsData = await workoutsRes.json();
+                            if (workoutsData.success) {
+                                progressMap[client._id] = calcularProgreso(workoutsData.workouts || []);
+                            } else {
+                                progressMap[client._id] = getDefaultProgress();
+                            }
+                        } catch (e) {
                             progressMap[client._id] = getDefaultProgress();
                         }
-                    } catch (e) {
-                        console.warn(`[Progress] Error cargando workouts de ${client.nombre}:`, e);
-                        progressMap[client._id] = getDefaultProgress();
-                    }
-                })
-            );
+                    })
+                );
+            }
 
             setClientsProgress(progressMap);
         } catch (error) {

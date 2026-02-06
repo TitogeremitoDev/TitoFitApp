@@ -47,6 +47,7 @@ const VISIBLE_ROUTES = [
   '/entreno',
   '/nutricion',
   '/perfil',
+  '/rutinas',
   '/seguimiento',
 ];
 
@@ -81,22 +82,54 @@ export function FloatingTabBarProvider({ children }) {
     // No aplicar en web
     if (Platform.OS === 'web') return;
 
-    // Verificar si la ruta actual está en la lista de rutas ocultas
+    // Verify if current route is in hidden list
     const shouldHide = HIDDEN_ROUTES.some(route => pathname?.includes(route));
 
-    // Verificar si la ruta actual es una ruta principal visible
+    // Verify if current route is a generic main route
     const isMainRoute = VISIBLE_ROUTES.some(route => {
       if (route === '/(tabs)') {
         return pathname === '/' || pathname === '/(tabs)' || pathname === '/(app)/(tabs)';
       }
-      // Para rutas principales, solo coincidir exactamente o con trailing slash
       return pathname === route || pathname === `${route}/` || pathname === `/(app)${route}`;
     });
 
-    if (shouldHide) {
-      hideTabBar();
-    } else if (isMainRoute) {
-      showTabBar();
+    // Monitor changes for debugging
+    // console.log('[FloatingTabBar] Path:', pathname, 'Visible:', isVisible);
+
+    // Lógica específica para Coach: SOLO mostrar en rutas principales exactas
+    if (pathname?.includes('(coach)')) {
+      const coachMainRoutes = [
+        // REMOVED Dashboard from visible routes per user request
+        // '/(coach)', 
+        // '/(coach)/',
+        // '/(coach)/index',
+        '/(coach)/clients_coach',
+        '/(coach)/clients_coach/index',
+        '/(coach)/progress',
+        '/(coach)/progress/index',
+        '/(coach)/seguimiento_coach',
+        '/(coach)/seguimiento_coach/index'
+      ];
+
+      // RELAXED CHECK: If it starts with one of the main routes and doesn't get deeper
+      // This handles potential trailing slash issues or normalized paths
+      const isCoachMain = coachMainRoutes.some(r => {
+        return pathname === r || pathname === r + '/' || (pathname.startsWith(r) && pathname.split('/').length <= 4);
+      });
+
+      if (isCoachMain) {
+        showTabBar();
+      } else {
+        hideTabBar();
+      }
+    }
+    // Lógica estándar para User App
+    else {
+      if (shouldHide) {
+        hideTabBar();
+      } else if (isMainRoute) {
+        showTabBar();
+      }
     }
   }, [pathname, hideTabBar, showTabBar]);
 

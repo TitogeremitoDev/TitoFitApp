@@ -17,6 +17,7 @@ import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import CoachHeader from '../components/CoachHeader';
 import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import BroadcastModal from '../../../components/BroadcastModal';
@@ -43,7 +44,7 @@ const ChatTab = ({ token }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState('all');
     const [loading, setLoading] = useState(true);
-    const [unreadMessages, setUnreadMessages] = useState(0);
+    const { unreadChat: unreadMessages, refreshNotifications } = useNotifications();
 
     // Chat Modal
     const [chatModalVisible, setChatModalVisible] = useState(false);
@@ -59,25 +60,20 @@ const ChatTab = ({ token }) => {
     const loadData = async () => {
         try {
             setLoading(true);
-            const [clientsRes, summaryRes, unreadRes] = await Promise.all([
+            const [clientsRes, summaryRes] = await Promise.all([
                 fetch(`${API_URL}/api/trainers/clients-extended`, {
                     headers: { Authorization: `Bearer ${token}` }
                 }),
                 fetch(`${API_URL}/api/chat/summary`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                }),
-                fetch(`${API_URL}/api/chat/total-unread`, {
                     headers: { Authorization: `Bearer ${token}` }
                 })
             ]);
 
             const clientsData = await clientsRes.json();
             const summaryData = await summaryRes.json();
-            const unreadData = await unreadRes.json();
 
             setClientsList(clientsData.clients || []);
             setFeedbackSummary(summaryData.summary || {});
-            setUnreadMessages(unreadData.totalUnread || 0);
         } catch (error) {
             console.error('Error loading chat data:', error);
         } finally {
@@ -94,6 +90,7 @@ const ChatTab = ({ token }) => {
         setChatModalVisible(false);
         setSelectedClient(null);
         loadData(); // Refresh data after closing chat
+        refreshNotifications(); // Refresh unread count from context
     };
 
     // Filter and sort clients

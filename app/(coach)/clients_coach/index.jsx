@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Modal, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
     ActivityIndicator, LayoutAnimation, Platform, UIManager,
-    useWindowDimensions, Animated
+    useWindowDimensions, Animated, ScrollView
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -256,51 +256,98 @@ export default function ClientsScreen() {
                         iconColor="#2563EB"
                         showBack={false}
                         rightContent={
-                            <View style={{ flexDirection: 'row', gap: isMobile ? 6 : 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                <View style={[styles.searchContainer, isMobile && { width: 110 }]}>
-                                    <Ionicons name="search" size={18} color="#94a3b8" />
-                                    <TextInput
-                                        style={styles.searchInput}
-                                        placeholder="Buscar"
-                                        placeholderTextColor="#94a3b8"
-                                        value={searchQuery}
-                                        onChangeText={handleSearchChange}
-                                    />
-                                </View>
+                            isMobile ? (
+                                <TouchableOpacity
+                                    style={styles.headerBtn}
+                                    onPress={() => setCreateEventModalVisible(true)}
+                                >
+                                    <Ionicons name="notifications-outline" size={20} color="#64748b" />
+                                </TouchableOpacity>
+                            ) : (
+                                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <View style={styles.searchContainer}>
+                                        <Ionicons name="search" size={18} color="#94a3b8" />
+                                        <TextInput
+                                            style={styles.searchInput}
+                                            placeholder="Buscar"
+                                            placeholderTextColor="#94a3b8"
+                                            value={searchQuery}
+                                            onChangeText={handleSearchChange}
+                                        />
+                                    </View>
 
-                                {/* Filter Chips */}
-                                {[
-                                    { key: 'cambioDietaUrgente', label: isMobile ? 'Dieta' : 'Cambio Dieta', icon: 'restaurant', color: COLORS.warning },
-                                    { key: 'cambioEntrenoUrgente', label: isMobile ? 'Entreno' : 'Cambio Entreno', icon: 'barbell', color: COLORS.danger },
-                                    { key: 'posibleAbandono', label: isMobile ? 'Abandono' : 'Abandono', icon: 'warning', color: COLORS.danger },
-                                ].map(chip => {
-                                    const count = filterCounts[chip.key];
-                                    const isActive = activeFilter === chip.key;
-                                    return (
-                                        <TouchableOpacity
-                                            key={chip.key}
-                                            style={[
-                                                styles.filterChip,
-                                                isActive && { backgroundColor: chip.color, borderColor: chip.color }
-                                            ]}
-                                            onPress={() => setActiveFilter(isActive ? null : chip.key)}
-                                        >
-                                            <Ionicons name={chip.icon} size={13} color={isActive ? '#fff' : chip.color} />
-                                            {!isMobile && (
+                                    {[
+                                        { key: 'cambioDietaUrgente', label: 'Cambio Dieta', icon: 'restaurant', color: COLORS.warning },
+                                        { key: 'cambioEntrenoUrgente', label: 'Cambio Entreno', icon: 'barbell', color: COLORS.danger },
+                                        { key: 'posibleAbandono', label: 'Abandono', icon: 'warning', color: COLORS.danger },
+                                    ].map(chip => {
+                                        const count = filterCounts[chip.key];
+                                        const isActive = activeFilter === chip.key;
+                                        return (
+                                            <TouchableOpacity
+                                                key={chip.key}
+                                                style={[
+                                                    styles.filterChip,
+                                                    isActive && { backgroundColor: chip.color, borderColor: chip.color }
+                                                ]}
+                                                onPress={() => setActiveFilter(isActive ? null : chip.key)}
+                                            >
+                                                <Ionicons name={chip.icon} size={13} color={isActive ? '#fff' : chip.color} />
                                                 <Text style={[styles.filterChipText, isActive && { color: '#fff' }]}>
                                                     {chip.label}
                                                 </Text>
-                                            )}
-                                            {count > 0 && (
-                                                <View style={[styles.filterChipBadge, isActive && { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
-                                                    <Text style={[styles.filterChipBadgeText, isActive && { color: '#fff' }]}>{count}</Text>
-                                                </View>
-                                            )}
-                                        </TouchableOpacity>
-                                    );
-                                })}
+                                                {count > 0 && (
+                                                    <View style={[styles.filterChipBadge, isActive && { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+                                                        <Text style={[styles.filterChipBadgeText, isActive && { color: '#fff' }]}>{count}</Text>
+                                                    </View>
+                                                )}
+                                            </TouchableOpacity>
+                                        );
+                                    })}
 
-                                {/* Sort Button with label */}
+                                    <TouchableOpacity
+                                        style={[styles.sortBtn, sortBy !== 'recent' && { borderColor: COLORS.primary, backgroundColor: '#eff6ff' }]}
+                                        onPress={() => {
+                                            if (sortBy === 'recent') setSortBy('name');
+                                            else if (sortBy === 'name') setSortBy('tracking');
+                                            else setSortBy('recent');
+                                        }}
+                                    >
+                                        <Ionicons name="swap-vertical" size={16} color={sortBy !== 'recent' ? COLORS.primary : '#64748b'} />
+                                        <Text style={[styles.sortBtnText, sortBy !== 'recent' && { color: COLORS.primary }]}>
+                                            {sortBy === 'name' ? 'A-Z' : sortBy === 'tracking' ? 'Seguim.' : 'Recientes'}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={styles.headerBtn}
+                                        onPress={() => setCreateEventModalVisible(true)}
+                                    >
+                                        <Ionicons name="notifications-outline" size={20} color="#64748b" />
+                                    </TouchableOpacity>
+                                </View>
+                            )
+                        }
+                    />
+
+                    {/* Mobile Controls Section - Rendered below header on list content */}
+                    {isMobile && (
+                        <View style={{ paddingBottom: 10, paddingTop: 6, gap: 10 }}>
+                            {/* Mobile Search */}
+                            <View style={[styles.searchContainer, { width: '100%', borderWidth: 1, borderColor: '#e2e8f0' }]}>
+                                <Ionicons name="search" size={18} color="#94a3b8" />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Buscar"
+                                    placeholderTextColor="#94a3b8"
+                                    value={searchQuery}
+                                    onChangeText={handleSearchChange}
+                                />
+                            </View>
+
+                            {/* Mobile Filters Horizontal Scroll */}
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}>
+                                {/* Sort Button First for quick access */}
                                 <TouchableOpacity
                                     style={[styles.sortBtn, sortBy !== 'recent' && { borderColor: COLORS.primary, backgroundColor: '#eff6ff' }]}
                                     onPress={() => {
@@ -315,16 +362,37 @@ export default function ClientsScreen() {
                                     </Text>
                                 </TouchableOpacity>
 
-                                {/* Alarm/Event Button */}
-                                <TouchableOpacity
-                                    style={styles.headerBtn}
-                                    onPress={() => setCreateEventModalVisible(true)}
-                                >
-                                    <Ionicons name="notifications-outline" size={20} color="#64748b" />
-                                </TouchableOpacity>
-                            </View>
-                        }
-                    />
+                                {[
+                                    { key: 'cambioDietaUrgente', label: 'Dieta', icon: 'restaurant', color: COLORS.warning },
+                                    { key: 'cambioEntrenoUrgente', label: 'Entreno', icon: 'barbell', color: COLORS.danger },
+                                    { key: 'posibleAbandono', label: 'Abandono', icon: 'warning', color: COLORS.danger },
+                                ].map(chip => {
+                                    const count = filterCounts[chip.key];
+                                    const isActive = activeFilter === chip.key;
+                                    return (
+                                        <TouchableOpacity
+                                            key={chip.key}
+                                            style={[
+                                                styles.filterChip,
+                                                isActive && { backgroundColor: chip.color, borderColor: chip.color }
+                                            ]}
+                                            onPress={() => setActiveFilter(isActive ? null : chip.key)}
+                                        >
+                                            <Ionicons name={chip.icon} size={13} color={isActive ? '#fff' : chip.color} />
+                                            <Text style={[styles.filterChipText, isActive && { color: '#fff' }]}>
+                                                {chip.label}
+                                            </Text>
+                                            {count > 0 && (
+                                                <View style={[styles.filterChipBadge, isActive && { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+                                                    <Text style={[styles.filterChipBadgeText, isActive && { color: '#fff' }]}>{count}</Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
+                    )}
 
                     <FlatList
                         data={filteredClients}

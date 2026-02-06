@@ -224,7 +224,7 @@ export default function PaymentScreen() {
             }
             setSyncModal(prev => ({ ...prev, visible: false }));
 
-            const updatedUser = refreshUser ? await refreshUser() : null;
+            const updatedUser = refreshUser ? await refreshUser(true) : null;
             console.log('[Payment] ✅ Usuario actualizado tras Stripe. Nuevo tipo:', updatedUser?.tipoUsuario);
 
             Alert.alert(
@@ -317,7 +317,7 @@ export default function PaymentScreen() {
             }
             setSyncModal(prev => ({ ...prev, visible: false }));
 
-            const updatedUser = refreshUser ? await refreshUser() : null;
+            const updatedUser = refreshUser ? await refreshUser(true) : null;
             console.log('[Payment] ✅ Usuario actualizado tras PayPal. Nuevo tipo:', updatedUser?.tipoUsuario);
 
             Alert.alert(
@@ -576,7 +576,7 @@ export default function PaymentScreen() {
                       if (confirmData.success) {
                         // Refrescar datos del usuario
                         if (refreshUser) {
-                          await refreshUser();
+                          await refreshUser(true);
                         }
 
                         Alert.alert(
@@ -1225,7 +1225,7 @@ export default function PaymentScreen() {
                     if (confirmData.success) {
                       // Refrescar datos del usuario para actualizar estado a PREMIUM
                       if (refreshUser) {
-                        await refreshUser();
+                        await refreshUser(true);
                       }
 
                       Alert.alert(
@@ -1317,7 +1317,7 @@ export default function PaymentScreen() {
                     await IAPService.finishTransaction(purchase);
 
                     // 8. Refrescar usuario
-                    if (refreshUser) await refreshUser();
+                    if (refreshUser) await refreshUser(true);
 
                     Alert.alert(
                       '¡Bienvenido al Team! 🚀',
@@ -1457,7 +1457,7 @@ export default function PaymentScreen() {
                   // 8. Procesar respuesta
                   if (verifyData.success) {
                     await IAPService.finishTransaction(purchase);
-                    if (refreshUser) await refreshUser();
+                    if (refreshUser) await refreshUser(true);
                     Alert.alert(
                       '¡Bienvenido al Team! 🚀',
                       `Suscripción ${selectedPlan.nombre} activada.`,

@@ -28,6 +28,9 @@ import RescueOfferModal from '../../components/RescueOfferModal';
 import { PaymentNotificationManager } from '../../src/components/payment';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useNotifications } from '../../context/NotificationContext';
+import { useTrainer } from '../../context/TrainerContext';
+import { useSubscription } from '../../context/SubscriptionContext';
 
 // Import condicional: Solo en móvil cargamos el layout flotante
 let HomeMobileLayout = null;
@@ -70,6 +73,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, token, refreshUser } = useAuth();
   const { theme, isDark } = useTheme();
+  const { unreadChat: unreadChatCount, unreadFeedbackReports, refreshNotifications } = useNotifications();
+  const { trainer: currentTrainer } = useTrainer();
   const [fraseActual, setFraseActual] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -78,18 +83,12 @@ export default function HomeScreen() {
   // Estado para el tooltip promocional de FREEUSER
   const [showPromoTooltip, setShowPromoTooltip] = useState(false);
 
-  // Estado para el entrenador del cliente
-  const [currentTrainer, setCurrentTrainer] = useState(null);
+  // Trainer data viene del TrainerContext centralizado
+  // Subscription data viene del SubscriptionContext centralizado
+  const { subscriptionData } = useSubscription();
 
   // Estado para el modal de retención de suscripción
-  const [subscriptionData, setSubscriptionData] = useState(null);
   const [showRetentionModal, setShowRetentionModal] = useState(false);
-
-  // Estado para mensajes no leídos del chat
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
-
-  // Estado para feedbacks del entrenador sin leer
-  const [unreadFeedbackReports, setUnreadFeedbackReports] = useState(0);
 
   // Estado para el modal de rescate (coach congelado >10 días)
   const [rescueOffer, setRescueOffer] = useState(null);
@@ -145,29 +144,7 @@ export default function HomeScreen() {
     showPromo();
   }, [user?.tipoUsuario]);
 
-  // Obtener datos del entrenador si el usuario es CLIENTE o ENTRENADOR con currentTrainerId
-  useEffect(() => {
-    const fetchTrainer = async () => {
-      // Buscar entrenador si es CLIENTE, o si es ENTRENADOR con otro entrenador asignado
-      const shouldFetchTrainer = user?.tipoUsuario === 'CLIENTE' ||
-        (user?.tipoUsuario === 'ENTRENADOR' && user?.currentTrainerId);
-
-      if (shouldFetchTrainer && token) {
-        try {
-          const response = await fetch(`${API_URL}/api/clients/my-trainer`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const data = await response.json();
-          if (data.success && data.trainer) {
-            setCurrentTrainer(data.trainer);
-          }
-        } catch (error) {
-          console.error('[Home] Error fetching trainer:', error);
-        }
-      }
-    };
-    fetchTrainer();
-  }, [user?.tipoUsuario, user?.currentTrainerId, token]);
+  // Datos del entrenador ahora vienen del TrainerContext centralizado
 
   // Verificar oferta de rescate (coach congelado >10 días)
   useEffect(() => {
@@ -197,47 +174,7 @@ export default function HomeScreen() {
     checkRescueOffer();
   }, [token, user?.currentTrainerId, user?.tipoUsuario]);
 
-  // Obtener mensajes no leídos del chat y feedbacks (con jitter para desincronizar usuarios)
-  useEffect(() => {
-    const fetchUnreadData = async () => {
-      if (!token) return;
-      try {
-        // Fetch chat unread y feedback reports en paralelo
-        const [chatRes, feedbackRes] = await Promise.all([
-          fetch(`${API_URL}/api/chat/total-unread`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch(`${API_URL}/api/feedback-reports/unread-count`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }).catch(() => null)
-        ]);
-
-        // Validar que las respuestas sean JSON antes de parsear
-        const isJsonResponse = (res) =>
-          res && res.ok && res.headers?.get('content-type')?.includes('application/json');
-
-        const chatData = isJsonResponse(chatRes) ? await chatRes.json() : { success: false };
-        const feedbackData = isJsonResponse(feedbackRes) ? await feedbackRes.json() : { success: false };
-
-        if (chatData.success) {
-          setUnreadChatCount(chatData.totalUnread || 0);
-        }
-        if (feedbackData.success) {
-          setUnreadFeedbackReports(feedbackData.count || 0);
-        }
-      } catch (error) {
-        console.error('[Home] Error fetching unread data:', error);
-      }
-    };
-    fetchUnreadData();
-
-    // Jitter: 30s base + 0-5s aleatorio para evitar picos de carga
-    const baseInterval = 30000;
-    const jitter = Math.floor(Math.random() * 5000);
-    const interval = setInterval(fetchUnreadData, baseInterval + jitter);
-
-    return () => clearInterval(interval);
-  }, [token]);
+  // Unread counts (chat + feedback) ahora vienen del NotificationContext centralizado
 
   // Verificar changelog - solo una vez por sesión de montaje
   useEffect(() => {
@@ -256,70 +193,6 @@ export default function HomeScreen() {
       } catch { }
     })();
   }, []);
-
-  // Cargar estado de suscripción para usuarios premium/cliente/entrenador
-  // NOTA: Dependencias son solo valores primitivos para evitar re-ejecuciones
-  // innecesarias cuando 'user' cambia de referencia (refreshUser, etc.)
-  const userSubscriptionExpiry = user?.subscriptionExpiry;
-  const userTipoUsuario = user?.tipoUsuario;
-
-  useEffect(() => {
-    const checkSubscriptionStatus = async () => {
-      // Solo para usuarios no FREEUSER que tengan token
-      if (!token || userTipoUsuario === 'FREEUSER' || !userTipoUsuario) return;
-
-      try {
-        const response = await fetch(`${API_URL}/api/subscription/status`, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const contentType = response.headers.get('content-type');
-        if (!response.ok || !contentType?.includes('application/json')) {
-          throw new Error(`Server returned ${response.status}`);
-        }
-        const data = await response.json();
-        if (data.success && data.subscription) {
-          setSubscriptionData(data.subscription);
-        } else if (userSubscriptionExpiry) {
-          // FALLBACK: Si no hay suscripción formal pero el usuario tiene subscriptionExpiry
-          // (caso de códigos gratuitos / períodos de prueba)
-          const expiryDate = new Date(userSubscriptionExpiry);
-          const now = new Date();
-          const diffTime = expiryDate.getTime() - now.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          setSubscriptionData({
-            daysRemaining: diffDays,
-            status: diffDays <= 0 ? 'expired' : 'trial',
-            active: diffDays > 0,
-            expiresAt: userSubscriptionExpiry,
-            isCodeBased: true,
-          });
-        }
-      } catch (error) {
-        console.warn('[Home] Subscription status unavailable, using fallback:', error.message);
-        // FALLBACK en caso de error: usar subscriptionExpiry del usuario
-        if (userSubscriptionExpiry) {
-          const expiryDate = new Date(userSubscriptionExpiry);
-          const now = new Date();
-          const diffTime = expiryDate.getTime() - now.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          setSubscriptionData({
-            daysRemaining: diffDays,
-            status: diffDays <= 0 ? 'expired' : 'trial',
-            active: diffDays > 0,
-            expiresAt: userSubscriptionExpiry,
-            isCodeBased: true,
-          });
-        }
-      }
-    };
-
-    checkSubscriptionStatus();
-  }, [token, userTipoUsuario, userSubscriptionExpiry]);
 
   // Lógica de trigger para el modal de retención
   useEffect(() => {

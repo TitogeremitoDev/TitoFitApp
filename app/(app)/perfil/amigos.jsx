@@ -252,7 +252,7 @@ export default function Amigos() {
                 }
                 setSyncModal(prev => ({ ...prev, visible: false }));
 
-                const updatedUser = await refreshUser();
+                const updatedUser = await refreshUser(true);
                 console.log('[Amigos] ✅ Usuario actualizado. Nuevo tipo:', updatedUser?.tipoUsuario);
 
                 setShowRedeemModal(false);
@@ -292,7 +292,7 @@ export default function Amigos() {
                 }
                 setSyncModal(prev => ({ ...prev, visible: false }));
 
-                const updatedUser = await refreshUser();
+                const updatedUser = await refreshUser(true);
                 console.log('[Amigos] ✅ Usuario actualizado tras promo. Nuevo tipo:', updatedUser?.tipoUsuario);
 
                 setShowRedeemModal(false);
@@ -682,6 +682,7 @@ const styles = StyleSheet.create({
     root: {
         flex: 1,
         paddingTop: 0,
+        paddingBottom: 40,
     },
     header: {
         paddingHorizontal: 20,

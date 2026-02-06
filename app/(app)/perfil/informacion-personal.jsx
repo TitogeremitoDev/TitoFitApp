@@ -231,7 +231,7 @@ export default function InformacionPersonal() {
             console.log('[INFO-PERSONAL] Enviando payload:', JSON.stringify(payload, null, 2));
             const response = await axios.put('/users/info', { info_user: payload });
             console.log('[INFO-PERSONAL] Respuesta servidor:', JSON.stringify(response.data, null, 2));
-            await refreshUser(); // Update local user context
+            await refreshUser(true); // Update local user context
             Alert.alert('Éxito', 'Información actualizada correctamente');
         } catch (error) {
             console.error('Error updating info:', error);

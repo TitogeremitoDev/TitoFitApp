@@ -29,6 +29,7 @@ import * as Sharing from 'expo-sharing';
 import SyncProgressModal from '../../../components/SyncProgressModal';
 import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
 import { useCoachBranding } from '../../../context/CoachBrandingContext';
+import { useSubscription } from '../../../context/SubscriptionContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -75,8 +76,7 @@ export default function AjustesScreen() {
   // Hook de branding del coach
   const { branding, hasCoachBranding: hasCoachTheme, clientPreference, setClientPreference } = useCoachBranding();
 
-  const [subscriptionData, setSubscriptionData] = useState(null);
-  const [loadingSub, setLoadingSub] = useState(true);
+  const { subscriptionData, loadingSub, refreshSubscription } = useSubscription();
 
   // Estados para cambio de contraseña
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -596,29 +596,7 @@ export default function AjustesScreen() {
     await setThemeId(themeId);
   };
 
-  // Cargar estado de suscripción
-  const loadSubscriptionStatus = async () => {
-    try {
-      const token = await AsyncStorage.getItem('totalgains_token');
-      if (!token || !user) return;
-
-      const response = await fetch(`${API_URL}/api/subscription/status`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setSubscriptionData(data.subscription);
-      }
-    } catch (error) {
-      console.error('[Ajustes] Error cargando suscripción:', error);
-    } finally {
-      setLoadingSub(false);
-    }
-  };
+  // Subscription data viene del SubscriptionContext centralizado
 
   // Cancelar suscripción - abre el modal de confirmación
   const handleCancelSubscription = () => {
@@ -641,7 +619,7 @@ export default function AjustesScreen() {
       const data = await response.json();
       if (data.success) {
         setShowCancelModal(false);
-        loadSubscriptionStatus(); // Recargar estado
+        refreshSubscription(true); // Recargar estado forzado
       } else {
         // Mostrar error en consola, el modal permanece abierto
         console.error('[Ajustes] Error:', data.message);
@@ -766,7 +744,7 @@ export default function AjustesScreen() {
         setShowLeaveTrainerModal(false);
 
         // Refrescar usuario para obtener el nuevo estado
-        await refreshUser();
+        await refreshUser(true);
 
         Alert.alert(
           '✅ Desvinculado',
@@ -784,13 +762,7 @@ export default function AjustesScreen() {
     }
   };
 
-  // Cargar suscripción al montar
-
-  useEffect(() => {
-    if (user) {
-      loadSubscriptionStatus();
-    }
-  }, [user?._id, user?.tipoUsuario]);
+  // Subscription data se carga automáticamente desde SubscriptionContext
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
