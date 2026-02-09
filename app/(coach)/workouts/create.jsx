@@ -2163,7 +2163,7 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: Dimensions.get('window').height * 0.8,
   },
   previewModalClose: {
     position: 'absolute',

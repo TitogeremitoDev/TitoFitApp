@@ -3990,7 +3990,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: '70%',
+        maxHeight: Dimensions.get('window').height * 0.7,
         paddingBottom: 32,
     },
     kpiModalHeader: {

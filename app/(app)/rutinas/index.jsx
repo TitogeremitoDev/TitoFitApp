@@ -234,19 +234,26 @@ export default function RutinasScreen() {
         localRutinas = Array.isArray(parsed) ? parsed : [];
       }
 
-      // 🆕 Variable LOCAL para las rutinas del coach (evita race condition con useState)
+      // Variables locales (evita race condition con useState)
       let localCoachRoutines = [];
+      let serverRutinas = [];
 
-      // 🆕 Cargar CurrentRoutines para CUALQUIER usuario autenticado
-      // Esto permite que entrenadores que también son clientes de otro entrenador vean sus rutinas asignadas
+      // 🚀 Cargar CurrentRoutines y rutinas del servidor EN PARALELO
       if (token) {
-        try {
-          const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-          const response = await fetch(`${apiBaseUrl}/api/current-routines/me`, {
+        const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+        const [coachRes, routinesRes] = await Promise.all([
+          fetch(`${apiBaseUrl}/api/current-routines/me`, {
             headers: { Authorization: `Bearer ${token}` }
-          });
-          if (response.ok) {
-            const data = await response.json();
+          }).catch(err => { console.error('[Rutinas] Error cargando CurrentRoutines:', err); return null; }),
+          fetch(`${apiBaseUrl}/api/routines`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }).catch(err => { console.error('Error cargando rutinas del servidor:', err); return null; }),
+        ]);
+
+        // Procesar CurrentRoutines (coach)
+        if (coachRes?.ok) {
+          try {
+            const data = await coachRes.json();
             if (data.success && Array.isArray(data.routines)) {
               const coachRoutinesData = data.routines.map(r => ({
                 id: r._id,
@@ -258,27 +265,18 @@ export default function RutinasScreen() {
                 trainerName: r.trainerId?.nombre || 'Tu Entrenador',
                 sourceRoutineId: r.sourceRoutineId,
               }));
-              // 🔧 FIX: Guardar en variable local ANTES de actualizar estado
               localCoachRoutines = coachRoutinesData;
               setCoachRoutines(coachRoutinesData);
             }
+          } catch (error) {
+            console.error('[Rutinas] Error parseando CurrentRoutines:', error);
           }
-        } catch (error) {
-          console.error('[Rutinas] Error cargando CurrentRoutines:', error);
         }
-      }
 
-      // Cargar rutinas desde el servidor (MongoDB)
-      let serverRutinas = [];
-      if (token) {
-        try {
-          const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
-          const response = await fetch(`${apiBaseUrl}/api/routines`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-
-          if (response.ok) {
-            const data = await response.json();
+        // Procesar rutinas del servidor (MongoDB)
+        if (routinesRes?.ok) {
+          try {
+            const data = await routinesRes.json();
             if (data.success && Array.isArray(data.routines)) {
               serverRutinas = data.routines.map(r => ({
                 id: r._id,
@@ -288,9 +286,9 @@ export default function RutinasScreen() {
                 folder: r.folder || null,
               }));
             }
+          } catch (error) {
+            console.error('Error parseando rutinas del servidor:', error);
           }
-        } catch (error) {
-          console.error('Error cargando rutinas del servidor:', error);
         }
       }
 

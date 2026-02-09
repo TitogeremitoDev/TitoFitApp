@@ -14,7 +14,7 @@ interface Mode {
     subtitle: string;
     icon: any;
     color: string;
-    route: '/(app)/home' | '/(coach)' | '/(admin)';
+    route: '/(app)/home' | '/(coach)' | '/(admin)' | '/(supervisor)';
     visible: boolean;
 }
 
@@ -26,6 +26,7 @@ export default function ModeSelect() {
     const isAdmin = user?.tipoUsuario === 'ADMINISTRADOR';
     // Acceso coach: es admin, tiene tipo ENTRENADOR, O tiene código de entrenador configurado
     const isCoach = isAdmin || user?.tipoUsuario === 'ENTRENADOR';
+    const isSupervisor = user?.isCoordinator === true || isAdmin;
 
     const modes: Mode[] = [
         {
@@ -45,6 +46,15 @@ export default function ModeSelect() {
             color: '#10b981',
             route: '/(coach)' as const,
             visible: isCoach
+        },
+        {
+            id: 'supervisor',
+            title: 'Panel Supervisor',
+            subtitle: 'Gestiona tu equipo',
+            icon: 'business' as any,
+            color: '#8b5cf6',
+            route: '/(supervisor)' as const,
+            visible: isSupervisor
         },
         {
             id: 'admin',

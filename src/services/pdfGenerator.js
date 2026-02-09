@@ -9,6 +9,7 @@
 
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -257,6 +258,28 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             letter-spacing: -2px;
             text-transform: uppercase;
         }
+
+        /* Watermark - LOGO (large centered, very low opacity) */
+        .watermark-logo {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 380px;
+            height: 380px;
+            opacity: 0.04;
+            z-index: -1;
+            pointer-events: none;
+            object-fit: contain;
+        }
+
+        /* Footer logo - bottom right */
+        .footer-logo {
+            width: 36px;
+            height: 36px;
+            object-fit: contain;
+            border-radius: 6px;
+        }
         
         /* Header */
         .header {
@@ -460,7 +483,8 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
 </head>
 <body>
     ${watermarkText ? `<div class="watermark">${watermarkText}</div>` : ''}
-    
+    ${logoUrl ? `<img src="${logoUrl}" class="watermark-logo" alt="" />` : ''}
+
     <div class="header">
         <div class="header-left">
             ${logoUrl
@@ -489,7 +513,10 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
     
     <div class="footer">
         <div>💪 Plan generado por ${coachName || 'Tu Entrenador'}</div>
-        <div>© ${new Date().getFullYear()}</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span>© ${new Date().getFullYear()}</span>
+            ${logoUrl ? `<img src="${logoUrl}" class="footer-logo" alt="Logo" />` : ''}
+        </div>
     </div>
 </body>
 </html>
@@ -498,10 +525,32 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
 
 /**
  * Generate a PDF from the nutrition plan
+ * On native: creates a PDF file and returns { uri }
+ * On web: opens browser print dialog (no file URI)
  */
 export async function generateNutritionPDF({ plan, coachBranding, clientName, hideMacros = false }) {
     try {
         const html = generateHTMLTemplate({ plan, coachBranding, clientName, hideMacros });
+
+        if (Platform.OS === 'web') {
+            // Web: open new window with HTML content, then trigger print
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(html);
+                printWindow.document.close();
+                // Wait for images to load before printing
+                printWindow.onload = () => {
+                    printWindow.focus();
+                    printWindow.print();
+                };
+                // Fallback if onload doesn't fire (some browsers)
+                setTimeout(() => {
+                    printWindow.focus();
+                    printWindow.print();
+                }, 500);
+            }
+            return { uri: null };
+        }
 
         const { uri } = await Print.printToFileAsync({
             html,
@@ -519,10 +568,17 @@ export async function generateNutritionPDF({ plan, coachBranding, clientName, hi
 
 /**
  * Generate and share a PDF of the nutrition plan
+ * On web: opens print dialog (save as PDF from there)
+ * On native: generates file then opens native share sheet
  */
 export async function generateAndShareNutritionPDF({ plan, coachBranding, clientName, hideMacros = false }) {
     try {
         const { uri } = await generateNutritionPDF({ plan, coachBranding, clientName, hideMacros });
+
+        // Web already handled via print dialog inside generateNutritionPDF
+        if (Platform.OS === 'web') {
+            return { success: true, uri: null };
+        }
 
         const isAvailable = await Sharing.isAvailableAsync();
 

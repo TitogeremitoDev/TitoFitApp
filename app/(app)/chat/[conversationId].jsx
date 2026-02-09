@@ -18,7 +18,9 @@ import {
     Image,
     Modal,
     Alert,
-    BackHandler
+    BackHandler,
+    Pressable,
+    Dimensions,
 } from 'react-native';
 import Video from 'react-native-video';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
@@ -330,7 +332,7 @@ const ChatMediaImage = ({ mediaKey, token, style }) => {
 // MESSAGE BUBBLE
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize, onPreviewPress, token, onMediaPress }) => {
+const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize, onPreviewPress, token, onMediaPress, onComparisonPhotoPress }) => {
     const router = useRouter();
     const getTypeColor = (type) => {
         const colors = {
@@ -382,6 +384,55 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 <Text style={[styles.senderName, { color: theme?.primary || '#8b5cf6' }]}>
                     {message.senderId?.nombre || 'Usuario'}
                 </Text>
+            )}
+
+            {/* 📊 Comparison Card */}
+            {message.metadata?.isComparison && message.metadata?.compareData && (
+                <Pressable
+                    style={({ pressed }) => [styles.comparisonCard, pressed && { opacity: 0.8 }]}
+                    onPress={() => onComparisonPhotoPress?.(message.metadata.compareData)}
+                >
+                    <View style={styles.comparisonHeader}>
+                        <Ionicons name="git-compare" size={14} color="#0ea5e9" />
+                        <Text style={styles.comparisonTitle}>Comparativa de progreso</Text>
+                        {message.metadata.compareData.delta && (
+                            <View style={styles.comparisonDeltaBadge}>
+                                <Text style={styles.comparisonDeltaText}>{message.metadata.compareData.delta}</Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={styles.comparisonPhotos}>
+                        <View style={styles.comparisonPhotoCol}>
+                            <Text style={styles.comparisonLabel}>Antes</Text>
+                            <Image
+                                source={{ uri: message.metadata.compareData.olderPhotoUrl }}
+                                style={styles.comparisonPhotoImg}
+                                resizeMode="cover"
+                            />
+                            <Text style={styles.comparisonDate}>
+                                {new Date(message.metadata.compareData.olderDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                            </Text>
+                        </View>
+                        <View style={styles.comparisonArrow}>
+                            <Ionicons name="arrow-forward" size={16} color={isOwn ? 'rgba(255,255,255,0.5)' : '#94a3b8'} />
+                        </View>
+                        <View style={styles.comparisonPhotoCol}>
+                            <Text style={styles.comparisonLabel}>Después</Text>
+                            <Image
+                                source={{ uri: message.metadata.compareData.newerPhotoUrl }}
+                                style={styles.comparisonPhotoImg}
+                                resizeMode="cover"
+                            />
+                            <Text style={styles.comparisonDate}>
+                                {new Date(message.metadata.compareData.newerDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={styles.comparisonTapHint}>
+                        <Ionicons name="expand-outline" size={12} color="#0ea5e9" />
+                        <Text style={styles.comparisonTapHintText}>Pulsa para ampliar</Text>
+                    </View>
+                </Pressable>
             )}
 
             {/* 📹 Video/Photo Feedback Response - Opens Modal */}
@@ -580,6 +631,10 @@ export default function ConversationScreen() {
     // 🆕 Fullscreen Media Modal (images/videos)
     const [mediaModalVisible, setMediaModalVisible] = useState(false);
     const [mediaModalData, setMediaModalData] = useState(null); // { mediaUrl, mediaType, signedUrl }
+
+    // 📊 Comparison fullscreen modal
+    const [comparisonModalVisible, setComparisonModalVisible] = useState(false);
+    const [comparisonModalData, setComparisonModalData] = useState(null); // { olderPhotoUrl, newerPhotoUrl, olderDate, newerDate, delta }
 
     const handleMediaPress = async (data) => {
         try {
@@ -1016,6 +1071,10 @@ export default function ConversationScreen() {
                                 onPreviewPress={handlePreviewFeedback}
                                 token={token}
                                 onMediaPress={handleMediaPress}
+                                onComparisonPhotoPress={(compareData) => {
+                                    setComparisonModalData(compareData);
+                                    setComparisonModalVisible(true);
+                                }}
                             />
                         )}
                         contentContainerStyle={styles.messagesList}
@@ -1211,6 +1270,84 @@ export default function ConversationScreen() {
                             repeat={false}
                         />
                     )}
+                </View>
+            </Modal>
+
+            {/* 📊 Fullscreen Comparison Modal */}
+            <Modal
+                visible={comparisonModalVisible}
+                transparent={false}
+                animationType="fade"
+                onRequestClose={() => setComparisonModalVisible(false)}
+                presentationStyle="fullScreen"
+            >
+                <View style={styles.comparisonModalBg}>
+                    {/* Close Button */}
+                    <Pressable
+                        style={styles.comparisonModalClose}
+                        onPress={() => setComparisonModalVisible(false)}
+                        hitSlop={16}
+                    >
+                        <Ionicons name="close" size={28} color="#fff" />
+                    </Pressable>
+
+                    {comparisonModalData && (() => {
+                        const screenW = Dimensions.get('window').width;
+                        const photoW = (screenW - 24) / 2; // 8px padding each side + 8px gap
+                        const photoH = photoW * (4 / 3);
+                        return (
+                            <View style={styles.comparisonModalContent}>
+                                {/* Delta badge */}
+                                {comparisonModalData.delta && (
+                                    <View style={styles.comparisonFullDeltaBadge}>
+                                        <Ionicons name="time-outline" size={14} color="#0ea5e9" />
+                                        <Text style={styles.comparisonFullDeltaText}>{comparisonModalData.delta}</Text>
+                                    </View>
+                                )}
+
+                                {/* Photos side by side - edge to edge */}
+                                <View style={styles.comparisonFullPhotos}>
+                                    {/* Antes */}
+                                    <View style={styles.comparisonFullCol}>
+                                        <Text style={styles.comparisonFullLabel}>Antes</Text>
+                                        <Image
+                                            source={{ uri: comparisonModalData.olderPhotoUrl }}
+                                            style={{ width: photoW, height: photoH, borderRadius: 10, backgroundColor: '#1a1a1f' }}
+                                            resizeMode="cover"
+                                        />
+                                        <Text style={styles.comparisonFullDate}>
+                                            {new Date(comparisonModalData.olderDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </Text>
+                                    </View>
+
+                                    {/* Después */}
+                                    <View style={styles.comparisonFullCol}>
+                                        <Text style={styles.comparisonFullLabel}>Después</Text>
+                                        <Image
+                                            source={{ uri: comparisonModalData.newerPhotoUrl }}
+                                            style={{ width: photoW, height: photoH, borderRadius: 10, backgroundColor: '#1a1a1f' }}
+                                            resizeMode="cover"
+                                        />
+                                        <Text style={styles.comparisonFullDate}>
+                                            {new Date(comparisonModalData.newerDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </Text>
+                                    </View>
+
+                                    {/* Arrow overlay centered between photos */}
+                                    <View style={styles.comparisonFullArrowOverlay}>
+                                        <View style={styles.comparisonFullArrowCircle}>
+                                            <Ionicons name="arrow-forward" size={18} color="#fff" />
+                                        </View>
+                                    </View>
+                                </View>
+
+                                {/* Note if exists */}
+                                {comparisonModalData.note ? (
+                                    <Text style={styles.comparisonFullNote}>{comparisonModalData.note}</Text>
+                                ) : null}
+                            </View>
+                        );
+                    })()}
                 </View>
             </Modal>
         </SafeAreaView >
@@ -1874,6 +2011,91 @@ const styles = StyleSheet.create({
         height: '80%'
     },
 
+    // 📊 Fullscreen Comparison Modal
+    comparisonModalBg: {
+        flex: 1,
+        backgroundColor: '#000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    comparisonModalClose: {
+        position: 'absolute',
+        top: 50,
+        right: 16,
+        zIndex: 20,
+        padding: 8,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 20,
+    },
+    comparisonModalContent: {
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    comparisonFullDeltaBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(14, 165, 233, 0.2)',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 20,
+        marginBottom: 16,
+    },
+    comparisonFullDeltaText: {
+        color: '#0ea5e9',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    comparisonFullPhotos: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    comparisonFullCol: {
+        alignItems: 'center',
+    },
+    comparisonFullLabel: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        marginBottom: 8,
+    },
+    comparisonFullDate: {
+        color: 'rgba(255,255,255,0.6)',
+        fontSize: 13,
+        marginTop: 8,
+        fontWeight: '500',
+    },
+    comparisonFullArrowOverlay: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        pointerEvents: 'none',
+    },
+    comparisonFullArrowCircle: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    comparisonFullNote: {
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 20,
+        fontStyle: 'italic',
+        paddingHorizontal: 16,
+    },
+
     // Video Feedback Response Card (Legacy)
     videoResponseCard: {
         backgroundColor: '#4361ee10',
@@ -1892,6 +2114,83 @@ const styles = StyleSheet.create({
         color: '#4361ee',
         fontSize: 13,
         fontWeight: '600'
+    },
+
+    // 📊 Comparison Card in Chat
+    comparisonCard: {
+        backgroundColor: 'rgba(14, 165, 233, 0.08)',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(14, 165, 233, 0.2)',
+    },
+    comparisonHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 8,
+    },
+    comparisonTitle: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#0ea5e9',
+        flex: 1,
+    },
+    comparisonDeltaBadge: {
+        backgroundColor: 'rgba(14, 165, 233, 0.15)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    comparisonDeltaText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#0ea5e9',
+    },
+    comparisonPhotos: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    comparisonPhotoCol: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    comparisonLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#94a3b8',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 4,
+    },
+    comparisonPhotoImg: {
+        width: '100%',
+        aspectRatio: 3 / 4,
+        borderRadius: 8,
+        backgroundColor: '#1a1a1f',
+    },
+    comparisonDate: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 3,
+    },
+    comparisonArrow: {
+        paddingHorizontal: 2,
+    },
+    comparisonTapHint: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        marginTop: 6,
+        opacity: 0.6,
+    },
+    comparisonTapHintText: {
+        fontSize: 10,
+        color: '#0ea5e9',
+        fontWeight: '500',
     },
 
     // 🆕 Enhanced Feedback Quote Card

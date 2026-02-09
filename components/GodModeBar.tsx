@@ -12,12 +12,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useImpersonation } from '../context/ImpersonationContext';
 
 export const GodModeBar = () => {
-    const { isImpersonating, impersonatedUser, exitImpersonation } = useImpersonation();
+    const { isImpersonating, impersonatedUser, impersonatorRole, exitImpersonation } = useImpersonation();
     const insets = useSafeAreaInsets();
 
     if (!isImpersonating || !impersonatedUser) {
         return null;
     }
+
+    const exitLabel = impersonatorRole === 'coordinator' ? 'Volver a Supervisor' : 'Volver a Admin';
 
     return (
         <View style={[styles.container, { paddingTop: Platform.OS === 'ios' ? insets.top : 8 }]}>
@@ -31,7 +33,7 @@ export const GodModeBar = () => {
 
                 <TouchableOpacity style={styles.exitButton} onPress={exitImpersonation}>
                     <Ionicons name="exit-outline" size={18} color="#fff" />
-                    <Text style={styles.exitText}>Volver a Admin</Text>
+                    <Text style={styles.exitText}>{exitLabel}</Text>
                 </TouchableOpacity>
             </View>
         </View>

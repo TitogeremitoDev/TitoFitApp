@@ -54,7 +54,14 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
   }
 }
 
-WebBrowser.maybeCompleteAuthSession();
+// Guard against environments where localStorage is unavailable (e.g. Chrome Mobile iOS)
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  try {
+    WebBrowser.maybeCompleteAuthSession();
+  } catch (e) {
+    console.warn('[Login] maybeCompleteAuthSession failed:', e);
+  }
+}
 
 export default function LoginScreen() {
   const { login, loginWithGoogle, loginWithApple } = useAuth();

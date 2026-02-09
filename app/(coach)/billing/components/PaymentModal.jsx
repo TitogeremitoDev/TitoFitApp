@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     View, Text, StyleSheet, Modal, TouchableOpacity,
     Platform, ScrollView, Image, KeyboardAvoidingView,
-    TouchableWithoutFeedback, Keyboard
+    TouchableWithoutFeedback, Keyboard, Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../../components/ui';
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
         width: '100%',
         maxWidth: 500,
         borderRadius: 24,
-        maxHeight: '90%',
+        maxHeight: Dimensions.get('window').height * 0.9,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.1,

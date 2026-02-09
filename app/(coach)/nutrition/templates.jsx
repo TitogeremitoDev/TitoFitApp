@@ -47,6 +47,9 @@ export default function NutritionTemplatesScreen() {
     const [showStagingModal, setShowStagingModal] = useState(false);
     const [parsedPlan, setParsedPlan] = useState(null);
 
+    // New Plan Type Modal
+    const [showNewPlanModal, setShowNewPlanModal] = useState(false);
+
     // AI Progress State
     const [aiProgressMessage, setAiProgressMessage] = useState('');
     const [aiShowRetry, setAiShowRetry] = useState(false);
@@ -341,8 +344,17 @@ export default function NutritionTemplatesScreen() {
     const renderTemplateCard = ({ item, section }) => {
         if (!expandedFolders[section.key]) return null;
 
-        const dayCount = item.customPlan?.dayTargets?.length || 0;
-        const firstDay = item.customPlan?.dayTargets?.[0];
+        // Detect template type
+        const isMealPlan = item.planType === 'complete' ||
+            (item.dayTemplates && item.dayTemplates.length > 0 && item.dayTemplates[0]?.meals?.length > 0);
+
+        const dayCount = isMealPlan
+            ? (item.dayTemplates?.length || 0)
+            : (item.customPlan?.dayTargets?.length || 0);
+
+        const firstDayKcal = isMealPlan
+            ? (item.dayTemplates?.[0]?.targetMacros?.kcal || 0)
+            : (item.customPlan?.dayTargets?.[0]?.kcal || 0);
 
         return (
             <TouchableOpacity
@@ -354,8 +366,8 @@ export default function NutritionTemplatesScreen() {
                 activeOpacity={0.7}
             >
                 <View style={styles.cardHeader}>
-                    <View style={[styles.iconContainer, { backgroundColor: DAY_COLORS[0] + '20' }]}>
-                        <Ionicons name="document-text" size={24} color={DAY_COLORS[0]} />
+                    <View style={[styles.iconContainer, { backgroundColor: isMealPlan ? '#22c55e20' : DAY_COLORS[0] + '20' }]}>
+                        <Ionicons name={isMealPlan ? 'restaurant' : 'create'} size={24} color={isMealPlan ? '#22c55e' : DAY_COLORS[0]} />
                     </View>
                     <View style={styles.cardInfo}>
                         <Text style={styles.templateName}>{item.name || 'Sin nombre'}</Text>
@@ -375,13 +387,15 @@ export default function NutritionTemplatesScreen() {
 
                 <View style={styles.cardStats}>
                     <View style={styles.stat}>
-                        <Ionicons name="calendar-outline" size={14} color="#64748b" />
-                        <Text style={styles.statText}>{dayCount} tipos de día</Text>
+                        <Ionicons name={isMealPlan ? 'restaurant-outline' : 'calendar-outline'} size={14} color="#64748b" />
+                        <Text style={styles.statText}>
+                            {isMealPlan ? `${dayCount} días · Completa` : `${dayCount} tipos de día · Flex`}
+                        </Text>
                     </View>
-                    {firstDay?.kcal ? (
+                    {firstDayKcal ? (
                         <View style={styles.stat}>
                             <Ionicons name="flame-outline" size={14} color="#ef4444" />
-                            <Text style={styles.statText}>{firstDay.kcal} kcal</Text>
+                            <Text style={styles.statText}>{Math.round(firstDayKcal)} kcal</Text>
                         </View>
                     ) : null}
                 </View>
@@ -478,10 +492,66 @@ export default function NutritionTemplatesScreen() {
             {/* FAB para crear nuevo plan */}
             <TouchableOpacity
                 style={styles.fab}
-                onPress={() => router.push('/(coach)/nutrition/template-editor')}
+                onPress={() => setShowNewPlanModal(true)}
             >
                 <Ionicons name="add" size={28} color="#fff" />
             </TouchableOpacity>
+
+            {/* Modal para elegir tipo de plan */}
+            <Modal
+                visible={showNewPlanModal}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => setShowNewPlanModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Nuevo Plan Nutricional</Text>
+                        <Text style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>
+                            Selecciona el tipo de plan que quieres crear
+                        </Text>
+
+                        <TouchableOpacity
+                            style={{ backgroundColor: '#f0fdf4', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#22c55e30' }}
+                            onPress={() => {
+                                setShowNewPlanModal(false);
+                                router.push({ pathname: '/(coach)/nutrition/template-editor', params: { mode: 'mealplan' } });
+                            }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                <Ionicons name="restaurant" size={22} color="#22c55e" />
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Dieta Completa</Text>
+                            </View>
+                            <Text style={{ fontSize: 12, color: '#64748b', marginLeft: 32 }}>
+                                Plan con comidas y alimentos detallados
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{ backgroundColor: '#eff6ff', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#3b82f630' }}
+                            onPress={() => {
+                                setShowNewPlanModal(false);
+                                router.push({ pathname: '/(coach)/nutrition/template-editor', params: { mode: 'custom' } });
+                            }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                <Ionicons name="create" size={22} color="#3b82f6" />
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b' }}>Plan Flex</Text>
+                            </View>
+                            <Text style={{ fontSize: 12, color: '#64748b', marginLeft: 32 }}>
+                                Solo objetivos de macros por tipo de día
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.modalCancelBtn}
+                            onPress={() => setShowNewPlanModal(false)}
+                        >
+                            <Text style={styles.modalCancelText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Modal para crear carpeta */}
             <Modal

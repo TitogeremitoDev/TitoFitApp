@@ -11,7 +11,8 @@ import {
     Modal,
     TouchableOpacity,
     ScrollView,
-    Platform
+    Platform,
+    Dimensions
 } from 'react-native';
 import { EnhancedTextInput } from '../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -326,8 +327,8 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: '85%',
-        minHeight: '50%',
+        maxHeight: Dimensions.get('window').height * 0.85,
+        minHeight: Dimensions.get('window').height * 0.5,
     },
     header: {
         flexDirection: 'row',

@@ -18,6 +18,7 @@ import {
     Image, // Added Image
     ActivityIndicator,
     Alert,
+    Dimensions,
 } from 'react-native';
 import { EnhancedTextInput } from '../../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -1067,7 +1068,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                 targets={currentTemplate?.targetMacros}
             />
 
-            {showFooter && (
+            {showFooter && !(activeModal?.type === 'food' && !isDesktop) && (
                 <ActionsFooter
                     planName={plan.name}
                     onChangePlanName={(text) => updatePlan(prev => ({ ...prev, name: text }))}
@@ -2532,7 +2533,7 @@ const styles = StyleSheet.create({
             web: { boxShadow: '0 10px 25px rgba(0,0,0,0.1)' },
             default: { elevation: 5 },
         }),
-        maxHeight: '80%'
+        maxHeight: Dimensions.get('window').height * 0.8
     },
     modalContentSmall: {
         width: '90%',

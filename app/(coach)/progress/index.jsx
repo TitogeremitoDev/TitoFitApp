@@ -1,10 +1,9 @@
 /* coach/progress/index.jsx
    ═══════════════════════════════════════════════════════════════════════════
-   DASHBOARD DE PROGRESO DE CLIENTES
-   - Lista de clientes con indicadores rápidos
-   - Flecha de tendencia (mejora/empeora)
-   - Días sin entrenar, sesiones por semana
-   - Clic → página de análisis detallado
+   DASHBOARD DE PROGRESO DE CLIENTES (CARD VIEW DESIGN)
+   - Diseño unificado con la vista de Clientes
+   - KPIs visuales: Fuerza (Tendencia), Volumen Total, Asistencia
+   - Alertas inteligentes
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -14,17 +13,16 @@ import {
     StyleSheet,
     SafeAreaView,
     FlatList,
-    TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
+    TouchableOpacity
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
-import { RPE_COLORS, RPE_LABELS } from '../../../src/utils/calculateKPIs';
-import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
+import ProgressListRow from '../components/ProgressListRow';
 
 export default function ProgressDashboard() {
     const router = useRouter();
@@ -36,7 +34,7 @@ export default function ProgressDashboard() {
 
     // Search and Sort state
     const [searchQuery, setSearchQuery] = useState('');
-    const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'sessions'
+    const [sortBy, setSortBy] = useState('recent'); // 'recent', 'name', 'performance'
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -47,8 +45,9 @@ export default function ProgressDashboard() {
         try {
             if (!isRefresh) setIsLoading(true);
 
-            // 1. Obtener lista de clientes
-            const clientsRes = await fetch(`${API_URL}/api/trainers/clients`, {
+            // 1. Obtener lista de clientes EXTENDIDA (para tener rutinas, avatar, etc.)
+            // Usamos el mismo endpoint que en la vista de Clientes para consistencia
+            const clientsRes = await fetch(`${API_URL}/api/trainers/clients-extended`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const clientsData = await clientsRes.json();
@@ -62,6 +61,7 @@ export default function ProgressDashboard() {
             setClients(clientsList);
 
             // 2. Obtener workouts de TODOS los clientes en una sola llamada (bulk)
+            // Necesitamos esto para calcular las tendencias (trends) de volúmenes de 7 días
             const fourWeeksAgo = new Date();
             fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
             const userIds = clientsList.map(c => c._id);
@@ -90,29 +90,11 @@ export default function ProgressDashboard() {
                         progressMap[client._id] = calcularProgreso(workouts);
                     }
                 } else {
-                    throw new Error('Bulk endpoint failed');
+                    // Si el bulk falla, no bloqueamos, usamos datos vacíos o fallback
+                    console.warn('Bulk endpoint returned unsuccessful');
                 }
             } catch (bulkError) {
-                // Fallback: si el bulk falla, usar el método individual
-                if (__DEV__) console.warn('[Progress] Bulk failed, falling back to individual calls:', bulkError.message);
-                await Promise.all(
-                    clientsList.map(async (client) => {
-                        try {
-                            const workoutsRes = await fetch(
-                                `${API_URL}/api/workouts/by-user/${client._id}?limit=100&startDate=${fourWeeksAgo.toISOString()}`,
-                                { headers: { Authorization: `Bearer ${token}` } }
-                            );
-                            const workoutsData = await workoutsRes.json();
-                            if (workoutsData.success) {
-                                progressMap[client._id] = calcularProgreso(workoutsData.workouts || []);
-                            } else {
-                                progressMap[client._id] = getDefaultProgress();
-                            }
-                        } catch (e) {
-                            progressMap[client._id] = getDefaultProgress();
-                        }
-                    })
-                );
+                console.warn('[Progress] Bulk fetch error:', bulkError);
             }
 
             setClientsProgress(progressMap);
@@ -129,7 +111,7 @@ export default function ProgressDashboard() {
     }, [fetchClientsAndProgress]);
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CÁLCULO DE PROGRESO
+    // CÁLCULO DE PROGRESO (Logica de Negocio)
     // ═══════════════════════════════════════════════════════════════════════════
     const getDefaultProgress = () => ({
         tendencia: 0,
@@ -139,7 +121,6 @@ export default function ProgressDashboard() {
         volumenSemanaActual: 0,
         volumenSemanaAnterior: 0,
         ultimoRPE: null,
-        ultimoRPENote: null,
     });
 
     const calcularProgreso = (sessions) => {
@@ -169,7 +150,7 @@ export default function ProgressDashboard() {
         if (volumenSemanaAnterior > 0) {
             tendencia = ((volumenSemanaActual - volumenSemanaAnterior) / volumenSemanaAnterior) * 100;
         } else if (volumenSemanaActual > 0) {
-            tendencia = 100; // Si no había nada antes, es mejoría
+            tendencia = 100; // Si no había nada antes, es mejoría inicial
         }
 
         // Última sesión y días sin entrenar
@@ -179,12 +160,6 @@ export default function ProgressDashboard() {
             ? Math.floor((ahora - ultimaSesion) / (1000 * 60 * 60 * 24))
             : null;
 
-        // Obtener último RPE de la sesión más reciente
-        const sessionsSorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const ultimaSession = sessionsSorted[0];
-        const ultimoRPE = ultimaSession?.sessionRPE || null;
-        const ultimoRPENote = ultimaSession?.sessionNote || null;
-
         return {
             tendencia: Math.round(tendencia),
             diasSinEntrenar,
@@ -192,26 +167,7 @@ export default function ProgressDashboard() {
             ultimaSesion,
             volumenSemanaActual,
             volumenSemanaAnterior,
-            ultimoRPE,
-            ultimoRPENote,
         };
-    };
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HELPERS DE UI
-    // ═══════════════════════════════════════════════════════════════════════════
-    const getTendenciaInfo = (tendencia) => {
-        if (tendencia > 5) return { icon: 'trending-up', color: '#10b981', text: `+${tendencia}%` };
-        if (tendencia < -5) return { icon: 'trending-down', color: '#ef4444', text: `${tendencia}%` };
-        return { icon: 'remove', color: '#6b7280', text: '0%' };
-    };
-
-    const formatUltimaSesion = (fecha) => {
-        if (!fecha) return 'Sin datos';
-        const dias = Math.floor((new Date() - new Date(fecha)) / (1000 * 60 * 60 * 24));
-        if (dias === 0) return 'Hoy';
-        if (dias === 1) return 'Ayer';
-        return `Hace ${dias} días`;
     };
 
     const onRefresh = () => {
@@ -220,140 +176,13 @@ export default function ProgressDashboard() {
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // RENDER TARJETA DE CLIENTE
-    // ═══════════════════════════════════════════════════════════════════════════
-    const renderClientCard = ({ item: client }) => {
-        const progress = clientsProgress[client._id] || getDefaultProgress();
-        const tendenciaInfo = getTendenciaInfo(progress.tendencia);
-        const alertaDias = progress.diasSinEntrenar !== null && progress.diasSinEntrenar >= 4;
-
-        return (
-            <TouchableOpacity
-                style={styles.clientCard}
-                onPress={() => router.push({
-                    pathname: '/(coach)/progress/[clientId]',
-                    params: { clientId: client._id, clientName: client.nombre }
-                })}
-                activeOpacity={0.7}
-            >
-                {/* Header */}
-                <View style={styles.cardHeader}>
-                    <View style={styles.clientInfo}>
-                        <View style={{ marginRight: 10 }}>
-                            <AvatarWithInitials
-                                avatarUrl={client.avatarUrl}
-                                name={client.nombre}
-                                size={42}
-                            />
-                        </View>
-                        <View style={styles.clientDetails}>
-                            <Text style={styles.clientName}>{client.nombre}</Text>
-                            <Text style={styles.clientEmail}>{client.email}</Text>
-                        </View>
-                    </View>
-
-                    {/* Tendencia */}
-                    <View style={[styles.tendenciaBadge, { backgroundColor: tendenciaInfo.color + '20' }]}>
-                        <Ionicons name={tendenciaInfo.icon} size={20} color={tendenciaInfo.color} />
-                        <Text style={[styles.tendenciaText, { color: tendenciaInfo.color }]}>
-                            {tendenciaInfo.text}
-                        </Text>
-                    </View>
-
-                    {/* 🆕 RPE Battery Ring */}
-                    {progress.ultimoRPE && (
-                        <View style={styles.rpeBatteryContainer}>
-                            <View style={[
-                                styles.rpeBatteryRing,
-                                {
-                                    borderColor: RPE_COLORS[progress.ultimoRPE] || '#CBD5E1',
-                                    borderWidth: progress.ultimoRPE >= 4 ? 4 : 2,
-                                }
-                            ]}>
-                                <View style={[
-                                    styles.rpeBatteryFill,
-                                    {
-                                        backgroundColor: RPE_COLORS[progress.ultimoRPE] || '#CBD5E1',
-                                        height: `${(progress.ultimoRPE / 5) * 100}%`,
-                                    }
-                                ]} />
-                            </View>
-                            {progress.ultimoRPENote && (
-                                <View style={styles.rpeBatteryNoteDot} />
-                            )}
-                        </View>
-                    )}
-                </View>
-
-                {/* Stats */}
-                <View style={styles.statsRow}>
-                    {/* Última sesión */}
-                    <View style={styles.statItem}>
-                        <Ionicons name="time-outline" size={16} color="#64748b" />
-                        <Text style={styles.statText}>
-                            {formatUltimaSesion(progress.ultimaSesion)}
-                        </Text>
-                    </View>
-
-                    {/* Sesiones/semana */}
-                    <View style={styles.statItem}>
-                        <Ionicons name="calendar-outline" size={16} color="#64748b" />
-                        <Text style={styles.statText}>
-                            {progress.sesionesSemana}/sem
-                        </Text>
-                    </View>
-
-                    {/* Alerta si no entrena */}
-                    {alertaDias && (
-                        <View style={styles.alertBadge}>
-                            <Ionicons name="warning" size={14} color="#f59e0b" />
-                            <Text style={styles.alertText}>
-                                {progress.diasSinEntrenar}d sin gym
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Barra de progreso visual */}
-                <View style={styles.progressBarContainer}>
-                    <View
-                        style={[
-                            styles.progressBar,
-                            {
-                                width: `${Math.min(100, Math.max(0, progress.sesionesSemana * 20))}%`,
-                                backgroundColor: progress.sesionesSemana >= 3 ? '#10b981' :
-                                    progress.sesionesSemana >= 2 ? '#f59e0b' : '#ef4444'
-                            }
-                        ]}
-                    />
-                </View>
-
-                {/* Flecha para indicar acción */}
-                <View style={styles.cardFooter}>
-                    <Text style={styles.footerText}>Ver análisis detallado</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#3b82f6" />
-                </View>
-            </TouchableOpacity>
-        );
-    };
-
-    const renderEmpty = () => (
-        <View style={styles.emptyContainer}>
-            <Ionicons name="analytics-outline" size={80} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>Sin Datos de Progreso</Text>
-            <Text style={styles.emptyText}>
-                Aún no tienes clientes con entrenamientos registrados.
-            </Text>
-        </View>
-    );
-
-    // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
 
-    // Filter and sort clients (MUST be before any early return)
     const filteredClients = React.useMemo(() => {
         let result = [...clients];
+
+        // Search
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(c =>
@@ -361,16 +190,24 @@ export default function ProgressDashboard() {
                 c.email?.toLowerCase().includes(q)
             );
         }
+
+        // Sort
         switch (sortBy) {
             case 'name':
                 result.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
                 break;
-            case 'sessions':
-                result.sort((a, b) => (clientsProgress[b._id]?.sesionesSemana || 0) - (clientsProgress[a._id]?.sesionesSemana || 0));
+            case 'performance':
+                // Sort by trend descending
+                result.sort((a, b) => (clientsProgress[b._id]?.tendencia || 0) - (clientsProgress[a._id]?.tendencia || 0));
                 break;
             case 'recent':
             default:
-                result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                // Sort by active status (days since last tracking ascending which means more recent)
+                result.sort((a, b) => {
+                    const daysA = clientsProgress[a._id]?.diasSinEntrenar ?? 999;
+                    const daysB = clientsProgress[b._id]?.diasSinEntrenar ?? 999;
+                    return daysA - daysB;
+                });
         }
         return result;
     }, [clients, clientsProgress, searchQuery, sortBy]);
@@ -378,15 +215,10 @@ export default function ProgressDashboard() {
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
-                <CoachHeader
-                    title="Progreso"
-                    subtitle="Análisis de clientes"
-                    icon="stats-chart"
-                    iconColor="#ef4444"
-                />
+                <CoachHeader title="Progreso" subtitle="Análisis de rendimiento de clientes" icon="stats-chart" iconColor="#2563EB" />
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#ef4444" />
-                    <Text style={styles.loadingText}>Cargando progreso...</Text>
+                    <ActivityIndicator size="large" color="#2563EB" />
+                    <Text style={styles.loadingText}>Cargando rendimiento...</Text>
                 </View>
             </SafeAreaView>
         );
@@ -396,10 +228,11 @@ export default function ProgressDashboard() {
         <SafeAreaView style={styles.container}>
             <CoachHeader
                 title="Progreso"
-                subtitle="Análisis de clientes"
+                subtitle="Análisis de rendimiento de clientes"
                 icon="stats-chart"
-                iconColor="#ef4444"
-                badge={`${clients.length} clientes`}
+                iconColor="#2563EB" // Changed to Blue as per prompt
+                badge={`${clients.length} clientes activos`}
+                showBack={false}
             />
 
             {/* Search and Sort Bar */}
@@ -409,7 +242,7 @@ export default function ProgressDashboard() {
                     <EnhancedTextInput
                         style={styles.searchInput}
                         containerStyle={{ flex: 1 }}
-                        placeholder="Buscar cliente..."
+                        placeholder="Buscar por nombre, rutina o correo..."
                         placeholderTextColor="#94a3b8"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -420,24 +253,21 @@ export default function ProgressDashboard() {
                         </TouchableOpacity>
                     )}
                 </View>
+
+                {/* Sort Toggle Buttons */}
                 <View style={styles.sortButtons}>
                     <TouchableOpacity
                         style={[styles.sortBtn, sortBy === 'recent' && styles.sortBtnActive]}
                         onPress={() => setSortBy('recent')}
                     >
-                        <Ionicons name="time-outline" size={16} color={sortBy === 'recent' ? '#fff' : '#64748b'} />
+                        <Ionicons name="time" size={16} color={sortBy === 'recent' ? '#2563EB' : '#64748b'} />
                     </TouchableOpacity>
+
                     <TouchableOpacity
-                        style={[styles.sortBtn, sortBy === 'name' && styles.sortBtnActive]}
-                        onPress={() => setSortBy('name')}
+                        style={[styles.sortBtn, sortBy === 'performance' && styles.sortBtnActive]}
+                        onPress={() => setSortBy('performance')}
                     >
-                        <Ionicons name="text-outline" size={16} color={sortBy === 'name' ? '#fff' : '#64748b'} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.sortBtn, sortBy === 'sessions' && styles.sortBtnActive]}
-                        onPress={() => setSortBy('sessions')}
-                    >
-                        <Ionicons name="barbell-outline" size={16} color={sortBy === 'sessions' ? '#fff' : '#64748b'} />
+                        <Ionicons name="trending-up" size={16} color={sortBy === 'performance' ? '#2563EB' : '#64748b'} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -445,16 +275,36 @@ export default function ProgressDashboard() {
             <FlatList
                 data={filteredClients}
                 keyExtractor={(item) => item._id}
-                renderItem={renderClientCard}
-                ListEmptyComponent={renderEmpty}
-                contentContainerStyle={clients.length === 0 ? styles.emptyList : styles.list}
+                renderItem={({ item }) => (
+                    <ProgressListRow
+                        client={item}
+                        progress={clientsProgress[item._id]}
+                        onPress={() => router.push({
+                            pathname: '/(coach)/progress/[clientId]',
+                            params: { clientId: item._id, clientName: item.nombre }
+                        })}
+                    />
+                )}
+                ListEmptyComponent={
+                    !isLoading && (
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="analytics-outline" size={80} color="#cbd5e1" />
+                            <Text style={styles.emptyTitle}>Sin Datos de Progreso</Text>
+                            <Text style={styles.emptyText}>
+                                No se encontraron clientes activos con datos recientes.
+                            </Text>
+                        </View>
+                    )
+                }
+                contentContainerStyle={[styles.list, filteredClients.length === 0 && styles.listEmpty]}
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
                         onRefresh={onRefresh}
-                        colors={['#ef4444']}
+                        colors={['#2563EB']}
                     />
                 }
+                showsVerticalScrollIndicator={false}
             />
         </SafeAreaView>
     );
@@ -470,21 +320,23 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 10,
-        gap: 10,
+        paddingVertical: 12,
+        gap: 12,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
+        borderBottomColor: '#f1f5f9',
     },
     searchContainer: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f1f5f9',
-        borderRadius: 10,
-        paddingHorizontal: 10,
-        height: 38,
-        gap: 8,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        height: 42,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
     },
     searchInput: {
         fontSize: 14,
@@ -492,20 +344,26 @@ const styles = StyleSheet.create({
     },
     sortButtons: {
         flexDirection: 'row',
-        gap: 6,
+        gap: 8,
     },
     sortBtn: {
-        padding: 8,
+        width: 42,
+        height: 42,
         borderRadius: 8,
-        backgroundColor: '#f1f5f9',
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     sortBtnActive: {
-        backgroundColor: '#ef4444',
+        borderColor: '#bfdbfe',
+        backgroundColor: '#eff6ff',
     },
     list: {
         padding: 16,
     },
-    emptyList: {
+    listEmpty: {
         flex: 1,
     },
     loadingContainer: {
@@ -515,124 +373,9 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 12,
-        fontSize: 16,
-        color: '#64748b',
-    },
-
-    // Tarjeta de cliente
-    clientCard: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 14,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 3,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    clientInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    clientDetails: {
-        marginLeft: 12,
-        flex: 1,
-    },
-    clientName: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: '#1e293b',
-    },
-    clientEmail: {
-        fontSize: 13,
-        color: '#64748b',
-        marginTop: 2,
-    },
-    tendenciaBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 4,
-    },
-    tendenciaText: {
         fontSize: 14,
-        fontWeight: '700',
-    },
-
-    // Stats
-    statsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-        marginBottom: 12,
-        paddingBottom: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
-    },
-    statItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    statText: {
-        fontSize: 13,
         color: '#64748b',
-        fontWeight: '500',
     },
-    alertBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fef3c7',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        gap: 4,
-    },
-    alertText: {
-        fontSize: 11,
-        color: '#d97706',
-        fontWeight: '600',
-    },
-
-    // Barra de progreso
-    progressBarContainer: {
-        height: 6,
-        backgroundColor: '#e2e8f0',
-        borderRadius: 3,
-        marginBottom: 12,
-        overflow: 'hidden',
-    },
-    progressBar: {
-        height: '100%',
-        borderRadius: 3,
-    },
-
-    // Footer
-    cardFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 4,
-    },
-    footerText: {
-        fontSize: 13,
-        color: '#3b82f6',
-        fontWeight: '600',
-    },
-
-    // Empty state
     emptyContainer: {
         flex: 1,
         alignItems: 'center',
@@ -640,48 +383,16 @@ const styles = StyleSheet.create({
         paddingVertical: 60,
     },
     emptyTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '700',
         color: '#64748b',
         marginTop: 16,
     },
     emptyText: {
-        fontSize: 16,
+        fontSize: 14,
         color: '#94a3b8',
         marginTop: 8,
         textAlign: 'center',
         paddingHorizontal: 32,
-    },
-
-    // 🆕 RPE Battery Ring Styles
-    rpeBatteryContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: 10,
-        position: 'relative',
-    },
-    rpeBatteryRing: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#f1f5f9',
-        overflow: 'hidden',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-    },
-    rpeBatteryFill: {
-        width: '100%',
-        borderRadius: 0,
-    },
-    rpeBatteryNoteDot: {
-        position: 'absolute',
-        top: -2,
-        right: -2,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#fff',
-        borderWidth: 2,
-        borderColor: '#3b82f6',
     },
 });

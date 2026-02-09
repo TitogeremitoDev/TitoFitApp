@@ -14,6 +14,7 @@ import { useAuth } from './AuthContext';
 const ADMIN_RECOVERY_TOKEN_KEY = 'ADMIN_RECOVERY_TOKEN';
 const ADMIN_RECOVERY_USER_KEY = 'ADMIN_RECOVERY_USER';
 const ADMIN_LAST_ROUTE_KEY = 'ADMIN_LAST_ROUTE';
+const IMPERSONATOR_ROLE_KEY = 'IMPERSONATOR_ROLE';
 const TOKEN_KEY = 'totalgains_token';
 const USER_KEY = 'totalgains_user';
 
@@ -28,7 +29,8 @@ interface ImpersonatedUser {
 interface ImpersonationContextData {
     isImpersonating: boolean;
     impersonatedUser: ImpersonatedUser | null;
-    startImpersonation: (targetUserId: string, currentPath: string) => Promise<boolean>;
+    impersonatorRole: 'admin' | 'coordinator' | null;
+    startImpersonation: (targetUserId: string, currentPath: string, endpoint?: string) => Promise<boolean>;
     exitImpersonation: () => Promise<void>;
     checkImpersonationStatus: () => Promise<void>;
 }
@@ -38,6 +40,7 @@ const ImpersonationContext = createContext<ImpersonationContextData | null>(null
 export const ImpersonationProvider = ({ children }: { children: React.ReactNode }) => {
     const [isImpersonating, setIsImpersonating] = useState(false);
     const [impersonatedUser, setImpersonatedUser] = useState<ImpersonatedUser | null>(null);
+    const [impersonatorRole, setImpersonatorRole] = useState<'admin' | 'coordinator' | null>(null);
     const router = useRouter();
     const { reloadSession } = useAuth();
 
@@ -46,6 +49,7 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
         try {
             const recoveryToken = await AsyncStorage.getItem(ADMIN_RECOVERY_TOKEN_KEY);
             const impersonatedUserData = await AsyncStorage.getItem(USER_KEY);
+            const storedRole = await AsyncStorage.getItem(IMPERSONATOR_ROLE_KEY);
 
             if (recoveryToken && impersonatedUserData) {
                 setIsImpersonating(true);
@@ -57,9 +61,11 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
                     username: userData.username,
                     tipoUsuario: userData.tipoUsuario
                 });
+                setImpersonatorRole((storedRole as 'admin' | 'coordinator') || 'admin');
             } else {
                 setIsImpersonating(false);
                 setImpersonatedUser(null);
+                setImpersonatorRole(null);
             }
         } catch (error) {
             console.error('[Impersonation] Error checking status:', error);
@@ -71,9 +77,15 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
     }, [checkImpersonationStatus]);
 
     // Iniciar impersonation
-    const startImpersonation = useCallback(async (targetUserId: string, currentPath: string): Promise<boolean> => {
+    const startImpersonation = useCallback(async (targetUserId: string, currentPath: string, endpoint?: string): Promise<boolean> => {
+        // Guardia de re-entrada: prevenir doble-click que corrompa tokens
+        if (isImpersonating) {
+            console.warn('[Impersonation] Ya se está impersonando, ignorando llamada duplicada');
+            return false;
+        }
+
         try {
-            // 1. Guardar token actual del admin
+            // 1. Guardar token actual del admin/supervisor
             const currentToken = await AsyncStorage.getItem(TOKEN_KEY);
             const currentUser = await AsyncStorage.getItem(USER_KEY);
 
@@ -82,18 +94,21 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
                 return false;
             }
 
-            // 2. Llamar al endpoint de impersonation
-            const response = await axios.post('/admin/impersonate', { targetUserId });
+            // 2. Llamar al endpoint de impersonation (admin o supervisor)
+            const impersonateEndpoint = endpoint || '/admin/impersonate';
+            const response = await axios.post(impersonateEndpoint, { targetUserId });
 
             if (!response.data.success || !response.data.token) {
                 console.error('[Impersonation] Respuesta inválida del servidor');
                 return false;
             }
 
-            // 3. Guardar token de admin para recuperarlo después
+            // 3. Guardar token de admin/supervisor para recuperarlo después
+            const role = endpoint?.includes('/supervisor/') ? 'coordinator' : 'admin';
             await AsyncStorage.setItem(ADMIN_RECOVERY_TOKEN_KEY, currentToken);
             await AsyncStorage.setItem(ADMIN_RECOVERY_USER_KEY, currentUser);
             await AsyncStorage.setItem(ADMIN_LAST_ROUTE_KEY, currentPath);
+            await AsyncStorage.setItem(IMPERSONATOR_ROLE_KEY, role);
 
             // 4. Reemplazar sesión con el usuario objetivo
             const { token, ...userData } = response.data;
@@ -112,6 +127,7 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
                 username: userData.username,
                 tipoUsuario: userData.tipoUsuario
             });
+            setImpersonatorRole(role);
 
             // 7. Sincronizar AuthContext con la nueva sesión
             await reloadSession();
@@ -129,17 +145,18 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
     // Salir de impersonation
     const exitImpersonation = useCallback(async () => {
         try {
-            // 1. Recuperar token del admin
+            // 1. Recuperar token del admin/supervisor
             const adminToken = await AsyncStorage.getItem(ADMIN_RECOVERY_TOKEN_KEY);
             const adminUser = await AsyncStorage.getItem(ADMIN_RECOVERY_USER_KEY);
             const lastRoute = await AsyncStorage.getItem(ADMIN_LAST_ROUTE_KEY);
+            const storedRole = await AsyncStorage.getItem(IMPERSONATOR_ROLE_KEY);
 
             if (!adminToken || !adminUser) {
                 console.error('[Impersonation] No hay token de recuperación');
                 return;
             }
 
-            // 2. Restaurar sesión del admin
+            // 2. Restaurar sesión del admin/supervisor
             await AsyncStorage.setItem(TOKEN_KEY, adminToken);
             await AsyncStorage.setItem(USER_KEY, adminUser);
 
@@ -150,21 +167,25 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
             await AsyncStorage.multiRemove([
                 ADMIN_RECOVERY_TOKEN_KEY,
                 ADMIN_RECOVERY_USER_KEY,
-                ADMIN_LAST_ROUTE_KEY
+                ADMIN_LAST_ROUTE_KEY,
+                IMPERSONATOR_ROLE_KEY
             ]);
 
             // 5. Actualizar estado local
             setIsImpersonating(false);
             setImpersonatedUser(null);
+            setImpersonatorRole(null);
 
             // 6. Sincronizar AuthContext con la sesión restaurada
             await reloadSession();
 
-            // 7. Navegar de vuelta a donde estaba el admin
+            // 7. Navegar de vuelta según el rol del impersonator
             if (lastRoute) {
                 router.replace(lastRoute as any);
+            } else if (storedRole === 'coordinator') {
+                router.replace('/(supervisor)/team' as any);
             } else {
-                router.replace('/clients' as any);
+                router.replace('/(admin)/clients' as any);
             }
 
         } catch (error) {
@@ -177,6 +198,7 @@ export const ImpersonationProvider = ({ children }: { children: React.ReactNode 
             value={{
                 isImpersonating,
                 impersonatedUser,
+                impersonatorRole,
                 startImpersonation,
                 exitImpersonation,
                 checkImpersonationStatus

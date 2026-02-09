@@ -9,7 +9,8 @@ import {
     ActivityIndicator,
     Modal,
     Switch,
-    Platform
+    Platform,
+    Dimensions
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -941,7 +942,7 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         padding: 24,
-        maxHeight: '85%'
+        maxHeight: Dimensions.get('window').height * 0.85
     },
     modalHeader: {
         flexDirection: 'row',

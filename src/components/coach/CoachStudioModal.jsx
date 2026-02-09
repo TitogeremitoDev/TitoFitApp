@@ -13,7 +13,6 @@ import {
     Pressable,
     Animated,
     Easing,
-    Dimensions,
     useWindowDimensions,
     TouchableOpacity,
     SafeAreaView,
@@ -32,8 +31,6 @@ import MarketingControls from './marketing/MarketingControls';
 import DraggableSticker from './marketing/DraggableSticker';
 import * as Sharing from 'expo-sharing';
 
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOOLBAR BUTTONS
@@ -85,13 +82,13 @@ export default function CoachStudioModal({
     const hasMultiplePhotos = totalPhotos > 1;
 
     // Responsive
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const isLargeScreen = windowWidth >= 768; // Only use Smart Drawer on Tablets+
     const isMobile = !isLargeScreen;
 
     // Animation & Drawer State
-    const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current; // Start off-screen right
-    const widthAnim = useRef(new Animated.Value(isMobile ? SCREEN_WIDTH : 650)).current; // Base width
+    const slideAnim = useRef(new Animated.Value(windowWidth)).current; // Start off-screen right
+    const widthAnim = useRef(new Animated.Value(isMobile ? windowWidth : 650)).current; // Base width
 
     useEffect(() => {
         if (visible) {
@@ -104,16 +101,16 @@ export default function CoachStudioModal({
             }).start();
         } else {
             // Slide Out (handled by onClose wrapper usually, but init state needs reset)
-            slideAnim.setValue(SCREEN_WIDTH);
+            slideAnim.setValue(windowWidth);
         }
-    }, [visible, slideAnim]);
+    }, [visible, slideAnim, windowWidth]);
 
     // Dynamic Width based on Active Tool
     useEffect(() => {
-        let targetWidth = isMobile ? SCREEN_WIDTH : 650; // Base width (Standard Mode)
+        let targetWidth = isMobile ? windowWidth : 650; // Base width (Standard Mode)
 
         if (!isMobile && (activeTool === 'marketing' || activeTool === 'compare')) {
-            targetWidth = Math.min(SCREEN_WIDTH * 0.9, 1400); // Expanded Mode (90% width or max 1400px)
+            targetWidth = Math.min(windowWidth * 0.95, 1600); // Expanded Mode (95% width or max 1600px)
         }
 
         Animated.timing(widthAnim, {
@@ -123,13 +120,13 @@ export default function CoachStudioModal({
             easing: Easing.inOut(Easing.ease),
         }).start();
 
-    }, [activeTool, isMobile, widthAnim]);
+    }, [activeTool, isMobile, widthAnim, windowWidth]);
 
     const closeDrawer = () => {
         if (isLargeScreen) {
             // Desktop: Slide out animation manually
             Animated.timing(slideAnim, {
-                toValue: SCREEN_WIDTH,
+                toValue: windowWidth,
                 duration: 250,
                 useNativeDriver: false,
                 easing: Easing.in(Easing.poly(4)),
@@ -152,9 +149,94 @@ export default function CoachStudioModal({
 
     // Compare state
     const [comparePhoto, setComparePhoto] = useState(null);
-    const [clientPhotos, setClientPhotos] = useState([]);
+    const [clientPhotos, setClientPhotos] = useState([]); // Raw fetched photos
     const [loadingPhotos, setLoadingPhotos] = useState(false);
-    const [isSwapped, setIsSwapped] = useState(false); // Toggle photo positions
+    const [isSwapped, setIsSwapped] = useState(false);
+    const [compareTagFilter, setCompareTagFilter] = useState(null); // 'front'|'side'|'back'|null
+    const compareNoteRef = useRef(''); // Coach comment on comparison (ref to avoid re-renders)
+    const allClientPhotosRef = useRef([]); // Store unfiltered list
+
+    // Auto-set tag filter when entering compare mode based on current photo's tag
+    useEffect(() => {
+        if (activeTool === 'compare' && currentPhoto?.tags?.length > 0) {
+            const primaryTag = currentPhoto.tags.find(t => ['front', 'side', 'back'].includes(t));
+            if (primaryTag) setCompareTagFilter(primaryTag);
+        }
+    }, [activeTool, currentPhoto?._id]);
+
+    // Tag labels for display
+    const TAG_DISPLAY = { front: 'Frontal', side: 'Lateral', back: 'Espalda' };
+
+    // Filtered compare photos: exclude current, apply tag filter, sort by date desc
+    const filteredComparePhotos = useMemo(() => {
+        let photos = allClientPhotosRef.current.filter(p => p._id !== currentPhoto?._id);
+        if (compareTagFilter) {
+            photos = photos.filter(p => p.tags?.includes(compareTagFilter));
+        }
+        // Sort descending (most recent first)
+        photos.sort((a, b) => new Date(b.takenAt) - new Date(a.takenAt));
+        return photos;
+    }, [currentPhoto?._id, clientPhotos, compareTagFilter]);
+
+    // Group filtered photos by month for the picker
+    const groupedComparePhotos = useMemo(() => {
+        const groups = [];
+        let currentGroup = null;
+        filteredComparePhotos.forEach(p => {
+            const date = new Date(p.takenAt);
+            const key = `${date.getFullYear()}-${date.getMonth()}`;
+            const label = date.toLocaleDateString('es-ES', { month: 'short', year: 'numeric' });
+            if (!currentGroup || currentGroup.key !== key) {
+                currentGroup = { key, label, photos: [] };
+                groups.push(currentGroup);
+            }
+            currentGroup.photos.push(p);
+        });
+        return groups;
+    }, [filteredComparePhotos]);
+
+    // Available tags across all client photos (for filter chips)
+    const availableCompareTags = useMemo(() => {
+        const tags = new Set();
+        allClientPhotosRef.current.forEach(p => {
+            p.tags?.forEach(t => {
+                if (['front', 'side', 'back'].includes(t)) tags.add(t);
+            });
+        });
+        return Array.from(tags);
+    }, [clientPhotos]);
+
+    // Relative date helper for picker items
+    const getRelativeDate = useCallback((dateStr) => {
+        const now = new Date();
+        const date = new Date(dateStr);
+        const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return 'Hoy';
+        if (diffDays === 1) return 'Ayer';
+        if (diffDays < 7) return `${diffDays}d`;
+        if (diffDays < 30) return `${Math.floor(diffDays / 7)}sem`;
+        if (diffDays < 365) return `${Math.floor(diffDays / 30)}m`;
+        return `${Math.floor(diffDays / 365)}a`;
+    }, []);
+
+    // Time delta between compared photos
+    const compareDelta = useMemo(() => {
+        if (!comparePhoto || !currentPhoto) return null;
+        const dateA = new Date(isSwapped ? currentPhoto.takenAt : comparePhoto.takenAt);
+        const dateB = new Date(isSwapped ? comparePhoto.takenAt : currentPhoto.takenAt);
+        const diffMs = Math.abs(dateB - dateA);
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return 'Mismo día';
+        if (diffDays < 7) return `${diffDays} día${diffDays > 1 ? 's' : ''}`;
+        const diffWeeks = Math.floor(diffDays / 7);
+        if (diffWeeks < 5) return `${diffWeeks} semana${diffWeeks > 1 ? 's' : ''}`;
+        const diffMonths = Math.floor(diffDays / 30);
+        return `${diffMonths} mes${diffMonths > 1 ? 'es' : ''}`;
+    }, [comparePhoto, currentPhoto, isSwapped]);
+
+    // Determine which photo is left/right based on swap
+    const leftPhoto = isSwapped ? currentPhoto : comparePhoto;
+    const rightPhoto = isSwapped ? comparePhoto : currentPhoto;
 
     // Marketing State
     const marketingRef = useRef(null);
@@ -280,7 +362,7 @@ export default function CoachStudioModal({
             // Check if canvas has strokes
             if (!canvasRef.current?.hasStrokes()) {
                 // No annotations, return original URL
-                return photo.fullUrl;
+                return currentPhoto.fullUrl;
             }
 
             // Get annotated image blob
@@ -288,7 +370,7 @@ export default function CoachStudioModal({
 
             // Create FormData
             const formData = new FormData();
-            formData.append('file', blob, `annotated_${photo._id}_${Date.now()}.jpg`);
+            formData.append('file', blob, `annotated_${currentPhoto._id}_${Date.now()}.jpg`);
             formData.append('clientId', clientId);
             formData.append('type', 'annotated-photo');
 
@@ -306,11 +388,11 @@ export default function CoachStudioModal({
                 return data.url;
             } else {
                 console.error('[CoachStudio] Upload failed:', data.message);
-                return photo.fullUrl; // Fallback to original
+                return currentPhoto.fullUrl; // Fallback to original
             }
         } catch (error) {
             console.error('[CoachStudio] Upload error:', error);
-            return photo.fullUrl; // Fallback to original
+            return currentPhoto.fullUrl; // Fallback to original
         }
     };
 
@@ -332,8 +414,7 @@ export default function CoachStudioModal({
                     break;
                 case 'compare':
                     // Load client photos if not already loaded
-                    // Note: activeTool is already set to 'compare' above
-                    if (clientPhotos.length === 0) {
+                    if (allClientPhotosRef.current.length === 0) {
                         setLoadingPhotos(true);
                         try {
                             const res = await fetch(`${API_URL}/api/progress-photos/client/${clientId}?limit=50`, {
@@ -341,9 +422,8 @@ export default function CoachStudioModal({
                             });
                             const data = await res.json();
                             if (data.success && data.photos) {
-                                // Filter out current photo and sort by date
-                                const filtered = data.photos.filter(p => p._id !== currentPhoto?._id);
-                                setClientPhotos(filtered);
+                                allClientPhotosRef.current = data.photos;
+                                setClientPhotos(data.photos); // Trigger filteredComparePhotos recalc
                             }
                         } catch (error) {
                             console.error('[Compare] Error loading photos:', error);
@@ -440,7 +520,7 @@ export default function CoachStudioModal({
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
 
-    if (!photo) return null;
+    if (!photo && photoList.length === 0) return null;
 
     // Helper to wrap content conditionally (Drawer vs Full Screen)
     const ContentWrapper = ({ children }) => {
@@ -479,7 +559,7 @@ export default function CoachStudioModal({
                         styles.backdrop,
                         {
                             opacity: slideAnim.interpolate({
-                                inputRange: [0, SCREEN_WIDTH],
+                                inputRange: [0, windowWidth],
                                 outputRange: [1, 0],
                             })
                         }
@@ -522,50 +602,90 @@ export default function CoachStudioModal({
                     {/* Compare Mode - Responsive (Side by side on desktop, stacked on mobile) */}
                     {activeTool === 'compare' && (
                         <View style={styles.compareContainer}>
-                            {/* Close compare button */}
-                            <TouchableOpacity
-                                style={styles.closeCompareBtn}
-                                onPress={() => {
-                                    setComparePhoto(null);
-                                    setActiveTool(null);
-                                }}
-                            >
-                                <Ionicons name="close" size={24} color="#fff" />
-                            </TouchableOpacity>
+                            {/* Top bar: close + swap + delta badge */}
+                            <View style={styles.compareTopBar}>
+                                <TouchableOpacity
+                                    style={styles.closeCompareBtn}
+                                    onPress={() => {
+                                        setComparePhoto(null);
+                                        setIsSwapped(false);
+                                        compareNoteRef.current = '';
+                                        setActiveTool(null);
+                                    }}
+                                >
+                                    <Ionicons name="close" size={22} color="#fff" />
+                                </TouchableOpacity>
 
-                            {/* Layout Container: Flex column to manage vertical space */}
+                                {/* Time delta badge */}
+                                {compareDelta && (
+                                    <View style={styles.compareDeltaBadge}>
+                                        <Ionicons name="time-outline" size={14} color="#0ea5e9" />
+                                        <Text style={styles.compareDeltaText}>{compareDelta}</Text>
+                                        {leftPhoto && rightPhoto && (
+                                            <Text style={styles.compareDeltaSubtext}>
+                                                {new Date(Math.min(new Date(leftPhoto.takenAt), new Date(rightPhoto.takenAt)))
+                                                    .toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                                {' \u2192 '}
+                                                {new Date(Math.max(new Date(leftPhoto.takenAt), new Date(rightPhoto.takenAt)))
+                                                    .toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                            </Text>
+                                        )}
+                                    </View>
+                                )}
+
+                                {/* Swap button */}
+                                {comparePhoto && (
+                                    <TouchableOpacity
+                                        style={styles.compareSwapBtn}
+                                        onPress={() => setIsSwapped(prev => !prev)}
+                                    >
+                                        <Ionicons name="swap-horizontal" size={20} color="#fff" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            {/* Layout Container */}
                             <View style={{ flex: 1, flexDirection: 'column' }}>
 
-                                {/* Photos Area - Grows to fill available space */}
+                                {/* Photos Area */}
                                 <View style={[
                                     styles.comparePhotosRow,
                                     !isLargeScreen && styles.comparePhotosColumn,
-                                    { flex: 1, marginBottom: 16 }
+                                    { flex: 1, marginBottom: 8 }
                                 ]}>
-                                    {/* LEFT = ANTERIOR (foto más antigua/seleccionada) */}
+                                    {/* LEFT photo */}
                                     <View style={[
                                         styles.comparePhotoWrapper,
                                         !isLargeScreen && styles.comparePhotoWrapperMobile
                                     ]}>
-                                        <Text style={styles.compareLabel}>Anterior</Text>
-                                        {comparePhoto ? (
+                                        <Text style={styles.compareLabel}>
+                                            {leftPhoto ? (new Date(leftPhoto.takenAt) <= new Date(rightPhoto?.takenAt || currentPhoto.takenAt) ? 'Anterior' : 'Actual') : 'Anterior'}
+                                            {compareTagFilter ? ` (${TAG_DISPLAY[compareTagFilter]})` : ''}
+                                        </Text>
+                                        {leftPhoto ? (
                                             <>
                                                 <Image
-                                                    source={{ uri: comparePhoto.fullUrl }}
+                                                    source={{ uri: leftPhoto.fullUrl }}
                                                     style={[
                                                         styles.comparePhoto,
-                                                        !isLargeScreen && styles.comparePhotoMobile
+                                                        !isLargeScreen && [styles.comparePhotoMobile, { maxHeight: windowHeight < 700 ? 150 : 220 }]
                                                     ]}
                                                     resizeMode="contain"
                                                 />
-                                                <Text style={styles.compareDateLabel}>
-                                                    {new Date(comparePhoto.takenAt).toLocaleDateString('es-ES')}
-                                                </Text>
+                                                <View style={styles.compareDateRow}>
+                                                    <Ionicons name="calendar-outline" size={12} color="#94a3b8" />
+                                                    <Text style={styles.compareDateLabel}>
+                                                        {new Date(leftPhoto.takenAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                    </Text>
+                                                    <Text style={styles.compareDateRelative}>
+                                                        ({getRelativeDate(leftPhoto.takenAt)})
+                                                    </Text>
+                                                </View>
                                             </>
                                         ) : (
                                             <View style={[
                                                 styles.comparePlaceholder,
-                                                !isLargeScreen && styles.comparePhotoMobile
+                                                !isLargeScreen && [styles.comparePhotoMobile, { maxHeight: windowHeight < 700 ? 150 : 220 }]
                                             ]}>
                                                 <Ionicons name="images-outline" size={32} color="#64748b" />
                                                 <Text style={styles.comparePlaceholderText}>Seleccionar del historial</Text>
@@ -573,39 +693,135 @@ export default function CoachStudioModal({
                                         )}
                                     </View>
 
-                                    {/* Simple divider line */}
+                                    {/* Divider */}
                                     <View style={[
                                         styles.compareDivider,
-                                        !isLargeScreen && { transform: [{ rotate: '90deg' }], marginVertical: 8 }
+                                        !isLargeScreen && { transform: [{ rotate: '90deg' }], marginVertical: 4 }
                                     ]} />
 
-                                    {/* RIGHT = ACTUAL (foto principal actual) */}
+                                    {/* RIGHT photo */}
                                     <View style={[
                                         styles.comparePhotoWrapper,
                                         !isLargeScreen && styles.comparePhotoWrapperMobile
                                     ]}>
-                                        <Text style={styles.compareLabel}>Actual</Text>
+                                        <Text style={styles.compareLabel}>
+                                            {rightPhoto ? (new Date(rightPhoto.takenAt) >= new Date(leftPhoto?.takenAt || currentPhoto.takenAt) ? 'Actual' : 'Anterior') : 'Actual'}
+                                            {compareTagFilter ? ` (${TAG_DISPLAY[compareTagFilter]})` : ''}
+                                        </Text>
                                         <Image
-                                            source={{ uri: currentPhoto.fullUrl }}
+                                            source={{ uri: (rightPhoto || currentPhoto).fullUrl }}
                                             style={[
                                                 styles.comparePhoto,
-                                                !isLargeScreen && styles.comparePhotoMobile
+                                                !isLargeScreen && [styles.comparePhotoMobile, { maxHeight: windowHeight < 700 ? 150 : 220 }]
                                             ]}
                                             resizeMode="contain"
                                         />
-                                        <Text style={styles.compareDateLabel}>
-                                            {new Date(currentPhoto.takenAt).toLocaleDateString('es-ES')}
-                                        </Text>
+                                        <View style={styles.compareDateRow}>
+                                            <Ionicons name="calendar-outline" size={12} color="#94a3b8" />
+                                            <Text style={styles.compareDateLabel}>
+                                                {new Date((rightPhoto || currentPhoto).takenAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </Text>
+                                            <Text style={styles.compareDateRelative}>
+                                                ({getRelativeDate((rightPhoto || currentPhoto).takenAt)})
+                                            </Text>
+                                        </View>
                                     </View>
                                 </View>
 
-                                {/* Photo picker strip - Fixed height at bottom, no shrink */}
+                                {/* Compare note input */}
+                                {comparePhoto && (
+                                    <View style={styles.compareNoteContainer}>
+                                        <EnhancedTextInput
+                                            defaultValue=""
+                                            onChangeText={(text) => { compareNoteRef.current = text; }}
+                                            placeholder="Añadir comentario a la comparativa..."
+                                            placeholderTextColor="#64748b"
+                                            style={styles.compareNoteInput}
+                                            containerStyle={styles.compareNoteInputContainer}
+                                            multiline
+                                            numberOfLines={2}
+                                        />
+                                    </View>
+                                )}
+
+                                {/* Save comparison to feedback button */}
+                                {comparePhoto && (
+                                    <TouchableOpacity
+                                        style={styles.compareAddFeedbackBtn}
+                                        onPress={() => {
+                                            const older = new Date(leftPhoto.takenAt) <= new Date(rightPhoto.takenAt) ? leftPhoto : rightPhoto;
+                                            const newer = older === leftPhoto ? rightPhoto : leftPhoto;
+                                            addHighlight({
+                                                id: `compare_${older._id}_${newer._id}_${Date.now()}`,
+                                                text: compareNoteRef.current || `Comparativa: ${compareDelta || 'progreso'}`,
+                                                exerciseName: 'Comparativa de progreso',
+                                                thumbnail: newer.thumbnailUrl || newer.fullUrl,
+                                                sourceMediaUrl: newer.fullUrl,
+                                                mediaType: 'photo',
+                                                compareData: {
+                                                    olderPhotoUrl: older.fullUrl,
+                                                    olderDate: older.takenAt,
+                                                    newerPhotoUrl: newer.fullUrl,
+                                                    newerDate: newer.takenAt,
+                                                    delta: compareDelta,
+                                                    note: compareNoteRef.current,
+                                                },
+                                            });
+                                            if (Platform.OS === 'web') {
+                                                alert('Comparativa añadida al feedback');
+                                            } else {
+                                                Alert.alert('Borrador', 'Comparativa guardada en el feedback');
+                                            }
+                                        }}
+                                    >
+                                        <Ionicons name="git-compare" size={16} color="#fff" />
+                                        <Text style={styles.compareAddFeedbackText}>Añadir comparativa al feedback</Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Photo picker strip */}
                                 <View style={[
                                     styles.comparePickerContainer,
-                                    !isLargeScreen && { height: 120, padding: 8, marginTop: 0 },
+                                    !isLargeScreen && { maxHeight: windowHeight < 700 ? 150 : 170, padding: 8, marginTop: 0 },
                                     { flexShrink: 0 }
                                 ]}>
-                                    <Text style={styles.comparePickerTitle}>Historial ({clientPhotos.length})</Text>
+                                    {/* Header: title + tag filter chips */}
+                                    <View style={styles.comparePickerHeader}>
+                                        <Text style={styles.comparePickerTitle}>
+                                            Historial ({filteredComparePhotos.length})
+                                        </Text>
+                                        <View style={styles.compareTagFilters}>
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.compareTagChip,
+                                                    !compareTagFilter && styles.compareTagChipActive
+                                                ]}
+                                                onPress={() => setCompareTagFilter(null)}
+                                            >
+                                                <Text style={[
+                                                    styles.compareTagChipText,
+                                                    !compareTagFilter && styles.compareTagChipTextActive
+                                                ]}>Todas</Text>
+                                            </TouchableOpacity>
+                                            {availableCompareTags.map(tag => (
+                                                <TouchableOpacity
+                                                    key={tag}
+                                                    style={[
+                                                        styles.compareTagChip,
+                                                        compareTagFilter === tag && styles.compareTagChipActive
+                                                    ]}
+                                                    onPress={() => setCompareTagFilter(
+                                                        compareTagFilter === tag ? null : tag
+                                                    )}
+                                                >
+                                                    <Text style={[
+                                                        styles.compareTagChipText,
+                                                        compareTagFilter === tag && styles.compareTagChipTextActive
+                                                    ]}>{TAG_DISPLAY[tag] || tag}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
                                     {loadingPhotos ? (
                                         <ActivityIndicator color="#0ea5e9" />
                                     ) : (
@@ -614,31 +830,51 @@ export default function CoachStudioModal({
                                             showsHorizontalScrollIndicator={false}
                                             contentContainerStyle={styles.comparePickerScroll}
                                         >
-                                            {clientPhotos.map((p) => (
-                                                <TouchableOpacity
-                                                    key={p._id}
-                                                    style={[
-                                                        styles.comparePickerItem,
-                                                        comparePhoto?._id === p._id && styles.comparePickerItemActive
-                                                    ]}
-                                                    onPress={() => setComparePhoto(p)}
-                                                >
-                                                    <Image
-                                                        source={{ uri: p.thumbnailUrl || p.fullUrl }}
-                                                        style={styles.comparePickerImage}
-                                                        resizeMode="cover"
-                                                    />
-                                                    <Text style={styles.comparePickerDate}>
-                                                        {new Date(p.takenAt).toLocaleDateString('es-ES', { month: '2-digit', day: '2-digit' })}
+                                            {groupedComparePhotos.map((group) => (
+                                                <View key={group.key} style={styles.comparePickerGroup}>
+                                                    <Text style={styles.comparePickerMonthLabel}>
+                                                        {group.label}
                                                     </Text>
-                                                </TouchableOpacity>
+                                                    <View style={styles.comparePickerGroupPhotos}>
+                                                        {group.photos.map((p) => (
+                                                            <TouchableOpacity
+                                                                key={p._id}
+                                                                style={[
+                                                                    styles.comparePickerItem,
+                                                                    comparePhoto?._id === p._id && styles.comparePickerItemActive
+                                                                ]}
+                                                                onPress={() => setComparePhoto(p)}
+                                                            >
+                                                                <Image
+                                                                    source={{ uri: p.thumbnailUrl || p.fullUrl }}
+                                                                    style={[
+                                                                        styles.comparePickerImage,
+                                                                        comparePhoto?._id === p._id && styles.comparePickerImageActive
+                                                                    ]}
+                                                                    resizeMode="cover"
+                                                                />
+                                                                <Text style={[
+                                                                    styles.comparePickerDate,
+                                                                    comparePhoto?._id === p._id && { color: '#0ea5e9' }
+                                                                ]}>
+                                                                    {new Date(p.takenAt).toLocaleDateString('es-ES', {
+                                                                        day: '2-digit',
+                                                                        month: 'short',
+                                                                        ...(new Date(p.takenAt).getFullYear() !== new Date().getFullYear()
+                                                                            ? { year: '2-digit' } : {})
+                                                                    })}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </View>
+                                                </View>
                                             ))}
                                         </ScrollView>
                                     )}
                                 </View>
 
-                            </View >
-                        </View >
+                            </View>
+                        </View>
                     )
                     }
 
@@ -726,7 +962,7 @@ export default function CoachStudioModal({
                                         style={{
                                             width: 1080,
                                             height: 1920,
-                                            transform: [{ scale: Math.min((SCREEN_WIDTH - 20) / 1080, (SCREEN_HEIGHT - 320) / 1920) }],
+                                            transform: [{ scale: Math.min((windowWidth - 20) / 1080, (windowHeight - 280) / 1920) }],
                                         }}
                                     >
                                         <MarketingCanvas
@@ -763,7 +999,10 @@ export default function CoachStudioModal({
                             <View style={styles.photoContainer}>
                                 <Image
                                     source={{ uri: currentPhoto.fullUrl }}
-                                    style={styles.photo}
+                                    style={[styles.photo, {
+                                        width: windowWidth,
+                                        height: windowHeight < 700 ? windowHeight * 0.50 : windowHeight * 0.60,
+                                    }]}
                                     resizeMode="contain"
                                 />
 
@@ -879,7 +1118,7 @@ export default function CoachStudioModal({
                     {/* Floating Toolbar - Centered Pill Design */}
                     <View style={[
                         styles.toolbar,
-                        isMobile && styles.toolbarMobile,
+                        isMobile && [styles.toolbarMobile, windowHeight < 700 && { bottom: 110 }],
                         isLargeScreen && styles.toolbarDesktop
                     ]}>
                         <View style={[
@@ -1016,7 +1255,7 @@ export default function CoachStudioModal({
                             onPress={async () => {
                                 setIsLoading(true);
                                 try {
-                                    if (hasChanges) handleSave();
+                                    if (hasChanges) await handleSave();
                                     const annotatedUrl = await uploadAnnotatedImage();
                                     addHighlight({
                                         id: `photo_${currentPhoto._id}_${Date.now()}`,
@@ -1111,22 +1350,106 @@ export default function CoachStudioModal({
                                 styles.sendNowBtn,
                                 isMobile && styles.btnMobile
                             ]}
-                            onPress={() => {
-                                if (hasChanges) handleSave();
-                                if (Platform.OS === 'web') {
-                                    alert('Feedback enviado al cliente');
-                                } else {
-                                    Alert.alert('Enviado', 'El cliente recibirá una notificación');
+                            onPress={async () => {
+                                setIsLoading(true);
+                                try {
+                                    if (activeTool === 'compare' && comparePhoto) {
+                                        // Send comparison directly to chat
+                                        const older = new Date(leftPhoto.takenAt) <= new Date(rightPhoto.takenAt) ? leftPhoto : rightPhoto;
+                                        const newer = older === leftPhoto ? rightPhoto : leftPhoto;
+                                        const payload = {
+                                            clientId,
+                                            message: compareNoteRef.current || `Comparativa de progreso (${compareDelta || 'evolución'})`,
+                                            type: 'evolucion',
+                                            isCoach: true,
+                                            metadata: {
+                                                isComparison: true,
+                                                compareData: {
+                                                    olderPhotoUrl: older.fullUrl,
+                                                    olderDate: older.takenAt,
+                                                    newerPhotoUrl: newer.fullUrl,
+                                                    newerDate: newer.takenAt,
+                                                    delta: compareDelta,
+                                                    note: compareNoteRef.current,
+                                                },
+                                            },
+                                        };
+                                        const res = await fetch(`${API_URL}/api/chat`, {
+                                            method: 'POST',
+                                            headers: {
+                                                Authorization: `Bearer ${token}`,
+                                                'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify(payload),
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            if (Platform.OS === 'web') {
+                                                alert('Comparativa enviada al cliente');
+                                            } else {
+                                                Alert.alert('Enviado', 'Comparativa enviada al chat del cliente');
+                                            }
+                                            compareNoteRef.current = '';
+                                            onClose();
+                                        } else {
+                                            throw new Error(data.message || 'Error al enviar');
+                                        }
+                                    } else {
+                                        // Normal photo send
+                                        if (hasChanges) await handleSave();
+                                        const annotatedUrl = await uploadAnnotatedImage();
+                                        const payload = {
+                                            clientId,
+                                            message: annotationNote || 'Foto de progreso',
+                                            type: 'evolucion',
+                                            isCoach: true,
+                                            mediaUrl: annotatedUrl || currentPhoto.fullUrl,
+                                            mediaType: 'image',
+                                        };
+                                        const res = await fetch(`${API_URL}/api/chat`, {
+                                            method: 'POST',
+                                            headers: {
+                                                Authorization: `Bearer ${token}`,
+                                                'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify(payload),
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            if (Platform.OS === 'web') {
+                                                alert('Foto enviada al cliente');
+                                            } else {
+                                                Alert.alert('Enviado', 'Foto enviada al chat del cliente');
+                                            }
+                                            onClose();
+                                        } else {
+                                            throw new Error(data.message || 'Error al enviar');
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error('[CoachStudio] Send error:', error);
+                                    if (Platform.OS === 'web') {
+                                        alert('Error al enviar');
+                                    } else {
+                                        Alert.alert('Error', 'No se pudo enviar');
+                                    }
+                                } finally {
+                                    setIsLoading(false);
                                 }
-                                onClose();
                             }}
                             disabled={isLoading}
                         >
-                            <Ionicons name="send" size={18} color="#fff" />
-                            <Text style={[
-                                styles.sendNowText,
-                                isMobile && styles.btnTextMobile
-                            ]}>Enviar ahora</Text>
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="send" size={18} color="#fff" />
+                                    <Text style={[
+                                        styles.sendNowText,
+                                        isMobile && styles.btnTextMobile
+                                    ]}>Enviar ahora</Text>
+                                </>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </SafeAreaView >
@@ -1178,7 +1501,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#0a0a0f',
     },
     headerMobile: {
-        paddingTop: 50, // Clear status bar/camera notch
+        paddingTop: Platform.OS === 'ios' ? 54 : 40,
     },
     headerBtn: {
         width: 44,
@@ -1222,8 +1545,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     photo: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT * 0.65,
+        // Dimensions set inline (dynamic based on windowWidth/windowHeight)
     },
     annotationOverlay: {
         ...StyleSheet.absoluteFillObject,
@@ -1260,7 +1582,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
     },
     visibilityBadgeMobile: {
-        top: 50, // Clear status bar
+        top: Platform.OS === 'ios' ? 54 : 40,
     },
     visibilityShareable: {
         backgroundColor: 'rgba(16, 185, 129, 0.8)',
@@ -1308,7 +1630,7 @@ const styles = StyleSheet.create({
     },
     toolbarMobile: {
         top: undefined, // Remove top positioning
-        bottom: 180, // Position safely above bottom elements
+        bottom: 130, // Just above note input + action buttons (~125px)
         width: '50%', // Constrain width
         left: '25%', // Center it
         paddingHorizontal: 0,
@@ -1431,7 +1753,7 @@ const styles = StyleSheet.create({
         borderTopColor: '#2a2a35',
     },
     actionButtonsRowMobile: {
-        paddingBottom: 60, // Significantly increased safe area for mobile
+        paddingBottom: Platform.OS === 'ios' ? 34 : 16,
         paddingHorizontal: 8,
         gap: 8,
     },
@@ -1565,19 +1887,66 @@ const styles = StyleSheet.create({
     compareContainer: {
         flex: 1,
         backgroundColor: '#0f0f13',
-        padding: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 12,
+    },
+    compareTopBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingBottom: 12,
+        gap: 12,
     },
     closeCompareBtn: {
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        zIndex: 10,
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.1)',
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    compareDeltaBadge: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(14, 165, 233, 0.15)',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    compareDeltaText: {
+        color: '#0ea5e9',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    compareSwapBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    compareAddFeedbackBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#6366f1',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        marginBottom: 8,
+    },
+    compareAddFeedbackText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    comparePickerImageActive: {
+        borderColor: '#0ea5e9',
     },
     comparePhotosRow: {
         flex: 1,
@@ -1613,12 +1982,29 @@ const styles = StyleSheet.create({
         backgroundColor: '#1a1a1f',
     },
     compareDateLabel: {
+        color: '#cbd5e1',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    compareDateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        justifyContent: 'center',
+    },
+    compareDateRelative: {
         color: '#64748b',
         fontSize: 12,
-        marginTop: 8,
+        fontWeight: '400',
+    },
+    compareDeltaSubtext: {
+        color: 'rgba(14, 165, 233, 0.6)',
+        fontSize: 11,
+        fontWeight: '400',
     },
     compareDivider: {
-        paddingHorizontal: 8,
+        paddingHorizontal: 4,
     },
     comparePlaceholder: {
         width: '100%',
@@ -1655,7 +2041,7 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         aspectRatio: undefined, // Let flex handle it
-        maxHeight: 200, // Limit maximum height on mobile to fit screen
+        // maxHeight set inline based on windowHeight
     },
     comparePickerTitle: {
         color: '#94a3b8',
@@ -1674,16 +2060,81 @@ const styles = StyleSheet.create({
         opacity: 1,
     },
     comparePickerImage: {
-        width: 60,
-        height: 80,
-        borderRadius: 8,
+        width: 72,
+        height: 96,
+        borderRadius: 10,
         borderWidth: 2,
         borderColor: 'transparent',
     },
     comparePickerDate: {
-        color: '#64748b',
-        fontSize: 10,
+        color: '#94a3b8',
+        fontSize: 11,
         marginTop: 4,
+        textAlign: 'center',
+    },
+    compareNoteContainer: {
+        marginBottom: 8,
+    },
+    compareNoteInputContainer: {
+        backgroundColor: '#1a1a1f',
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    compareNoteInput: {
+        color: '#e2e8f0',
+        fontSize: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        minHeight: 44,
+        maxHeight: 80,
+    },
+    comparePickerHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    compareTagFilters: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    compareTagChip: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+    },
+    compareTagChipActive: {
+        backgroundColor: 'rgba(14, 165, 233, 0.2)',
+        borderColor: '#0ea5e9',
+    },
+    compareTagChipText: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    compareTagChipTextActive: {
+        color: '#0ea5e9',
+    },
+    comparePickerGroup: {
+        marginRight: 16,
+    },
+    comparePickerMonthLabel: {
+        color: '#94a3b8',
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 8,
+    },
+    comparePickerGroupPhotos: {
+        flexDirection: 'row',
+        gap: 10,
     },
 
     // Marketing
@@ -1730,9 +2181,9 @@ const styles = StyleSheet.create({
         padding: 4,
     },
     zoomBtnSmall: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: 'rgba(255,255,255,0.1)',
         justifyContent: 'center',
         alignItems: 'center',

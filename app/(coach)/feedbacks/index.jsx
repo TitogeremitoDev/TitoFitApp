@@ -11,7 +11,8 @@ import {
     SafeAreaView,
     FlatList,
     ActivityIndicator,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import FeedbackReportModal from '../../../components/FeedbackReportModal';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 // Componentes mejorados para iOS
 import {
     EnhancedTouchable as TouchableOpacity,
@@ -66,9 +68,11 @@ const ClientFeedbackCard = ({ client, onPress, lastFeedback }) => {
         >
             {/* Avatar */}
             <View style={styles.clientAvatar}>
-                <Text style={styles.clientAvatarText}>
-                    {client.nombre?.charAt(0)?.toUpperCase() || '?'}
-                </Text>
+                <AvatarWithInitials
+                    avatarUrl={client.avatarUrl}
+                    name={client.nombre}
+                    size={48}
+                />
                 {hasDraft && (
                     <View style={styles.draftDot}>
                         <Ionicons name="pencil" size={10} color="#fff" />
@@ -111,9 +115,11 @@ const ResponseCard = ({ item }) => {
         >
             <View style={styles.responseHeader}>
                 <View style={styles.clientAvatar}>
-                    <Text style={styles.clientAvatarText}>
-                        {item.clientName?.charAt(0)?.toUpperCase() || '?'}
-                    </Text>
+                    <AvatarWithInitials
+                        avatarUrl={item.client?.avatarUrl || item.clientAvatar || item.clientPhoto}
+                        name={item.clientName}
+                        size={48}
+                    />
                 </View>
                 <View style={styles.responseHeaderInfo}>
                     <Text style={styles.clientName}>{item.clientName}</Text>
@@ -306,6 +312,20 @@ export default function FeedbacksScreen() {
         loadData();
     }, [loadData]);
 
+    // Handle Deep Link for Feedback Modal (Web Back Button Support)
+    useEffect(() => {
+        if (params.feedbackClientId && clients.length > 0) {
+            const client = clients.find(c => c._id === params.feedbackClientId);
+            if (client) {
+                setSelectedClient(client);
+                setModalVisible(true);
+            }
+        } else if (!params.feedbackClientId && Platform.OS === 'web' && modalVisible) {
+            setModalVisible(false);
+            setSelectedClient(null);
+        }
+    }, [params.feedbackClientId, clients]);
+
     const handleRefresh = () => {
         setRefreshing(true);
         loadData();
@@ -316,15 +336,22 @@ export default function FeedbacksScreen() {
     // ─────────────────────────────────────────────────────────────────────────
 
     const openFeedbackModal = (client) => {
-        setSelectedClient(client);
+        if (Platform.OS === 'web') {
+            router.push({ pathname: '/(coach)/feedbacks', params: { feedbackClientId: client._id } });
+        } else {
+            setSelectedClient(client);
+            setModalVisible(true);
+        }
         setPrefillData(null);
         // Activar también el bubble para tomar notas si lo desea
         setActiveClient(client._id, client.nombre);
-        // Abrir directamente el modal de feedback
-        setModalVisible(true);
     };
 
     const closeFeedbackModal = () => {
+        if (Platform.OS === 'web' && params.feedbackClientId) {
+            router.back();
+            return;
+        }
         setModalVisible(false);
         setSelectedClient(null);
         setPrefillData(null);
@@ -386,7 +413,7 @@ export default function FeedbacksScreen() {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#8b5cf6" />
+                    <ActivityIndicator size="large" color="#3b82f6" />
                     <Text style={styles.loadingText}>Cargando clientes...</Text>
                 </View>
             </SafeAreaView>
@@ -424,7 +451,7 @@ export default function FeedbacksScreen() {
                     </View>
                     <View style={styles.statDivider} />
                     <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: '#8b5cf6' }]}>{stats.drafts}</Text>
+                        <Text style={[styles.statNumber, { color: '#3b82f6' }]}>{stats.drafts}</Text>
                         <Text style={styles.statLabel}>Borradores</Text>
                     </View>
                 </View>
@@ -490,7 +517,7 @@ export default function FeedbacksScreen() {
                         <RefreshControl
                             refreshing={refreshing}
                             onRefresh={handleRefresh}
-                            colors={['#8b5cf6']}
+                            colors={['#3b82f6']}
                         />
                     }
                     renderItem={({ item }) => <ResponseCard item={item} />}
@@ -512,7 +539,7 @@ export default function FeedbacksScreen() {
                         <RefreshControl
                             refreshing={refreshing}
                             onRefresh={handleRefresh}
-                            colors={['#8b5cf6']}
+                            colors={['#3b82f6']}
                         />
                     }
                     renderItem={({ item }) => (
@@ -542,8 +569,16 @@ export default function FeedbacksScreen() {
             {/* Feedback Report Modal */}
             <FeedbackReportModal
                 visible={modalVisible}
-                onClose={closeFeedbackModal}
+                onClose={() => {
+                    closeFeedbackModal();
+                    setPrefillData(null);
+                }}
                 client={selectedClient}
+                clients={clients} // Pass full client list for sidebar
+                onSwitchClient={(client) => {
+                    setSelectedClient(client);
+                    // No need to close modal, just switch data
+                }}
                 prefillData={prefillData}
             />
         </SafeAreaView >
@@ -662,8 +697,8 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0'
     },
     filterTabActive: {
-        backgroundColor: '#8b5cf6',
-        borderColor: '#8b5cf6'
+        backgroundColor: '#3b82f6',
+        borderColor: '#3b82f6'
     },
     filterTabText: {
         fontSize: 13,
@@ -696,7 +731,7 @@ const styles = StyleSheet.create({
     },
     clientCardDraft: {
         borderWidth: 2,
-        borderColor: '#8b5cf6',
+        borderColor: '#3b82f6',
         borderStyle: 'dashed'
     },
     clientAvatar: {
@@ -720,7 +755,7 @@ const styles = StyleSheet.create({
         width: 20,
         height: 20,
         borderRadius: 10,
-        backgroundColor: '#8b5cf6',
+        backgroundColor: '#3b82f6',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
@@ -877,7 +912,7 @@ const styles = StyleSheet.create({
 
     // Expanded Card
     responseCardExpanded: {
-        borderLeftColor: '#8b5cf6',
+        borderLeftColor: '#3b82f6',
         borderLeftWidth: 4
     },
     trafficLightBadge: {

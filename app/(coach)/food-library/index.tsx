@@ -224,10 +224,14 @@ export default function FoodLibraryScreen() {
             const { toggleFavorite } = require('../../../src/services/foodService');
             const result = await toggleFavorite(food);
 
-            // If cloned, update both lists to ensure UI reflects the new CLOUD item immediately
             if (result.action === 'cloned_and_favorited') {
+                // Cloned: add the new CLOUD item to both lists
                 setInitialFoods(prev => [result.food, ...prev]);
                 setFoods(prev => [result.food, ...prev]);
+            } else if (result.action === 'removed_deleted' || !result.food) {
+                // Zombie cleanup: backend hard-deleted the food, remove from lists
+                setFoods(prev => prev.filter(f => f._id !== food._id));
+                setInitialFoods(prev => prev.filter(f => f._id !== food._id));
             } else {
                 // Update the food's isFavorite status in lists
                 const updateFavorite = (list: FoodItem[]) =>

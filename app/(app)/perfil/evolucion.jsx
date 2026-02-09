@@ -20,6 +20,7 @@ import {
   Platform,
   Modal,
   FlatList,
+  Dimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -2412,7 +2413,7 @@ export default function EvolucionScreen() {
           onRequestClose={() => setKpiModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setKpiModalVisible(false)}>
-            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+            <Pressable style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onPress={() => {}}>
               <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar KPI</Text>
                 <Pressable onPress={() => setKpiModalVisible(false)}>
@@ -2443,7 +2444,7 @@ export default function EvolucionScreen() {
                   </Pressable>
                 )}
               />
-            </View>
+            </Pressable>
           </Pressable>
         </Modal>
 
@@ -2457,7 +2458,7 @@ export default function EvolucionScreen() {
           onRequestClose={() => setMuscleModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setMuscleModalVisible(false)}>
-            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+            <Pressable style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onPress={() => {}}>
               <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar Músculo</Text>
                 <Pressable onPress={() => setMuscleModalVisible(false)}>
@@ -2484,7 +2485,7 @@ export default function EvolucionScreen() {
                   </Pressable>
                 )}
               />
-            </View>
+            </Pressable>
           </Pressable>
         </Modal>
 
@@ -2498,7 +2499,7 @@ export default function EvolucionScreen() {
           onRequestClose={() => setExerciseModalVisible(false)}
         >
           <Pressable style={styles.kpiModalOverlay} onPress={() => setExerciseModalVisible(false)}>
-            <View style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onStartShouldSetResponder={() => true}>
+            <Pressable style={[styles.kpiModalContent, { backgroundColor: theme.cardBackground, borderColor: theme.border }]} onPress={() => {}}>
               <View style={[styles.kpiModalHeader, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.kpiModalTitle, { color: theme.text }]}>Seleccionar Ejercicio</Text>
                 <Pressable onPress={() => setExerciseModalVisible(false)}>
@@ -2525,7 +2526,7 @@ export default function EvolucionScreen() {
                   </Pressable>
                 )}
               />
-            </View>
+            </Pressable>
           </Pressable>
         </Modal>
 
@@ -2542,7 +2543,7 @@ export default function EvolucionScreen() {
             style={styles.noteModalOverlay}
             onPress={() => setNoteModal({ visible: false, note: null })}
           >
-            <View style={styles.noteModalContent} onStartShouldSetResponder={() => true}>
+            <Pressable style={styles.noteModalContent} onPress={() => {}}>
               <View style={styles.noteModalHeader}>
                 <View style={styles.noteModalPriority}>
                   <View
@@ -2565,7 +2566,7 @@ export default function EvolucionScreen() {
               <Text style={styles.noteModalText}>
                 {noteModal.note?.note || 'Sin texto adicional'}
               </Text>
-            </View>
+            </Pressable>
           </Pressable>
         </Modal>
 
@@ -3060,7 +3061,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '60%',
+    maxHeight: Dimensions.get('window').height * 0.6,
     paddingBottom: Platform.select({ android: 60, default: 32 }),
   },
   kpiModalHeader: {

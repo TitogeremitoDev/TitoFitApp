@@ -116,7 +116,6 @@ const EditablePortionControl = ({
                 onSubmitEditing={() => inputRef.current?.blur()} // Triggers onBlur
             />
             <TouchableOpacity
-                onStartShouldSetResponder={() => true}
                 onPressIn={() => changingUnitRef.current = true}
                 onPress={handleCycle}
                 style={styleUnit}

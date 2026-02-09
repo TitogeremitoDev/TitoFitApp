@@ -29,6 +29,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '../../../context/AuthContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
+import ActionToast from '../../../src/components/shared/ActionToast';
 import {
     calcVolumeByWeek,
     calcIntensityByWeek,
@@ -183,6 +184,7 @@ export default function ClientDetailScreen() {
     const [feedbackMessage, setFeedbackMessage] = useState('');
     const [feedbackType, setFeedbackType] = useState('general');
     const [sendingFeedback, setSendingFeedback] = useState(false);
+    const [toastConfig, setToastConfig] = useState({ visible: false, message: '', icon: 'checkmark-circle', iconColor: '#10b981' });
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -211,7 +213,7 @@ export default function ClientDetailScreen() {
                 setSendFeedbackModalVisible(false);
                 setFeedbackMessage('');
                 setFeedbackType('general');
-                // TODO: Mostrar toast de éxito
+                setToastConfig({ visible: true, message: 'Feedback enviado correctamente', icon: 'checkmark-circle', iconColor: '#10b981' });
             }
         } catch (error) {
             console.error('[SendFeedback] Error:', error);
@@ -1029,6 +1031,13 @@ export default function ClientDetailScreen() {
                     </View>
                 </View>
             </Modal>
+            <ActionToast
+                visible={toastConfig.visible}
+                message={toastConfig.message}
+                icon={toastConfig.icon}
+                iconColor={toastConfig.iconColor}
+                onDismiss={() => setToastConfig(prev => ({ ...prev, visible: false }))}
+            />
         </SafeAreaView>
     );
 }
@@ -1374,7 +1383,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: '75%',
+        maxHeight: Dimensions.get('window').height * 0.75,
         paddingBottom: 30,
     },
     modalHeader: {

@@ -67,45 +67,43 @@ export default function StagingIdentityCard({ ingredient, onPress, onUpdate, onD
         if (onPress) onPress();
     };
 
-    // Web: Larger card layout with horizontal subingredients
+    // Web: Dense Vertical Card Layout (Reverted by request)
     if (isLargeScreen) {
         return (
-            <View style={[styles.webRowWrapper, ingredient.validationWarning && styles.cardWarning]}>
+            <View style={[styles.webCardWrapper, ingredient.validationWarning && styles.cardWarning]}>
                 {/* Main Recipe/Food Card */}
                 <TouchableOpacity
                     style={[styles.webCard, isRecipe && styles.cardRecipe]}
                     onPress={handleEditPress}
                     activeOpacity={0.8}
                 >
-                    {/* Large Image */}
+                    {/* Image Header */}
                     <View style={styles.webImageContainer}>
                         {photoUrl ? (
                             <Image source={{ uri: photoUrl }} style={styles.webImage} />
                         ) : (
                             <View style={[styles.webImagePlaceholder, { backgroundColor: status.bg }]}>
-                                <Ionicons name={isRecipe ? 'restaurant' : 'nutrition'} size={32} color={status.color} />
+                                <Ionicons name={isRecipe ? 'restaurant' : 'nutrition'} size={28} color={status.color} />
                             </View>
                         )}
 
-                        {/* Source Badge on Image */}
+                        {/* Source Badge */}
                         <View style={[styles.webSourceOverlay, { backgroundColor: sourceConfig.color }]}>
                             <MaterialCommunityIcons name={sourceConfig.icon} size={10} color="#fff" />
-                            <Text style={styles.webSourceLabel}>{sourceConfig.label}</Text>
+                        </View>
+
+                        {/* Confidence Badge */}
+                        <View style={[styles.webConfidenceOverlay, { backgroundColor: status.color }]}>
+                            <Text style={styles.webConfidenceTextOverlay}>{status.label}</Text>
                         </View>
                     </View>
 
                     {/* Content */}
                     <View style={styles.webContent}>
                         <View style={styles.webNameRow}>
-                            <Text style={styles.webName} numberOfLines={2}>
+                            <Text style={styles.webName} numberOfLines={2} ellipsizeMode="tail">
                                 {displayName}
                             </Text>
-                            {isRecipe && (
-                                <View style={styles.recipeTagBadge}>
-                                    <Ionicons name="restaurant" size={10} color="#d97706" />
-                                    <Text style={styles.recipeTagText}>RECETA</Text>
-                                </View>
-                            )}
                         </View>
 
                         {/* Quantity */}
@@ -113,107 +111,48 @@ export default function StagingIdentityCard({ ingredient, onPress, onUpdate, onD
                             {ingredient.unit === 'a_gusto' ? '🎯 Libre' : `${ingredient.amount || ingredient.qty || 0} ${ingredient.unit || 'g'}`}
                         </Text>
 
-                        {/* Macros Row */}
+                        {/* Compact Macros */}
                         {ingredient.nutrients && (
-                            <View style={styles.webMacrosRow}>
-                                <View style={styles.webMacroItem}>
-                                    <Text style={styles.webMacroValue}>{Math.round(ingredient.nutrients.kcal || 0)}</Text>
-                                    <Text style={styles.webMacroLabel}>kcal</Text>
-                                </View>
-                                <View style={[styles.webMacroItem, styles.macroProtein]}>
-                                    <Text style={styles.webMacroValue}>{Math.round(ingredient.nutrients.protein || 0)}g</Text>
-                                    <Text style={styles.webMacroLabel}>Prot</Text>
-                                </View>
-                                <View style={[styles.webMacroItem, styles.macroCarbs]}>
-                                    <Text style={styles.webMacroValue}>{Math.round(ingredient.nutrients.carbs || 0)}g</Text>
-                                    <Text style={styles.webMacroLabel}>Carbs</Text>
-                                </View>
-                                <View style={[styles.webMacroItem, styles.macroFat]}>
-                                    <Text style={styles.webMacroValue}>{Math.round(ingredient.nutrients.fat || 0)}g</Text>
-                                    <Text style={styles.webMacroLabel}>Grasa</Text>
-                                </View>
+                            <View style={styles.webMacrosCompact}>
+                                <Text style={styles.webMacroText}>⚡ {Math.round(ingredient.nutrients.kcal || 0)}</Text>
+                                <Text style={styles.webMacroText}>P {Math.round(ingredient.nutrients.protein || 0)}</Text>
                             </View>
                         )}
 
-                        {/* Original name diff */}
-                        {showOriginal && (
-                            <Text style={styles.webOriginalText} numberOfLines={1}>
-                                ← "{originalName}"
-                            </Text>
-                        )}
+                        {/* Actions Row */}
+                        <View style={styles.webActionsData}>
+                            <TouchableOpacity style={styles.webEditBtnSmall} onPress={handleEditPress}>
+                                <Ionicons name="create-outline" size={14} color="#64748b" />
+                            </TouchableOpacity>
 
-                        {/* Validation warning */}
-                        {ingredient.validationWarning && (
-                            <Text style={styles.warningText}>⚠️ {ingredient.validationWarning}</Text>
-                        )}
-                    </View>
+                            {onDelete && (
+                                <TouchableOpacity style={styles.webDeleteBtnSmall} onPress={onDelete}>
+                                    <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                                </TouchableOpacity>
+                            )}
 
-                    {/* Actions - Right side */}
-                    <View style={styles.webActions}>
-                        <View style={[styles.webConfidenceBadge, { borderColor: status.color, backgroundColor: status.bg }]}>
-                            <Text style={[styles.webConfidenceText, { color: status.color }]}>{status.label}</Text>
+                            {hasSubIngredients && (
+                                <TouchableOpacity
+                                    style={[styles.webExpandBtnSmall, expanded && styles.webExpandBtnActive]}
+                                    onPress={() => setExpanded(!expanded)}
+                                >
+                                    <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
+                                </TouchableOpacity>
+                            )}
                         </View>
-
-                        <TouchableOpacity style={styles.webEditBtn} onPress={handleEditPress}>
-                            <Ionicons name="create-outline" size={18} color="#64748b" />
-                        </TouchableOpacity>
-
-                        {/* Delete button */}
-                        {onDelete && (
-                            <TouchableOpacity style={styles.webDeleteBtn} onPress={onDelete}>
-                                <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Expand button for recipes */}
-                        {hasSubIngredients && (
-                            <TouchableOpacity
-                                style={[styles.webExpandBtn, expanded && styles.webExpandBtnActive]}
-                                onPress={() => setExpanded(!expanded)}
-                            >
-                                <Ionicons name={expanded ? 'chevron-back' : 'chevron-forward'} size={18} color={expanded ? '#d97706' : '#64748b'} />
-                            </TouchableOpacity>
-                        )}
                     </View>
                 </TouchableOpacity>
 
-                {/* Horizontal SubIngredients Panel - Shows to the RIGHT */}
+                {/* Vertical SubIngredients Panel */}
                 {expanded && hasSubIngredients && (
-                    <View style={styles.webSubHorizontal}>
-                        <Text style={styles.webSubHorizontalTitle}>
-                            ≡ Ingredientes ({ingredient.subIngredients.length})
-                        </Text>
-                        <View style={styles.webSubHorizontalList}>
-                            {ingredient.subIngredients.map((sub, idx) => {
-                                const subSource = SOURCE_ICONS[sub.sourceType] || SOURCE_ICONS.default;
-                                return (
-                                    <View key={idx} style={styles.webSubHorizontalItem}>
-                                        {sub.image ? (
-                                            <Image source={{ uri: sub.image }} style={styles.webSubHorizontalImg} />
-                                        ) : (
-                                            <View style={styles.webSubHorizontalImgPlaceholder}>
-                                                <Ionicons name="nutrition" size={20} color="#d97706" />
-                                            </View>
-                                        )}
-                                        <View style={styles.webSubHorizontalContent}>
-                                            <Text style={styles.webSubHorizontalName} numberOfLines={1}>{sub.name}</Text>
-                                            <Text style={styles.webSubHorizontalQty}>{sub.amount || sub.qty || 0}{sub.unit || 'g'}</Text>
-                                            {sub.nutrients && (
-                                                <View style={styles.webSubHorizontalMacros}>
-                                                    <Text style={styles.webSubHorizontalMacroItem}>{Math.round(sub.nutrients.kcal || 0)} kcal</Text>
-                                                    <Text style={styles.webSubHorizontalMacroItem}>P: {Math.round(sub.nutrients.protein || 0)}g</Text>
-                                                    <Text style={styles.webSubHorizontalMacroItem}>C: {Math.round(sub.nutrients.carbs || 0)}g</Text>
-                                                    <Text style={styles.webSubHorizontalMacroItem}>G: {Math.round(sub.nutrients.fat || 0)}g</Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                        <View style={[styles.webSubHorizontalBadge, { backgroundColor: subSource.color }]}>
-                                            <MaterialCommunityIcons name={subSource.icon} size={10} color="#fff" />
-                                        </View>
-                                    </View>
-                                );
-                            })}
-                        </View>
+                    <View style={styles.webSubVertical}>
+                        {ingredient.subIngredients.map((sub, idx) => (
+                            <View key={idx} style={styles.webSubVerticalItem}>
+                                <View style={styles.webSubDot} />
+                                <Text style={styles.webSubVerticalName} numberOfLines={1}>{sub.name}</Text>
+                                <Text style={styles.webSubVerticalQty}>{sub.amount}{sub.unit}</Text>
+                            </View>
+                        ))}
                     </View>
                 )}
             </View>
@@ -481,33 +420,27 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    // ============ WEB STYLES ============
+    // ============ WEB STYLES (DENSE VERTICAL) ============
     webCardWrapper: {
-        width: 220,
-        borderRadius: 16,
+        width: 160,
+        borderRadius: 12,
         overflow: 'hidden',
         backgroundColor: '#fff',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 3,
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 2,
     },
     webCard: {
-        width: 220,
         backgroundColor: '#fff',
-        borderRadius: 16,
+        borderRadius: 12,
         overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 3,
     },
     webImageContainer: {
         position: 'relative',
         width: '100%',
-        height: 120,
+        height: 100,
     },
     webImage: {
         width: '100%',
@@ -521,259 +454,109 @@ const styles = StyleSheet.create({
     },
     webSourceOverlay: {
         position: 'absolute',
-        top: 8,
-        left: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 3,
-        paddingHorizontal: 6,
-        paddingVertical: 3,
+        top: 6,
+        left: 6,
+        padding: 4,
         borderRadius: 6,
     },
-    webSourceLabel: {
-        fontSize: 9,
-        fontWeight: '700',
-        color: '#fff',
-    },
-    webContent: {
-        padding: 12,
-    },
-    webNameRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 6,
-    },
-    webName: {
-        flex: 1,
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#1e293b',
-        lineHeight: 18,
-    },
-    recipeTagBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 2,
-        backgroundColor: '#fef3c7',
+    webConfidenceOverlay: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
         paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: 6,
+        borderRadius: 8,
     },
-    recipeTagText: {
-        fontSize: 8,
-        fontWeight: '800',
-        color: '#d97706',
+    webConfidenceTextOverlay: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '700'
+    },
+    webContent: {
+        padding: 8,
+    },
+    webNameRow: {
+        marginBottom: 2,
+        height: 36, // Fixed height for 2 lines
+    },
+    webName: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+        lineHeight: 16,
     },
     webQty: {
-        fontSize: 13,
-        fontWeight: '600',
+        fontSize: 11,
         color: '#64748b',
+        marginTop: 2,
+        fontWeight: '500',
+    },
+    webMacrosCompact: {
+        flexDirection: 'row',
+        gap: 8,
         marginTop: 4,
     },
-    webMacrosRow: {
+    webMacroText: {
+        fontSize: 10,
+        color: '#94a3b8',
+        fontWeight: '500',
+    },
+    webActionsData: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 10,
-        paddingTop: 10,
+        justifyContent: 'flex-end',
+        gap: 6,
+        marginTop: 8,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
+        paddingTop: 6,
     },
-    webMacroItem: {
-        alignItems: 'center',
-    },
-    webMacroValue: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: '#334155',
-    },
-    webMacroLabel: {
-        fontSize: 9,
-        color: '#94a3b8',
-        marginTop: 1,
-    },
-    macroProtein: {},
-    macroCarbs: {},
-    macroFat: {},
-    webOriginalText: {
-        fontSize: 10,
-        fontStyle: 'italic',
-        color: '#94a3b8',
-        marginTop: 4,
-    },
-    webActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 10,
-        paddingTop: 0,
-        gap: 8,
-    },
-    webConfidenceBadge: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-        borderWidth: 1.5,
-    },
-    webConfidenceText: {
-        fontSize: 11,
-        fontWeight: '700',
-    },
-    webEditBtn: {
-        padding: 8,
-        borderRadius: 8,
+    webEditBtnSmall: {
+        padding: 4,
+        borderRadius: 4,
         backgroundColor: '#f1f5f9',
     },
-    webDeleteBtn: {
-        padding: 8,
-        borderRadius: 8,
+    webDeleteBtnSmall: {
+        padding: 4,
+        borderRadius: 4,
         backgroundColor: '#fef2f2',
     },
-    webExpandBtn: {
-        padding: 8,
-        borderRadius: 8,
+    webExpandBtnSmall: {
+        padding: 4,
+        borderRadius: 4,
         backgroundColor: '#f1f5f9',
     },
     webExpandBtnActive: {
-        backgroundColor: '#fef3c7',
-    },
-    // Web SubIngredients - Keep old styles for compatibility
-    webSubContainer: {
-        backgroundColor: '#fefbeb',
-        padding: 12,
-        borderTopWidth: 1,
-        borderTopColor: '#fef08a',
-    },
-    webSubTitle: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#92400e',
-        marginBottom: 8,
-    },
-    webSubGrid: {
-        gap: 8,
-    },
-    webSubItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fff',
-        padding: 8,
-        borderRadius: 10,
-        gap: 10,
-    },
-    webSubImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-    },
-    webSubImagePlaceholder: {
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-        backgroundColor: '#fef3c7',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    webSubContent: {
-        flex: 1,
-    },
-    webSubName: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#78350f',
-    },
-    webSubQty: {
-        fontSize: 11,
-        color: '#92400e',
-        marginTop: 1,
-    },
-    webSubMacros: {
-        fontSize: 10,
-        color: '#a16207',
-        marginTop: 2,
-    },
-    webSubSourceBadge: {
-        padding: 4,
-        borderRadius: 6,
+        backgroundColor: '#fff7ed',
     },
 
-    // ============ NEW: HORIZONTAL WEB SUBINGREDIENTS ============
-    webRowWrapper: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 12,
-        marginBottom: 8,
-        flexWrap: 'wrap',
-    },
-    webSubHorizontal: {
-        flex: 1,
-        backgroundColor: '#fefbeb',
-        borderRadius: 12,
-        padding: 10,
-        borderWidth: 1,
-        borderColor: '#fef08a',
-        maxWidth: 400,
-    },
-    webSubHorizontalTitle: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#92400e',
-        marginBottom: 8,
-    },
-    webSubHorizontalList: {
-        gap: 6,
-    },
-    webSubHorizontalItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fff',
+    // Vertical SubIngredients (Collapsed list inside card)
+    webSubVertical: {
+        backgroundColor: '#fffbef',
         padding: 8,
-        borderRadius: 10,
-        gap: 8,
-        borderWidth: 1,
-        borderColor: '#fef3c7',
+        borderTopWidth: 1,
+        borderTopColor: '#fef3c7',
     },
-    webSubHorizontalImg: {
-        width: 48,
-        height: 48,
-        borderRadius: 8,
-    },
-    webSubHorizontalImgPlaceholder: {
-        width: 48,
-        height: 48,
-        borderRadius: 8,
-        backgroundColor: '#fef3c7',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    webSubHorizontalContent: {
-        flex: 1,
-    },
-    webSubHorizontalName: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#78350f',
-    },
-    webSubHorizontalQty: {
-        fontSize: 12,
-        fontWeight: '500',
-        color: '#92400e',
-        marginTop: 2,
-    },
-    webSubHorizontalMacros: {
+    webSubVerticalItem: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        alignItems: 'center',
+        marginBottom: 4,
         gap: 6,
-        marginTop: 4,
     },
-    webSubHorizontalMacroItem: {
+    webSubDot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#d97706',
+    },
+    webSubVerticalName: {
+        flex: 1,
         fontSize: 10,
-        color: '#a16207',
-        fontWeight: '500',
+        color: '#92400e',
     },
-    webSubHorizontalBadge: {
-        padding: 4,
-        borderRadius: 6,
+    webSubVerticalQty: {
+        fontSize: 10,
+        color: '#b45309',
+        fontWeight: '500',
     },
 });
 

@@ -5018,13 +5018,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 0,
-    maxHeight: '100%',
+    maxHeight: Dimensions.get('window').height,
 
   },
   statsModalCard: {
     width: Platform.select({ web: '90%', default: '95%' }),
-    minHeight: Platform.select({ web: '80%', default: '80%' }),
-    maxHeight: Platform.select({ web: '85%', default: '92%' }),
+    minHeight: Platform.select({ web: Dimensions.get('window').height * 0.8, default: '80%' }),
+    maxHeight: Platform.select({ web: Dimensions.get('window').height * 0.85, default: '92%' }),
     maxWidth: Platform.select({ web: 480, default: 500 }),
     borderRadius: Platform.select({ web: 20, default: 24 }),
     paddingHorizontal: Platform.select({ web: 20, default: 16 }),

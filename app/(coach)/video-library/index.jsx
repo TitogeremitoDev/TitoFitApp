@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
-    Platform, useWindowDimensions, Image, Linking
+    Platform, useWindowDimensions, Image, Linking, Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -618,7 +618,7 @@ const styles = StyleSheet.create({
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-    modalContent: { backgroundColor: '#fff', borderRadius: 24, maxHeight: '90%', width: '100%', alignSelf: 'center' },
+    modalContent: { backgroundColor: '#fff', borderRadius: 24, maxHeight: Dimensions.get('window').height * 0.9, width: '100%', alignSelf: 'center' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
     modalTitle: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
     modalCloseBtn: { padding: 4 },

@@ -64,6 +64,13 @@ export type User = {
   // Factor de actividad para cálculos nutricionales
   af?: number;
   subscriptionStatus?: string;
+  // Campos de coordinador/supervisor
+  isCoordinator?: boolean;
+  supervisorId?: string;
+  pendingSupervisorInvite?: {
+    from: string | null;
+    sentAt: string | null;
+  };
   overQuota?: {
     currentClients: number;
     maxClients: number;

@@ -188,8 +188,21 @@ const EnhancedTextInput = forwardRef<TextInput, EnhancedTextInputProps>(
     // ════════════════════════════════════════════════════════════════════════
 
     // En web o Android: devolver TextInput directo sin wrapper
+    // PERO fusionar containerStyle con style para mantener el layout (flex, width, etc.)
     if (Platform.OS !== 'ios') {
-      return textInput;
+      return (
+        <TextInput
+          ref={inputRef}
+          clearButtonMode={defaultClearButtonMode}
+          returnKeyType={defaultReturnKeyType}
+          enablesReturnKeyAutomatically={defaultEnablesReturnKey}
+          autoCorrect={defaultAutoCorrect}
+          spellCheck={defaultSpellCheck}
+          multiline={multiline}
+          style={[containerStyle as any, style]}
+          {...props}
+        />
+      );
     }
 
     // Si el wrapper está desactivado, devolver solo el TextInput

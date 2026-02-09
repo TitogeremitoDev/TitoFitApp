@@ -15,6 +15,7 @@ import {
     Platform,
     useWindowDimensions,
     Image,
+    Dimensions,
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -25,6 +26,7 @@ import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition, ACTIVITY_FACTORS } from '../../../src/utils/nutritionCalculator';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
 import WeeklyMealPlanner from './components/WeeklyMealPlanner';
+import { generateAndShareNutritionPDF } from '../../../src/services/pdfGenerator';
 
 const DAYS_OF_WEEK = [
     { key: 'monday', label: 'Lunes', short: 'L' },
@@ -48,21 +50,21 @@ const DAY_COLORS = [
     '#84cc16', // Lima
 ];
 
-// Componente para input numérico
+// Componente para input numérico compacto
 const MacroInput = ({ label, value, onChange, placeholder, suffix, color = '#64748b' }) => (
-    <View style={styles.macroInputContainer}>
-        <Text style={styles.macroInputLabel}>{label}</Text>
-        <View style={styles.macroInputRow}>
+    <View style={styles.macroInputWrapper}>
+        <View style={[styles.macroInputContainer, { borderColor: color + '40' }]}>
+            <Text style={[styles.macroInputLabel, { color }]}>{label}</Text>
             <EnhancedTextInput
-                containerStyle={[styles.macroInputContainer, { borderColor: color + '40' }]}
+                containerStyle={styles.macroInputInner}
                 style={styles.macroInputText}
                 value={value != null ? String(value) : ''}
                 onChangeText={onChange}
                 placeholder={placeholder}
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="#cbd5e1"
                 keyboardType="numeric"
             />
-            {suffix ? <Text style={[styles.macroInputSuffix, { color }]}>{suffix}</Text> : null}
+            {suffix ? <Text style={styles.macroInputSuffix}>{suffix}</Text> : null}
         </View>
     </View>
 );
@@ -98,12 +100,6 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
         };
     }, [macroMode, dayTarget.kcal, dayTarget.protein_pct, dayTarget.carbs_pct, dayTarget.fat_pct]);
 
-    // Valores a mostrar según modo
-    const displayKcal = macroMode === 'grams' ? (dayTarget.kcal || calculatedKcal) : dayTarget.kcal;
-    const displayProtein = macroMode === 'percent' ? calculatedMacros?.protein : dayTarget.protein_g;
-    const displayCarbs = macroMode === 'percent' ? calculatedMacros?.carbs : dayTarget.carbs_g;
-    const displayFat = macroMode === 'percent' ? calculatedMacros?.fat : dayTarget.fat_g;
-
     // Validación: suma de porcentajes
     const totalPct = (parseFloat(dayTarget.protein_pct) || 0) +
         (parseFloat(dayTarget.carbs_pct) || 0) +
@@ -113,140 +109,123 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
     const dayColor = dayTarget.color || DAY_COLORS[index % DAY_COLORS.length];
 
     return (
-        <View style={[styles.dayTargetCard, { borderLeftWidth: 4, borderLeftColor: dayColor }]}>
-            {/* Color picker row */}
-            <View style={styles.colorPickerRow}>
-                {DAY_COLORS.map((color) => (
-                    <TouchableOpacity
-                        key={color}
-                        style={[
-                            styles.colorDot,
-                            { backgroundColor: color },
-                            dayColor === color && styles.colorDotActive
-                        ]}
-                        onPress={() => onUpdate(index, 'color', color)}
+        <View style={[styles.dayTargetCard, { borderLeftColor: dayColor }]}>
+            <View style={styles.cardHeaderRow}>
+                {/* Name Input */}
+                <View style={[styles.dayNameInputWrapper, { borderLeftColor: dayColor }]}>
+                    <EnhancedTextInput
+                        containerStyle={styles.dayNameInputContainer}
+                        style={styles.dayTargetNameText}
+                        value={dayTarget.name}
+                        onChangeText={(v) => onUpdate(index, 'name', v)}
+                        placeholder={`Tipo de día ${index + 1}`}
+                        placeholderTextColor="#94a3b8"
                     />
-                ))}
-            </View>
+                </View>
 
-            <View style={styles.dayTargetHeader}>
-                <EnhancedTextInput
-                    containerStyle={[styles.dayTargetNameContainer, { borderLeftColor: dayColor }]}
-                    style={styles.dayTargetNameText}
-                    value={dayTarget.name}
-                    onChangeText={(v) => onUpdate(index, 'name', v)}
-                    placeholder={`Tipo de día ${index + 1}`}
-                    placeholderTextColor="#94a3b8"
-                />
-                <TouchableOpacity onPress={() => onDelete(index)} style={styles.deleteBtn}>
+                {/* Training Toggle (Compact Icon) */}
+                <TouchableOpacity
+                    style={[
+                        styles.compactToggle,
+                        dayTarget.isTrainingDay ? styles.toggleActive : styles.toggleInactive
+                    ]}
+                    onPress={() => onUpdate(index, 'isTrainingDay', !dayTarget.isTrainingDay)}
+                >
+                    <Ionicons
+                        name={dayTarget.isTrainingDay ? 'barbell' : 'bed'}
+                        size={16}
+                        color={dayTarget.isTrainingDay ? '#fff' : '#64748b'}
+                    />
+                </TouchableOpacity>
+
+                {/* Delete */}
+                <TouchableOpacity onPress={() => onDelete(index)} style={styles.compactDeleteBtn}>
                     <Ionicons name="trash-outline" size={18} color="#ef4444" />
                 </TouchableOpacity>
             </View>
 
-            {/* Toggle día de entreno */}
-            <TouchableOpacity
-                style={styles.trainingToggle}
-                onPress={() => onUpdate(index, 'isTrainingDay', !dayTarget.isTrainingDay)}
-            >
-                <Ionicons
-                    name={dayTarget.isTrainingDay ? 'barbell' : 'bed'}
-                    size={16}
-                    color={dayTarget.isTrainingDay ? '#10b981' : '#64748b'}
-                />
-                <Text style={[
-                    styles.trainingToggleText,
-                    { color: dayTarget.isTrainingDay ? '#10b981' : '#64748b' }
-                ]}>
-                    {dayTarget.isTrainingDay ? 'Día de entrenamiento' : 'Día de descanso'}
-                </Text>
-            </TouchableOpacity>
+            {/* Color & Mode Row */}
+            <View style={styles.controlsRow}>
+                <View style={styles.colorPickerRow}>
+                    {DAY_COLORS.map((color) => (
+                        <TouchableOpacity
+                            key={color}
+                            style={[
+                                styles.colorDot,
+                                { backgroundColor: color },
+                                dayColor === color && styles.colorDotActive
+                            ]}
+                            onPress={() => onUpdate(index, 'color', color)}
+                        />
+                    ))}
+                </View>
 
-            {/* Toggle modo macros: % o g */}
-            <View style={styles.macroModeContainer}>
-                <TouchableOpacity
-                    style={[styles.macroModeBtn, macroMode === 'percent' && styles.macroModeBtnActive]}
-                    onPress={() => onUpdate(index, 'macroMode', 'percent')}
-                >
-                    <Ionicons name="pie-chart" size={14} color={macroMode === 'percent' ? '#fff' : '#64748b'} />
-                    <Text style={[styles.macroModeText, macroMode === 'percent' && styles.macroModeTextActive]}>
-                        Kcal + %
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.macroModeBtn, macroMode === 'grams' && styles.macroModeBtnActive]}
-                    onPress={() => onUpdate(index, 'macroMode', 'grams')}
-                >
-                    <Ionicons name="scale" size={14} color={macroMode === 'grams' ? '#fff' : '#64748b'} />
-                    <Text style={[styles.macroModeText, macroMode === 'grams' && styles.macroModeTextActive]}>
-                        Gramos
-                    </Text>
-                </TouchableOpacity>
+                <View style={styles.modeSwitch}>
+                    <TouchableOpacity
+                        style={[styles.modeSwitchItem, macroMode === 'percent' && styles.modeSwitchActive]}
+                        onPress={() => onUpdate(index, 'macroMode', 'percent')}
+                    >
+                        <Text style={[styles.modeSwitchText, macroMode === 'percent' && styles.modeSwitchTextActive]}>%</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.modeSwitchItem, macroMode === 'grams' && styles.modeSwitchActive]}
+                        onPress={() => onUpdate(index, 'macroMode', 'grams')}
+                    >
+                        <Text style={[styles.modeSwitchText, macroMode === 'grams' && styles.modeSwitchTextActive]}>g</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
-            {/* Modo PORCENTAJE */}
-            {macroMode === 'percent' && (
-                <View style={styles.macrosGrid}>
-                    <MacroInput
-                        label="Kcal"
-                        value={dayTarget.kcal?.toString() || ''}
-                        onChange={(v) => onUpdate(index, 'kcal', v ? parseInt(v) : '')}
-                        placeholder="2500"
-                        suffix=""
-                        color="#ef4444"
-                    />
-                    <MacroInput
-                        label="Prot %"
-                        value={dayTarget.protein_pct?.toString() || ''}
-                        onChange={(v) => onUpdate(index, 'protein_pct', v ? parseInt(v) : '')}
-                        placeholder="30"
-                        suffix="%"
-                        color="#ef4444"
-                    />
-                    <MacroInput
-                        label="Carbs %"
-                        value={dayTarget.carbs_pct?.toString() || ''}
-                        onChange={(v) => onUpdate(index, 'carbs_pct', v ? parseInt(v) : '')}
-                        placeholder="45"
-                        suffix="%"
-                        color="#3b82f6"
-                    />
-                    <MacroInput
-                        label="Grasas %"
-                        value={dayTarget.fat_pct?.toString() || ''}
-                        onChange={(v) => onUpdate(index, 'fat_pct', v ? parseInt(v) : '')}
-                        placeholder="25"
-                        suffix="%"
-                        color="#f59e0b"
-                    />
-                </View>
-            )}
+            <View style={styles.divider} />
 
-            {/* Resultado calculado (modo %) */}
-            {macroMode === 'percent' && calculatedMacros && (
-                <View style={styles.calculatedRow}>
-                    <Text style={styles.calculatedLabel}>→</Text>
-                    <Text style={styles.calculatedValue}>P: {calculatedMacros.protein}g</Text>
-                    <Text style={styles.calculatedValue}>C: {calculatedMacros.carbs}g</Text>
-                    <Text style={styles.calculatedValue}>G: {calculatedMacros.fat}g</Text>
-                </View>
-            )}
+            {/* INPUTS GRID */}
+            <View style={styles.inputsGrid}>
+                {/* Modo PORCENTAJE */}
+                {macroMode === 'percent' && (
+                    <>
+                        <MacroInput
+                            label="Kcal Objetivo"
+                            value={dayTarget.kcal?.toString() || ''}
+                            onChange={(v) => onUpdate(index, 'kcal', v ? parseInt(v) : '')}
+                            placeholder="2500"
+                            color="#1e293b"
+                        />
+                        <View style={styles.rowBreak} />
+                        <MacroInput
+                            label="Prot %"
+                            value={dayTarget.protein_pct?.toString() || ''}
+                            onChange={(v) => onUpdate(index, 'protein_pct', v ? parseInt(v) : '')}
+                            placeholder="30"
+                            suffix="%"
+                            color="#ef4444"
+                        />
+                        <MacroInput
+                            label="Carbs %"
+                            value={dayTarget.carbs_pct?.toString() || ''}
+                            onChange={(v) => onUpdate(index, 'carbs_pct', v ? parseInt(v) : '')}
+                            placeholder="45"
+                            suffix="%"
+                            color="#3b82f6"
+                        />
+                        <MacroInput
+                            label="Grasas %"
+                            value={dayTarget.fat_pct?.toString() || ''}
+                            onChange={(v) => onUpdate(index, 'fat_pct', v ? parseInt(v) : '')}
+                            placeholder="25"
+                            suffix="%"
+                            color="#f59e0b"
+                        />
+                    </>
+                )}
 
-            {pctWarning && (
-                <View style={styles.warningRow}>
-                    <Ionicons name="warning" size={14} color="#f59e0b" />
-                    <Text style={styles.warningText}>Suma {totalPct}% (debería ser ~100%)</Text>
-                </View>
-            )}
-
-            {/* Modo GRAMOS */}
-            {macroMode === 'grams' && (
-                <>
-                    <View style={styles.macrosGrid}>
+                {/* Modo GRAMOS */}
+                {macroMode === 'grams' && (
+                    <>
                         <MacroInput
                             label="Proteína"
                             value={dayTarget.protein_g?.toString() || ''}
                             onChange={(v) => onUpdate(index, 'protein_g', v ? parseInt(v) : '')}
-                            placeholder="180"
+                            placeholder="160"
                             suffix="g"
                             color="#ef4444"
                         />
@@ -254,7 +233,7 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
                             label="Carbs"
                             value={dayTarget.carbs_g?.toString() || ''}
                             onChange={(v) => onUpdate(index, 'carbs_g', v ? parseInt(v) : '')}
-                            placeholder="300"
+                            placeholder="200"
                             suffix="g"
                             color="#3b82f6"
                         />
@@ -262,24 +241,42 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
                             label="Grasas"
                             value={dayTarget.fat_g?.toString() || ''}
                             onChange={(v) => onUpdate(index, 'fat_g', v ? parseInt(v) : '')}
-                            placeholder="80"
+                            placeholder="60"
                             suffix="g"
                             color="#f59e0b"
                         />
-                    </View>
-                    {calculatedKcal && (
-                        <View style={styles.calculatedRow}>
-                            <Text style={styles.calculatedLabel}>= </Text>
-                            <Text style={[styles.calculatedValue, { color: '#22c55e', fontWeight: '700' }]}>
-                                {calculatedKcal} kcal
+                    </>
+                )}
+            </View>
+
+            {/* Resultado calculado */}
+            {(macroMode === 'percent' ? calculatedMacros : calculatedKcal) && (
+                <View style={styles.resultBar}>
+                    {macroMode === 'percent' && calculatedMacros ? (
+                        <>
+                            <Text style={styles.resultLabel}>Estimado:</Text>
+                            <Text style={styles.resultValue}>⚡ {dayTarget.kcal || 0}</Text>
+                            <Text style={[styles.resultValue, { color: '#ef4444' }]}>P: {calculatedMacros.protein}g</Text>
+                            <Text style={[styles.resultValue, { color: '#3b82f6' }]}>C: {calculatedMacros.carbs}g</Text>
+                            <Text style={[styles.resultValue, { color: '#f59e0b' }]}>G: {calculatedMacros.fat}g</Text>
+                        </>
+                    ) : (
+                        <>
+                            <Text style={styles.resultLabel}>Total Calórico:</Text>
+                            <Text style={[styles.resultValue, { fontSize: 15, color: '#22c55e' }]}>
+                                ⚡ {calculatedKcal} kcal
                             </Text>
-                        </View>
+                        </>
                     )}
-                </>
+                </View>
             )}
 
-            {/* Extras row */}
-            <View style={styles.extrasRow}>
+            {pctWarning && (
+                <Text style={styles.warningTextSmall}>⚠️ La suma de % no es 100% ({totalPct}%)</Text>
+            )}
+
+            {/* Extras Grid */}
+            <View style={styles.extrasGrid}>
                 <MacroInput
                     label="Agua"
                     value={dayTarget.water_ml?.toString() || ''}
@@ -292,27 +289,27 @@ const DayTargetCard = ({ dayTarget, index, onUpdate, onDelete }) => {
                     label="Pasos"
                     value={dayTarget.steps_target?.toString() || ''}
                     onChange={(v) => onUpdate(index, 'steps_target', v ? parseInt(v) : '')}
-                    placeholder="8000"
+                    placeholder="8k"
                     suffix=""
-                    color="#22c55e"
+                    color="#10b981"
                 />
                 <MacroInput
                     label="Fibra"
                     value={dayTarget.fiber_g?.toString() || ''}
                     onChange={(v) => onUpdate(index, 'fiber_g', v ? parseInt(v) : '')}
-                    placeholder="30"
+                    placeholder="25"
                     suffix="g"
                     color="#84cc16"
                 />
             </View>
 
-            {/* Notas */}
+            {/* Notes */}
             <EnhancedTextInput
-                containerStyle={styles.notesInputContainer}
+                containerStyle={styles.notesInputCompact}
                 style={styles.notesInputText}
                 value={dayTarget.notes || ''}
                 onChangeText={(v) => onUpdate(index, 'notes', v)}
-                placeholder="Instrucciones del día (opcional)"
+                placeholder="Notas o instrucciones (opcional)"
                 placeholderTextColor="#94a3b8"
                 multiline
             />
@@ -481,6 +478,7 @@ export default function ClientNutritionEditor() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isSavingAsTemplate, setIsSavingAsTemplate] = useState(false);
+    const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [clientData, setClientData] = useState(null);
     const [mode, setMode] = useState('auto'); // 'auto' | 'custom' | 'mealplan'
     const [planName, setPlanName] = useState('');
@@ -961,6 +959,46 @@ export default function ClientNutritionEditor() {
                 'plain-text',
                 planName || ''
             );
+        }
+    };
+
+    // 📄 Export as PDF (share)
+    const handleExportPDF = async () => {
+        if (isExportingPDF) return;
+
+        // Validate there's a plan to export
+        if (mode === 'mealplan' && (!mealPlan?.dayTemplates || mealPlan.dayTemplates.length === 0)) {
+            Alert.alert('Sin datos', 'El plan de comidas está vacío. Necesitas tener comidas para exportar.');
+            return;
+        }
+        if (mode !== 'mealplan') {
+            Alert.alert('Solo Meal Plan', 'La exportación a PDF solo está disponible para planes con comidas completas (modo Meal Plan).');
+            return;
+        }
+
+        setIsExportingPDF(true);
+        try {
+            const coachBranding = {
+                primaryColor: theme?.primary || '#3b82f6',
+                coachName: user?.nombre || 'Entrenador',
+                logoUrl: user?.trainerProfile?.logoUrl || null,
+            };
+
+            await generateAndShareNutritionPDF({
+                plan: mealPlan,
+                coachBranding,
+                clientName: clientName || 'Cliente',
+                hideMacros,
+            });
+        } catch (error) {
+            console.error('[Coach PDF Export] Error:', error);
+            if (Platform.OS === 'web') {
+                window.alert('Error al generar PDF: ' + error.message);
+            } else {
+                Alert.alert('Error', 'No se pudo generar el PDF: ' + error.message);
+            }
+        } finally {
+            setIsExportingPDF(false);
         }
     };
 
@@ -1467,6 +1505,22 @@ export default function ClientNutritionEditor() {
                                 </>
                             )}
                         </TouchableOpacity>
+                        {mode === 'mealplan' && (
+                            <TouchableOpacity
+                                style={[styles.draftBtn, { flex: 0.8, backgroundColor: '#dbeafe' }]}
+                                onPress={handleExportPDF}
+                                disabled={isExportingPDF}
+                            >
+                                {isExportingPDF ? (
+                                    <ActivityIndicator size="small" color="#1d4ed8" />
+                                ) : (
+                                    <>
+                                        <Ionicons name="document-text-outline" size={20} color="#1d4ed8" />
+                                        <Text style={[styles.draftBtnText, { color: '#1d4ed8' }]}>Exportar PDF</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                             style={[styles.activateBtn, { flex: 1.2 }]} // Give more space to "Activar"
                             onPress={() => handleSave('active')}
@@ -1817,224 +1871,207 @@ const styles = StyleSheet.create({
         color: '#22c55e',
     },
 
-    // Day Target Card
+    // Day Target Card (Dense)
     dayTargetCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 16,
+        padding: 12,
         marginBottom: 12,
         borderWidth: 1,
         borderColor: '#e2e8f0',
+        borderLeftWidth: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    dayTargetHeader: {
+    cardHeaderRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 12,
+        gap: 8,
+        marginBottom: 8,
+    },
+    dayNameInputWrapper: {
+        flex: 1,
+        position: 'relative',
+    },
+    dayNameInputContainer: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    dayTargetNameText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    compactToggle: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    toggleActive: {
+        backgroundColor: '#10b981',
+    },
+    toggleInactive: {
+        backgroundColor: '#e2e8f0',
+    },
+    compactDeleteBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: '#fee2e2',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    // Controls Row
+    controlsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
     },
     colorPickerRow: {
         flexDirection: 'row',
-        gap: 8,
-        marginBottom: 12,
-        flexWrap: 'wrap',
+        gap: 6,
     },
     colorDot: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 2,
-        borderColor: 'transparent',
+        width: 20,
+        height: 20,
+        borderRadius: 10,
     },
     colorDotActive: {
+        borderWidth: 2,
         borderColor: '#1e293b',
         transform: [{ scale: 1.1 }],
     },
-    dayTargetName: {
-        flex: 1,
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#1e293b',
-        padding: 8,
-        backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        marginRight: 8,
-    },
-    dayTargetNameContainer: {
-        flex: 1,
-        padding: 8,
-        backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        marginRight: 8,
-    },
-    dayTargetNameText: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#1e293b',
-    },
-    deleteBtn: {
-        padding: 8,
-    },
-    trainingToggle: {
+    modeSwitch: {
         flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#f8fafc',
-        padding: 10,
-        borderRadius: 8,
-        marginBottom: 16,
-        gap: 8,
-    },
-    trainingToggleText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-
-    // Macro Mode Toggle
-    macroModeContainer: {
-        flexDirection: 'row',
-        gap: 8,
-        marginBottom: 12,
-    },
-    macroModeBtn: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 10,
-        borderRadius: 8,
         backgroundColor: '#f1f5f9',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        gap: 6,
+        borderRadius: 8,
+        padding: 2,
     },
-    macroModeBtnActive: {
-        backgroundColor: '#8b5cf6',
-        borderColor: '#8b5cf6',
+    modeSwitchItem: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
     },
-    macroModeText: {
-        fontSize: 12,
+    modeSwitchActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 1,
+        elevation: 1,
+    },
+    modeSwitchText: {
+        fontSize: 11,
         fontWeight: '600',
         color: '#64748b',
     },
-    macroModeTextActive: {
-        color: '#fff',
+    modeSwitchTextActive: {
+        color: '#0f172a',
     },
 
-    // Calculated Row
-    calculatedRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#f0fdf4',
-        padding: 8,
-        borderRadius: 8,
-        marginBottom: 10,
-        gap: 12,
-    },
-    calculatedLabel: {
-        fontSize: 14,
-        color: '#64748b',
-        fontWeight: '600',
-    },
-    calculatedValue: {
-        fontSize: 13,
-        color: '#1e293b',
-        fontWeight: '600',
+    divider: {
+        height: 1,
+        backgroundColor: '#f1f5f9',
+        marginVertical: 8,
     },
 
-    // Warning Row
-    warningRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fffbeb',
-        padding: 8,
-        borderRadius: 8,
-        marginBottom: 10,
-        gap: 6,
-    },
-    warningText: {
-        fontSize: 12,
-        color: '#92400e',
-    },
-
-    // Macros Grid - Wrap style para móviles
-    macrosGrid: {
+    // Grids
+    inputsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 6,
-        marginBottom: 10,
+        gap: 8,
+        marginBottom: 8,
     },
-    extrasRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-        marginBottom: 10,
+    rowBreak: {
+        width: '100%',
+        height: 0,
+    },
+    macroInputWrapper: {
+        flex: 1,
+        minWidth: '30%',
     },
     macroInputContainer: {
-        width: '23%',
-        minWidth: 65,
+        backgroundColor: '#fdfdfd',
+        borderRadius: 8,
+        borderWidth: 1,
+        padding: 6,
     },
     macroInputLabel: {
         fontSize: 10,
-        color: '#64748b',
+        fontWeight: '600',
         marginBottom: 2,
-        textAlign: 'center',
     },
-    macroInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    macroInput: {
-        width: '100%',
+    macroInputInner: {
+        padding: 4,
         backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        paddingVertical: 8,
-        paddingHorizontal: 6,
-        fontSize: 13,
-        fontWeight: '700',
-        color: '#1e293b',
-        borderWidth: 1.5,
-        textAlign: 'center',
-    },
-    macroInputContainer: {
-        width: '100%',
-        backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        paddingVertical: 8,
-        paddingHorizontal: 6,
-        borderWidth: 1.5,
+        borderRadius: 6,
     },
     macroInputText: {
         fontSize: 13,
         fontWeight: '700',
         color: '#1e293b',
         textAlign: 'center',
+        padding: 0,
     },
     macroInputSuffix: {
-        fontSize: 10,
-        fontWeight: '600',
-        marginLeft: 2,
         position: 'absolute',
-        right: 4,
-        top: 8,
+        right: 8,
+        bottom: 8,
+        fontSize: 10,
+        color: '#94a3b8',
     },
-    notesInput: {
+
+    // Results & Extras
+    resultBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f0fdf4',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        gap: 8,
+        marginBottom: 8,
+        flexWrap: 'wrap',
+    },
+    resultLabel: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    resultValue: {
+        fontSize: 12,
+        color: '#1e293b',
+        fontWeight: '700',
+    },
+    warningTextSmall: {
+        fontSize: 11,
+        color: '#d97706',
+        marginBottom: 8,
+        fontWeight: '500',
+    },
+    extrasGrid: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 8,
+    },
+    notesInputCompact: {
         backgroundColor: '#f8fafc',
         borderRadius: 8,
-        padding: 10,
-        fontSize: 13,
-        color: '#1e293b',
-        minHeight: 50,
-        textAlignVertical: 'top',
-    },
-    notesInputContainer: {
-        backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        padding: 10,
-        minHeight: 50,
-    },
-    notesInputText: {
-        fontSize: 13,
-        color: '#1e293b',
-        textAlignVertical: 'top',
+        padding: 8,
+        minHeight: 40,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
 
     // Week Schedule
@@ -2264,7 +2301,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: '70%',
+        maxHeight: Dimensions.get('window').height * 0.7,
         minHeight: 300,
     },
     modalHeader: {

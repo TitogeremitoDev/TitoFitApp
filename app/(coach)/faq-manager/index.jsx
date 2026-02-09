@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
-    Platform, useWindowDimensions, Animated, Clipboard
+    Platform, useWindowDimensions, Animated, Clipboard, Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
     // ONBOARDING MODAL STYLES
     // ═══════════════════════════════════════════════════════════════════
     onboardingOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-    onboardingCard: { backgroundColor: '#1e293b', borderRadius: 24, padding: 24, width: '100%', maxHeight: '90%' },
+    onboardingCard: { backgroundColor: '#1e293b', borderRadius: 24, padding: 24, width: '100%', maxHeight: Dimensions.get('window').height * 0.9 },
     onboardingEmoji: { fontSize: 48, textAlign: 'center', marginBottom: 8 },
     onboardingTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
     onboardingSubtitle: { fontSize: 14, fontWeight: '600', color: '#94a3b8', textAlign: 'center', marginBottom: 20 },
@@ -745,7 +745,7 @@ const styles = StyleSheet.create({
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-    modalContent: { backgroundColor: '#fff', borderRadius: 24, maxHeight: '90%', width: '100%', alignSelf: 'center' },
+    modalContent: { backgroundColor: '#fff', borderRadius: 24, maxHeight: Dimensions.get('window').height * 0.9, width: '100%', alignSelf: 'center' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
     modalTitle: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
     modalCloseBtn: { padding: 4 },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Platform, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Platform, Switch, ActivityIndicator, Dimensions } from 'react-native';
 import { EnhancedTextInput as TextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker'; // Should be installed
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
         maxWidth: 500,
         backgroundColor: '#fff',
         borderRadius: 16,
-        maxHeight: '90%',
+        maxHeight: Dimensions.get('window').height * 0.9,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.25,

@@ -19,6 +19,7 @@ import { AlertProvider } from '../src/hooks/useAlert';
 import { SupplementInventoryProvider } from '../src/context/SupplementInventoryContext';
 import { ImpersonationProvider } from '../context/ImpersonationContext';
 import { GodModeBar } from '../components/GodModeBar';
+import { SupervisorInviteModal } from '../components/SupervisorInviteModal';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 
@@ -41,6 +42,37 @@ Sentry.init({
 
 // Mantén el splash visible hasta que el router + auth estén listos
 try { SplashScreen.preventAutoHideAsync(); } catch { }
+
+// FIX: Emoji rendering en macOS Chrome
+// React Native Web genera font stacks SIN fuentes emoji (e.g. "...Arial,sans-serif").
+// En macOS Chrome, sin "Apple Color Emoji" explícito, los emojis se muestran como □.
+// Parcheamos las reglas CSS vía CSSOM (NO textContent, que destruye reglas dinámicas).
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const emojiFonts = ', "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+  const patchEmojiFonts = () => {
+    const rnwEl = document.getElementById('react-native-stylesheet');
+    if (!rnwEl || !rnwEl.sheet) return;
+    const rules = rnwEl.sheet.cssRules;
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
+      if (rule.style && rule.style.fontFamily &&
+          rule.style.fontFamily.includes('sans-serif') &&
+          !rule.style.fontFamily.includes('Apple Color Emoji')) {
+        rule.style.fontFamily = rule.style.fontFamily + emojiFonts;
+      }
+    }
+  };
+  // Parchear tras primer render (cuando RNW ya insertó sus reglas)
+  if (document.readyState === 'complete') {
+    patchEmojiFonts();
+  } else {
+    window.addEventListener('load', patchEmojiFonts);
+  }
+  // Observer para reglas que RNW inyecte después dinámicamente
+  const obs = new MutationObserver(patchEmojiFonts);
+  const target = document.getElementById('react-native-stylesheet');
+  if (target) obs.observe(target, { childList: true, characterData: true, subtree: true });
+}
 
 // CSS global para scrollbar estilizado y fix de inputs en web
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -314,6 +346,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(app)" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(coach)" />
+        <Stack.Screen name="(supervisor)" />
         <Stack.Screen name="(admin)" />
       </Stack>
     </>
@@ -359,6 +392,7 @@ export default function RootLayout() {
                         <ImpersonationProvider>
                           <ThemedRootView>
                             <GodModeBar />
+                            <SupervisorInviteModal />
                             <RootLayoutNav />
                           </ThemedRootView>
                         </ImpersonationProvider>

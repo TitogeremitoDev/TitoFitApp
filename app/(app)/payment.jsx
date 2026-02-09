@@ -163,12 +163,6 @@ export default function PaymentScreen() {
   // EFFECTS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  useEffect(() => {
-    if (isPremium && userType !== 'coach') {
-      console.log('[Payment] Force switching to coach because user is PREMIUM');
-      setUserType('coach');
-    }
-  }, [isPremium, userType]); // Added userType to dependency to ensure it sticks
 
   useEffect(() => {
     (async () => {

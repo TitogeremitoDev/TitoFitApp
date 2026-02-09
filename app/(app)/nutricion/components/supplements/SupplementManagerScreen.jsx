@@ -15,7 +15,8 @@ import {
     TouchableOpacity,
     Modal,
     Alert,
-    Share
+    Share,
+    Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../../../components/ui';
@@ -703,7 +704,7 @@ const styles = StyleSheet.create({
     addModalContent: {
         width: '100%',
         maxWidth: 400,
-        maxHeight: '80%',
+        maxHeight: Dimensions.get('window').height * 0.8,
         borderRadius: 20,
         padding: 20,
     },

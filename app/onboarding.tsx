@@ -1047,7 +1047,7 @@ export default function Onboarding() {
                     {/* BIG DATA ROW: Edad / Peso / Altura */}
                     <View style={styles.bigDataRow}>
                         {/* EDAD */}
-                        <TouchableOpacity
+                        <View
                             style={[
                                 styles.bigDataCard,
                                 {
@@ -1056,25 +1056,22 @@ export default function Onboarding() {
                                     borderWidth: formData.edad ? 2 : 1,
                                 }
                             ]}
-                            activeOpacity={0.9}
                         >
-                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Edad</Text>
-                            <View style={styles.bigDataValueRow}>
-                                <TextInput
-                                    style={[styles.bigDataInput, { color: theme.text }]}
-                                    placeholder="--"
-                                    placeholderTextColor={theme.textSecondary}
-                                    keyboardType="numeric"
-                                    maxLength={2}
-                                    value={formData.edad}
-                                    onChangeText={(text) => setFormData({ ...formData, edad: text.replace(/[^0-9]/g, '') })}
-                                />
-                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>años</Text>
-                            </View>
-                        </TouchableOpacity>
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>EDAD</Text>
+                            <TextInput
+                                disableTouchWrapper
+                                style={[styles.bigDataInput, { color: theme.text }]}
+                                placeholder="--"
+                                placeholderTextColor={theme.textSecondary}
+                                keyboardType="numeric"
+                                maxLength={2}
+                                value={formData.edad}
+                                onChangeText={(text) => setFormData({ ...formData, edad: text.replace(/[^0-9]/g, '') })}
+                            />
+                        </View>
 
                         {/* PESO */}
-                        <TouchableOpacity
+                        <View
                             style={[
                                 styles.bigDataCard,
                                 {
@@ -1083,25 +1080,22 @@ export default function Onboarding() {
                                     borderWidth: formData.peso ? 2 : 1,
                                 }
                             ]}
-                            activeOpacity={0.9}
                         >
-                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Peso</Text>
-                            <View style={styles.bigDataValueRow}>
-                                <TextInput
-                                    style={[styles.bigDataInput, { color: theme.text }]}
-                                    placeholder="--"
-                                    placeholderTextColor={theme.textSecondary}
-                                    keyboardType="decimal-pad"
-                                    maxLength={5}
-                                    value={formData.peso}
-                                    onChangeText={(text) => setFormData({ ...formData, peso: text })}
-                                />
-                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>kg</Text>
-                            </View>
-                        </TouchableOpacity>
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>PESO</Text>
+                            <TextInput
+                                disableTouchWrapper
+                                style={[styles.bigDataInput, { color: theme.text }]}
+                                placeholder="--"
+                                placeholderTextColor={theme.textSecondary}
+                                keyboardType="decimal-pad"
+                                maxLength={5}
+                                value={formData.peso}
+                                onChangeText={(text) => setFormData({ ...formData, peso: text })}
+                            />
+                        </View>
 
                         {/* ALTURA */}
-                        <TouchableOpacity
+                        <View
                             style={[
                                 styles.bigDataCard,
                                 {
@@ -1110,22 +1104,19 @@ export default function Onboarding() {
                                     borderWidth: formData.altura ? 2 : 1,
                                 }
                             ]}
-                            activeOpacity={0.9}
                         >
-                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>Altura</Text>
-                            <View style={styles.bigDataValueRow}>
-                                <TextInput
-                                    style={[styles.bigDataInput, { color: theme.text }]}
-                                    placeholder="--"
-                                    placeholderTextColor={theme.textSecondary}
-                                    keyboardType="decimal-pad"
-                                    maxLength={4}
-                                    value={formData.altura}
-                                    onChangeText={(text) => setFormData({ ...formData, altura: text.replace(/,/g, '.') })}
-                                />
-                                <Text style={[styles.bigDataUnit, { color: theme.textSecondary }]}>m</Text>
-                            </View>
-                        </TouchableOpacity>
+                            <Text style={[styles.bigDataLabel, { color: theme.textSecondary }]}>ALTURA</Text>
+                            <TextInput
+                                disableTouchWrapper
+                                style={[styles.bigDataInput, { color: theme.text }]}
+                                placeholder="--"
+                                placeholderTextColor={theme.textSecondary}
+                                keyboardType="decimal-pad"
+                                maxLength={4}
+                                value={formData.altura}
+                                onChangeText={(text) => setFormData({ ...formData, altura: text.replace(/,/g, '.') })}
+                            />
+                        </View>
                     </View>
 
                     {/* GÉNERO - Square Tinted Buttons */}
@@ -1725,7 +1716,6 @@ export default function Onboarding() {
                                         backgroundColor: !formData.tieneAlergias ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
                                         borderColor: !formData.tieneAlergias ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
                                         borderWidth: !formData.tieneAlergias ? 2 : 1,
-                                        aspectRatio: undefined,
                                         paddingVertical: 14,
                                     },
                                 ]}
@@ -1748,7 +1738,6 @@ export default function Onboarding() {
                                         backgroundColor: formData.tieneAlergias ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
                                         borderColor: formData.tieneAlergias ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
                                         borderWidth: formData.tieneAlergias ? 2 : 1,
-                                        aspectRatio: undefined,
                                         paddingVertical: 14,
                                     },
                                 ]}
@@ -1806,7 +1795,6 @@ export default function Onboarding() {
                                         backgroundColor: formData.cocina === 'si' ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
                                         borderColor: formData.cocina === 'si' ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
                                         borderWidth: formData.cocina === 'si' ? 2 : 1,
-                                        aspectRatio: undefined,
                                         paddingVertical: 14,
                                     },
                                 ]}
@@ -1829,7 +1817,6 @@ export default function Onboarding() {
                                         backgroundColor: formData.cocina === 'no' ? brandedPrimary + '15' : (isDark ? '#334155' : '#F9FAFB'),
                                         borderColor: formData.cocina === 'no' ? brandedPrimary : (isDark ? '#475569' : '#E5E7EB'),
                                         borderWidth: formData.cocina === 'no' ? 2 : 1,
-                                        aspectRatio: undefined,
                                         paddingVertical: 14,
                                     },
                                 ]}
@@ -2098,7 +2085,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     section: {
-        marginBottom: 8,
+        marginBottom: 20,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -2201,7 +2188,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         gap: 8,
         borderWidth: 2,
-        marginBottom: 40,
     },
     footerButtonPrimary: {
         borderWidth: 0,
@@ -2516,14 +2502,15 @@ const styles = StyleSheet.create({
     // BIG DATA STYLES (Step 2 redesign)
     bigDataRow: {
         flexDirection: 'row',
-        gap: 12,
+        gap: 10,
         marginBottom: 24,
         marginTop: 8,
     },
     bigDataCard: {
         flex: 1,
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 14,
+        paddingVertical: 14,
+        paddingHorizontal: 10,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -2544,11 +2531,10 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     bigDataInput: {
-        flex: 1,
-        fontSize: 32,
+        width: '100%',
+        fontSize: 26,
         fontWeight: '800',
         textAlign: 'center',
-        minWidth: 50,
         padding: 0,
     },
     bigDataUnit: {
@@ -2561,11 +2547,11 @@ const styles = StyleSheet.create({
     },
     genderButton: {
         flex: 1,
-        aspectRatio: 1,
         borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
+        paddingVertical: 16,
+        gap: 6,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
@@ -2579,14 +2565,16 @@ const styles = StyleSheet.create({
     objectiveGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 12,
+        gap: 10,
+        width: '100%',
     },
     objectiveCard: {
-        width: '47%',
+        flexBasis: '46%',
+        flexGrow: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-        padding: 16,
+        gap: 8,
+        padding: 14,
         borderRadius: 14,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -2626,11 +2614,11 @@ const styles = StyleSheet.create({
     },
     commitmentSquare: {
         flex: 1,
-        aspectRatio: 1,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 16,
-        padding: 12,
+        paddingVertical: 18,
+        paddingHorizontal: 12,
     },
     commitmentIcon: {
         fontSize: 32,
@@ -2664,15 +2652,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 24,
-        paddingHorizontal: 16,
+        paddingVertical: 20,
+        paddingHorizontal: 12,
         borderRadius: 20,
-        gap: 24,
+        gap: 16,
     },
     heroNumberBtn: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
@@ -2687,9 +2675,9 @@ const styles = StyleSheet.create({
         minWidth: 80,
     },
     heroNumber: {
-        fontSize: 56,
+        fontSize: 44,
         fontWeight: '800',
-        lineHeight: 64,
+        lineHeight: 52,
     },
     heroNumberLabel: {
         fontSize: 14,
@@ -2725,19 +2713,21 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     luxuryGridItem: {
-        width: '47%',
-        paddingVertical: 16,
-        paddingHorizontal: 14,
+        flexBasis: '45%',
+        flexGrow: 1,
+        paddingVertical: 14,
+        paddingHorizontal: 12,
         borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
     },
     luxuryGridItemMulti: {
-        width: '48%',
+        flexBasis: '45%',
+        flexGrow: 1,
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 12,
-        paddingHorizontal: 12,
+        paddingHorizontal: 10,
         borderRadius: 12,
     },
     luxuryGridText: {

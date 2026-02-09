@@ -230,7 +230,17 @@ export function FeedbackBubbleProvider({ children }) {
     // FORM HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
 
-    const addHighlight = () => {
+    const addHighlight = (itemOrUndefined) => {
+        // Support both text input (from FAB form) and rich objects (from CoachStudioModal photos)
+        if (itemOrUndefined && typeof itemOrUndefined === 'object') {
+            // Rich highlight with photo/media data
+            setHighlights(prev => {
+                if (prev.some(h => h.id === itemOrUndefined.id)) return prev;
+                return [...prev, itemOrUndefined];
+            });
+            return;
+        }
+        // Text-only highlight from the input field
         if (!newHighlight.trim()) return;
         setHighlights([...highlights, { id: Date.now(), text: newHighlight.trim() }]);
         setNewHighlight('');
@@ -269,8 +279,21 @@ export function FeedbackBubbleProvider({ children }) {
         // Combinar notas de análisis en un string para el informe
         const analysisText = analysisNotes.map(a => a.text).join('\n');
 
+        // Preserve full highlight objects (including photo data) instead of just text
+        const highlightsData = highlights.map(h => ({
+            text: h.text,
+            ...(h.mediaType && {
+                id: h.id,
+                thumbnail: h.thumbnail,
+                sourceMediaUrl: h.sourceMediaUrl,
+                mediaType: h.mediaType,
+                exerciseName: h.exerciseName,
+                compareData: h.compareData || null,
+            }),
+        }));
+
         console.log('[FeedbackBubble] Enviando datos:', {
-            highlights: highlights.map(h => h.text),
+            highlights: highlightsData,
             analysis: analysisText,
             actionItems: actionItems.map(a => a.text),
             trafficLight
@@ -282,7 +305,7 @@ export function FeedbackBubbleProvider({ children }) {
             params: {
                 clientId: activeClient?.id,
                 prefillData: JSON.stringify({
-                    highlights: highlights.map(h => h.text),
+                    highlights: highlightsData,
                     analysis: analysisText,
                     actionItems: actionItems.map(a => a.text),
                     trafficLight
@@ -506,7 +529,10 @@ export function FeedbackBubbleProvider({ children }) {
                                     <Text style={styles.sectionLabel}>✨ Logros</Text>
                                     {highlights.map(h => (
                                         <View key={h.id} style={styles.chip}>
-                                            <Text style={styles.chipText}>{h.text}</Text>
+                                            {h.mediaType === 'photo' && (
+                                                <Ionicons name="image" size={14} color="#6366f1" style={{ marginRight: 4 }} />
+                                            )}
+                                            <Text style={styles.chipText} numberOfLines={2}>{h.text}</Text>
                                             <TouchableOpacity onPress={() => removeHighlight(h.id)}>
                                                 <Ionicons name="close-circle" size={18} color="#94a3b8" />
                                             </TouchableOpacity>

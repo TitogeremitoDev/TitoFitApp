@@ -1,6 +1,6 @@
 import { Stack, router, usePathname, useFocusEffect } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
-import { Alert, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ScrollView, Image } from 'react-native';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ScrollView, Image, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +11,7 @@ import OverQuotaModal from '../../components/OverQuotaModal';
 import { useOverQuotaInterceptor } from '../../hooks/useOverQuotaInterceptor';
 import { FloatingTabBarProvider } from '../../context/FloatingTabBarContext';
 import CoachFloatingTabBar from '../../src/components/shared/CoachFloatingTabBar';
+import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials'; // Importar Avatar
 
 // Configuración de secciones del sidebar (coincide con las cajas temáticas del dashboard)
 const SIDEBAR_SECTIONS = [
@@ -267,6 +268,205 @@ const Sidebar = ({ currentPath, onNavigate, user, trainerProfile }) => {
     );
 };
 
+// Componente Banner Móvil para Navegación entre Clientes
+const MobileClientNavBanner = ({ currentPath, onNavigate, token }) => {
+    const [clients, setClients] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [expanded, setExpanded] = useState(false);
+    const insets = useSafeAreaInsets();
+
+    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+
+    // Extraer el clientId actual de la ruta
+    const currentClientId = useMemo(() => {
+        if (!currentPath) return null;
+        // Buscar el patrón /[clientId] en la ruta
+        const patterns = [
+            /\/seguimiento_coach\/([^/]+)/,
+            /\/progress\/([^/]+)/,
+            /\/nutrition\/([^/]+)/,
+            /\/clients_coach\/([^/]+)/,
+            /\/workouts\/([^/]+)/
+        ];
+        for (const pattern of patterns) {
+            const match = currentPath.match(pattern);
+            if (match && match[1] && match[1] !== 'index') {
+                return match[1];
+            }
+        }
+        return null;
+    }, [currentPath]);
+
+    // Determinar el contexto actual (seguimiento, progress, etc.)
+    const currentContext = useMemo(() => {
+        if (currentPath?.includes('/seguimiento_coach')) return 'seguimiento_coach';
+        if (currentPath?.includes('/progress')) return 'progress';
+        if (currentPath?.includes('/nutrition')) return 'nutrition';
+        if (currentPath?.includes('/clients_coach')) return 'clients_coach';
+        if (currentPath?.includes('/workouts')) return 'workouts';
+        return 'seguimiento_coach';
+    }, [currentPath]);
+
+    // Fetch clientes
+    useEffect(() => {
+        const fetchClients = async () => {
+            if (!token) return;
+            try {
+                setIsLoading(true);
+                const res = await fetch(`${API_URL}/api/monitoring/coach/sidebar-status?context=${currentContext}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setClients(data.clients || []);
+                }
+            } catch (error) {
+                console.error('[MobileClientNav] Error:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchClients();
+    }, [token, currentContext]);
+
+    // Navegar a otro cliente
+    const handleClientSelect = (client) => {
+        onNavigate({
+            pathname: `/(coach)/${currentContext}/[clientId]`,
+            params: { clientId: client._id, clientName: client.nombre }
+        });
+        setExpanded(false);
+    };
+
+    // Obtener cliente actual
+    const currentClient = clients.find(c => c._id === currentClientId);
+
+    if (expanded) {
+        return (
+            <View style={[mobileStyles.expandedContainer, { paddingBottom: insets.bottom + 20, maxHeight: Dimensions.get('window').height * 0.6 }]}>
+                {/* Header */}
+                <View style={mobileStyles.expandedHeader}>
+                    <View style={mobileStyles.userInfoRow}>
+                        <Ionicons name="people" size={24} color="#3b82f6" />
+                        <Text style={[mobileStyles.userName, { marginLeft: 12 }]}>Cambiar Cliente</Text>
+                    </View>
+                    <TouchableOpacity
+                        style={mobileStyles.closeBtn}
+                        onPress={() => setExpanded(false)}
+                    >
+                        <Ionicons name="close" size={24} color="#64748b" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Lista de Clientes */}
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                    {clients.map(client => {
+                        const isActive = client._id === currentClientId;
+                        const statusColor = client.status === 'critical' ? '#ef4444' :
+                            client.status === 'warning' ? '#f59e0b' : '#10b981';
+                        return (
+                            <TouchableOpacity
+                                key={client._id}
+                                style={[
+                                    mobileStyles.clientItem,
+                                    isActive && mobileStyles.clientItemActive
+                                ]}
+                                onPress={() => handleClientSelect(client)}
+                            >
+                                <AvatarWithInitials
+                                    name={client.nombre}
+                                    avatarUrl={client.avatarUrl}
+                                    size={40}
+                                />
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={[
+                                        mobileStyles.clientName,
+                                        isActive && { color: '#3b82f6', fontWeight: '700' }
+                                    ]}>
+                                        {client.nombre}
+                                    </Text>
+                                    {client.statusLabel && (
+                                        <Text style={[mobileStyles.clientStatus, { color: statusColor }]}>
+                                            {client.statusLabel}
+                                        </Text>
+                                    )}
+                                </View>
+                                {isActive && <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />}
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            </View>
+        );
+    }
+
+    // Estado Colapsado - Mostrar cliente actual y avatares de otros
+    return (
+        <TouchableOpacity
+            style={[mobileStyles.collapsedBanner, { paddingBottom: Math.max(insets.bottom, 10) }]}
+            onPress={() => setExpanded(true)}
+            activeOpacity={0.9}
+        >
+            <View style={mobileStyles.bannerContent}>
+                {/* Cliente actual */}
+                {currentClient ? (
+                    <>
+                        <AvatarWithInitials
+                            name={currentClient.nombre}
+                            avatarUrl={currentClient.avatarUrl}
+                            size={32}
+                        />
+                        <Text style={[mobileStyles.bannerText, { marginLeft: 8 }]} numberOfLines={1}>
+                            {currentClient.nombre?.split(' ')[0]}
+                        </Text>
+                    </>
+                ) : (
+                    <>
+                        <Ionicons name="person" size={20} color="#94a3b8" />
+                        <Text style={[mobileStyles.bannerText, { marginLeft: 8 }]}>
+                            {isLoading ? 'Cargando...' : 'Cliente'}
+                        </Text>
+                    </>
+                )}
+
+                {/* Separador */}
+                <View style={{ width: 1, height: 24, backgroundColor: '#475569', marginHorizontal: 12 }} />
+
+                {/* Avatares de otros clientes (max 5) */}
+                <View style={{ flexDirection: 'row', flex: 1, gap: 4 }}>
+                    {clients.slice(0, 5).filter(c => c._id !== currentClientId).map(client => (
+                        <TouchableOpacity
+                            key={client._id}
+                            onPress={() => handleClientSelect(client)}
+                        >
+                            <AvatarWithInitials
+                                name={client.nombre}
+                                avatarUrl={client.avatarUrl}
+                                size={28}
+                            />
+                        </TouchableOpacity>
+                    ))}
+                    {clients.length > 6 && (
+                        <View style={{
+                            width: 28, height: 28, borderRadius: 14,
+                            backgroundColor: '#475569', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                            <Text style={{ fontSize: 10, color: '#fff', fontWeight: '600' }}>
+                                +{clients.length - 6}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Icono expandir */}
+                <View style={mobileStyles.expandIcon}>
+                    <Ionicons name="chevron-up" size={20} color="#fff" />
+                </View>
+            </View>
+        </TouchableOpacity>
+    );
+};
+
 export default function CoachLayout() {
     const { user, token, refreshUser } = useAuth();
     const insets = useSafeAreaInsets();
@@ -412,8 +612,56 @@ export default function CoachLayout() {
                         canDismiss={!isFrozen}
                     />
 
-                    {/* Tab Bar Flotante para Coach (Solo Móvil) */}
-                    <CoachFloatingTabBar />
+
+                    {/* 
+                        SISTEMA DE NAVEGACIÓN MÓVIL COACH:
+                        1. CoachFloatingTabBar: Para pantallas principales (clientes, progress, seguimiento) - NO en dashboard ni detalle
+                        2. MobileNavBanner: Solo en pantallas de DETALLE de cliente (cuando seleccionas un cliente)
+                    */}
+                    {!showSidebar && (() => {
+                        // Determinar tipo de pantalla actual
+                        const isDashboard = pathname === '/(coach)' || pathname === '/(coach)/' || pathname === '/(coach)/index';
+
+                        // Pantallas de detalle de cliente (contienen un clientId en la ruta)
+                        // NOTA: nutrition excluido porque es una pantalla más compleja de edición
+                        const isClientDetailScreen = pathname && (
+                            pathname.includes('/seguimiento_coach/') ||
+                            pathname.includes('/progress/') ||
+                            pathname.includes('/clients_coach/') ||
+                            pathname.includes('/workouts/')
+                        ) && !pathname.endsWith('/index') && pathname !== '/(coach)/seguimiento_coach' &&
+                            pathname !== '/(coach)/progress' && pathname !== '/(coach)/clients_coach' &&
+                            pathname !== '/(coach)/workouts';
+
+                        // Pantallas principales (listados, no detalle ni dashboard)
+                        // nutrition: solo en la pantalla principal, no en subcarpetas
+                        const isNutritionMain = pathname === '/(coach)/nutrition' || pathname === '/(coach)/nutrition/' || pathname === '/(coach)/nutrition/index';
+                        const isMainScreen = !isDashboard && !isClientDetailScreen && (
+                            pathname?.includes('/seguimiento_coach') ||
+                            pathname?.includes('/progress') ||
+                            pathname?.includes('/clients_coach') ||
+                            isNutritionMain ||
+                            pathname?.includes('/workouts')
+                        );
+
+                        return (
+                            <>
+                                {/* MobileClientNavBanner: SOLO en detalle de cliente - Navegación entre clientes */}
+                                {isClientDetailScreen && (
+                                    <MobileClientNavBanner
+                                        currentPath={pathname}
+                                        onNavigate={handleNavigate}
+                                        token={token}
+                                    />
+                                )}
+
+                                {/* CoachFloatingTabBar: SOLO en pantallas principales (listados) */}
+                                {isMainScreen && (
+                                    <CoachFloatingTabBar />
+                                )}
+                            </>
+                        );
+                    })()}
                 </View>
             </FloatingTabBarProvider>
         </FeedbackBubbleProvider>
@@ -723,5 +971,151 @@ const sidebarStyles = StyleSheet.create({
         color: '#f97316',
         fontWeight: '600',
         marginLeft: 8,
+    },
+});
+
+const mobileStyles = StyleSheet.create({
+    collapsedBanner: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#1e293b',
+        borderTopWidth: 1,
+        borderTopColor: '#334155',
+        paddingTop: 10,
+        paddingHorizontal: 16,
+        zIndex: 50,
+    },
+    bannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    bannerText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#f8fafc',
+    },
+    expandIcon: {
+        marginLeft: 'auto',
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#334155',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    expandedContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        maxHeight: Dimensions.get('window').height * 0.8,
+        zIndex: 50,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 20,
+    },
+    expandedHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    userInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    userName: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    userRole: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    closeBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    menuScroll: {
+        flex: 1,
+        paddingHorizontal: 16,
+        paddingTop: 12,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        marginBottom: 4,
+    },
+    menuItemActive: {
+        backgroundColor: '#f1f5f9',
+    },
+    menuIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    menuLabel: {
+        fontSize: 14,
+        color: '#475569',
+        fontWeight: '500',
+        flex: 1,
+    },
+    sectionBlock: {
+        marginTop: 16,
+    },
+    sectionTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        marginBottom: 8,
+        paddingHorizontal: 4,
+    },
+    sectionGrid: {
+        gap: 2,
+    },
+    // Estilos para items de cliente en MobileClientNavBanner
+    clientItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    clientItemActive: {
+        backgroundColor: '#eff6ff',
+    },
+    clientName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1e293b',
+    },
+    clientStatus: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginTop: 2,
     },
 });

@@ -58,7 +58,7 @@ const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://consistent-don
 // COMPONENT
 // ─────────────────────────────────────────────────────────
 export default function FoodCreatorModal({ visible, onClose, onSave, initialData, onDelete }: FoodCreatorModalProps) {
-    const { width } = useWindowDimensions();
+    const { width, height: windowHeight } = useWindowDimensions();
     const isLargeScreen = width > 600;
 
     // Form State
@@ -566,9 +566,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
             <View style={styles.overlay}>
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={styles.centeredView}
+                    style={[styles.centeredView, { maxHeight: windowHeight * 0.85 }]}
                 >
-                    <View style={[styles.modalCard, isLargeScreen && { maxWidth: 750, minWidth: 650 }]}>
+                    <View style={[styles.modalCard, isLargeScreen ? { maxWidth: 750, minWidth: 650 } : { flex: 1 }]}>
                         <View style={styles.header}>
                             <View style={styles.headerTitle}>
                                 <Ionicons name="restaurant-outline" size={20} color="#2563eb" />
@@ -607,7 +607,7 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
                         </View>
 
                         <ScrollView
-                            style={styles.content}
+                            style={[styles.content, { flex: 1 }]}
                             contentContainerStyle={styles.contentContainer}
                             showsVerticalScrollIndicator={false}
                         >
@@ -1238,7 +1238,6 @@ const styles = StyleSheet.create({
     centeredView: {
         width: '100%',
         maxWidth: 800,
-        maxHeight: '90%',
     },
     modalCard: {
         backgroundColor: '#fff',
@@ -1276,7 +1275,7 @@ const styles = StyleSheet.create({
 
     // Content
     content: {
-        maxHeight: 700,
+        flexShrink: 1,
     },
     contentContainer: {
         padding: 24,

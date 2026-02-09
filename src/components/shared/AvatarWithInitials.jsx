@@ -48,12 +48,12 @@ const AvatarWithInitials = ({
         <View style={[styles.container, { width: size, height: size, borderRadius: size / 2 }, style]}>
             {avatarUrl ? (
                 <Image
-                    source={avatarUrl}
+                    source={typeof avatarUrl === 'string' ? { uri: avatarUrl } : avatarUrl}
                     style={{ width: size, height: size, borderRadius: size / 2 }}
                     contentFit="cover"
                     cachePolicy="memory-disk"
                     transition={200}
-                    recyclingKey={avatarUrl}
+                    recyclingKey={typeof avatarUrl === 'string' ? avatarUrl : undefined}
                     placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
                 />
             ) : emoji ? (

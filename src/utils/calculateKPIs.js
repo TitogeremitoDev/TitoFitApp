@@ -14,7 +14,7 @@ export const groupByWeek = (sessions) => {
         const weekNum = session.week ?? getWeekNumber(date);
 
         if (!weeks.has(weekNum)) {
-            weeks.set(weekNum, { week: weekNum, sessions: [], date });
+            weeks.set(weekNum, { week: weekNum, sessions: [], date: session.date }); // Store first session date
         }
         weeks.get(weekNum).sessions.push(session);
     });
@@ -83,7 +83,7 @@ export const calcIntensityByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio
     const weeks = groupByWeek(sessions);
     let baseline = null;
 
-    return weeks.map(({ week, sessions: weekSessions }) => {
+    return weeks.map(({ week, sessions: weekSessions, date }) => {
         let totalVolume = 0;
         let totalReps = 0;
 
@@ -113,8 +113,10 @@ export const calcIntensityByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio
         return {
             week,
             label: `S${week}`,
+            date: date, // Pass date for labeling
             value: Math.round(intensity * 10) / 10,
-            avgLoad: Math.round(avgLoad * 10) / 10
+            avgLoad: Math.round(avgLoad * 10) / 10,
+            volume: Math.round(totalVolume)
         };
     });
 };
@@ -448,7 +450,7 @@ export const calcVolumeByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio = 
     const weeks = groupByWeek(sessions);
     let baseline = null;
 
-    return weeks.map(({ week, sessions: weekSessions }) => {
+    return weeks.map(({ week, sessions: weekSessions, date }) => {
         let totalVolume = 0;
 
         weekSessions.forEach(session => {
@@ -472,6 +474,7 @@ export const calcVolumeByWeek = (sessions, selMusculo = 'TOTAL', selEjercicio = 
         return {
             week,
             label: `S${week}`,
+            date: date, // Pass date
             value: Math.round(percentChange * 10) / 10,
             volume: Math.round(totalVolume),
             volumeK: (totalVolume / 1000).toFixed(1)

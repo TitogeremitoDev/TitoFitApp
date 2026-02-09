@@ -11,7 +11,8 @@ import {
     ActivityIndicator,
     Platform,
     Alert,
-    Dimensions
+    Dimensions,
+    useWindowDimensions
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,8 +21,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MODAL_HEIGHT = Math.min(SCREEN_HEIGHT * 0.85, SCREEN_HEIGHT - 100);
 
 // Componente para el indicador de estado (semáforo)
 const MatchStatusIndicator = ({ status, confidence }) => {
@@ -164,6 +163,8 @@ const ExercisePreviewItem = ({ exercise, onSelectExercise, allExercises, searchQ
 
 export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
     const { token, user } = useAuth();
+    const { height: windowHeight } = useWindowDimensions();
+    const modalMaxHeight = Math.min(windowHeight * 0.85, windowHeight - 60);
     const abortControllerRef = useRef(null);
     const [step, setStep] = useState(1); // 1: Upload, 2: Preview
     const [loading, setLoading] = useState(false);
@@ -582,7 +583,7 @@ export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
             onRequestClose={handleClose}
         >
             <View style={styles.overlay}>
-                <View style={styles.modalContainer}>
+                <View style={[styles.modalContainer, { maxHeight: modalMaxHeight }]}>
                     {/* Header */}
                     <View style={styles.header}>
                         <View style={styles.headerLeft}>
@@ -840,7 +841,6 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         width: '100%',
         maxWidth: 600,
-        height: MODAL_HEIGHT,
         overflow: 'hidden'
     },
     header: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Modal, Image, ActivityIndicator, Alert, Share, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Modal, Image, ActivityIndicator, Alert, Share, useWindowDimensions, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1570,7 +1570,7 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 1,
         alignItems: 'center',
-        maxHeight: '85%',
+        maxHeight: Dimensions.get('window').height * 0.85,
     },
     modalTitle: {
         fontSize: 20,

@@ -16,7 +16,8 @@ import {
     KeyboardAvoidingView,
     Platform,
     Image,
-    useWindowDimensions
+    useWindowDimensions,
+    Dimensions
 } from 'react-native';
 import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -841,7 +842,7 @@ const mediaStyles = StyleSheet.create({
         borderRadius: 20,
         padding: 20,
         width: '100%',
-        maxHeight: '90%'
+        maxHeight: Dimensions.get('window').height * 0.9
     },
     header: {
         flexDirection: 'row',

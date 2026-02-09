@@ -243,11 +243,12 @@ export const ChatThemeProvider = ({ children }) => {
     useEffect(() => {
         const loadSettings = async () => {
             try {
-                const savedId = await AsyncStorage.getItem(CHAT_THEME_KEY);
+                const [[, savedId], [, savedFontSize]] = await AsyncStorage.multiGet([
+                    CHAT_THEME_KEY, CHAT_FONT_SIZE_KEY,
+                ]);
                 if (savedId && CHAT_THEMES[savedId]) {
                     setChatThemeIdState(savedId);
                 }
-                const savedFontSize = await AsyncStorage.getItem(CHAT_FONT_SIZE_KEY);
                 if (savedFontSize) {
                     setFontSizeState(savedFontSize);
                 }

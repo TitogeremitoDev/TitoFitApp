@@ -34,6 +34,7 @@ interface Client {
     email: string;
     username: string;
     tipoUsuario: string;
+    isCoordinator?: boolean;
     currentPlan: string;
     totalSpent: number;
     totalPayments: number;
@@ -43,7 +44,7 @@ interface Client {
 }
 
 type SortOption = 'DATE_DESC' | 'DATE_ASC' | 'SPENT_DESC' | 'PAYMENTS_DESC';
-type RoleFilter = 'ALL' | 'FREEUSER' | 'PREMIUM' | 'ENTRENADOR' | 'CLIENTE' | 'ADMINISTRADOR';
+type RoleFilter = 'ALL' | 'FREEUSER' | 'PREMIUM' | 'ENTRENADOR' | 'CLIENTE' | 'ADMINISTRADOR' | 'SUPERVISOR';
 type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
 
 export default function ClientsScreen() {
@@ -198,6 +199,59 @@ export default function ClientsScreen() {
         setImpersonatingId(null);
     };
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TOGGLE COORDINATOR
+    // ═══════════════════════════════════════════════════════════════════════════
+    const toggleCoordinator = async (clientId: string, clientName: string, currentValue: boolean) => {
+        const action = currentValue ? 'quitar coordinador a' : 'hacer coordinador a';
+        const confirmMsg = `¿${currentValue ? 'Quitar rol de coordinador a' : 'Hacer coordinador a'} ${clientName}?`;
+
+        const doToggle = async () => {
+            try {
+                const token = await AsyncStorage.getItem('totalgains_token');
+                const response = await fetch(`${API_URL}/api/users/${clientId}/coordinator`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ isCoordinator: !currentValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Update local state
+                    setClients(prev => prev.map(c =>
+                        c._id === clientId
+                            ? { ...c, isCoordinator: !currentValue, tipoUsuario: data.user?.tipoUsuario || c.tipoUsuario }
+                            : c
+                    ));
+                    const msg = data.message || 'Actualizado correctamente';
+                    if (Platform.OS !== 'web') Alert.alert('Exito', msg);
+                    else window.alert(msg);
+                } else {
+                    const msg = data.message || 'Error al actualizar';
+                    if (Platform.OS !== 'web') Alert.alert('Error', msg);
+                    else window.alert(`Error: ${msg}`);
+                }
+            } catch (error) {
+                console.error('[ToggleCoordinator] Error:', error);
+                if (Platform.OS !== 'web') Alert.alert('Error', 'Error de red');
+                else window.alert('Error de red');
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(confirmMsg)) await doToggle();
+        } else {
+            Alert.alert('Coordinador', confirmMsg, [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Confirmar', onPress: doToggle }
+            ]);
+        }
+    };
+
     // Advanced Filtering & Sorting Logic
     const filteredClients = useMemo(() => {
         let result = [...clients];
@@ -213,7 +267,9 @@ export default function ClientsScreen() {
         }
 
         // 2. Role Filter
-        if (selectedRole !== 'ALL') {
+        if (selectedRole === 'SUPERVISOR') {
+            result = result.filter(client => client.isCoordinator === true);
+        } else if (selectedRole !== 'ALL') {
             result = result.filter(client => client.tipoUsuario === selectedRole);
         }
 
@@ -270,10 +326,29 @@ export default function ClientsScreen() {
                     </View>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 5 }}>
-                    <View style={[styles.roleBadge, { backgroundColor: getRoleColor(item.tipoUsuario) + '20' }]}>
-                        <Text style={[styles.roleText, { color: getRoleColor(item.tipoUsuario) }]}>{item.tipoUsuario}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[styles.roleBadge, { backgroundColor: getRoleColor(item.tipoUsuario) + '20' }]}>
+                            <Text style={[styles.roleText, { color: getRoleColor(item.tipoUsuario) }]}>{item.tipoUsuario}</Text>
+                        </View>
+                        {item.isCoordinator && (
+                            <View style={[styles.roleBadge, { backgroundColor: '#8B5CF620' }]}>
+                                <Text style={[styles.roleText, { color: '#8B5CF6' }]}>COORD</Text>
+                            </View>
+                        )}
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                        {/* Toggle Coordinator - Solo para ENTRENADOR */}
+                        {item.tipoUsuario === 'ENTRENADOR' && (
+                            <TouchableOpacity
+                                onPress={() => toggleCoordinator(item._id, item.nombre || 'Usuario', !!item.isCoordinator)}
+                            >
+                                <Ionicons
+                                    name={item.isCoordinator ? 'shield-checkmark' : 'shield-outline'}
+                                    size={20}
+                                    color={item.isCoordinator ? '#8B5CF6' : '#9ca3af'}
+                                />
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                             onPress={() => handleImpersonate(item._id, item.nombre || 'Usuario')}
                             disabled={impersonatingId === item._id}
@@ -386,6 +461,7 @@ export default function ClientsScreen() {
                         <FilterChip label="Free" active={selectedRole === 'FREEUSER'} onPress={() => setSelectedRole('FREEUSER')} />
                         <FilterChip label="Premium" active={selectedRole === 'PREMIUM'} onPress={() => setSelectedRole('PREMIUM')} />
                         <FilterChip label="Entrenador" active={selectedRole === 'ENTRENADOR'} onPress={() => setSelectedRole('ENTRENADOR')} />
+                        <FilterChip label="Supervisor" active={selectedRole === 'SUPERVISOR'} onPress={() => setSelectedRole('SUPERVISOR')} />
                         <FilterChip label="Cliente" active={selectedRole === 'CLIENTE'} onPress={() => setSelectedRole('CLIENTE')} />
                     </ScrollView>
 

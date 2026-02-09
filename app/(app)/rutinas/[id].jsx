@@ -1845,7 +1845,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     width: '100%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: Dimensions.get('window').height * 0.8,
     overflow: 'hidden',
   },
   techModalHeader: {

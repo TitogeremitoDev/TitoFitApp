@@ -11,6 +11,7 @@ import {
     Text,
     StyleSheet,
     Modal,
+    Image,
     TouchableOpacity,
     FlatList,
     ActivityIndicator,
@@ -18,7 +19,8 @@ import {
     Platform,
     Keyboard,
     Pressable,
-    Animated
+    Animated,
+    Dimensions
 } from 'react-native';
 import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -131,6 +133,32 @@ const MessageBubble = ({ message, isMine, showAvatar, isFirst, isLast, avatarUrl
                         <Text style={[styles.typeBadgeText, { color: typeInfo.color }]}>
                             {message.type}
                         </Text>
+                    </View>
+                )}
+
+                {/* Comparison Card */}
+                {message.metadata?.isComparison && message.metadata?.compareData && (
+                    <View style={styles.comparisonCard}>
+                        <View style={styles.comparisonHeader}>
+                            <Ionicons name="git-compare" size={12} color="#0ea5e9" />
+                            <Text style={styles.comparisonTitle}>Comparativa</Text>
+                            {message.metadata.compareData.delta && (
+                                <Text style={styles.comparisonDelta}>{message.metadata.compareData.delta}</Text>
+                            )}
+                        </View>
+                        <View style={styles.comparisonPhotos}>
+                            <Image
+                                source={{ uri: message.metadata.compareData.olderPhotoUrl }}
+                                style={styles.comparisonImg}
+                                resizeMode="cover"
+                            />
+                            <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
+                            <Image
+                                source={{ uri: message.metadata.compareData.newerPhotoUrl }}
+                                style={styles.comparisonImg}
+                                resizeMode="cover"
+                            />
+                        </View>
                     </View>
                 )}
 
@@ -1047,6 +1075,44 @@ const styles = StyleSheet.create({
         borderBottomLeftRadius: 4
     },
 
+    // Comparison Card
+    comparisonCard: {
+        backgroundColor: 'rgba(14, 165, 233, 0.08)',
+        borderRadius: 8,
+        padding: 8,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(14, 165, 233, 0.2)',
+    },
+    comparisonHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 6,
+    },
+    comparisonTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#0ea5e9',
+        flex: 1,
+    },
+    comparisonDelta: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#0ea5e9',
+    },
+    comparisonPhotos: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    comparisonImg: {
+        flex: 1,
+        aspectRatio: 3 / 4,
+        borderRadius: 6,
+        backgroundColor: '#e2e8f0',
+    },
+
     // Type Badge
     typeBadge: {
         flexDirection: 'row',
@@ -1165,7 +1231,7 @@ const styles = StyleSheet.create({
         right: 16,
         backgroundColor: '#fff',
         borderRadius: 16,
-        maxHeight: '40%',
+        maxHeight: Dimensions.get('window').height * 0.4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.15,
@@ -1252,7 +1318,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         width: '100%',
         maxWidth: 400,
-        maxHeight: '80%',
+        maxHeight: Dimensions.get('window').height * 0.8,
         borderRadius: 20,
         padding: 20,
         shadowColor: '#000',

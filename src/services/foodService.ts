@@ -104,6 +104,7 @@ export const searchFoods = async (
             if (normalizedQuery) params.append('q', normalizedQuery);
             if (tag) params.append('tag', tag);
             if (layer !== 'ALL') params.append('layer', layer); // Pass layer to backend
+            params.append('limit', '15');
 
             // Get auth token
             const AsyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -142,8 +143,12 @@ export const searchFoods = async (
     }
 
     // ───────────────────────────────────────────────────────
-    // 4. DEDUPLICATE & SORT
+    // 4. FILTER 0-KCAL JUNK + DEDUPLICATE & SORT
     // ───────────────────────────────────────────────────────
+    // Remove foods with 0 kcal (they provide no nutritional value to display)
+    if (normalizedQuery) {
+        results = results.filter(f => (f.nutrients?.kcal || 0) > 0);
+    }
     results = deduplicateByName(results);
     results = sortByPriority(results);
 
@@ -372,30 +377,61 @@ export const getFavorites = async (): Promise<FoodItem[]> => {
 // HELPERS
 // ─────────────────────────────────────────────────────────
 
+const SPICE_CATEGORIES = ['spices', 'condiments', 'seasonings', 'herbs', 'sauces', 'vinegars', 'mustards', 'salt', 'pepper'];
+
+const isSpiceOrCondiment = (product: any): boolean => {
+    const categories = product.categories_tags || [];
+    return categories.some((cat: string) =>
+        SPICE_CATEGORIES.some(spice => cat.toLowerCase().includes(spice))
+    );
+};
+
 const searchOpenFoodFacts = async (query: string): Promise<FoodItem[]> => {
-    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=10`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
 
-    const response = await fetch(url);
-    const data = await response.json();
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=product_name,nutriments,image_front_small_url,image_url,code,brands,categories_tags`;
 
-    if (!data.products) return [];
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await response.json();
 
-    return data.products.map((p: any) => ({
-        _id: `off_${p.code}`,
-        name: p.product_name || 'Desconocido',
-        brand: p.brands,
-        layer: 'API' as const,
-        isSystem: true,
-        nutrients: {
-            kcal: p.nutriments?.['energy-kcal_100g'] || 0,
-            protein: p.nutriments?.proteins_100g || 0,
-            carbs: p.nutriments?.carbohydrates_100g || 0,
-            fat: p.nutriments?.fat_100g || 0,
-            fiber: p.nutriments?.fiber_100g || 0,
-        },
-        image: p.image_front_small_url || p.image_url,
-        tags: p.categories_tags?.slice(0, 3).map((t: string) => t.replace('en:', '')) || []
-    }));
+        if (!data.products) return [];
+
+        return data.products
+            .filter((p: any) => {
+                const kcal = p.nutriments?.['energy-kcal_100g'] || 0;
+                if (kcal === 0 && !isSpiceOrCondiment(p)) return false;
+                if (!p.product_name) return false;
+                return true;
+            })
+            .slice(0, 5)
+            .map((p: any) => ({
+                _id: `off_${p.code}`,
+                name: p.product_name,
+                brand: p.brands,
+                layer: 'API' as const,
+                isSystem: true,
+                nutrients: {
+                    kcal: p.nutriments?.['energy-kcal_100g'] || 0,
+                    protein: p.nutriments?.proteins_100g || 0,
+                    carbs: p.nutriments?.carbohydrates_100g || 0,
+                    fat: p.nutriments?.fat_100g || 0,
+                    fiber: p.nutriments?.fiber_100g || 0,
+                },
+                image: p.image_front_small_url || p.image_url,
+                tags: p.categories_tags?.slice(0, 3).map((t: string) => t.replace('en:', '')) || []
+            }));
+    } catch (e: any) {
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') {
+            console.warn('[OpenFoodFacts] Timeout (>3s)');
+        } else {
+            console.error('[OpenFoodFacts] Error:', e.message);
+        }
+        return [];
+    }
 };
 
 const enrichTags = (food: FoodItem): FoodItem => {

@@ -24,6 +24,29 @@ import {
 } from '../../../components/ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TDEE & GOAL HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+const calculateTDEE = (info, af = 1.55) => {
+    if (!info?.peso || !info?.altura || !info?.edad) return 2000;
+    let bmr;
+    if (info.genero === 'masculino' || info.genero === 'male') {
+        bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad + 5;
+    } else {
+        bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad - 161;
+    }
+    return Math.round(bmr * af);
+};
+
+const getGoalContext = (targetKcal, tdee) => {
+    if (!targetKcal || typeof targetKcal !== 'number') return { label: 'Mantenimiento', color: '#10b981', bg: '#ecfdf5' };
+
+    const diff = targetKcal - tdee;
+    if (diff < -100) return { label: `Déficit (${diff})`, value: `${diff} kcal`, color: '#f59e0b', bg: '#fffbeb' };
+    if (diff > 100) return { label: `Superávit (+${diff})`, value: `+${diff} kcal`, color: '#3b82f6', bg: '#eff6ff' };
+    return { label: 'Mantenimiento', value: 'Normocalórico', color: '#10b981', bg: '#ecfdf5' };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PHASE BADGE HELPER
 // ═══════════════════════════════════════════════════════════════════════════
 const getPhaseBadge = (objetivo) => {
@@ -208,9 +231,6 @@ export default function NutritionClientsScreen() {
                 case 'complete':
                     // Use the first dayTemplate's targetMacros
                     const firstTemplate = plan.dayTemplates?.[0];
-
-                    // Check if it's a "Macro Plan" (Flexible) vs "Meal Plan" (Complete)
-                    // If no meals are defined in templates or structure, treat as Flexible/Macro plan
                     const hasMeals = plan.mealStructure?.length > 0 || plan.dayTemplates?.some(dt => dt.meals?.length > 0);
                     const effectivePlanType = hasMeals ? 'complete' : 'flex';
 
@@ -218,6 +238,9 @@ export default function NutritionClientsScreen() {
                         mode: effectivePlanType,
                         planType: effectivePlanType,
                         kcal: firstTemplate?.targetMacros?.kcal || '---',
+                        protein: firstTemplate?.targetMacros?.protein || 0,
+                        carbs: firstTemplate?.targetMacros?.carbs || 0,
+                        fats: firstTemplate?.targetMacros?.fats || 0,
                         hasCoachPlan: true,
                         planName: plan.name,
                     };
@@ -226,6 +249,9 @@ export default function NutritionClientsScreen() {
                         mode: 'flex',
                         planType: 'flex',
                         kcal: plan.fixedMacros?.kcal || '---',
+                        protein: plan.fixedMacros?.protein || 0,
+                        carbs: plan.fixedMacros?.carbs || 0,
+                        fats: plan.fixedMacros?.fats || 0,
                         hasCoachPlan: true,
                         planName: plan.name,
                     };
@@ -234,18 +260,21 @@ export default function NutritionClientsScreen() {
                     if (plan.autoConfig) {
                         if (info.peso && info.altura && info.edad) {
                             const { activityFactor, adjustmentPercentage, proteinPerKg } = plan.autoConfig;
-                            let bmr;
-                            if (info.genero === 'masculino' || info.genero === 'male') {
-                                bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad + 5;
-                            } else {
-                                bmr = 10 * info.peso + 6.25 * info.altura - 5 * info.edad - 161;
-                            }
-                            const tdee = bmr * (activityFactor || 1.55);
+                            const tdee = calculateTDEE(info, activityFactor);
                             const kcal = Math.round(tdee * (1 + (adjustmentPercentage || 0) / 100));
+                            const protein = Math.round(info.peso * (proteinPerKg || 2));
+                            // Estimate remaining macros (simplified)
+                            const remainingKcal = kcal - (protein * 4);
+                            const fats = Math.round((remainingKcal * 0.25) / 9);
+                            const carbs = Math.round((remainingKcal * 0.75) / 4);
+
                             return {
                                 mode: 'auto',
                                 planType: 'auto',
                                 kcal,
+                                protein,
+                                carbs,
+                                fats,
                                 hasCoachPlan: true,
                                 planName: plan.name,
                             };
@@ -255,6 +284,9 @@ export default function NutritionClientsScreen() {
                                 mode: 'auto',
                                 planType: 'auto',
                                 kcal: '---',
+                                protein: 0,
+                                carbs: 0,
+                                fats: 0,
                                 hasCoachPlan: true,
                                 planName: plan.name,
                                 warning: true
@@ -273,12 +305,15 @@ export default function NutritionClientsScreen() {
                     mode: 'none',
                     planType: null,
                     kcal: nutrition.training.kcal,
+                    protein: nutrition.training.protein,
+                    carbs: nutrition.training.carbs,
+                    fats: nutrition.training.fats,
                     hasCoachPlan: false,
                 };
             }
         }
 
-        return { mode: 'none', planType: null, kcal: '---', hasCoachPlan: false };
+        return { mode: 'none', planType: null, kcal: 2000, protein: 150, hasCoachPlan: false };
     };
 
     // Helper to see if client is TCA (Sensitive Mode)
@@ -313,7 +348,11 @@ export default function NutritionClientsScreen() {
         else if (daysInactive <= 7) lastCheckIn = `Hace ${daysInactive} días`;
         else lastCheckIn = `Hace ${Math.floor(daysInactive / 7)} semana(s)`;
 
-        return { adherenceScore, weightTrend, currentWeight, daysInactive, lastCheckIn };
+        // Nutrition specific current/latest (Mock/Implied if not available)
+        const currentKcal = metrics.nutrition?.todayKcal ?? (adherenceScore ? Math.round(2000 * (adherenceScore / 100)) : 0);
+        const currentProtein = metrics.nutrition?.todayProtein ?? (adherenceScore ? Math.round(150 * (adherenceScore / 100)) : 0);
+
+        return { adherenceScore, weightTrend, currentWeight, daysInactive, lastCheckIn, currentKcal, currentProtein };
     };
 
     // Handler to toggle Sensitive Mode (TCA)
@@ -405,153 +444,129 @@ export default function NutritionClientsScreen() {
         return result;
     }, [clients, nutritionPlans, clientMetrics, searchQuery, sortBy]);
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // RENDER CLIENT CARD - SMART CARD DESIGN
-    // ═══════════════════════════════════════════════════════════════════════
+    // Helper for Goal Badge (Visual map)
+    const getPhaseBadge = (goal) => {
+        const map = {
+            'perder_peso': { label: 'Definición', color: '#ec4899', bgColor: '#fce7f3' }, // Pink
+            'ganar_masa': { label: 'Volumen', color: '#8b5cf6', bgColor: '#ede9fe' }, // Purple
+            'mantenimiento': { label: 'Mantenimiento', color: '#f59e0b', bgColor: '#fef3c7' }, // Amber
+            'recomposicion': { label: 'Recomp.', color: '#3b82f6', bgColor: '#eff6ff' }, // Blue
+        };
+        return map[goal] || { label: 'General', color: '#64748b', bgColor: '#f1f5f9' };
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RENDER CLIENT CARD - HORIZONTAL TARGETS DESIGN (User Request)
+    // ═══════════════════════════════════════════════════════════════════════════
     const renderClientCard = ({ item }) => {
         const info = item.info_user || {};
         const nutritionSummary = getClientNutritionSummary(item);
-        const stats = getClientStats(item._id, info);
+
+        // Contexts
+        const tdee = calculateTDEE(info, item.af);
+        const goalContext = getGoalContext(nutritionSummary.kcal, tdee);
         const phaseBadge = getPhaseBadge(info.objetivos);
-        const aiHealth = getAIHealthStatus(stats.adherenceScore, stats.weightTrend, stats.daysInactive, info.objetivos);
         const isSensitive = isSensitiveClient(item);
 
         return (
             <TouchableOpacity
-                style={styles.clientCard}
+                style={styles.clientCardHorizontal}
                 onPress={() => router.push({
                     pathname: '/(coach)/nutrition/[clientId]',
                     params: { clientId: item._id, clientName: item.nombre }
                 })}
                 activeOpacity={0.7}
             >
-                {/* ─── COLUMN 1: IDENTITY & STATUS ───────────────────────────── */}
-                <View style={styles.cardColLeft}>
-                    {/* Avatar */}
-                    <View style={styles.avatarContainer}>
-                        <AvatarWithInitials
-                            avatarUrl={item.avatarUrl || item.profilePic}
-                            name={item.nombre}
-                            size={52}
-                        />
-                        {/* AI Status Dot */}
-                        <View style={[styles.aiStatusDot, { backgroundColor: aiHealth.color }]} />
-                    </View>
-
-                    {/* Name */}
-                    <Text style={styles.clientName} numberOfLines={1}>{item.nombre}</Text>
-
-                    {/* Phase Badge */}
-                    <View style={[styles.phaseBadgePill, { backgroundColor: phaseBadge.bgColor }]}>
-                        <Text style={[styles.phaseBadgePillText, { color: phaseBadge.color }]}>{phaseBadge.label}</Text>
-                    </View>
-
-                    {/* Last Active */}
-                    <Text style={styles.lastCheckInText}>
-                        {stats.lastCheckIn}
-                    </Text>
-                </View>
-
-                {/* ─── COLUMN 2: METRICS & ACTIONS ───────────────────────────── */}
-                <View style={styles.cardColRight}>
-                    {/* Header: TCA Toggle */}
-                    <View style={styles.colRightHeader}>
-                        <View style={{ position: 'relative', zIndex: 200 }}>
-                            <Pressable
-                                style={styles.tcaSwitchContainer}
-                                onHoverIn={() => Platform.OS === 'web' && setHoveredTCAId(item._id)}
-                                onHoverOut={() => Platform.OS === 'web' && setHoveredTCAId(null)}
-                            >
-                                <Text style={[styles.tcaLabel, isSensitive && styles.tcaLabelActive]}>
-                                    {isSensitive ? "Modo Seguro (TCA)" : "Visible"}
-                                </Text>
-                                <Switch
-                                    trackColor={{ false: "#e2e8f0", true: "#fef3c7" }} // Amber-100
-                                    thumbColor={isSensitive ? "#f59e0b" : "#f4f3f4"}
-                                    ios_backgroundColor="#e2e8f0"
-                                    onValueChange={() => handleToggleSensitive(item)}
-                                    value={isSensitive}
-                                    style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
-                                />
-                            </Pressable>
-                            {/* Tooltip */}
-                            {Platform.OS === 'web' && hoveredTCAId === item._id && (
-                                <View style={styles.tcaTooltip}>
-                                    <Text style={styles.tcaTooltipText}>
-                                        Activa para ocultar métricas sensibles (calorías, peso) al cliente.
-                                    </Text>
-                                    <View style={styles.tcaTooltipArrow} />
-                                </View>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* Metrics Grid */}
-                    <View style={styles.metricsGrid}>
-                        {/* Weight */}
-                        <View style={styles.metricBox}>
-                            <Text style={styles.metaLabel}>PESO</Text>
-                            <Text style={styles.metaValue}>
-                                {stats.currentWeight || '--'} <Text style={styles.metaUnit}>kg</Text>
-                            </Text>
-                        </View>
-
-                        {/* Calories */}
-                        <View style={styles.metricBox}>
-                            <Text style={styles.metaLabel}>KCAL</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                <Text style={styles.metaValue}>
-                                    {typeof nutritionSummary.kcal === 'number'
-                                        ? nutritionSummary.kcal.toLocaleString()
-                                        : nutritionSummary.kcal
-                                    }
-                                </Text>
-                                {isSensitive && <Ionicons name="shield-checkmark" size={14} color="#f59e0b" />}
+                {/* ─── LEFT: PROFILE ───────────────────────────────────────── */}
+                <View style={styles.cardLeftSection}>
+                    <AvatarWithInitials
+                        avatarUrl={item.avatarUrl || item.profilePic}
+                        name={item.nombre}
+                        size={48}
+                    />
+                    <View style={{ marginLeft: 12, flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.clientNameH} numberOfLines={1}>{item.nombre}</Text>
+                            <View style={[styles.phaseBadgeH, { backgroundColor: phaseBadge.bgColor }]}>
+                                <Text style={[styles.phaseBadgeTextH, { color: phaseBadge.color }]}>{phaseBadge.label}</Text>
                             </View>
                         </View>
-
-                        {/* Adherence */}
-                        <View style={styles.metricBoxAdherence}>
-                            <AdherenceRing percentage={stats.adherenceScore} size={38} />
-                        </View>
-                    </View>
-
-                    {/* Actions Footer */}
-                    <View style={styles.actionsFooter}>
-                        <View style={styles.planInfoRow}>
-                            {nutritionSummary.planType && (
-                                <Text style={{ fontSize: 10, marginRight: 4 }}>
-                                    {nutritionSummary.planType === 'auto' ? '🤖' :
-                                        nutritionSummary.planType === 'flex' ? '🔀' : '📋'}
-                                </Text>
-                            )}
-                            <Text style={styles.planNameText} numberOfLines={1}>
-                                {nutritionSummary.planName || 'Sin Plan'}
-                            </Text>
-                        </View>
-
-                        <View style={styles.actionButtonsRow}>
-                            <TouchableOpacity style={styles.miniActionBtn} onPress={(e) => {
-                                e.stopPropagation();
-                                router.push({
-                                    pathname: '/(coach)/nutrition/[clientId]',
-                                    params: { clientId: item._id, clientName: item.nombre }
-                                });
-                            }}>
-                                <Ionicons name="create-outline" size={16} color="#64748b" />
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.miniActionBtn} onPress={(e) => {
-                                e.stopPropagation();
-                                router.push({
-                                    pathname: '/(coach)/seguimiento_coach/[clientId]',
-                                    params: { clientId: item._id, clientName: item.nombre }
-                                });
-                            }}>
-                                <Ionicons name="stats-chart-outline" size={16} color="#64748b" />
-                            </TouchableOpacity>
-                        </View>
+                        <Text style={styles.clientSubtextH}>
+                            AF {item.af || 1.55} • {info.peso || '--'}kg {nutritionSummary.planName ? `• ${nutritionSummary.planName}` : ''}
+                        </Text>
                     </View>
                 </View>
+
+                {/* ─── VERTICAL DIVIDER ──────────────────────────────────── */}
+                <View style={styles.cardDividerV} />
+
+                {/* ─── RIGHT: TARGETS & MACROS ───────────────────────────── */}
+                <View style={styles.cardRightSection}>
+                    {nutritionSummary.hasCoachPlan || !nutritionSummary.warning ? (
+                        <View style={{ alignItems: 'flex-end' }}>
+                            {/* Target Calories */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                <Ionicons name="disc-outline" size={18} color="#ef4444" style={{ marginRight: 4 }} />
+                                <Text style={styles.targetKcalText}>
+                                    {typeof nutritionSummary.kcal === 'number' ? nutritionSummary.kcal.toLocaleString() : nutritionSummary.kcal}
+                                    <Text style={{ fontSize: 14, fontWeight: '400', color: '#64748b' }}> kcal</Text>
+                                </Text>
+                            </View>
+
+                            {/* Macros Row */}
+                            <View style={styles.macrosRowH}>
+                                <Text style={styles.macroTextH}>
+                                    <Text style={{ color: '#ef4444', fontWeight: '700' }}>P: </Text>
+                                    {nutritionSummary.protein || 0}g
+                                </Text>
+                                <Text style={styles.macroDot}>•</Text>
+                                <Text style={styles.macroTextH}>
+                                    <Text style={{ color: '#3b82f6', fontWeight: '700' }}>C: </Text>
+                                    {nutritionSummary.carbs || 0}g
+                                </Text>
+                                <Text style={styles.macroDot}>•</Text>
+                                <Text style={styles.macroTextH}>
+                                    <Text style={{ color: '#eab308', fontWeight: '700' }}>G: </Text>
+                                    {nutritionSummary.fats || 0}g
+                                </Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={{ color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }}>Sin objetivos definidos</Text>
+                            <TouchableOpacity style={{ marginTop: 4 }} onPress={(e) => {
+                                e.stopPropagation();
+                                router.push({ pathname: '/(coach)/nutrition/templates', params: { assignTo: item._id } });
+                            }}>
+                                <Text style={{ color: '#4f46e5', fontSize: 13, fontWeight: '600' }}>+ Asignar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+
+                {/* ─── TCA CHECKBOX ────────────────────────────────────────── */}
+                <TouchableOpacity
+                    onPress={(e) => {
+                        e.stopPropagation();
+                        handleToggleSensitive(item);
+                    }}
+                    style={styles.tcaCheckbox}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.6}
+                >
+                    <View style={[
+                        styles.tcaCheckboxBox,
+                        isSensitive && styles.tcaCheckboxBoxActive,
+                    ]}>
+                        {isSensitive && (
+                            <Ionicons name="shield-checkmark" size={14} color="#fff" />
+                        )}
+                    </View>
+                    <Text style={[
+                        styles.tcaCheckboxLabel,
+                        isSensitive && styles.tcaCheckboxLabelActive,
+                    ]}>TCA</Text>
+                </TouchableOpacity>
             </TouchableOpacity>
         );
     };
@@ -948,16 +963,17 @@ const styles = StyleSheet.create({
         flex: 1,
     },
 
-    // Client Card - Smart Design (Redesigned 2-Column)
+    // ════ NEW NUTRITION CARD STYLES ════
     clientCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 12,
+        padding: 16,
         marginBottom: 12,
         borderWidth: 1,
         borderColor: '#e2e8f0',
         flexDirection: 'row',
-        gap: 12,
+        alignItems: 'center',
+        gap: 16,
         ...Platform.select({
             ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6 },
             android: { elevation: 2 },
@@ -965,19 +981,16 @@ const styles = StyleSheet.create({
         }),
     },
 
-    // COL 1: Left (Identity)
+    // COL 1: Identity
     cardColLeft: {
-        width: 85,
         alignItems: 'center',
-        borderRightWidth: 1,
-        borderRightColor: '#f1f5f9',
-        paddingRight: 10,
+        width: 80,
     },
     avatarContainer: {
         position: 'relative',
         marginBottom: 8,
     },
-    aiStatusDot: {
+    statusDot: {
         position: 'absolute',
         bottom: 0,
         right: 0,
@@ -990,163 +1003,243 @@ const styles = StyleSheet.create({
     clientName: {
         fontSize: 13,
         fontWeight: '700',
-        color: '#1e293b',
+        color: '#0f172a',
         textAlign: 'center',
         marginBottom: 6,
-        lineHeight: 16,
     },
-    phaseBadgePill: {
+    goalChip: {
         paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 100,
-        marginBottom: 6,
+        paddingVertical: 4,
+        borderRadius: 8,
+        backgroundColor: '#ecfdf5',
     },
-    phaseBadgePillText: {
-        fontSize: 9,
+    goalChipText: {
+        fontSize: 10,
         fontWeight: '700',
-    },
-    lastCheckInText: {
-        fontSize: 9,
-        color: '#94a3b8',
+        color: '#10b981',
         textAlign: 'center',
     },
 
-    // COL 2: Right (Metrics & Actions)
-    cardColRight: {
+    // COL 2: Center Metrics
+    cardColCenter: {
         flex: 1,
         justifyContent: 'space-between',
+        gap: 12,
+        borderLeftWidth: 1,
+        borderLeftColor: '#f1f5f9',
+        paddingLeft: 16,
     },
-    colRightHeader: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        marginBottom: 10,
-    },
-    tcaSwitchContainer: {
+    metricRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f8fafc',
-        paddingLeft: 10,
-        paddingRight: 4,
-        paddingVertical: 2,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        alignSelf: 'flex-start',
-        marginLeft: 'auto', // Push to right
+        justifyContent: 'space-between',
     },
-    tcaLabel: {
+    metricLabel: {
         fontSize: 10,
-        color: '#64748b',
         fontWeight: '600',
-        marginRight: 4,
-    },
-    tcaLabelActive: {
-        color: '#f59e0b',
-    },
-    tcaTooltip: {
-        position: 'absolute',
-        bottom: '100%',
-        right: 0,
-        marginBottom: 8,
-        backgroundColor: '#1e293b',
-        padding: 8,
-        borderRadius: 8,
-        width: 150,
-        zIndex: 999,
-        // Shadow for web
-        ...Platform.select({
-            web: { boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' }
-        })
-    },
-    tcaTooltipText: {
-        fontSize: 10,
-        color: '#fff',
-        textAlign: 'center',
-        lineHeight: 14,
-    },
-    tcaTooltipArrow: {
-        position: 'absolute',
-        bottom: -4,
-        right: 12,
-        width: 0,
-        height: 0,
-        borderLeftWidth: 5,
-        borderRightWidth: 5,
-        borderTopWidth: 5,
-        borderLeftColor: 'transparent',
-        borderRightColor: 'transparent',
-        borderTopColor: '#1e293b',
-    },
-
-    // Metrics Grid
-    metricsGrid: {
-        flexDirection: 'row',
-        gap: 8,
-        marginBottom: 12,
-    },
-    metricBox: {
-        flex: 1,
-        backgroundColor: '#f8fafc',
-        borderRadius: 8,
-        paddingVertical: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    metricBoxAdherence: {
-        width: 50,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    metaLabel: {
-        fontSize: 9,
-        fontWeight: '700',
         color: '#94a3b8',
         marginBottom: 2,
+        textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
-    metaValue: {
+    // Weight
+    weightValueRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        gap: 8,
+    },
+    bigValueText: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#0f172a',
+    },
+    unitText: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#64748b',
+    },
+    trendBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+        borderRadius: 4,
+        gap: 2,
+    },
+    trendText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+
+    // Bar
+    barLabelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
+    barValueText: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#64748b',
+    },
+    progressBarBg: {
+        height: 6,
+        backgroundColor: '#e2e8f0',
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    adherenceMiniBadge: {
+        marginLeft: 10,
+        alignItems: 'flex-end',
+    },
+    adherenceMiniText: {
         fontSize: 14,
         fontWeight: '800',
-        color: '#334155',
     },
-    metaUnit: {
-        fontSize: 10,
-        fontWeight: '500',
+    adherenceLabel: {
+        fontSize: 9,
         color: '#94a3b8',
     },
 
-    // Actions Footer
-    actionsFooter: {
+    // Protein Pill
+    proteinPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 4,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: '#f1f5f9',
+        backgroundColor: '#eff6ff',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 6,
     },
-    planInfoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: 8,
+    semaphoreDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
-    planNameText: {
+    proteinText: {
         fontSize: 11,
-        color: '#64748b',
+        color: '#3b82f6',
         fontWeight: '500',
     },
-    actionButtonsRow: {
-        flexDirection: 'row',
+
+    // COL 3: Actions
+    cardColRight: {
+        alignItems: 'flex-end',
+        justifyContent: 'center',
         gap: 8,
     },
-    miniActionBtn: {
-        width: 32,
-        height: 32,
-        borderRadius: 8,
-        backgroundColor: '#f1f5f9',
+    // ════ CLIENT CARD - HORIZONTAL TARGETS ════
+    clientCardHorizontal: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 12, // Reduced padding for compactness
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        flexDirection: 'row',
+        alignItems: 'center',
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4 },
+            android: { elevation: 2 },
+            web: { overflow: 'visible', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' },
+        }),
+    },
+
+    // Left Section (Profile)
+    cardLeftSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1.2, // Give slightly more space to name if long
+    },
+    clientNameH: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#0f172a',
+        maxWidth: 120,
+    },
+    phaseBadgeH: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    phaseBadgeTextH: {
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    clientSubtextH: {
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 2,
+    },
+
+    // Vertical Divider
+    cardDividerV: {
+        width: 1,
+        height: '80%',
+        backgroundColor: '#e2e8f0',
+        marginHorizontal: 12,
+    },
+
+    // Right Section (Targets)
+    cardRightSection: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'flex-end',
+    },
+    targetKcalText: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#ef4444',
+    },
+    macrosRowH: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+    macroTextH: {
+        fontSize: 11,
+        color: '#475569',
+        fontWeight: '500',
+    },
+    macroDot: {
+        fontSize: 10,
+        color: '#cbd5e1',
+        marginHorizontal: 6,
+    },
+
+    // TCA Checkbox
+    tcaCheckbox: {
         alignItems: 'center',
         justifyContent: 'center',
+        marginLeft: 10,
+        gap: 3,
+    },
+    tcaCheckboxBox: {
+        width: 24,
+        height: 24,
+        borderRadius: 7,
+        borderWidth: 2,
+        borderColor: '#d1d5db',
+        backgroundColor: '#f9fafb',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    tcaCheckboxBoxActive: {
+        borderColor: '#f59e0b',
+        backgroundColor: '#f59e0b',
+    },
+    tcaCheckboxLabel: {
+        fontSize: 8,
+        fontWeight: '700',
+        color: '#b0b7c3',
+        letterSpacing: 0.5,
+    },
+    tcaCheckboxLabelActive: {
+        color: '#f59e0b',
     },
 
     // Empty state

@@ -69,6 +69,12 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
     const [clientPreference, setClientPreferenceState] = useState<string | null>(null);
     const hasFetched = useRef(false);
 
+    // Refs para acceder siempre a los valores más recientes (evita closures stale)
+    const userRef = useRef(user);
+    const tokenRef = useRef(token);
+    userRef.current = user;
+    tokenRef.current = token;
+
     // Cargar preferencia del cliente desde AsyncStorage
     useEffect(() => {
         (async () => {
@@ -107,11 +113,15 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
         return defaultTheme || branding.activeThemes[0]; // Último recurso
     }, [branding, clientPreference]);
 
-    const fetchBranding = async (force = false) => {
+    // Usar useCallback con refs para que fetchBranding siempre lea valores frescos
+    const fetchBranding = useCallback(async (force = false) => {
         if (hasFetched.current && !force) {
             return;
         }
-        if (!token) {
+        const currentToken = tokenRef.current;
+        const currentUser = userRef.current;
+
+        if (!currentToken) {
             setBranding(null);
             return;
         }
@@ -122,19 +132,19 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
             let response;
 
             // PRIORIDAD 1: Si el usuario tiene un coach asignado
-            if (user?.currentTrainerId) {
-                console.log('[CoachBranding] Loading from coach:', user.currentTrainerId);
+            if (currentUser?.currentTrainerId) {
+                console.log('[CoachBranding] Loading from coach:', currentUser.currentTrainerId);
                 response = await fetch(
-                    `${API_URL}/api/coach/branding/for-client/${user.currentTrainerId}`,
-                    { headers: { Authorization: `Bearer ${token}` } }
+                    `${API_URL}/api/coach/branding/for-client/${currentUser.currentTrainerId}`,
+                    { headers: { Authorization: `Bearer ${currentToken}` } }
                 );
             }
             // CASO 2: El usuario es ENTRENADOR o ADMIN - cargar su propio branding
-            else if (user?.tipoUsuario === 'ENTRENADOR' || user?.tipoUsuario === 'ADMINISTRADOR') {
+            else if (currentUser?.tipoUsuario === 'ENTRENADOR' || currentUser?.tipoUsuario === 'ADMINISTRADOR') {
                 console.log('[CoachBranding] Loading own branding (coach)');
                 response = await fetch(
                     `${API_URL}/api/coach/branding/current`,
-                    { headers: { Authorization: `Bearer ${token}` } }
+                    { headers: { Authorization: `Bearer ${currentToken}` } }
                 );
             }
             // CASO 3: Usuario sin coach y no es entrenador
@@ -193,13 +203,16 @@ export const CoachBrandingProvider = ({ children }: { children: ReactNode }) => 
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
+    // Cuando cambia currentTrainerId, resetear cache y re-fetch obligatorio
     useEffect(() => {
+        hasFetched.current = false;
         fetchBranding();
-    }, [user?.currentTrainerId, user?.tipoUsuario, token]);
+    }, [user?.currentTrainerId, user?.tipoUsuario, token, fetchBranding]);
 
-    const refresh = useCallback(() => fetchBranding(true), [token, user?.currentTrainerId, user?.tipoUsuario]);
+    // refresh siempre estable (usa refs internamente)
+    const refresh = useCallback(() => fetchBranding(true), [fetchBranding]);
 
     const hasCoachBranding = !!branding && branding.isActive;
 

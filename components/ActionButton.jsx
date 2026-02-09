@@ -74,7 +74,7 @@ export default function ActionButton({
   return (
     <Animated.View
       style={[{ transform: [{ scale }] }, compact ? { width: '100%' } : null]}
-      pointerEvents="box-none"
+      pointerEvents={Platform.OS === 'ios' ? 'auto' : 'box-none'}
     >
       <Pressable
         {...pressableProps}

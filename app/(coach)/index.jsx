@@ -20,8 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useFloatingTabBar } from '../../context/FloatingTabBarContext';
+import { useRouter } from 'expo-router';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
 import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
@@ -242,17 +241,8 @@ export default function TrainerDashboard() {
     const router = useRouter();
     const { width } = useWindowDimensions();
     const isMobile = width <= 768;
-    const { setIsVisible } = useFloatingTabBar();
+    // Removido: La visibilidad del CoachFloatingTabBar ahora se controla en _layout.jsx
 
-    // Ocultar CoachFloatingTabBar al entrar a esta pantalla
-    useFocusEffect(
-        useCallback(() => {
-            setIsVisible(false);
-            return () => {
-                setIsVisible(true);
-            };
-        }, [])
-    );
 
     const [loading, setLoading] = useState(true);
     const [trainerProfile, setTrainerProfile] = useState(null);

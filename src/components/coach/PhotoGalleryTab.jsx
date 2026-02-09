@@ -44,9 +44,10 @@ const TAG_LABELS = {
  */
 export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
     const { width } = useWindowDimensions();
-    const numColumns = width > 900 ? 10 : width > 600 ? 7 : 6;
-    const gap = 6;
-    const imageSize = (width - 32 - (numColumns - 1) * gap) / numColumns;
+    const numColumns = width > 900 ? 10 : width > 600 ? 7 : width > 400 ? 4 : 3;
+    const gap = width < 400 ? 4 : 6;
+    const listPadding = width < 400 ? 8 : 16;
+    const imageSize = (width - listPadding * 2 - (numColumns - 1) * gap) / numColumns;
 
     const [photos, setPhotos] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -164,7 +165,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
 
         return (
             <TouchableOpacity
-                style={[styles.photoItem, { width: imageSize, height: imageSize * (16 / 9) }]}
+                style={[styles.photoItem, { width: imageSize, height: imageSize * (16 / 9), borderRadius: width < 400 ? 6 : 8 }]}
                 onPress={() => onPhotoPress?.({
                     photos: dayPhotos,
                     initialIndex: Math.max(0, photoIndex),
@@ -194,21 +195,21 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
                     {/* Badges row */}
                     <View style={styles.badgeRow}>
                         {/* Visibility badge */}
-                        <View style={[styles.badge, { backgroundColor: visibility.color + '40' }]}>
-                            <Ionicons name={visibility.icon} size={10} color={visibility.color} />
+                        <View style={[styles.badge, { backgroundColor: visibility.color + '40', width: Math.max(16, imageSize * 0.22), height: Math.max(16, imageSize * 0.22), borderRadius: Math.max(8, imageSize * 0.11) }]}>
+                            <Ionicons name={visibility.icon} size={Math.max(8, Math.round(imageSize * 0.12))} color={visibility.color} />
                         </View>
 
                         {/* Annotations badge */}
                         {hasAnnotations && (
-                            <View style={[styles.badge, { backgroundColor: '#f59e0b40' }]}>
-                                <Ionicons name="pencil" size={10} color="#f59e0b" />
+                            <View style={[styles.badge, { backgroundColor: '#f59e0b40', width: Math.max(16, imageSize * 0.22), height: Math.max(16, imageSize * 0.22), borderRadius: Math.max(8, imageSize * 0.11) }]}>
+                                <Ionicons name="pencil" size={Math.max(8, Math.round(imageSize * 0.12))} color="#f59e0b" />
                             </View>
                         )}
 
                         {/* Voice notes badge */}
                         {hasVoiceNotes && (
-                            <View style={[styles.badge, { backgroundColor: '#8b5cf640' }]}>
-                                <Ionicons name="mic" size={10} color="#8b5cf6" />
+                            <View style={[styles.badge, { backgroundColor: '#8b5cf640', width: Math.max(16, imageSize * 0.22), height: Math.max(16, imageSize * 0.22), borderRadius: Math.max(8, imageSize * 0.11) }]}>
+                                <Ionicons name="mic" size={Math.max(8, Math.round(imageSize * 0.12))} color="#8b5cf6" />
                             </View>
                         )}
                     </View>
@@ -237,7 +238,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
                 <Text style={styles.monthLabel}>{group.label}</Text>
                 <Text style={styles.monthCount}>{group.photos.length} fotos</Text>
             </View>
-            <View style={styles.photoGrid}>
+            <View style={[styles.photoGrid, { gap }]}>
                 {group.photos.map((photo) => (
                     <View key={photo._id}>
                         {renderPhotoItem({ item: photo })}
@@ -335,7 +336,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
                     data={groupedPhotos}
                     renderItem={renderMonthSection}
                     keyExtractor={item => item.key}
-                    contentContainerStyle={styles.listContent}
+                    contentContainerStyle={[styles.listContent, { padding: listPadding }]}
                     refreshControl={
                         <RefreshControl
                             refreshing={isRefreshing}

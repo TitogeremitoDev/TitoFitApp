@@ -870,6 +870,28 @@ export default function SmartFoodDrawer({
                     )}
                 </View>
 
+                {/* Add Button Bar (Search Mode) - Always visible above scroll */}
+                {drawerMode === 'search' && (
+                    <View style={styles.addBar}>
+                        <TouchableOpacity
+                            style={[
+                                styles.addSelectedBtn,
+                                Object.keys(selections).length === 0 && styles.addSelectedBtnDisabled
+                            ]}
+                            onPress={handleAddSelected}
+                            disabled={Object.keys(selections).length === 0}
+                        >
+                            <Ionicons name="add-circle" size={22} color="#fff" />
+                            <Text style={styles.addSelectedText}>
+                                {Object.keys(selections).length > 0
+                                    ? `AÑADIR ${Object.keys(selections).length} ALIMENTO${Object.keys(selections).length > 1 ? 'S' : ''}`
+                                    : 'SELECCIONA ALIMENTOS'
+                                }
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {/* ═══════════════════════════════════════════════════════════════ */}
                 {/* CONTENT: Search Mode */}
                 {/* ═══════════════════════════════════════════════════════════════ */}
@@ -955,14 +977,6 @@ export default function SmartFoodDrawer({
                                 <Text style={styles.emptyText}>Escribe para buscar alimentos</Text>
                             </View>
                         )}
-
-                        {/* Bottom padding for floating button */}
-                        <View style={{ height: 100 }} />
-
-                        <TouchableOpacity style={styles.addNowBtn} onPress={handleAddSelected}>
-                            <Ionicons name="add-circle" size={22} color="#fff" />
-                            <Text style={styles.addNowText}>AÑADIR AHORA</Text>
-                        </TouchableOpacity>
 
                     </ScrollView>
                 )}
@@ -1160,13 +1174,6 @@ export default function SmartFoodDrawer({
                         </TouchableOpacity>
 
                     </Animated.View>
-                )}
-
-                {/* Floating Add Button (Search Mode Only) */}
-                {drawerMode === 'search' && Object.keys(selections).length > 0 && (
-                    <View style={styles.floatingFooter}>
-
-                    </View>
                 )}
 
                 {/* Toast Notification */}
@@ -1608,14 +1615,13 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
     },
 
-    // Floating Footer (Static - Relative)
-    floatingFooter: {
-        padding: 16,
-        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    // Add Bar (sits between header and scroll content)
+    addBar: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
         backgroundColor: '#fff',
-        borderTopWidth: 1,
-        borderTopColor: '#e2e8f0',
-        zIndex: 1000,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
     },
     addSelectedBtn: {
         flexDirection: 'row',
@@ -1625,6 +1631,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#22c55e',
         paddingVertical: 14,
         borderRadius: 12,
+    },
+    addSelectedBtnDisabled: {
+        backgroundColor: '#94a3b8',
     },
     addSelectedText: {
         fontSize: 16,
