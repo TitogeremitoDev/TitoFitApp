@@ -78,6 +78,15 @@ const EXTRA_ABBR = {
   bs: 'BS',
 };
 
+// Detectar si este ejercicio es parte de una biserie
+const isBiserie = (ej) => {
+  if (!ej?.series || !Array.isArray(ej.series)) return false;
+  return ej.series.some(serie => {
+    const extra = String(serie?.extra || '').toLowerCase().trim();
+    return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
+  });
+};
+
 const sessionKeyFor = (routineId) => `last_session_${routineId || 'global'}`;
 
 function getTrendIcon(curr, prev) {
@@ -3159,13 +3168,13 @@ export default function Entreno() {
   }, [hasUnsavedChanges]);
 
   /* ───────── Cambio de estado SIN guardado inmediato ───────── */
-  const setEstadoEjLocal = (clave, val) => {
+  const setEstadoEjLocal = useCallback((clave, val) => {
     // Solo cambio local del estado, NO guardamos en AsyncStorage aquí
     const nextVal = val === 'OJ' ? 'OE' : val;
     setProg((prev) => ({ ...prev, [clave]: nextVal }));
     // 🚪 Marcar que hay cambios sin guardar
     setHasUnsavedChanges(true);
-  };
+  }, []);
 
   /* ───────── Buscar datos del día anterior ───────── */
   const findPrevDayData = (exerciseId, serieIdx, field) => {
@@ -3669,7 +3678,7 @@ export default function Entreno() {
   // Asignar a ref para que AppState listener pueda acceder
   flushProgressRef.current = flushProgress;
 
-  const setSerieDato = (serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
+  const setSerieDato = useCallback((serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
     // Convertir coma a punto para compatibilidad con separador decimal europeo
     const normalizedVal = typeof val === 'string' ? val.replace(/,/g, '.') : val;
 
@@ -3742,7 +3751,7 @@ export default function Entreno() {
         console.warn('No se pudo guardar el dato de serie:', e);
       }
     }, DEBOUNCE_SAVE_MS);
-  };
+  }, [activeId, semana, diaIdx]);
 
   const findPrev = (week, d, eId, sIdx, field) => {
     for (let w = week - 1; w > 0; w--) {
@@ -3807,6 +3816,55 @@ export default function Entreno() {
     }
   };
 
+  const ejerciciosDia = useMemo(() =>
+    (diasEj[diaIdx] || []).filter(Boolean),
+    [diasEj, diaIdx]
+  );
+
+  const bringCardIntoView = (idx) => {
+    try {
+      listRef.current?.scrollToIndex({
+        index: idx,
+        animated: true,
+        viewPosition: 0.3,
+      });
+    } catch { }
+  };
+
+  // Abrir Técnica Correcta (TC)
+  const onOpenTC = useCallback((item) => {
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
+    if (!ej || !Array.isArray(ej.tecnicaCorrecta) || ej.tecnicaCorrecta.length === 0) {
+      Alert.alert('Técnica no disponible', 'No hay técnica registrada para este ejercicio.');
+      return;
+    }
+    setTechModal({ visible: true, title: item.nombre, tips: ej.tecnicaCorrecta });
+  }, [findExerciseInIndex]);
+
+  // Abrir Imagen del ejercicio
+  const onOpenImage = useCallback((item) => {
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
+    const url = ej?.imagenEjercicioId?.trim() || null;
+    setImageModal({ visible: true, imageUrl: url, title: item.nombre });
+  }, [findExerciseInIndex]);
+
+  // Abrir Vídeo
+  const onOpenVideo = useCallback((item) => {
+    if (user?.tipoUsuario === 'FREEUSER') {
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    const ej = findExerciseInIndex(item.musculo, item.nombre);
+    const id = ej?.videoId?.trim() || null;
+    setVideoModal({ visible: true, videoId: id, playing: !!id, title: item.nombre });
+  }, [findExerciseInIndex, user?.tipoUsuario]);
+
+  const goToPayment = () => {
+    setShowUpgradeModal(false);
+    navigation.navigate('payment');
+  };
+
   if (!rutina) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -3853,51 +3911,50 @@ export default function Entreno() {
     );
   }
 
-  const ejerciciosDia = (diasEj[diaIdx] || []).filter(Boolean);
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        {/* Modal Sin Rutina Activa */}
+        <Modal
+          visible={showNoRoutineModal}
+          transparent
+          animationType={Platform.OS === 'android' ? 'slide' : 'fade'}
+          onRequestClose={() => setShowNoRoutineModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.noRoutineCard, {
+              backgroundColor: theme.backgroundSecondary,
+              borderColor: theme.border
+            }]}>
+              <View style={styles.noRoutineIconContainer}>
+                <Ionicons name="fitness-outline" size={64} color={theme.primary} />
+              </View>
 
-  const bringCardIntoView = (idx) => {
-    try {
-      listRef.current?.scrollToIndex({
-        index: idx,
-        animated: true,
-        viewPosition: 0.3,
-      });
-    } catch { }
-  };
+              <Text style={[styles.noRoutineTitle, { color: theme.text }]}>
+                Sin rutina activa
+              </Text>
 
-  // Abrir Técnica Correcta (TC)
-  const onOpenTC = (item) => {
-    const ej = findExerciseInIndex(item.musculo, item.nombre);
-    if (!ej || !Array.isArray(ej.tecnicaCorrecta) || ej.tecnicaCorrecta.length === 0) {
-      Alert.alert('Técnica no disponible', 'No hay técnica registrada para este ejercicio.');
-      return;
-    }
-    setTechModal({ visible: true, title: item.nombre, tips: ej.tecnicaCorrecta });
-  };
+              <Text style={[styles.noRoutineDescription, { color: theme.textSecondary }]}>
+                Para comenzar a entrenar, primero necesitas seleccionar una rutina activa.
+              </Text>
 
-  // Abrir Imagen del ejercicio
-  const onOpenImage = (item) => {
-    const ej = findExerciseInIndex(item.musculo, item.nombre);
-    const url = ej?.imagenEjercicioId?.trim() || null;
-    setImageModal({ visible: true, imageUrl: url, title: item.nombre });
-  };
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  setShowNoRoutineModal(false);
+                  navigation.navigate('rutinas/index');
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.actionButtonText}>Ir a Rutinas</Text>
+              </TouchableOpacity>
 
-  // Abrir Vídeo
-  const onOpenVideo = (item) => {
-    if (user?.tipoUsuario === 'FREEUSER') {
-      setShowUpgradeModal(true);
-      return;
-    }
-
-    const ej = findExerciseInIndex(item.musculo, item.nombre);
-    const id = ej?.videoId?.trim() || null;
-    setVideoModal({ visible: true, videoId: id, playing: !!id, title: item.nombre });
-  };
-
-  const goToPayment = () => {
-    setShowUpgradeModal(false);
-    navigation.navigate('payment');
-  };
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -3950,6 +4007,8 @@ export default function Entreno() {
           style={{ marginTop: 12 }}
           data={ejerciciosDia}
           keyExtractor={(it, i) => (it?.id ? String(it.id) : `idx-${i}`)}
+          removeClippedSubviews={true}
+          initialNumToRender={5}
           renderItem={({ item, index }) => {
             if (!item) return null;
 
@@ -3958,15 +4017,6 @@ export default function Entreno() {
 
             // Compat visual con datos antiguos "OJ" -> se muestra como OE
             const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
-
-            // Detectar si este ejercicio es parte de una biserie
-            const isBiserie = (ej) => {
-              if (!ej?.series || !Array.isArray(ej.series)) return false;
-              return ej.series.some(serie => {
-                const extra = String(serie?.extra || '').toLowerCase().trim();
-                return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
-              });
-            };
 
             const currentIsBiserie = isBiserie(item);
             const nextItem = ejerciciosDia[index + 1];
