@@ -60,7 +60,7 @@ interface EnhancedTextInputProps extends TextInputProps {
  *
  * Es un reemplazo directo de TextInput con mejor experiencia en iOS.
  */
-const EnhancedTextInput = forwardRef<TextInput, EnhancedTextInputProps>(
+const EnhancedTextInputComponent = forwardRef<TextInput, EnhancedTextInputProps>(
   (
     {
       containerStyle,
@@ -267,6 +267,8 @@ const styles = StyleSheet.create({
   },
 });
 
-EnhancedTextInput.displayName = 'EnhancedTextInput';
+EnhancedTextInputComponent.displayName = 'EnhancedTextInput';
+
+const EnhancedTextInput = React.memo(EnhancedTextInputComponent);
 
 export default EnhancedTextInput;
