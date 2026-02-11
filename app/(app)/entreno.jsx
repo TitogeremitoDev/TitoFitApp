@@ -19,7 +19,7 @@ Pantalla principal de entrenamiento — v4.0 ULTIMATE EDITION 🔥
 - Búsqueda robusta por músculo + nombre (tolerante a tildes/puntuación).
 ──────────────────────────────────────────────────────────────────────────── */
 
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -58,6 +58,60 @@ import { useTrainer } from '../../context/TrainerContext';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
 import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
+
+/* ───────── ⚡ SmartInput for Performance ───────── */
+const SmartInput = memo(({
+  value,
+  placeholder,
+  theme,
+  onChangeText,
+  onBlur,
+  listRef,
+  index,
+  serieKey,
+  field,
+  item,
+  totalSeries,
+  style,
+  keyboardType,
+  placeholderTextColor
+}) => {
+  const handleChange = useCallback((v) => {
+    onChangeText(serieKey, field, v, item, totalSeries);
+  }, [onChangeText, serieKey, field, item, totalSeries]);
+
+  const handleFocus = useCallback(() => {
+    try {
+      listRef.current?.scrollToIndex({
+        index,
+        animated: true,
+        viewPosition: 0.3,
+      });
+    } catch { }
+  }, [listRef, index]);
+
+  return (
+    <TextInput
+      style={style}
+      placeholder={placeholder}
+      placeholderTextColor={placeholderTextColor}
+      keyboardType={keyboardType}
+      value={value}
+      onChangeText={handleChange}
+      onBlur={onBlur}
+      onFocus={handleFocus}
+    />
+  );
+}, (prev, next) => {
+  return (
+    prev.value === next.value &&
+    prev.placeholder === next.placeholder &&
+    prev.theme === next.theme &&
+    prev.onChangeText === next.onChangeText &&
+    prev.serieKey === next.serieKey &&
+    prev.onBlur === next.onBlur
+  );
+});
 import { useVideoFeedback } from '../../src/hooks/useVideoFeedback';
 import { getContrastColor } from '../../utils/colors';
 
@@ -3669,7 +3723,7 @@ export default function Entreno() {
   // Asignar a ref para que AppState listener pueda acceder
   flushProgressRef.current = flushProgress;
 
-  const setSerieDato = (serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
+  const setSerieDato = useCallback((serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
     // Convertir coma a punto para compatibilidad con separador decimal europeo
     const normalizedVal = typeof val === 'string' ? val.replace(/,/g, '.') : val;
 
@@ -3742,7 +3796,7 @@ export default function Entreno() {
         console.warn('No se pudo guardar el dato de serie:', e);
       }
     }, DEBOUNCE_SAVE_MS);
-  };
+  }, [activeId, semana, diaIdx]);
 
   const findPrev = (week, d, eId, sIdx, field) => {
     for (let w = week - 1; w > 0; w--) {
@@ -4178,7 +4232,7 @@ export default function Entreno() {
 
                             {/* Reps */}
                             <View style={styles.inputWithTrend}>
-                              <TextInput
+                              <SmartInput
                                 style={[styles.serieInput, {
                                   borderColor: theme.inputBorder,
                                   backgroundColor: theme.inputBackground,
@@ -4188,17 +4242,15 @@ export default function Entreno() {
                                 placeholderTextColor={theme.placeholder}
                                 keyboardType="numeric"
                                 value={curr.reps || ''}
-                                onFocus={() => {
-                                  try {
-                                    listRef.current?.scrollToIndex({
-                                      index,
-                                      animated: true,
-                                      viewPosition: 0.3,
-                                    });
-                                  } catch { }
-                                }}
-                                onChangeText={(v) => setSerieDato(serieKey, 'reps', v, item, (item.series || []).length)}
+                                onChangeText={setSerieDato}
                                 onBlur={flushProgress}
+                                listRef={listRef}
+                                index={index}
+                                serieKey={serieKey}
+                                field="reps"
+                                item={item}
+                                totalSeries={(item.series || []).length}
+                                theme={theme}
                               />
                               {iconReps && (
                                 <Ionicons
@@ -4212,7 +4264,7 @@ export default function Entreno() {
 
                             {/* Kg */}
                             <View style={styles.inputWithTrend}>
-                              <TextInput
+                              <SmartInput
                                 style={[styles.serieInput, {
                                   borderColor: theme.inputBorder,
                                   backgroundColor: theme.inputBackground,
@@ -4222,8 +4274,15 @@ export default function Entreno() {
                                 placeholderTextColor={theme.placeholder}
                                 keyboardType="numeric"
                                 value={curr.peso || ''}
-                                onChangeText={(v) => setSerieDato(serieKey, 'peso', v, item, (item.series || []).length)}
+                                onChangeText={setSerieDato}
                                 onBlur={flushProgress}
+                                listRef={listRef}
+                                index={index}
+                                serieKey={serieKey}
+                                field="peso"
+                                item={item}
+                                totalSeries={(item.series || []).length}
+                                theme={theme}
                               />
                               {iconKg && (
                                 <Ionicons
