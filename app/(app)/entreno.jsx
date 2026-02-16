@@ -19,7 +19,7 @@ Pantalla principal de entrenamiento — v4.0 ULTIMATE EDITION 🔥
 - Búsqueda robusta por músculo + nombre (tolerante a tildes/puntuación).
 ──────────────────────────────────────────────────────────────────────────── */
 
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -2503,6 +2503,361 @@ const tutorialStyles = StyleSheet.create({
   },
 });
 
+/* ───────── Helpers para el componente Entreno ───────── */
+
+const isBiserie = (ej) => {
+  if (!ej?.series || !Array.isArray(ej.series)) return false;
+  return ej.series.some(serie => {
+    const extra = String(serie?.extra || '').toLowerCase().trim();
+    return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
+  });
+};
+
+const findPrevHelper = (prog, week, d, eId, sIdx, field) => {
+  for (let w = week - 1; w > 0; w--) {
+    const key = `${w}|${d}|${eId}|${sIdx}`;
+    const data = prog[key]?.[field];
+    if (data) return data;
+  }
+  return null;
+};
+
+/* ───────── Componente ExerciseCard ───────── */
+const ExerciseCard = memo(({
+  item,
+  index,
+  semana,
+  diaIdx,
+  isOpen,
+  onToggleOpen,
+  prog,
+  notes,
+  theme,
+  exerciseDetails,
+  onSetStatus,
+  onOpenTC,
+  onOpenImage,
+  onOpenVideo,
+  onSetData,
+  onFlushProgress,
+  onOpenNotes,
+  listRef,
+  showBiserieConnector
+}) => {
+  const ejerKey = `${semana}|${diaIdx}|${item.id}`;
+  const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
+  const isBiserieItem = isBiserie(item);
+
+  return (
+    <>
+      <View style={[styles.card, {
+        backgroundColor: theme.cardBackground,
+        borderColor: isBiserieItem ? '#F59E0B' : theme.cardBorder,
+        borderWidth: isBiserieItem ? 2 : 1,
+      }]}>
+        {isBiserieItem && (
+          <View style={styles.biserieBadge}>
+            <Text style={styles.biserieBadgeText}>BS</Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder, backgroundColor: theme.cardHeaderBg }]}
+          onPress={() => onToggleOpen(item.id)}
+        >
+          <Text style={[styles.cardTxt, { color: theme.text }]}>
+            {item.musculo} — {item.nombre}
+          </Text>
+          <Ionicons
+            name={isOpen ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.stateToolsRow}>
+          <View style={styles.stateRow}>
+            <TouchableOpacity
+              style={[
+                styles.radio,
+                {
+                  borderColor: currentState === 'C' ? '#22c55e' : '#bbf7d0',
+                  backgroundColor: currentState === 'C' ? '#22c55e' : '#f0fdf4'
+                }
+              ]}
+              onPress={() => onSetStatus(ejerKey, 'C')}
+            >
+              <Ionicons
+                name="checkmark"
+                size={16}
+                color={currentState === 'C' ? '#fff' : '#86efac'}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.radio,
+                {
+                  borderColor: currentState === 'NC' ? '#ef4444' : '#fecaca',
+                  backgroundColor: currentState === 'NC' ? '#ef4444' : '#fef2f2'
+                }
+              ]}
+              onPress={() => onSetStatus(ejerKey, 'NC')}
+            >
+              <Ionicons
+                name="close"
+                size={16}
+                color={currentState === 'NC' ? '#fff' : '#fca5a5'}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.radio,
+                {
+                  borderColor: currentState === 'OE' ? '#f97316' : '#fed7aa',
+                  backgroundColor: currentState === 'OE' ? '#f97316' : '#fff7ed'
+                }
+              ]}
+              onPress={() => onSetStatus(ejerKey, 'OE')}
+            >
+              <Ionicons
+                name="swap-horizontal"
+                size={16}
+                color={currentState === 'OE' ? '#fff' : '#fdba74'}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.toolsRow}>
+            <TouchableOpacity
+              onPress={() => onOpenTC(item)}
+              style={[styles.toolBtn, {
+                backgroundColor: theme.backgroundTertiary,
+                borderColor: theme.border
+              }]}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => onOpenImage(item)}
+              style={[styles.toolBtn, styles.toolBtnIcon, {
+                backgroundColor: theme.backgroundTertiary,
+                borderColor: theme.border,
+                opacity: exerciseDetails?.hasImage ? 1 : 0.5
+              }]}
+              activeOpacity={0.85}
+            >
+              <Text style={{ fontSize: 14 }}>
+                {exerciseDetails?.hasImage ? '🖼️' : '🚫'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => onOpenVideo(item)}
+              style={[styles.toolBtn, styles.toolBtnIcon, {
+                backgroundColor: theme.backgroundTertiary,
+                borderColor: theme.border,
+                opacity: exerciseDetails?.hasVideo ? 1 : 0.5
+              }]}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={exerciseDetails?.hasVideo ? "videocam-outline" : "videocam-off-outline"}
+                size={16}
+                color={theme.text}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {isOpen && (
+          <View style={styles.seriesBox}>
+            <View style={styles.serieRowHeader}>
+              <Text style={[styles.serieLabel, { fontWeight: 'bold', color: theme.textSecondary }]}>#</Text>
+              <View style={styles.inputCol}>
+                <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Reps</Text>
+              </View>
+              <View style={styles.inputCol}>
+                <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Kg</Text>
+              </View>
+              <View style={{ flex: 1 }} />
+            </View>
+
+            {(item.series || []).map((serie, idx) => {
+              const serieKey = `${ejerKey}|${idx}`;
+              const prevReps = findPrevHelper(prog, semana, diaIdx, item.id, idx, 'reps');
+              const prevKg = findPrevHelper(prog, semana, diaIdx, item.id, idx, 'peso');
+              const curr = prog[serieKey] || {};
+
+              let bgColor = theme.cardBackground;
+              const repMinRaw = serie?.repMin;
+              const repMaxRaw = serie?.repMax;
+              const isFallo = String(repMinRaw).toLowerCase() === 'fallo' ||
+                String(repMaxRaw).toLowerCase() === 'fallo';
+
+              const repMin = !isFallo && repMinRaw != null ? Number(repMinRaw) : null;
+              const repMax = !isFallo && repMaxRaw != null ? Number(repMaxRaw) : null;
+              const reps = curr?.reps != null ? Number(curr.reps) : null;
+
+              if (!isFallo && reps !== null && repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) {
+                if (reps < repMin) bgColor = '#fecaca';
+                else if (reps > repMax) bgColor = '#bfdbfe';
+                else bgColor = '#bbf7d0';
+              }
+
+              const prevExceeded = !isFallo && prevReps !== null && repMax !== null && Number(prevReps) > repMax;
+              const iconReps = getTrendIcon(curr.reps, prevReps);
+              const iconKg = getTrendIcon(curr.peso, prevKg);
+              const existingNote = notes[serieKey];
+
+              return (
+                <View key={idx} style={[styles.serieRow, {
+                  backgroundColor: bgColor,
+                  borderColor: theme.border
+                }]}>
+                  <View style={{ width: 70, justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
+                    {isFallo ? (
+                      <Text style={{ fontSize: 10, color: '#ef4444', marginTop: 2, fontWeight: '600' }}>
+                        🔥 Fallo
+                      </Text>
+                    ) : (repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) && (
+                      <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
+                        {repMin}-{repMax}
+                      </Text>
+                    )}
+                    {serie?.nota && serie.nota.trim() !== '' && (
+                      <TouchableOpacity
+                        onPress={() => Alert.alert('📝 Nota del Coach', serie.nota)}
+                        style={{ marginTop: 3 }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ fontSize: 10, color: '#f59e0b' }}>⚠️ Nota</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View style={styles.inputWithTrend}>
+                    <TextInput
+                      style={[styles.serieInput, {
+                        borderColor: theme.inputBorder,
+                        backgroundColor: theme.inputBackground,
+                        color: theme.inputText
+                      }]}
+                      placeholder={prevReps ? String(prevReps) : ''}
+                      placeholderTextColor={theme.placeholder}
+                      keyboardType="numeric"
+                      value={curr.reps || ''}
+                      onFocus={() => {
+                        try {
+                          listRef.current?.scrollToIndex({
+                            index,
+                            animated: true,
+                            viewPosition: 0.3,
+                          });
+                        } catch { }
+                      }}
+                      onChangeText={(v) => onSetData(serieKey, 'reps', v, item, (item.series || []).length)}
+                      onBlur={onFlushProgress}
+                    />
+                    {iconReps && (
+                      <Ionicons
+                        name={iconReps.name}
+                        size={14}
+                        color={iconReps.color}
+                        style={styles.trendIcon}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.inputWithTrend}>
+                    <TextInput
+                      style={[styles.serieInput, {
+                        borderColor: theme.inputBorder,
+                        backgroundColor: theme.inputBackground,
+                        color: theme.inputText
+                      }]}
+                      placeholder={prevKg ? String(prevKg) : ''}
+                      placeholderTextColor={theme.placeholder}
+                      keyboardType="numeric"
+                      value={curr.peso || ''}
+                      onChangeText={(v) => onSetData(serieKey, 'peso', v, item, (item.series || []).length)}
+                      onBlur={onFlushProgress}
+                    />
+                    {iconKg && (
+                      <Ionicons
+                        name={iconKg.name}
+                        size={14}
+                        color={iconKg.color}
+                        style={styles.trendIcon}
+                      />
+                    )}
+                  </View>
+
+                  {prevExceeded && <Text style={[styles.sp, { color: theme.primary }]}>¡SP!</Text>}
+
+                  <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
+                    {EXTRA_ABBR[serie?.extra] || ''}
+                  </Text>
+
+                  <View style={styles.actionBtns}>
+                    <TouchableOpacity
+                      onPress={() => onOpenNotes(serieKey, item.id, item.nombre)}
+                      style={styles.actionBtn}
+                      activeOpacity={0.7}
+                    >
+                      {existingNote ? (
+                        <View style={[
+                          styles.noteDot,
+                          { backgroundColor: NOTE_VALUES.find(n => n.key === existingNote?.value)?.color || '#6b7280' }
+                        ]} />
+                      ) : (
+                        <Ionicons name="chatbubble-ellipses" size={15} color="#10b981" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {showBiserieConnector && (
+        <View style={styles.biserieConnector}>
+          <View style={styles.biserieLine} />
+          <View style={styles.biseriePlusContainer}>
+            <Text style={styles.biseriePlusText}>+</Text>
+          </View>
+          <View style={styles.biserieLine} />
+        </View>
+      )}
+    </>
+  );
+}, (prev, next) => {
+  if (prev.item.id !== next.item.id) return false;
+  if (prev.isOpen !== next.isOpen) return false;
+  if (prev.semana !== next.semana) return false;
+  if (prev.diaIdx !== next.diaIdx) return false;
+  if (prev.showBiserieConnector !== next.showBiserieConnector) return false;
+  if (prev.theme !== next.theme) return false;
+  if (prev.exerciseDetails !== next.exerciseDetails) return false;
+
+  const ejKey = `${next.semana}|${next.diaIdx}|${next.item.id}`;
+  if (prev.prog[ejKey] !== next.prog[ejKey]) return false;
+
+  const seriesCount = next.item.series?.length || 0;
+  for (let i = 0; i < seriesCount; i++) {
+    const key = `${ejKey}|${i}`;
+    if (prev.prog[key] !== next.prog[key]) return false;
+    if (prev.notes[key] !== next.notes[key]) return false;
+  }
+  return true;
+});
+
 export default function Entreno() {
   const { theme } = useTheme();
   const { user } = useAuth();
@@ -3159,13 +3514,13 @@ export default function Entreno() {
   }, [hasUnsavedChanges]);
 
   /* ───────── Cambio de estado SIN guardado inmediato ───────── */
-  const setEstadoEjLocal = (clave, val) => {
+  const setEstadoEjLocal = useCallback((clave, val) => {
     // Solo cambio local del estado, NO guardamos en AsyncStorage aquí
     const nextVal = val === 'OJ' ? 'OE' : val;
     setProg((prev) => ({ ...prev, [clave]: nextVal }));
     // 🚪 Marcar que hay cambios sin guardar
     setHasUnsavedChanges(true);
-  };
+  }, []);
 
   /* ───────── Buscar datos del día anterior ───────── */
   const findPrevDayData = (exerciseId, serieIdx, field) => {
@@ -3669,7 +4024,7 @@ export default function Entreno() {
   // Asignar a ref para que AppState listener pueda acceder
   flushProgressRef.current = flushProgress;
 
-  const setSerieDato = (serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
+  const setSerieDato = useCallback((serieKey, campo, val, ejercicio = null, totalSeries = 0) => {
     // Convertir coma a punto para compatibilidad con separador decimal europeo
     const normalizedVal = typeof val === 'string' ? val.replace(/,/g, '.') : val;
 
@@ -3742,7 +4097,7 @@ export default function Entreno() {
         console.warn('No se pudo guardar el dato de serie:', e);
       }
     }, DEBOUNCE_SAVE_MS);
-  };
+  }, [activeId, semana, diaIdx]);
 
   const findPrev = (week, d, eId, sIdx, field) => {
     for (let w = week - 1; w > 0; w--) {
@@ -3865,25 +4220,67 @@ export default function Entreno() {
     } catch { }
   };
 
+  const handleOpenNotes = useCallback(async (serieKey, exerciseId, exerciseName) => {
+    const existingNote = notes[serieKey];
+    let pendingMediaUri = existingNote?.mediaUri || null;
+    let pendingMediaType = existingNote?.mediaType || null;
+
+    try {
+      const pendingPhotoJson = await AsyncStorage.getItem('pending_photo_feedback');
+      if (pendingPhotoJson) {
+        const pendingPhoto = JSON.parse(pendingPhotoJson);
+        if (pendingPhoto.serieKey === serieKey) {
+          pendingMediaUri = pendingPhoto.photoUri;
+          pendingMediaType = 'photo';
+        }
+        await AsyncStorage.removeItem('pending_photo_feedback');
+      }
+
+      const pendingVideoJson = await AsyncStorage.getItem('pending_video_feedback');
+      if (pendingVideoJson) {
+        const pendingVideo = JSON.parse(pendingVideoJson);
+        if (pendingVideo.serieKey === serieKey) {
+          pendingMediaUri = pendingVideo.videoPath;
+          pendingMediaType = 'video';
+        }
+        await AsyncStorage.removeItem('pending_video_feedback');
+      }
+    } catch (err) {
+      console.error('[Entreno] Error leyendo pending media:', err);
+    }
+
+    setNotesModal({
+      visible: true,
+      serieKey,
+      exerciseId,
+      exerciseName,
+      value: existingNote?.value || 'low',
+      note: existingNote?.note || '',
+      audioUri: existingNote?.audioUri || null,
+      mediaUri: pendingMediaUri,
+      mediaType: pendingMediaType,
+    });
+  }, [notes]);
+
   // Abrir Técnica Correcta (TC)
-  const onOpenTC = (item) => {
+  const onOpenTC = useCallback((item) => {
     const ej = findExerciseInIndex(item.musculo, item.nombre);
     if (!ej || !Array.isArray(ej.tecnicaCorrecta) || ej.tecnicaCorrecta.length === 0) {
       Alert.alert('Técnica no disponible', 'No hay técnica registrada para este ejercicio.');
       return;
     }
     setTechModal({ visible: true, title: item.nombre, tips: ej.tecnicaCorrecta });
-  };
+  }, [findExerciseInIndex]);
 
   // Abrir Imagen del ejercicio
-  const onOpenImage = (item) => {
+  const onOpenImage = useCallback((item) => {
     const ej = findExerciseInIndex(item.musculo, item.nombre);
     const url = ej?.imagenEjercicioId?.trim() || null;
     setImageModal({ visible: true, imageUrl: url, title: item.nombre });
-  };
+  }, [findExerciseInIndex]);
 
   // Abrir Vídeo
-  const onOpenVideo = (item) => {
+  const onOpenVideo = useCallback((item) => {
     if (user?.tipoUsuario === 'FREEUSER') {
       setShowUpgradeModal(true);
       return;
@@ -3892,7 +4289,7 @@ export default function Entreno() {
     const ej = findExerciseInIndex(item.musculo, item.nombre);
     const id = ej?.videoId?.trim() || null;
     setVideoModal({ visible: true, videoId: id, playing: !!id, title: item.nombre });
-  };
+  }, [user?.tipoUsuario, findExerciseInIndex]);
 
   const goToPayment = () => {
     setShowUpgradeModal(false);
@@ -3952,382 +4349,36 @@ export default function Entreno() {
           keyExtractor={(it, i) => (it?.id ? String(it.id) : `idx-${i}`)}
           renderItem={({ item, index }) => {
             if (!item) return null;
-
-            const ejerKey = `${semana}|${diaIdx}|${item.id}`;
-            const abierto = openId === item.id;
-
-            // Compat visual con datos antiguos "OJ" -> se muestra como OE
-            const currentState = prog[ejerKey] === 'OJ' ? 'OE' : prog[ejerKey];
-
-            // Detectar si este ejercicio es parte de una biserie
-            const isBiserie = (ej) => {
-              if (!ej?.series || !Array.isArray(ej.series)) return false;
-              return ej.series.some(serie => {
-                const extra = String(serie?.extra || '').toLowerCase().trim();
-                return extra === 'biserie' || extra === 'biseries' || extra === 'bs';
-              });
-            };
-
             const currentIsBiserie = isBiserie(item);
             const nextItem = ejerciciosDia[index + 1];
             const nextIsBiserie = isBiserie(nextItem);
-
-            // Mostrar el "+" si este Y el siguiente son biseries
             const showBiserieConnector = currentIsBiserie && nextIsBiserie;
 
             return (
-              <>
-                <View style={[styles.card, {
-                  backgroundColor: theme.cardBackground,
-                  borderColor: currentIsBiserie ? '#F59E0B' : theme.cardBorder,
-                  borderWidth: currentIsBiserie ? 2 : 1,
-                }]}>
-                  {/* Badge BS para biseries */}
-                  {currentIsBiserie && (
-                    <View style={styles.biserieBadge}>
-                      <Text style={styles.biserieBadgeText}>BS</Text>
-                    </View>
-                  )}
-
-                  <TouchableOpacity
-                    style={[styles.cardHeader, { borderColor: theme.cardHeaderBorder, backgroundColor: theme.cardHeaderBg }]}
-                    onPress={() => setOpenId(abierto ? null : item.id)}
-                  >
-                    <Text style={[styles.cardTxt, { color: theme.text }]}>
-                      {item.musculo} — {item.nombre}
-                    </Text>
-                    <Ionicons
-                      name={abierto ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={theme.textSecondary}
-                    />
-                  </TouchableOpacity>
-
-                  {/* Estados + Herramientas (TC/Vídeo) */}
-                  <View style={styles.stateToolsRow}>
-                    <View style={styles.stateRow}>
-                      {/* C - Check (Completado) */}
-                      <TouchableOpacity
-                        style={[
-                          styles.radio,
-                          {
-                            borderColor: currentState === 'C' ? '#22c55e' : '#bbf7d0',
-                            backgroundColor: currentState === 'C' ? '#22c55e' : '#f0fdf4'
-                          }
-                        ]}
-                        onPress={() => setEstadoEjLocal(ejerKey, 'C')}
-                      >
-                        <Ionicons
-                          name="checkmark"
-                          size={16}
-                          color={currentState === 'C' ? '#fff' : '#86efac'}
-                        />
-                      </TouchableOpacity>
-
-                      {/* NC - Cruz (No Completado) */}
-                      <TouchableOpacity
-                        style={[
-                          styles.radio,
-                          {
-                            borderColor: currentState === 'NC' ? '#ef4444' : '#fecaca',
-                            backgroundColor: currentState === 'NC' ? '#ef4444' : '#fef2f2'
-                          }
-                        ]}
-                        onPress={() => setEstadoEjLocal(ejerKey, 'NC')}
-                      >
-                        <Ionicons
-                          name="close"
-                          size={16}
-                          color={currentState === 'NC' ? '#fff' : '#fca5a5'}
-                        />
-                      </TouchableOpacity>
-
-                      {/* OE - Flechas de Cambio (Orden Ejercicio) */}
-                      <TouchableOpacity
-                        style={[
-                          styles.radio,
-                          {
-                            borderColor: currentState === 'OE' ? '#f97316' : '#fed7aa',
-                            backgroundColor: currentState === 'OE' ? '#f97316' : '#fff7ed'
-                          }
-                        ]}
-                        onPress={() => setEstadoEjLocal(ejerKey, 'OE')}
-                      >
-                        <Ionicons
-                          name="swap-horizontal"
-                          size={16}
-                          color={currentState === 'OE' ? '#fff' : '#fdba74'}
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.toolsRow}>
-                      <TouchableOpacity
-                        onPress={() => onOpenTC(item)}
-                        style={[styles.toolBtn, {
-                          backgroundColor: theme.backgroundTertiary,
-                          borderColor: theme.border
-                        }]}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={[styles.toolBtnTxt, { color: theme.text }]}>TC</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => onOpenImage(item)}
-                        style={[styles.toolBtn, styles.toolBtnIcon, {
-                          backgroundColor: theme.backgroundTertiary,
-                          borderColor: theme.border,
-                          opacity: exerciseDetailsMap.get(item.id)?.hasImage ? 1 : 0.5
-                        }]}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={{ fontSize: 14 }}>
-                          {exerciseDetailsMap.get(item.id)?.hasImage ? '🖼️' : '🚫'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => onOpenVideo(item)}
-                        style={[styles.toolBtn, styles.toolBtnIcon, {
-                          backgroundColor: theme.backgroundTertiary,
-                          borderColor: theme.border,
-                          opacity: exerciseDetailsMap.get(item.id)?.hasVideo ? 1 : 0.5
-                        }]}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons
-                          name={exerciseDetailsMap.get(item.id)?.hasVideo ? "videocam-outline" : "videocam-off-outline"}
-                          size={16}
-                          color={theme.text}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {abierto && (
-                    <View style={styles.seriesBox}>
-                      <View style={styles.serieRowHeader}>
-                        <Text style={[styles.serieLabel, { fontWeight: 'bold', color: theme.textSecondary }]}>#</Text>
-                        <View style={styles.inputCol}>
-                          <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Reps</Text>
-                        </View>
-                        <View style={styles.inputCol}>
-                          <Text style={[styles.colLabel, { color: theme.textSecondary }]}>Kg</Text>
-                        </View>
-                        <View style={{ flex: 1 }} />
-                      </View>
-
-                      {(item.series || []).map((serie, idx) => {
-                        const serieKey = `${ejerKey}|${idx}`;
-                        const prevReps = findPrev(semana, diaIdx, item.id, idx, 'reps');
-                        const prevKg = findPrev(semana, diaIdx, item.id, idx, 'peso');
-                        const curr = prog[serieKey] || {};
-
-                        let bgColor = theme.cardBackground;
-
-                        // Detectar si es serie al Fallo
-                        const repMinRaw = serie?.repMin;
-                        const repMaxRaw = serie?.repMax;
-                        const isFallo = String(repMinRaw).toLowerCase() === 'fallo' ||
-                          String(repMaxRaw).toLowerCase() === 'fallo';
-
-                        const repMin = !isFallo && repMinRaw != null ? Number(repMinRaw) : null;
-                        const repMax = !isFallo && repMaxRaw != null ? Number(repMaxRaw) : null;
-                        const reps = curr?.reps != null ? Number(curr.reps) : null;
-
-                        // Solo aplicar colores si NO es fallo
-                        if (!isFallo && reps !== null && repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) {
-                          if (reps < repMin) bgColor = '#fecaca';
-                          else if (reps > repMax) bgColor = '#bfdbfe';
-                          else bgColor = '#bbf7d0';
-                        }
-
-                        const prevExceeded =
-                          !isFallo && prevReps !== null && repMax !== null && Number(prevReps) > repMax;
-                        const iconReps = getTrendIcon(curr.reps, prevReps);
-                        const iconKg = getTrendIcon(curr.peso, prevKg);
-
-                        return (
-                          <View key={idx} style={[styles.serieRow, {
-                            backgroundColor: bgColor,
-                            borderColor: theme.border
-                          }]}>
-                            <View style={{ width: 70, justifyContent: 'center' }}>
-                              <Text style={{ fontSize: 12, color: theme.textSecondary }}>Serie {idx + 1}</Text>
-                              {isFallo ? (
-                                <Text style={{ fontSize: 10, color: '#ef4444', marginTop: 2, fontWeight: '600' }}>
-                                  🔥 Fallo
-                                </Text>
-                              ) : (repMin !== null && repMax !== null && !isNaN(repMin) && !isNaN(repMax)) && (
-                                <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 2 }}>
-                                  {repMin}-{repMax}
-                                </Text>
-                              )}
-                              {/* Nota del entrenador */}
-                              {serie?.nota && serie.nota.trim() !== '' && (
-                                <TouchableOpacity
-                                  onPress={() => Alert.alert('📝 Nota del Coach', serie.nota)}
-                                  style={{ marginTop: 3 }}
-                                  activeOpacity={0.7}
-                                >
-                                  <Text style={{ fontSize: 10, color: '#f59e0b' }}>⚠️ Nota</Text>
-                                </TouchableOpacity>
-                              )}
-                            </View>
-
-                            {/* Reps */}
-                            <View style={styles.inputWithTrend}>
-                              <TextInput
-                                style={[styles.serieInput, {
-                                  borderColor: theme.inputBorder,
-                                  backgroundColor: theme.inputBackground,
-                                  color: theme.inputText
-                                }]}
-                                placeholder={prevReps ? String(prevReps) : ''}
-                                placeholderTextColor={theme.placeholder}
-                                keyboardType="numeric"
-                                value={curr.reps || ''}
-                                onFocus={() => {
-                                  try {
-                                    listRef.current?.scrollToIndex({
-                                      index,
-                                      animated: true,
-                                      viewPosition: 0.3,
-                                    });
-                                  } catch { }
-                                }}
-                                onChangeText={(v) => setSerieDato(serieKey, 'reps', v, item, (item.series || []).length)}
-                                onBlur={flushProgress}
-                              />
-                              {iconReps && (
-                                <Ionicons
-                                  name={iconReps.name}
-                                  size={14}
-                                  color={iconReps.color}
-                                  style={styles.trendIcon}
-                                />
-                              )}
-                            </View>
-
-                            {/* Kg */}
-                            <View style={styles.inputWithTrend}>
-                              <TextInput
-                                style={[styles.serieInput, {
-                                  borderColor: theme.inputBorder,
-                                  backgroundColor: theme.inputBackground,
-                                  color: theme.inputText
-                                }]}
-                                placeholder={prevKg ? String(prevKg) : ''}
-                                placeholderTextColor={theme.placeholder}
-                                keyboardType="numeric"
-                                value={curr.peso || ''}
-                                onChangeText={(v) => setSerieDato(serieKey, 'peso', v, item, (item.series || []).length)}
-                                onBlur={flushProgress}
-                              />
-                              {iconKg && (
-                                <Ionicons
-                                  name={iconKg.name}
-                                  size={14}
-                                  color={iconKg.color}
-                                  style={styles.trendIcon}
-                                />
-                              )}
-                            </View>
-
-                            {/* SP flag */}
-                            {prevExceeded && <Text style={[styles.sp, { color: theme.primary }]}>¡SP!</Text>}
-
-                            <Text style={[styles.extraTxt, { color: theme.textSecondary }]}>
-                              {EXTRA_ABBR[serie?.extra] || ''}
-                            </Text>
-
-                            {/* 📝 Botón de Feedback Unificado (reemplaza video + notas separados) */}
-                            <View style={styles.actionBtns}>
-                              <TouchableOpacity
-                                onPress={async () => {
-                                  const existingNote = notes[serieKey];
-                                  let pendingMediaUri = existingNote?.mediaUri || null;
-                                  let pendingMediaType = existingNote?.mediaType || null;
-
-                                  // 📸 Leer pending photo/video de AsyncStorage si existe
-                                  try {
-                                    // Check for pending photo
-                                    const pendingPhotoJson = await AsyncStorage.getItem('pending_photo_feedback');
-                                    if (pendingPhotoJson) {
-                                      const pendingPhoto = JSON.parse(pendingPhotoJson);
-                                      // Solo usar si es para esta serie
-                                      if (pendingPhoto.serieKey === serieKey) {
-                                        pendingMediaUri = pendingPhoto.photoUri;
-                                        pendingMediaType = 'photo';
-                                        console.log('[Entreno] 📸 Pending photo encontrada:', pendingMediaUri);
-                                      }
-                                      // Limpiar después de leer
-                                      await AsyncStorage.removeItem('pending_photo_feedback');
-                                    }
-
-                                    // Check for pending video
-                                    const pendingVideoJson = await AsyncStorage.getItem('pending_video_feedback');
-                                    if (pendingVideoJson) {
-                                      const pendingVideo = JSON.parse(pendingVideoJson);
-                                      // Solo usar si es para esta serie
-                                      if (pendingVideo.serieKey === serieKey) {
-                                        pendingMediaUri = pendingVideo.videoPath; // preview.jsx guarda videoPath
-                                        pendingMediaType = 'video';
-                                        console.log('[Entreno] 📹 Pending video encontrado:', pendingMediaUri);
-                                      }
-                                      // Limpiar después de leer
-                                      await AsyncStorage.removeItem('pending_video_feedback');
-                                    }
-                                  } catch (err) {
-                                    console.error('[Entreno] Error leyendo pending media:', err);
-                                  }
-
-                                  setNotesModal({
-                                    visible: true,
-                                    serieKey,
-                                    exerciseId: item.id,
-                                    exerciseName: item.nombre,
-                                    value: existingNote?.value || 'low',
-                                    note: existingNote?.note || '',
-                                    audioUri: existingNote?.audioUri || null,
-                                    mediaUri: pendingMediaUri,
-                                    mediaType: pendingMediaType,
-                                  });
-                                }}
-                                style={styles.actionBtn}
-                                activeOpacity={0.7}
-                              >
-                                {notes[serieKey] ? (
-                                  <View style={[
-                                    styles.noteDot,
-                                    { backgroundColor: NOTE_VALUES.find(n => n.key === notes[serieKey]?.value)?.color || '#6b7280' }
-                                  ]} />
-                                ) : (
-                                  <Ionicons name="chatbubble-ellipses" size={15} color="#10b981" />
-                                )}
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-
-                {/* Conector "+" para biseries */}
-                {showBiserieConnector && (
-                  <View style={styles.biserieConnector}>
-                    <View style={styles.biserieLine} />
-                    <View style={styles.biseriePlusContainer}>
-                      <Text style={styles.biseriePlusText}>+</Text>
-                    </View>
-                    <View style={styles.biserieLine} />
-                  </View>
-                )}
-              </>
+              <ExerciseCard
+                item={item}
+                index={index}
+                semana={semana}
+                diaIdx={diaIdx}
+                isOpen={openId === item.id}
+                onToggleOpen={(id) => setOpenId(openId === id ? null : id)}
+                prog={prog}
+                notes={notes}
+                theme={theme}
+                exerciseDetails={exerciseDetailsMap.get(item.id)}
+                onSetStatus={setEstadoEjLocal}
+                onOpenTC={onOpenTC}
+                onOpenImage={onOpenImage}
+                onOpenVideo={onOpenVideo}
+                onSetData={setSerieDato}
+                onFlushProgress={flushProgress}
+                onOpenNotes={handleOpenNotes}
+                listRef={listRef}
+                showBiserieConnector={showBiserieConnector}
+              />
             );
           }}
+
           ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.textSecondary }}>Sin ejercicios</Text>}
           ListFooterComponent={
             ejerciciosDia.length > 0 ? (
