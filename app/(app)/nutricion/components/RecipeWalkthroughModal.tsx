@@ -326,6 +326,16 @@ export default function RecipeWalkthroughModal({
                             })}
                         </View>
 
+                        {/* COACH NOTE (If any) */}
+                        {recipe.coachNote ? (
+                            <View style={[styles.coachNoteBox, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '25' }]}>
+                                <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.primary} style={{ marginRight: 10, marginTop: 2 }} />
+                                <Text style={[styles.coachNoteText, { color: theme.text }]}>
+                                    {recipe.coachNote}
+                                </Text>
+                            </View>
+                        ) : null}
+
                         {/* SECTION 2: INSTRUCTIONS (If any) */}
                         {recipe.instructions && (
                             <View style={styles.instructionsSection}>
@@ -442,6 +452,21 @@ const styles = StyleSheet.create({
     ingredientMacros: { fontSize: 11, marginTop: 2 },
     checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
 
+    coachNoteBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: 24,
+        padding: 16,
+        borderRadius: 14,
+        borderWidth: 1,
+    },
+    coachNoteText: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '500',
+        fontStyle: 'italic',
+        lineHeight: 22,
+    },
     instructionsSection: { marginTop: 32 },
     finishBtn: {
         flexDirection: 'row',

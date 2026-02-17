@@ -29,7 +29,14 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChatTheme } from '../../../context/ChatThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ChatAudioPlayer from '../../../src/components/chat/ChatAudioPlayer';
-import * as ImagePicker from 'expo-image-picker'; // 🆕 For gallery/camera
+import SignedImage, { getCachedUrl } from '../../../src/components/shared/SignedImage';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import ChatAttachmentMenu, { showAttachmentMenuIOS } from '../../../src/components/chat/ChatAttachmentMenu';
+import ChatAudioRecorder from '../../../src/components/chat/ChatAudioRecorder';
+import ChatDocumentBubble from '../../../src/components/chat/ChatDocumentBubble';
+import ChatMessageAudioPlayer from '../../../src/components/chat/ChatMessageAudioPlayer';
+import BroadcastModal from '../../../components/BroadcastModal';
 // Componentes mejorados para iOS
 import {
     EnhancedScrollView as ScrollView,
@@ -264,75 +271,12 @@ const FeedbackPreviewModal = ({ visible, onClose, data, loading, onRetry }) => {
     );
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CHAT MEDIA IMAGE (fetches signed URL then displays)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const ChatMediaImage = ({ mediaKey, token, style }) => {
-    const [imageUrl, setImageUrl] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
-
-    useEffect(() => {
-        const fetchSignedUrl = async () => {
-            try {
-                const res = await fetch(`${API_URL}/api/chat/media-url`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ key: mediaKey })
-                });
-                const data = await res.json();
-                if (data.success && data.url) {
-                    setImageUrl(data.url);
-                } else {
-                    setError(true);
-                }
-            } catch (err) {
-                console.error('[ChatMediaImage] Error:', err);
-                setError(true);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (mediaKey && token) {
-            fetchSignedUrl();
-        }
-    }, [mediaKey, token]);
-
-    if (loading) {
-        return (
-            <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#e2e8f0' }]}>
-                <ActivityIndicator size="small" color="#8b5cf6" />
-            </View>
-        );
-    }
-
-    if (error || !imageUrl) {
-        return (
-            <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#fee2e2' }]}>
-                <Ionicons name="image-outline" size={32} color="#ef4444" />
-            </View>
-        );
-    }
-
-    return (
-        <Image
-            source={{ uri: imageUrl }}
-            style={style}
-            resizeMode="cover"
-        />
-    );
-};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MESSAGE BUBBLE
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize, onPreviewPress, token, onMediaPress, onComparisonPhotoPress }) => {
+const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDark, fontSize, onPreviewPress, onMediaPress, onComparisonPhotoPress }) => {
     const router = useRouter();
     const getTypeColor = (type) => {
         const colors = {
@@ -367,10 +311,12 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
 
     const youtubeLink = extractYouTubeLink(message.message);
 
-    // Limpiar mensaje de YouTube link para mostrarlo separado
-    const cleanMessage = youtubeLink
+    // Limpiar mensaje: quitar YouTube links y placeholders de media
+    let cleanMessage = youtubeLink
         ? message.message.replace(/📺.*$/s, '').trim()
-        : message.message;
+        : (message.message || '');
+    // Strip media placeholders ([image], [audio], [video], [document])
+    cleanMessage = cleanMessage.replace(/^\[(image|audio|video|document)\]$/i, '').trim();
 
     return (
         <View style={[
@@ -404,10 +350,10 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                     <View style={styles.comparisonPhotos}>
                         <View style={styles.comparisonPhotoCol}>
                             <Text style={styles.comparisonLabel}>Antes</Text>
-                            <Image
-                                source={{ uri: message.metadata.compareData.olderPhotoUrl }}
+                            <SignedImage
+                                r2Key={message.metadata.compareData.olderPhotoKey}
+                                fallbackUrl={message.metadata.compareData.olderPhotoUrl}
                                 style={styles.comparisonPhotoImg}
-                                resizeMode="cover"
                             />
                             <Text style={styles.comparisonDate}>
                                 {new Date(message.metadata.compareData.olderDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
@@ -418,10 +364,10 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                         </View>
                         <View style={styles.comparisonPhotoCol}>
                             <Text style={styles.comparisonLabel}>Después</Text>
-                            <Image
-                                source={{ uri: message.metadata.compareData.newerPhotoUrl }}
+                            <SignedImage
+                                r2Key={message.metadata.compareData.newerPhotoKey}
+                                fallbackUrl={message.metadata.compareData.newerPhotoUrl}
                                 style={styles.comparisonPhotoImg}
-                                resizeMode="cover"
                             />
                             <Text style={styles.comparisonDate}>
                                 {new Date(message.metadata.compareData.newerDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
@@ -507,35 +453,51 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                     />
                 )}
 
-            {/* 🆕 Inline Media Attachment (WhatsApp-style) */}
+            {/* Inline Media Attachment (WhatsApp-style) */}
             {message.mediaUrl && message.mediaType && (
-                <TouchableOpacity
-                    style={styles.chatMediaContainer}
-                    activeOpacity={0.9}
-                    onPress={() => {
-                        if (onMediaPress) {
-                            onMediaPress({
-                                mediaUrl: message.mediaUrl,
-                                mediaType: message.mediaType,
-                                token
-                            });
-                        }
-                    }}
-                >
-                    {message.mediaType === 'image' && (
-                        <ChatMediaImage
-                            mediaKey={message.mediaUrl}
-                            token={token}
-                            style={styles.chatMediaImage}
+                <>
+                    {(message.mediaType === 'image' || message.mediaType === 'video') && (
+                        <TouchableOpacity
+                            style={styles.chatMediaContainer}
+                            activeOpacity={0.9}
+                            onPress={() => {
+                                if (onMediaPress) {
+                                    onMediaPress({
+                                        mediaUrl: message.mediaUrl,
+                                        mediaType: message.mediaType,
+                                    });
+                                }
+                            }}
+                        >
+                            {message.mediaType === 'image' && (
+                                <SignedImage
+                                    r2Key={message.mediaUrl}
+                                    style={styles.chatMediaImage}
+                                />
+                            )}
+                            {message.mediaType === 'video' && (
+                                <View style={styles.chatMediaVideo}>
+                                    <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
+                                    <Text style={styles.chatMediaVideoLabel}>Video</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    {message.mediaType === 'audio' && (
+                        <ChatMessageAudioPlayer
+                            r2Key={message.mediaUrl}
+                            duration={message.duration}
+                            isOwn={isOwn}
                         />
                     )}
-                    {message.mediaType === 'video' && (
-                        <View style={styles.chatMediaVideo}>
-                            <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
-                            <Text style={styles.chatMediaVideoLabel}>Video</Text>
-                        </View>
+                    {message.mediaType === 'document' && (
+                        <ChatDocumentBubble
+                            r2Key={message.mediaUrl}
+                            fileName={message.fileName}
+                            isOwn={isOwn}
+                        />
                     )}
-                </TouchableOpacity>
+                </>
             )}
 
             {/* Type badge for trainer chat (not for video_feedback_response) */}
@@ -547,12 +509,14 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
                 </View>
             )}
 
-            <Text style={[
-                styles.messageText,
-                { color: isOwn ? textOwn : textOther, fontSize: fontSize || 15 }
-            ]}>
-                {cleanMessage}
-            </Text>
+            {cleanMessage ? (
+                <Text style={[
+                    styles.messageText,
+                    { color: isOwn ? textOwn : textOther, fontSize: fontSize || 15 }
+                ]}>
+                    {cleanMessage}
+                </Text>
+            ) : null}
 
             {/* YouTube Link - Rendered as tappable card */}
             {youtubeLink && (
@@ -601,9 +565,12 @@ export default function ConversationScreen() {
     const [messageType, setMessageType] = useState('general');
     const [selectedCategory, setSelectedCategory] = useState('all');
 
-    // 🆕 Media Attachment States
-    const [attachment, setAttachment] = useState(null); // { uri, type: 'image'|'video', fileName }
+    // Media Attachment States
+    const [attachment, setAttachment] = useState(null); // { uri, type: 'image'|'video'|'audio'|'document', fileName, mimeType? }
     const [uploading, setUploading] = useState(false);
+    const [attachMenuVisible, setAttachMenuVisible] = useState(false);
+    const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+    const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
 
     const isTrainer = isTrainerChat === 'true';
     const isGroup = type === 'group';
@@ -638,11 +605,34 @@ export default function ConversationScreen() {
 
     const handleMediaPress = async (data) => {
         try {
-            // Fetch signed URL
+            // If mediaUrl is already a full URL (legacy messages), use directly
+            if (data.mediaUrl && data.mediaUrl.startsWith('http')) {
+                setMediaModalData({
+                    mediaUrl: data.mediaUrl,
+                    mediaType: data.mediaType,
+                    signedUrl: data.mediaUrl
+                });
+                setMediaModalVisible(true);
+                return;
+            }
+
+            // Check SignedImage cache first (avoids duplicate API call)
+            const cached = getCachedUrl(data.mediaUrl);
+            if (cached) {
+                setMediaModalData({
+                    mediaUrl: data.mediaUrl,
+                    mediaType: data.mediaType,
+                    signedUrl: cached
+                });
+                setMediaModalVisible(true);
+                return;
+            }
+
+            // Fetch signed URL from R2 key (uses token from useAuth closure)
             const res = await fetch(`${API_URL}/api/chat/media-url`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${data.token}`,
+                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ key: data.mediaUrl })
@@ -655,9 +645,12 @@ export default function ConversationScreen() {
                     signedUrl: result.url
                 });
                 setMediaModalVisible(true);
+            } else {
+                Alert.alert('Error', 'No se pudo cargar el contenido');
             }
         } catch (err) {
             console.error('[Chat] Error opening media:', err);
+            Alert.alert('Error', 'No se pudo abrir el contenido');
         }
     };
 
@@ -724,8 +717,16 @@ export default function ConversationScreen() {
     };
 
     // Upload media to R2 and get key
-    const uploadMedia = async (mediaUri, mediaType, fileName) => {
+    const uploadMedia = async (mediaUri, mediaType, fileName, mimeType) => {
         try {
+            // Determine contentType based on mediaType
+            let contentType;
+            if (mediaType === 'video') contentType = 'video/mp4';
+            else if (mediaType === 'image') contentType = 'image/jpeg';
+            else if (mediaType === 'audio') contentType = mimeType || 'audio/m4a';
+            else if (mediaType === 'document') contentType = mimeType || 'application/pdf';
+            else contentType = 'application/octet-stream';
+
             // 1. Get presigned upload URL
             const urlRes = await fetch(`${API_URL}/api/chat/upload-url`, {
                 method: 'POST',
@@ -735,7 +736,7 @@ export default function ConversationScreen() {
                 },
                 body: JSON.stringify({
                     fileName,
-                    contentType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+                    contentType,
                     conversationId
                 })
             });
@@ -747,13 +748,17 @@ export default function ConversationScreen() {
             const fileResponse = await fetch(mediaUri);
             const blob = await fileResponse.blob();
 
-            await fetch(urlData.uploadUrl, {
+            const uploadRes = await fetch(urlData.uploadUrl, {
                 method: 'PUT',
                 body: blob,
                 headers: {
-                    'Content-Type': mediaType === 'video' ? 'video/mp4' : 'image/jpeg'
+                    'Content-Type': contentType
                 }
             });
+
+            if (!uploadRes.ok) {
+                throw new Error(`R2 upload failed: ${uploadRes.status}`);
+            }
 
             return urlData.key;
         } catch (error) {
@@ -761,6 +766,57 @@ export default function ConversationScreen() {
             throw error;
         }
     };
+
+    // Pick document (PDF, DOC, XLS, TXT, etc.)
+    const pickDocument = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: [
+                    'application/pdf',
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'text/plain',
+                ],
+                copyToCacheDirectory: true,
+            });
+
+            if (!result.canceled && result.assets[0]) {
+                const asset = result.assets[0];
+                setAttachment({
+                    uri: asset.uri,
+                    type: 'document',
+                    fileName: asset.name || `document_${Date.now()}.pdf`,
+                    mimeType: asset.mimeType || 'application/pdf',
+                    fileSize: asset.size,
+                });
+            }
+        } catch (error) {
+            console.error('[Chat] Document picker error:', error);
+            Alert.alert('Error', 'No se pudo seleccionar el archivo');
+        }
+    };
+
+    // Attachment menu handler
+    const showAttachmentMenu = () => {
+        if (Platform.OS === 'ios') {
+            showAttachmentMenuIOS({
+                onCamera: launchCamera,
+                onGallery: pickFromGallery,
+                onDocument: pickDocument,
+            });
+        } else {
+            setAttachMenuVisible(true);
+        }
+    };
+
+    // Auto-send voice messages (WhatsApp-style)
+    useEffect(() => {
+        if (attachment?._autoSend) {
+            handleSend();
+        }
+    }, [attachment]);
 
     // Clear attachment
     const clearAttachment = () => {
@@ -834,8 +890,8 @@ export default function ConversationScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-            router.replace('/(app)/chat');
-            return true; // Prevents default back behavior
+            router.back();
+            return true;
         });
 
         return () => backHandler.remove();
@@ -960,7 +1016,7 @@ export default function ConversationScreen() {
             if (attachment) {
                 setUploading(true);
                 try {
-                    mediaUrl = await uploadMedia(attachment.uri, attachment.type, attachment.fileName);
+                    mediaUrl = await uploadMedia(attachment.uri, attachment.type, attachment.fileName, attachment.mimeType);
                     mediaType = attachment.type;
                     fileName = attachment.fileName;
                     duration = attachment.duration || null;
@@ -1017,7 +1073,7 @@ export default function ConversationScreen() {
 
             {/* Header */}
             <View style={[styles.header, { backgroundColor: chatTheme.cardBackground, borderBottomColor: chatTheme.border }]}>
-                <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/(app)/chat')}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={24} color={chatTheme.text} />
                 </TouchableOpacity>
 
@@ -1037,6 +1093,14 @@ export default function ConversationScreen() {
                     )}
                 </View>
 
+                {isTrainer && (
+                    <TouchableOpacity
+                        style={styles.broadcastBtn}
+                        onPress={() => setBroadcastModalVisible(true)}
+                    >
+                        <Ionicons name="megaphone" size={18} color={chatTheme.primary} />
+                    </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.moreBtn}>
                     <Ionicons name="ellipsis-vertical" size={20} color={chatTheme.textSecondary} />
                 </TouchableOpacity>
@@ -1069,7 +1133,7 @@ export default function ConversationScreen() {
                                 isDark={isDark}
                                 fontSize={fontSizeValue}
                                 onPreviewPress={handlePreviewFeedback}
-                                token={token}
+
                                 onMediaPress={handleMediaPress}
                                 onComparisonPhotoPress={(compareData) => {
                                     setComparisonModalData(compareData);
@@ -1133,11 +1197,19 @@ export default function ConversationScreen() {
                     </View>
                 )}
 
-                {/* 🆕 Attachment Preview */}
+                {/* Attachment Preview */}
                 {attachment && (
                     <View style={[styles.attachmentPreview, { backgroundColor: chatTheme.cardBackground }]}>
                         {attachment.type === 'image' ? (
                             <Image source={{ uri: attachment.uri }} style={styles.attachmentThumb} />
+                        ) : attachment.type === 'document' ? (
+                            <View style={[styles.attachmentThumb, styles.documentThumb]}>
+                                <Ionicons name="document-text" size={24} color="#fff" />
+                            </View>
+                        ) : attachment.type === 'audio' ? (
+                            <View style={[styles.attachmentThumb, styles.audioThumb]}>
+                                <Ionicons name="mic" size={24} color="#fff" />
+                            </View>
                         ) : (
                             <View style={[styles.attachmentThumb, styles.videoThumb]}>
                                 <Ionicons name="videocam" size={24} color="#fff" />
@@ -1152,80 +1224,97 @@ export default function ConversationScreen() {
                     </View>
                 )}
 
-                {/* WhatsApp-style Input Bar */}
-                <View style={[styles.inputContainer, {
-                    backgroundColor: chatTheme.cardBackground,
-                    borderTopColor: chatTheme.border,
-                    paddingBottom: Math.max(insets.bottom, 12)
-                }]}>
-                    {/* [+] Gallery Button */}
-                    <TouchableOpacity
-                        style={styles.mediaBtn}
-                        onPress={pickFromGallery}
-                        disabled={sending}
-                    >
-                        <Ionicons name="add" size={26} color={chatTheme.primary} />
-                    </TouchableOpacity>
-
-                    {/* Text Input */}
-                    <TextInput
-                        style={[styles.input, {
-                            backgroundColor: chatTheme.inputBackground,
-                            color: chatTheme.text
-                        }]}
-                        value={newMessage}
-                        onChangeText={setNewMessage}
-                        placeholder="Escribe un mensaje..."
-                        placeholderTextColor={chatTheme.textTertiary}
-                        multiline
-                        maxLength={2000}
-                        blurOnSubmit={false}
-                        autoCorrect={true}
-                        autoCapitalize="sentences"
-                        returnKeyType="default"
-                        textAlignVertical="center"
-                        onKeyPress={(e) => {
-                            if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
-                                e.preventDefault();
-                                handleSend();
-                            }
+                {/* Input Bar */}
+                {isRecordingAudio ? (
+                    <ChatAudioRecorder
+                        theme={chatTheme}
+                        insets={insets}
+                        onRecordingComplete={(uri, durationMs) => {
+                            setIsRecordingAudio(false);
+                            setAttachment({
+                                uri,
+                                type: 'audio',
+                                fileName: `voice_${Date.now()}.m4a`,
+                                mimeType: 'audio/m4a',
+                                duration: durationMs,
+                                _autoSend: true,
+                            });
                         }}
+                        onCancel={() => setIsRecordingAudio(false)}
                     />
-
-                    {/* Right buttons: Camera + Mic (no text) OR Send (with text/attachment) */}
-                    {(newMessage.trim() || attachment) ? (
-                        /* SEND BUTTON */
+                ) : (
+                    <View style={[styles.inputContainer, {
+                        backgroundColor: chatTheme.cardBackground,
+                        borderTopColor: chatTheme.border,
+                        paddingBottom: Math.max(insets.bottom, 12)
+                    }]}>
+                        {/* [+] Attachment Menu Button */}
                         <TouchableOpacity
-                            style={[styles.sendBtn, { backgroundColor: chatTheme.primary }]}
-                            onPress={handleSend}
-                            disabled={sending || uploading}
+                            style={styles.mediaBtn}
+                            onPress={showAttachmentMenu}
+                            disabled={sending}
                         >
-                            {(sending || uploading) ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <Ionicons name="send" size={20} color="#fff" />
-                            )}
+                            <Ionicons name="add" size={26} color={chatTheme.primary} />
                         </TouchableOpacity>
-                    ) : (
-                        /* MEDIA BUTTONS (Camera + Mic placeholder) */
-                        <View style={styles.mediaButtonsRow}>
+
+                        {/* Text Input */}
+                        <TextInput
+                            style={[styles.input, {
+                                backgroundColor: chatTheme.inputBackground,
+                                color: chatTheme.text
+                            }]}
+                            value={newMessage}
+                            onChangeText={setNewMessage}
+                            placeholder="Escribe un mensaje..."
+                            placeholderTextColor={chatTheme.textTertiary}
+                            multiline
+                            maxLength={2000}
+                            blurOnSubmit={false}
+                            autoCorrect={true}
+                            autoCapitalize="sentences"
+                            returnKeyType="default"
+                            textAlignVertical="center"
+                            onKeyPress={(e) => {
+                                if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                                    e.preventDefault();
+                                    handleSend();
+                                }
+                            }}
+                        />
+
+                        {/* Right button: Mic (no text) OR Send (with text/attachment) */}
+                        {(newMessage.trim() || attachment) ? (
+                            <TouchableOpacity
+                                style={[styles.sendBtn, { backgroundColor: chatTheme.primary }]}
+                                onPress={handleSend}
+                                disabled={sending || uploading}
+                            >
+                                {(sending || uploading) ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Ionicons name="send" size={20} color="#fff" />
+                                )}
+                            </TouchableOpacity>
+                        ) : (
                             <TouchableOpacity
                                 style={styles.mediaBtn}
-                                onPress={launchCamera}
+                                onPress={() => setIsRecordingAudio(true)}
                                 disabled={sending}
                             >
-                                <Ionicons name="camera-outline" size={24} color={chatTheme.primary} />
+                                <Ionicons name="mic-outline" size={24} color={chatTheme.primary} />
                             </TouchableOpacity>
-                            {/* Mic button placeholder - will be AudioRecorderButton later */}
-                            <TouchableOpacity
-                                style={styles.mediaBtn}
-                                disabled={true}
-                            >
-                                <Ionicons name="mic-outline" size={24} color={chatTheme.textTertiary} />
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
+                        )}
+                    </View>
+                )}
+
+                {/* Android Attachment Menu */}
+                <ChatAttachmentMenu
+                    visible={attachMenuVisible}
+                    onClose={() => setAttachMenuVisible(false)}
+                    onCamera={launchCamera}
+                    onGallery={pickFromGallery}
+                    onDocument={pickDocument}
+                />
             </KeyboardAvoidingView>
 
             {/* 🆕 Preview Modal */}
@@ -1259,6 +1348,10 @@ export default function ConversationScreen() {
                             source={{ uri: mediaModalData.signedUrl }}
                             style={styles.fullscreenImage}
                             resizeMode="contain"
+                            onError={() => {
+                                Alert.alert('Error', 'No se pudo cargar la imagen. Inténtalo de nuevo.');
+                                setMediaModalVisible(false);
+                            }}
                         />
                     )}
                     {mediaModalData?.mediaType === 'video' && mediaModalData?.signedUrl && (
@@ -1310,10 +1403,10 @@ export default function ConversationScreen() {
                                     {/* Antes */}
                                     <View style={styles.comparisonFullCol}>
                                         <Text style={styles.comparisonFullLabel}>Antes</Text>
-                                        <Image
-                                            source={{ uri: comparisonModalData.olderPhotoUrl }}
+                                        <SignedImage
+                                            r2Key={comparisonModalData.olderPhotoKey}
+                                            fallbackUrl={comparisonModalData.olderPhotoUrl}
                                             style={{ width: photoW, height: photoH, borderRadius: 10, backgroundColor: '#1a1a1f' }}
-                                            resizeMode="cover"
                                         />
                                         <Text style={styles.comparisonFullDate}>
                                             {new Date(comparisonModalData.olderDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1323,10 +1416,10 @@ export default function ConversationScreen() {
                                     {/* Después */}
                                     <View style={styles.comparisonFullCol}>
                                         <Text style={styles.comparisonFullLabel}>Después</Text>
-                                        <Image
-                                            source={{ uri: comparisonModalData.newerPhotoUrl }}
+                                        <SignedImage
+                                            r2Key={comparisonModalData.newerPhotoKey}
+                                            fallbackUrl={comparisonModalData.newerPhotoUrl}
                                             style={{ width: photoW, height: photoH, borderRadius: 10, backgroundColor: '#1a1a1f' }}
-                                            resizeMode="cover"
                                         />
                                         <Text style={styles.comparisonFullDate}>
                                             {new Date(comparisonModalData.newerDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1350,6 +1443,12 @@ export default function ConversationScreen() {
                     })()}
                 </View>
             </Modal>
+
+            {/* Broadcast Modal (trainer only) */}
+            <BroadcastModal
+                visible={broadcastModalVisible}
+                onClose={() => setBroadcastModalVisible(false)}
+            />
         </SafeAreaView >
     );
 }
@@ -1775,6 +1874,14 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#fff'
     },
+    broadcastBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(139, 92, 246, 0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     moreBtn: {
         padding: 4
     },
@@ -1952,6 +2059,16 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center'
     },
+    documentThumb: {
+        backgroundColor: '#f59e0b',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    audioThumb: {
+        backgroundColor: '#8b5cf6',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
     attachmentName: {
         flex: 1,
         fontSize: 14
@@ -2124,6 +2241,7 @@ const styles = StyleSheet.create({
         marginBottom: 6,
         borderWidth: 1,
         borderColor: 'rgba(14, 165, 233, 0.2)',
+        minWidth: 240,
     },
     comparisonHeader: {
         flexDirection: 'row',

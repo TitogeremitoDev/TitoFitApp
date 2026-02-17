@@ -161,7 +161,7 @@ export default function BrandingScreen() {
                 return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
                 quality: 1,
             });
@@ -236,7 +236,7 @@ export default function BrandingScreen() {
                 return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
                 quality: 1,
             });
@@ -766,7 +766,7 @@ export default function BrandingScreen() {
                                 }}>
                                     <Ionicons name="refresh" size={18} color="#64748b" />
                                     <Text style={styles.secondaryActionText}>
-                                        Cambiar Logo / Regenerar ({brandingData.regenerationsRemaining} restantes)
+                                        Cambiar Logo / Regenerar
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.dangerAction} onPress={handleDeactivate}>

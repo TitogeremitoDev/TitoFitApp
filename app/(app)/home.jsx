@@ -421,10 +421,11 @@ export default function HomeScreen() {
         {/* Grid para botones secundarios en pantallas pequeñas, Lista en grandes */}
         {isSmallHeight ? (
           <View style={styles.gridContainer}>
-            {/* Fila 1 */}
+
+            {/* Fila 1*/}
             <View style={styles.gridColumn}>
-              <Link href="/rutinas" asChild>
-                <ActionButton title="Rutina" icon="construct-outline" variant="secondary" compact={true} style={styles.compactButton} />
+              <Link href="/nutricion" asChild>
+                <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" compact={true} style={styles.compactButton} />
               </Link>
             </View>
             <View style={styles.gridColumnRelative}>
@@ -449,11 +450,6 @@ export default function HomeScreen() {
 
             {/* Fila 2 */}
             <View style={styles.gridColumn}>
-              <Link href="/nutricion" asChild>
-                <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" compact={true} style={styles.compactButton} />
-              </Link>
-            </View>
-            <View style={styles.gridColumn}>
               <ActionButton
                 title="Perfil"
                 icon="person-outline"
@@ -463,11 +459,14 @@ export default function HomeScreen() {
                 style={styles.compactButton}
               />
             </View>
+
+
+
           </View>
         ) : (
           <>
-            <Link href="/rutinas" asChild>
-              <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
+            <Link href="/nutricion" asChild>
+              <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
             </Link>
             <View style={styles.spacer10} />
             <View style={styles.badgeContainer}>
@@ -485,10 +484,6 @@ export default function HomeScreen() {
                 </View>
               )}
             </View>
-            <View style={styles.spacer10} />
-            <Link href="/nutricion" asChild>
-              <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
-            </Link>
             <View style={styles.spacer10} />
             <ActionButton
               title="Perfil"

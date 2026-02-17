@@ -63,7 +63,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
         try {
             if (!isRefresh) setIsLoading(true);
 
-            let url = `${API_URL}/api/progress-photos/client/${clientId}?limit=100`;
+            let url = `${API_URL}/api/progress-photos/client/${clientId}?category=body&limit=100`;
             if (selectedTags.length > 0) {
                 url += `&tags=${selectedTags.join(',')}`;
             }

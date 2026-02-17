@@ -512,6 +512,7 @@ export default function FeedbacksScreen() {
                 <FlatList
                     data={respondedFeedbacks}
                     keyExtractor={item => item._id}
+                    style={{ flex: 1 }}
                     contentContainerStyle={styles.listContent}
                     refreshControl={
                         <RefreshControl
@@ -534,6 +535,7 @@ export default function FeedbacksScreen() {
                 <FlatList
                     data={filteredClients}
                     keyExtractor={item => item._id}
+                    style={{ flex: 1 }}
                     contentContainerStyle={styles.listContent}
                     refreshControl={
                         <RefreshControl

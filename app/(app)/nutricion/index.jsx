@@ -14,6 +14,7 @@ import {
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
 import ClientMealPlanView from './components/ClientMealPlanView';
@@ -22,6 +23,7 @@ import {
     ACTIVITY_FACTORS,
 } from '../../../src/utils/nutritionCalculator';
 import { getContrastColor } from '../../../utils/colors';
+import ActionToast from '../../../src/components/shared/ActionToast';
 
 const { width } = Dimensions.get('window');
 
@@ -96,6 +98,7 @@ export default function NutricionScreen() {
 
     // Estado para plan del coach
     const [coachPlan, setCoachPlan] = useState(null);
+    const [dietToast, setDietToast] = useState(false);
     const [clientSettings, setClientSettings] = useState({});
     const [todayTarget, setTodayTarget] = useState(null);
     const [planMode, setPlanMode] = useState('auto'); // 'auto' | 'custom'
@@ -138,6 +141,16 @@ export default function NutricionScreen() {
                             currentMode = newMode;
 
                             setDataSource('coach');
+
+                            // Detectar cambios en la dieta del coach
+                            const planUpdatedAt = data.plan.updatedAt || data.plan.assignedAt;
+                            if (planUpdatedAt) {
+                                const lastSeen = await AsyncStorage.getItem('last_seen_diet_updated');
+                                if (lastSeen && new Date(planUpdatedAt) > new Date(lastSeen)) {
+                                    setDietToast(true);
+                                }
+                                await AsyncStorage.setItem('last_seen_diet_updated', planUpdatedAt);
+                            }
                         } else if (data.success && data.plan && data.plan.planType === 'auto') {
                             // Plan automático asignado por el coach
                             console.log('[Nutricion] ✅ Plan AUTO del coach encontrado');
@@ -783,6 +796,17 @@ export default function NutricionScreen() {
                     </>
                 )}
             </ScrollView>
+            {/* Toast: cambio en la dieta del coach */}
+            <ActionToast
+                visible={dietToast}
+                message="Plan nutricional actualizado"
+                submessage="Tu entrenador ha modificado tu dieta"
+                icon="nutrition-outline"
+                iconColor="#22c55e"
+                onDismiss={() => setDietToast(false)}
+                duration={5000}
+                position="top"
+            />
         </SafeAreaView>
     );
 }

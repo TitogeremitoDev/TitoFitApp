@@ -5,7 +5,7 @@
     Ahora con soporte para tema dinámico.
     ──────────────────────────────────────────────────────────────────────── */
 
-import { useRef } from 'react';
+import { useRef, forwardRef } from 'react';
 import {
   Pressable,
   Animated,
@@ -17,8 +17,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
 /* Botón reutilizable con micro-animación.
-   - Se usa con <Link asChild> o con onPress normal. */
-export default function ActionButton({
+   - Se usa con <Link asChild> o con onPress normal.
+   - forwardRef necesario para que <Link asChild> funcione en iOS (primera carga). */
+const ActionButton = forwardRef(function ActionButton({
   title,
   icon,
   variant = 'primary',
@@ -26,7 +27,7 @@ export default function ActionButton({
   onPressIn: onPressInProp,
   onPressOut: onPressOutProp,
   ...pressableProps // Acepta onPress, onPressIn, onPressOut, etc.
-}) {
+}, ref) {
   const { theme } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -77,6 +78,7 @@ export default function ActionButton({
       pointerEvents={Platform.OS === 'ios' ? 'auto' : 'box-none'}
     >
       <Pressable
+        ref={ref}
         {...pressableProps}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -95,7 +97,7 @@ export default function ActionButton({
       </Pressable>
     </Animated.View>
   );
-}
+});
 
 /* ───────────── Estilos Base ───────────── */
 const styles = StyleSheet.create({
@@ -156,3 +158,5 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 });
+
+export default ActionButton;

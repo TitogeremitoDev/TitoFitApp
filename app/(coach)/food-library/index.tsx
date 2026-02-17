@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import CoachHeader from '../components/CoachHeader';
 import FoodListCard from '../../../components/FoodListCard';
 import FoodGridCard from '../../../components/FoodGridCard';
@@ -55,10 +55,12 @@ export default function FoodLibraryScreen() {
 
 
 
-    // 1. Initial Load
-    useEffect(() => {
-        loadDiscoveryData();
-    }, []);
+    // 1. Refresh data on screen focus (syncs favorites from other screens)
+    useFocusEffect(
+        useCallback(() => {
+            loadDiscoveryData();
+        }, [])
+    );
 
     const loadDiscoveryData = async () => {
         try {
@@ -415,7 +417,7 @@ export default function FoodLibraryScreen() {
                     </View>
 
                     {/* CONTENT GRID */}
-                    <ScrollView contentContainerStyle={{ padding: 10, paddingBottom: 100 }}>
+                    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, paddingBottom: 100 }}>
                         {/* 2. Favorites Carousel (Only if showing 'All' and not searching) */}
                         {searchQuery === '' && !filters.onlyFavorites && initialFoods.some(f => f.isFavorite) && (
                             <View style={{ marginBottom: 20 }}>

@@ -98,7 +98,7 @@ export default function BrandBackground({
     const { width, height } = Dimensions.get('window');
 
     return (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: bgColor }]}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: bgColor }]} pointerEvents="none">
             <Svg
                 width={width}
                 height={height}

@@ -12,10 +12,54 @@ import LOCAL_FOODS from '../constants/localFoods.json';
 // ─────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────
-const USE_BACKEND = true; // ✅ Connected to Local
-const USE_OPENFOODFACTS = true; // ✅ ENABLED for Async Loading
-// const API_BASE_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app/api';
+const USE_BACKEND = true;
+const USE_OPENFOODFACTS = true;
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app').replace(/\/+$/, '') + '/api';
+
+// ─────────────────────────────────────────────────────────
+// SEARCH CACHE (30s TTL, avoids repeated API calls)
+// ─────────────────────────────────────────────────────────
+const CACHE_TTL = 30_000; // 30 seconds
+const searchCache = new Map<string, { data: FoodItem[]; ts: number }>();
+
+const getCached = (key: string): FoodItem[] | null => {
+    const entry = searchCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > CACHE_TTL) {
+        searchCache.delete(key);
+        return null;
+    }
+    return entry.data;
+};
+
+const setCache = (key: string, data: FoodItem[]) => {
+    searchCache.set(key, { data, ts: Date.now() });
+    // Keep cache bounded (max 50 entries)
+    if (searchCache.size > 50) {
+        const oldest = searchCache.keys().next().value;
+        if (oldest) searchCache.delete(oldest);
+    }
+};
+
+// ─────────────────────────────────────────────────────────
+// TOKEN HELPER (read once per search session, not per layer)
+// ─────────────────────────────────────────────────────────
+let _cachedToken: string | null = null;
+let _tokenTs = 0;
+const TOKEN_CACHE_TTL = 60_000; // 1 minute
+
+const getToken = async (): Promise<string | null> => {
+    if (_cachedToken && Date.now() - _tokenTs < TOKEN_CACHE_TTL) return _cachedToken;
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    _cachedToken = await AsyncStorage.getItem('totalgains_token');
+    _tokenTs = Date.now();
+    return _cachedToken;
+};
+
+export const invalidateTokenCache = () => {
+    _cachedToken = null;
+    _tokenTs = 0;
+};
 
 // ─────────────────────────────────────────────────────────
 // TYPES
@@ -66,11 +110,16 @@ export const searchFoods = async (
     options: {
         layer?: 'LOCAL' | 'CLOUD' | 'API' | 'ALL' | 'RECIPE' | 'RAW';
         tag?: string;
-        skipExternal?: boolean; // New Flag for async loading
+        skipExternal?: boolean;
     } = {}
 ): Promise<FoodItem[]> => {
     const { layer = 'ALL', tag, skipExternal = false } = options;
     const normalizedQuery = query.toLowerCase().trim();
+
+    // Check cache first
+    const cacheKey = `${normalizedQuery}|${layer}|${tag || ''}|${skipExternal}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
 
     let results: FoodItem[] = [];
 
@@ -80,14 +129,12 @@ export const searchFoods = async (
     if (layer === 'ALL' || layer === 'LOCAL') {
         let localResults = LOCAL_FOODS as FoodItem[];
 
-        // Filter by query
         if (normalizedQuery) {
             localResults = localResults.filter(f =>
                 f.name.toLowerCase().includes(normalizedQuery)
             );
         }
 
-        // Filter by tag
         if (tag) {
             localResults = localResults.filter(f => f.tags?.includes(tag));
         }
@@ -103,12 +150,10 @@ export const searchFoods = async (
             const params = new URLSearchParams();
             if (normalizedQuery) params.append('q', normalizedQuery);
             if (tag) params.append('tag', tag);
-            if (layer !== 'ALL') params.append('layer', layer); // Pass layer to backend
+            if (layer !== 'ALL') params.append('layer', layer);
             params.append('limit', '15');
 
-            // Get auth token
-            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-            const token = await AsyncStorage.getItem('totalgains_token');
+            const token = await getToken();
 
             const response = await fetch(`${API_BASE_URL}/foods/search?${params}`, {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -127,17 +172,15 @@ export const searchFoods = async (
     }
 
     // ───────────────────────────────────────────────────────
-    // 3. API LAYER (OpenFoodFacts - Fallback)
-    // Only if NOT skipped
+    // 3. API LAYER (OpenFoodFacts via Backend Proxy)
     // ───────────────────────────────────────────────────────
     if (!skipExternal && (layer === 'ALL' || layer === 'API') && USE_OPENFOODFACTS && normalizedQuery) {
-        // Only fetch if we have less than 10 local/cloud results
         if (results.length < 10) {
             try {
                 const apiResults = await searchExternalFoods(normalizedQuery);
                 results.push(...apiResults);
             } catch (error) {
-                console.error('[API] OpenFoodFacts failed:', error);
+                console.error('[API] External search failed:', error);
             }
         }
     }
@@ -145,26 +188,33 @@ export const searchFoods = async (
     // ───────────────────────────────────────────────────────
     // 4. FILTER 0-KCAL JUNK + DEDUPLICATE & SORT
     // ───────────────────────────────────────────────────────
-    // Remove foods with 0 kcal (they provide no nutritional value to display)
-    if (normalizedQuery) {
-        results = results.filter(f => (f.nutrients?.kcal || 0) > 0);
-    }
+    const SPICE_TAGS = ['Especia', 'Condimento', 'spices', 'condiments', 'seasonings', 'herbs', 'sauces'];
+    results = results.filter(f => {
+        const kcal = f.nutrients?.kcal || 0;
+        if (kcal > 0) return true;
+        return f.tags?.some(t => SPICE_TAGS.includes(t)) || false;
+    });
     results = deduplicateByName(results);
     results = sortByPriority(results);
+
+    // Store in cache
+    setCache(cacheKey, results);
 
     return results;
 };
 
 // ─────────────────────────────────────────────────────────
-// EXPORTED EXTERNAL SEARCH (For Lazy Loading)
+// EXPORTED EXTERNAL SEARCH (Direct OpenFoodFacts)
+// Calls OFF directly from the client (browser/app).
+// Backend proxy removed — Koyeb IPs are blocked by OFF.
+// Atwater validation + 0-kcal filter are in searchOpenFoodFacts.
 // ─────────────────────────────────────────────────────────
-export const searchExternalFoods = async (query: string): Promise<FoodItem[]> => {
-    if (!USE_OPENFOODFACTS) return [];
+export const searchExternalFoods = async (query: string, signal?: AbortSignal): Promise<FoodItem[]> => {
+    if (!USE_OPENFOODFACTS || !query.trim()) return [];
 
     try {
-        return await searchOpenFoodFacts(query);
+        return await searchOpenFoodFacts(query, signal);
     } catch (e) {
-        console.error("External search failed", e);
         return [];
     }
 };
@@ -233,9 +283,7 @@ export const saveFood = async (foodData: Partial<FoodItem>): Promise<FoodItem> =
         });
     }
 
-    // Get auth token
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const token = await AsyncStorage.getItem('totalgains_token');
+    const token = await getToken();
 
     if (!token) {
         throw new Error('No hay sesión activa');
@@ -273,8 +321,7 @@ export const saveFoodFromPlan = async (payload: {
     instructions?: string;
     image?: string;
 }): Promise<FoodItem> => {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const token = await AsyncStorage.getItem('totalgains_token');
+    const token = await getToken();
 
     if (!token) throw new Error('No hay sesión activa');
 
@@ -300,16 +347,26 @@ export const saveFoodFromPlan = async (payload: {
 // TOGGLE FAVORITE (Clone-on-Favorite)
 // ─────────────────────────────────────────────────────────
 export const toggleFavorite = async (food: FoodItem): Promise<{ food: FoodItem | null; action: string }> => {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const token = await AsyncStorage.getItem('totalgains_token');
+    const token = await getToken();
 
     if (!token) {
         throw new Error('No hay sesión activa');
     }
 
-    const body = food.layer === 'CLOUD'
-        ? { layer: 'CLOUD', foodId: food._id }
-        : { layer: food.layer, foodData: food };
+    // Validate _id for CLOUD layer (must be valid MongoDB ObjectId)
+    const isValidObjectId = (id: any): boolean =>
+        typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
+
+    let body: any;
+
+    if (food.layer === 'CLOUD' && isValidObjectId(food._id)) {
+        body = { layer: 'CLOUD', foodId: food._id };
+    } else {
+        // For LOCAL/API or invalid _id: send foodData WITHOUT _id
+        // Backend will create a new document or match by name
+        const { _id, ...cleanData } = food as any;
+        body = { layer: food.layer || 'LOCAL', foodData: cleanData };
+    }
 
     const response = await fetch(`${API_BASE_URL}/foods/favorite`, {
         method: 'POST',
@@ -334,8 +391,7 @@ export const toggleFavorite = async (food: FoodItem): Promise<{ food: FoodItem |
 export const deleteFood = async (id: string): Promise<boolean> => {
     if (!USE_BACKEND) return true;
 
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const token = await AsyncStorage.getItem('totalgains_token');
+    const token = await getToken();
 
     if (!token) throw new Error('No hay sesión activa');
 
@@ -358,8 +414,7 @@ export const deleteFood = async (id: string): Promise<boolean> => {
 // GET FAVORITES
 // ─────────────────────────────────────────────────────────
 export const getFavorites = async (): Promise<FoodItem[]> => {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const token = await AsyncStorage.getItem('totalgains_token');
+    const token = await getToken();
 
     if (!token) return [];
 
@@ -386,11 +441,26 @@ const isSpiceOrCondiment = (product: any): boolean => {
     );
 };
 
-const searchOpenFoodFacts = async (query: string): Promise<FoodItem[]> => {
+const searchOpenFoodFacts = async (query: string, externalSignal?: AbortSignal): Promise<FoodItem[]> => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout (OFF can be very slow)
 
-    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=product_name,nutriments,image_front_small_url,image_url,code,brands,categories_tags`;
+    // If caller passes an AbortSignal, link it so cancellation propagates
+    if (externalSignal) {
+        if (externalSignal.aborted) { clearTimeout(timeoutId); return []; }
+        externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    // Use Spanish regional endpoint (faster from ES/LATAM) with v2-compatible search
+    const params = new URLSearchParams({
+        search_terms: query,
+        search_simple: '1',
+        action: 'process',
+        json: '1',
+        page_size: '8',
+        fields: 'product_name,product_name_es,nutriments,image_front_small_url,image_url,code,brands,categories_tags'
+    });
+    const url = `https://es.openfoodfacts.org/cgi/search.pl?${params}`;
 
     try {
         const response = await fetch(url, { signal: controller.signal });
@@ -399,37 +469,50 @@ const searchOpenFoodFacts = async (query: string): Promise<FoodItem[]> => {
 
         if (!data.products) return [];
 
-        return data.products
+        const filtered = data.products
             .filter((p: any) => {
                 const kcal = p.nutriments?.['energy-kcal_100g'] || 0;
-                if (kcal === 0 && !isSpiceOrCondiment(p)) return false;
+                const protein = p.nutriments?.proteins_100g || 0;
+                const carbs = p.nutriments?.carbohydrates_100g || 0;
+                const fat = p.nutriments?.fat_100g || 0;
+
                 if (!p.product_name) return false;
+
+                // Filter 0-kcal (except spices)
+                if (kcal === 0 && !isSpiceOrCondiment(p)) return false;
+
+                // Filter foods with all macros at 0 (incomplete data)
+                if (kcal > 0 && protein === 0 && carbs === 0 && fat === 0) return false;
+
+                // Atwater sanity check: expected kcal vs reported kcal (40% tolerance)
+                if (kcal > 0 && (protein + carbs + fat) > 0) {
+                    const expectedKcal = (protein * 4) + (carbs * 4) + (fat * 9);
+                    if (expectedKcal > 0 && Math.abs(kcal - expectedKcal) / expectedKcal > 0.4) return false;
+                }
+
                 return true;
             })
-            .slice(0, 5)
-            .map((p: any) => ({
-                _id: `off_${p.code}`,
-                name: p.product_name,
-                brand: p.brands,
-                layer: 'API' as const,
-                isSystem: true,
-                nutrients: {
-                    kcal: p.nutriments?.['energy-kcal_100g'] || 0,
-                    protein: p.nutriments?.proteins_100g || 0,
-                    carbs: p.nutriments?.carbohydrates_100g || 0,
-                    fat: p.nutriments?.fat_100g || 0,
-                    fiber: p.nutriments?.fiber_100g || 0,
-                },
-                image: p.image_front_small_url || p.image_url,
-                tags: p.categories_tags?.slice(0, 3).map((t: string) => t.replace('en:', '')) || []
-            }));
+            .slice(0, 5);
+
+        return filtered.map((p: any) => ({
+            _id: `off_${p.code}`,
+            name: p.product_name_es || p.product_name,
+            brand: p.brands,
+            layer: 'API' as const,
+            isSystem: true,
+            nutrients: {
+                kcal: Math.round(p.nutriments?.['energy-kcal_100g'] || 0),
+                protein: Math.round((p.nutriments?.proteins_100g || 0) * 10) / 10,
+                carbs: Math.round((p.nutriments?.carbohydrates_100g || 0) * 10) / 10,
+                fat: Math.round((p.nutriments?.fat_100g || 0) * 10) / 10,
+                fiber: Math.round((p.nutriments?.fiber_100g || 0) * 10) / 10,
+            },
+            image: p.image_front_small_url || p.image_url,
+            tags: p.categories_tags?.slice(0, 3).map((t: string) => t.replace('en:', '')) || []
+        }));
     } catch (e: any) {
         clearTimeout(timeoutId);
-        if (e.name === 'AbortError') {
-            console.warn('[OpenFoodFacts] Timeout (>3s)');
-        } else {
-            console.error('[OpenFoodFacts] Error:', e.message);
-        }
+        // Silently ignore AbortError (user typed new query) and timeouts
         return [];
     }
 };

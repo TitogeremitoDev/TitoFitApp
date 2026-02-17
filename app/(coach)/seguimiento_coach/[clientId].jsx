@@ -1,6 +1,6 @@
 /* app/(coach)/seguimiento/[clientId].jsx - Detalle de Seguimiento de un Cliente */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -13,16 +13,19 @@ import {
     useWindowDimensions,
     Platform,
     Image,
+    Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
+import Svg, { Circle as SvgCircle, Rect as SvgRect } from 'react-native-svg';
 import { useAuth } from '../../../context/AuthContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import PhotoGalleryTab from '../../../src/components/coach/PhotoGalleryTab';
 import CoachStudioModal from '../../../src/components/coach/CoachStudioModal';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -43,23 +46,38 @@ const formatTime = (dateStr) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RESPONSIVE CHART WRAPPER — measures parent width for react-native-chart-kit
+// ═══════════════════════════════════════════════════════════════════════════
+const ResponsiveChart = ({ children, fallbackWidth }) => {
+    const [width, setWidth] = useState(fallbackWidth || 300);
+    return (
+        <View style={{ width: '100%' }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
+            {typeof children === 'function' ? children(width) : children}
+        </View>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CHART CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
 const chartConfig = {
-    backgroundColor: '#fff',
-    backgroundGradientFrom: '#fff',
-    backgroundGradientTo: '#fff',
+    backgroundColor: 'transparent',
+    backgroundGradientFrom: '#ffffff',
+    backgroundGradientTo: '#ffffff',
+    backgroundGradientFromOpacity: 0,
+    backgroundGradientToOpacity: 0,
     decimalPlaces: 1,
     color: (opacity = 1) => `rgba(14, 165, 233, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-    propsForDots: { r: '4', strokeWidth: '2', stroke: '#0ea5e9' },
+    labelColor: () => '#64748b',
+    propsForLabels: { fontSize: 10 },
+    propsForDots: { r: '2.5', strokeWidth: '1.5', stroke: '#fff' },
     fillShadowGradient: '#0ea5e9',
-    fillShadowGradientOpacity: 0.2,
+    fillShadowGradientOpacity: 0.08,
     propsForBackgroundLines: {
-        strokeDasharray: '',
-        stroke: '#e2e8f0',
-        strokeWidth: 1,
+        strokeDasharray: '4 4',
+        stroke: '#e5e7eb',
+        strokeWidth: 0.5,
     },
 };
 
@@ -67,6 +85,7 @@ const barChartConfig = {
     ...chartConfig,
     color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
     fillShadowGradient: '#8b5cf6',
+    fillShadowGradientOpacity: 0.15,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -170,6 +189,168 @@ const getStatusBadge = (record) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// NUTRITION GALLERY TAB (fotos de comida del cliente)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NutritionGalleryTab = ({ clientId, token }) => {
+    const [photos, setPhotos] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [selectedPhoto, setSelectedPhoto] = React.useState(null);
+
+    const API_URL_GALLERY = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+
+    React.useEffect(() => {
+        fetchNutritionPhotos();
+    }, [clientId]);
+
+    const fetchNutritionPhotos = async () => {
+        try {
+            setLoading(true);
+            const res = await fetch(
+                `${API_URL_GALLERY}/api/progress-photos/client/${clientId}?category=nutrition&limit=100`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const data = await res.json();
+            if (data.success) {
+                setPhotos(data.photos || []);
+            }
+        } catch (e) {
+            console.error('[NutritionGallery] Error:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Agrupar fotos por fecha
+    const groupedPhotos = React.useMemo(() => {
+        const groups = {};
+        photos.forEach(p => {
+            const dateKey = new Date(p.takenAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+            if (!groups[dateKey]) groups[dateKey] = [];
+            groups[dateKey].push(p);
+        });
+        return Object.entries(groups);
+    }, [photos]);
+
+    if (loading) {
+        return (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#0ea5e9" />
+                <Text style={{ marginTop: 12, color: '#64748b', fontSize: 13 }}>Cargando fotos de nutrición...</Text>
+            </View>
+        );
+    }
+
+    if (photos.length === 0) {
+        return (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+                <Ionicons name="restaurant-outline" size={60} color="#cbd5e1" />
+                <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '700', color: '#334155' }}>Sin fotos de comida</Text>
+                <Text style={{ marginTop: 6, fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>
+                    Las fotos que el cliente suba desde su sección de nutrición aparecerán aquí.
+                </Text>
+            </View>
+        );
+    }
+
+    return (
+        <ScrollView contentContainerStyle={{ padding: 12 }}>
+            {groupedPhotos.map(([dateLabel, datePhotos]) => (
+                <View key={dateLabel} style={{ marginBottom: 20 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#334155', marginBottom: 10 }}>
+                        📅 {dateLabel}
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                        {datePhotos.map((photo) => (
+                            <View key={photo._id} style={{ width: 160 }}>
+                                <TouchableOpacity
+                                    onPress={() => setSelectedPhoto(selectedPhoto?._id === photo._id ? null : photo)}
+                                    style={{
+                                        width: 160, height: 120, borderRadius: 12, overflow: 'hidden',
+                                        borderWidth: selectedPhoto?._id === photo._id ? 2 : 0,
+                                        borderColor: '#0ea5e9',
+                                    }}
+                                >
+                                    <Image
+                                        source={{ uri: photo.fullUrl || photo.thumbnailUrl }}
+                                        style={{ width: '100%', height: '100%' }}
+                                    />
+                                </TouchableOpacity>
+                                {photo.mealInfo?.mealName && (
+                                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginTop: 6 }} numberOfLines={1}>
+                                        {photo.mealInfo.mealName}
+                                    </Text>
+                                )}
+                                {photo.mealInfo?.optionName && (
+                                    <Text style={{ fontSize: 10, color: '#64748b', marginTop: 1 }} numberOfLines={1}>
+                                        {photo.mealInfo.optionName}
+                                    </Text>
+                                )}
+                                {photo.mealInfo?.foods?.length > 0 && (
+                                    <View style={{ marginTop: 4 }}>
+                                        {photo.mealInfo.foods.slice(0, 4).map((f, fi) => (
+                                            <Text key={fi} style={{ fontSize: 9, color: '#94a3b8', lineHeight: 14 }} numberOfLines={1}>
+                                                {f.name}{f.amount ? ` · ${f.amount}${f.unit || ''}` : ''}
+                                            </Text>
+                                        ))}
+                                        {photo.mealInfo.foods.length > 4 && (
+                                            <Text style={{ fontSize: 9, color: '#cbd5e1' }}>+{photo.mealInfo.foods.length - 4} más</Text>
+                                        )}
+                                    </View>
+                                )}
+                            </View>
+                        ))}
+                    </View>
+                </View>
+            ))}
+
+            {/* Fullscreen preview */}
+            {selectedPhoto && (
+                <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedPhoto(null)}>
+                    <View style={{
+                        flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+                        justifyContent: 'center', alignItems: 'center',
+                    }}>
+                        <TouchableOpacity
+                            style={{ position: 'absolute', top: 50, right: 20, zIndex: 10 }}
+                            onPress={() => setSelectedPhoto(null)}
+                        >
+                            <Ionicons name="close-circle" size={36} color="#fff" />
+                        </TouchableOpacity>
+                        <Image
+                            source={{ uri: selectedPhoto.fullUrl }}
+                            style={{ width: '90%', height: '70%', borderRadius: 12 }}
+                            resizeMode="contain"
+                        />
+                        {selectedPhoto.mealInfo?.mealName && (
+                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', marginTop: 16 }}>
+                                {selectedPhoto.mealInfo.mealName}
+                                {selectedPhoto.mealInfo.optionName ? ` - ${selectedPhoto.mealInfo.optionName}` : ''}
+                            </Text>
+                        )}
+                        <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+                            {new Date(selectedPhoto.takenAt).toLocaleDateString('es-ES', {
+                                weekday: 'long', day: 'numeric', month: 'long',
+                            })}
+                        </Text>
+                        {selectedPhoto.mealInfo?.foods?.length > 0 && (
+                            <View style={{ marginTop: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, maxWidth: 300 }}>
+                                {selectedPhoto.mealInfo.foods.map((f, fi) => (
+                                    <Text key={fi} style={{ color: '#e2e8f0', fontSize: 12, lineHeight: 20 }}>
+                                        {f.name}{f.amount ? `  ·  ${f.amount} ${f.unit || ''}` : ''}
+                                    </Text>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+                </Modal>
+            )}
+            <View style={{ height: 40 }} />
+        </ScrollView>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -179,19 +360,15 @@ export default function ClientSeguimientoDetailScreen() {
     const { token } = useAuth();
     const { width: windowWidth } = useWindowDimensions();
 
-    // Chart dimensions
-    const isWeb = Platform.OS === 'web';
-    const chartWidth = isWeb ? Math.min(windowWidth - 64, 600) : windowWidth - 48;
-
     // Estados principales
     const [dailyRecords, setDailyRecords] = useState([]);
     const [weeklyRecords, setWeeklyRecords] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [activeTab, setActiveTab] = useState('daily');
-
-    // 📊 NUEVO: View mode (data | stats)
-    const [viewMode, setViewMode] = useState('data');
+    // 📊 Navegación principal: GRAFICOS | DATOS | GALERIA
+    const [mainTab, setMainTab] = useState('graficos');
+    const [datosSubTab, setDatosSubTab] = useState('daily');
+    const [galeriaSubTab, setGaleriaSubTab] = useState('corporal');
 
     // 📊 NUEVO: Client info and nutrition targets for stats
     const [clientInfo, setClientInfo] = useState(null);
@@ -205,6 +382,11 @@ export default function ClientSeguimientoDetailScreen() {
     const [photoGroup, setPhotoGroup] = useState([]); // Grupo de fotos del mismo día
     const [photoIndex, setPhotoIndex] = useState(0);  // Índice actual en el carrusel
     const [studioVisible, setStudioVisible] = useState(false);
+
+    // 📊 SEGUIMIENTO 2.0: New states
+    const [timeRange, setTimeRange] = useState('30d');
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [expandedZone, setExpandedZone] = useState(null);
 
     // 🆕 NEW: Single expanded row for accordion behavior
     const [expandedRowId, setExpandedRowId] = useState(null);
@@ -224,6 +406,14 @@ export default function ClientSeguimientoDetailScreen() {
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
+    // Chart dimensions — responsive for grid layout
+    const isWeb = Platform.OS === 'web';
+    const sidebarW = isWideScreen ? (sidebarCollapsed ? 60 : 260) : 0;
+    const contentW = windowWidth - sidebarW;
+    // scrollContent padding=12*2, card padding=12*2, tierRow gap=10
+    const chartWidth = isWeb ? Math.min(contentW - 48, 700) : windowWidth - 48;
+    const halfChartWidth = isWideScreen ? Math.floor((contentW - 34) / 2 - 24) : chartWidth;
+
     // ─────────────────────────────────────────────────────────────────────────
     // CARGAR DATOS Y MARCAR COMO VISTO
     // ─────────────────────────────────────────────────────────────────────────
@@ -231,8 +421,8 @@ export default function ClientSeguimientoDetailScreen() {
         try {
             if (!isRefresh) setIsLoading(true);
 
-            // Cargar historial de seguimiento
-            const res = await fetch(`${API_URL}/api/monitoring/coach/client/${clientId}/history`, {
+            // Cargar historial de seguimiento (365 daily + 52 weekly for full chart ranges)
+            const res = await fetch(`${API_URL}/api/monitoring/coach/client/${clientId}/history?dailyLimit=365&weeklyLimit=52`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -340,25 +530,44 @@ export default function ClientSeguimientoDetailScreen() {
     // 📊 CHART DATA CALCULATIONS (para vista de estadísticas)
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Ordenar dailyRecords por fecha
+    // Ordenar dailyRecords por fecha (full dataset — used by data view)
     const sortedDailyData = useMemo(() => {
         return [...dailyRecords].sort((a, b) => new Date(a.date) - new Date(b.date));
     }, [dailyRecords]);
 
+    // 📊 SEGUIMIENTO 2.0: Filtered data for charts based on timeRange
+    const chartDailyData = useMemo(() => {
+        if (timeRange === 'all') return sortedDailyData;
+        const days = { '7d': 7, '30d': 30, '3m': 90, '6m': 180 };
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - (days[timeRange] || 30));
+        return sortedDailyData.filter(d => new Date(d.date) >= cutoff);
+    }, [sortedDailyData, timeRange]);
+
+    const chartWeeklyData = useMemo(() => {
+        if (timeRange === 'all') return weeklyRecords;
+        const days = { '7d': 7, '30d': 30, '3m': 90, '6m': 180 };
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - (days[timeRange] || 30));
+        return [...weeklyRecords]
+            .sort((a, b) => new Date(a.weekStartDate) - new Date(b.weekStartDate))
+            .filter(w => new Date(w.weekStartDate) >= cutoff);
+    }, [weeklyRecords, timeRange]);
+
     // Peso objetivo del cliente
     const targetWeight = useMemo(() => {
         return clientInfo?.info_user?.pesoObjetivo || null;
-    }, [clientInfo]);
+    }, [clientInfo?.info_user?.pesoObjetivo]);
 
-    // Peso actual
+    // Peso actual (latest from full dataset)
     const currentWeight = useMemo(() => {
         const weightEntries = sortedDailyData.filter(d => d.peso && d.peso > 0);
         return weightEntries.length > 0 ? weightEntries[weightEntries.length - 1].peso : null;
     }, [sortedDailyData]);
 
-    // Weight chart data
+    // Weight chart data (uses chartDailyData for time range filtering)
     const weightChartData = useMemo(() => {
-        const weightEntries = sortedDailyData.filter(d => d.peso && d.peso > 0);
+        const weightEntries = chartDailyData.filter(d => d.peso && d.peso > 0);
         if (weightEntries.length < 2) return null;
 
         const labels = weightEntries.map(d => {
@@ -366,47 +575,75 @@ export default function ClientSeguimientoDetailScreen() {
             return `${date.getDate()}/${date.getMonth() + 1}`;
         });
 
+        // Target weight line as second dataset
+        const datasets = [{
+            data: weightEntries.map(d => d.peso),
+            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+            strokeWidth: 3,
+        }];
+
+        if (targetWeight) {
+            datasets.push({
+                data: weightEntries.map(() => targetWeight),
+                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity * 0.3})`,
+                strokeWidth: 2,
+                withDots: false,
+            });
+        }
+
         return {
-            labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
-            datasets: [{
-                data: weightEntries.map(d => d.peso),
-                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                strokeWidth: 3,
-            }],
+            labels: labels.length > 10 ? labels.filter((_, i) => i % Math.ceil(labels.length / 10) === 0) : labels,
+            datasets,
         };
-    }, [sortedDailyData]);
+    }, [chartDailyData, targetWeight]);
 
-    // Mood chart data
-    const moodChartData = useMemo(() => {
-        const moodEntries = sortedDailyData.filter(d => d.animo && d.animo > 0);
-        if (moodEntries.length < 2) return null;
+    // Unified wellbeing chart: Ánimo + Energía on same axes (1-5)
+    const wellbeingChartData = useMemo(() => {
+        // Build unified timeline: entries that have at least animo OR energia
+        const entries = chartDailyData.filter(d => (d.animo && d.animo > 0) || (d.energia && d.energia > 0));
+        if (entries.length < 2) return null;
 
-        const labels = moodEntries.map(d => {
+        const labels = entries.map(d => {
             const date = new Date(d.date);
             return `${date.getDate()}/${date.getMonth() + 1}`;
         });
+        const filteredLabels = labels.length > 10
+            ? labels.map((l, i) => i % Math.ceil(labels.length / 10) === 0 ? l : '')
+            : labels;
 
         return {
-            labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
-            datasets: [{
-                data: moodEntries.map(d => d.animo),
-                color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-                strokeWidth: 3,
-            }],
+            labels: filteredLabels,
+            datasets: [
+                {
+                    data: entries.map(d => d.animo || 0),
+                    color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
+                    strokeWidth: 2,
+                },
+                {
+                    data: entries.map(d => d.energia || 0),
+                    color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+                    strokeWidth: 2,
+                },
+            ],
+            legend: ['Ánimo', 'Energía'],
         };
-    }, [sortedDailyData]);
+    }, [chartDailyData]);
 
-    // Average mood
     const avgMood = useMemo(() => {
-        const moodEntries = sortedDailyData.filter(d => d.animo && d.animo > 0);
-        if (moodEntries.length === 0) return null;
-        const sum = moodEntries.reduce((acc, d) => acc + d.animo, 0);
-        return (sum / moodEntries.length).toFixed(1);
-    }, [sortedDailyData]);
+        const m = chartDailyData.filter(d => d.animo && d.animo > 0);
+        if (m.length === 0) return null;
+        return (m.reduce((a, d) => a + d.animo, 0) / m.length).toFixed(1);
+    }, [chartDailyData]);
+
+    const avgEnergy = useMemo(() => {
+        const e = chartDailyData.filter(d => d.energia && d.energia > 0);
+        if (e.length === 0) return null;
+        return (e.reduce((a, d) => a + d.energia, 0) / e.length).toFixed(1);
+    }, [chartDailyData]);
 
     // Macro compliance percentages
     const macroCompliance = useMemo(() => {
-        const entriesWithMacros = sortedDailyData.filter(d => d.kcalConsumed && d.kcalConsumed > 0);
+        const entriesWithMacros = chartDailyData.filter(d => d.kcalConsumed && d.kcalConsumed > 0);
         if (entriesWithMacros.length === 0) return null;
 
         const avgKcal = entriesWithMacros.reduce((acc, d) => acc + (d.kcalConsumed || 0), 0) / entriesWithMacros.length;
@@ -420,45 +657,45 @@ export default function ClientSeguimientoDetailScreen() {
             carbs: nutritionTargets.carbs > 0 ? (avgCarbs / nutritionTargets.carbs) * 100 : 0,
             fat: nutritionTargets.fat > 0 ? (avgFat / nutritionTargets.fat) * 100 : 0,
         };
-    }, [sortedDailyData, nutritionTargets]);
+    }, [chartDailyData, nutritionTargets]);
 
     // Sleep chart data
     const sleepChartData = useMemo(() => {
-        const sleepEntries = sortedDailyData.filter(d => d.sueno && d.sueno > 0);
+        const sleepEntries = chartDailyData.filter(d => d.sueno && d.sueno > 0);
         if (sleepEntries.length < 2) return null;
 
         const labels = sleepEntries.map(d => {
             const date = new Date(d.date);
-            return `${date.getDate()}`;
+            return `${date.getDate()}/${date.getMonth() + 1}`;
         });
 
         return {
-            labels: labels.length > 7 ? labels.filter((_, i) => i % Math.ceil(labels.length / 7) === 0) : labels,
+            labels: labels.length > 10 ? labels.filter((_, i) => i % Math.ceil(labels.length / 10) === 0) : labels,
             datasets: [{ data: sleepEntries.map(d => d.sueno) }],
         };
-    }, [sortedDailyData]);
+    }, [chartDailyData]);
 
     // Average sleep
     const avgSleep = useMemo(() => {
-        const sleepEntries = sortedDailyData.filter(d => d.sueno && d.sueno > 0);
+        const sleepEntries = chartDailyData.filter(d => d.sueno && d.sueno > 0);
         if (sleepEntries.length === 0) return null;
         const sum = sleepEntries.reduce((acc, d) => acc + d.sueno, 0);
         return (sum / sleepEntries.length).toFixed(1);
-    }, [sortedDailyData]);
+    }, [chartDailyData]);
 
     // Hunger vs Adherence data
     const hungerAdherenceData = useMemo(() => {
-        if (weeklyRecords.length === 0) return null;
+        if (chartWeeklyData.length === 0) return null;
 
         const dataPoints = [];
-        weeklyRecords.forEach(week => {
+        chartWeeklyData.forEach(week => {
             if (!week.nutriAdherencia) return;
 
             const weekStart = new Date(week.weekStartDate);
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekEnd.getDate() + 7);
 
-            const weekDailyData = sortedDailyData.filter(d => {
+            const weekDailyData = chartDailyData.filter(d => {
                 const date = new Date(d.date);
                 return date >= weekStart && date < weekEnd && d.hambre;
             });
@@ -473,7 +710,233 @@ export default function ClientSeguimientoDetailScreen() {
         });
 
         return dataPoints.length >= 2 ? dataPoints : null;
-    }, [sortedDailyData, weeklyRecords]);
+    }, [chartDailyData, chartWeeklyData]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 📊 SEGUIMIENTO 2.0: HERO CARD CALCULATIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Weight delta (first vs last in current time range)
+    const weightDelta = useMemo(() => {
+        const weightEntries = chartDailyData.filter(d => d.peso && d.peso > 0);
+        if (weightEntries.length < 2) return null;
+        const first = weightEntries[0].peso;
+        const last = weightEntries[weightEntries.length - 1].peso;
+        return Math.round((last - first) * 10) / 10;
+    }, [chartDailyData]);
+
+    // Client Score (0-100)
+    const clientScore = useMemo(() => {
+        // a) Adherence score (from weekly nutriAdherencia 1-10 → 0-100)
+        const recentWeeklies = chartWeeklyData.slice(-4);
+        let adherenceScore = 50;
+        if (recentWeeklies.length > 0) {
+            const adherenceValues = recentWeeklies.filter(w => w.nutriAdherencia).map(w => w.nutriAdherencia);
+            if (adherenceValues.length > 0) {
+                adherenceScore = (adherenceValues.reduce((s, v) => s + v, 0) / adherenceValues.length) * 10;
+            }
+        }
+
+        // b) Weight score (proximity to target)
+        let weightScore = 50;
+        if (targetWeight && currentWeight) {
+            const distPct = Math.abs(currentWeight - targetWeight) / targetWeight * 100;
+            if (distPct < 2) weightScore = 100;
+            else if (distPct < 5) weightScore = 80;
+            else if (distPct < 10) weightScore = 60;
+            else weightScore = 40;
+        }
+
+        // c) Consistency score (check-in days in last 7 days)
+        const last7Days = sortedDailyData.filter(d => {
+            const daysDiff = (new Date() - new Date(d.date)) / (1000 * 60 * 60 * 24);
+            return daysDiff <= 7;
+        });
+        const consistencyScore = Math.min(100, (last7Days.length / 7) * 100);
+
+        // d) Mood score (1-5 → 0-100)
+        const moodVal = avgMood ? parseFloat(avgMood) : 3;
+        const moodScoreVal = ((moodVal - 1) / 4) * 100;
+
+        return Math.round(
+            adherenceScore * 0.30 +
+            weightScore * 0.25 +
+            consistencyScore * 0.25 +
+            moodScoreVal * 0.20
+        );
+    }, [chartWeeklyData, targetWeight, currentWeight, sortedDailyData, avgMood]);
+
+    // Score state info
+    const scoreState = useMemo(() => {
+        if (clientScore >= 75) return { color: '#10b981', bg: '#10b98110', label: 'En buena linea' };
+        if (clientScore >= 50) return { color: '#f59e0b', bg: '#f59e0b10', label: 'Necesita atencion' };
+        return { color: '#ef4444', bg: '#ef444410', label: 'Intervenir' };
+    }, [clientScore]);
+
+    // Auto-generated summary phrase
+    const summaryPhrase = useMemo(() => {
+        const parts = [];
+        if (currentWeight) {
+            const deltaStr = weightDelta
+                ? (weightDelta > 0 ? `subio ${weightDelta}kg` : weightDelta < 0 ? `bajo ${Math.abs(weightDelta)}kg` : 'estable')
+                : '';
+            parts.push(`Peso ${currentWeight}kg${deltaStr ? ` (${deltaStr})` : ''}`);
+        }
+        const recentWeeklies = chartWeeklyData.slice(-4);
+        const adherenceValues = recentWeeklies.filter(w => w.nutriAdherencia).map(w => w.nutriAdherencia);
+        if (adherenceValues.length > 0) {
+            const avg = Math.round(adherenceValues.reduce((s, v) => s + v, 0) / adherenceValues.length * 10);
+            parts.push(`Adherencia ${avg}%`);
+        }
+        if (avgMood) {
+            parts.push(`Animo ${MOOD_EMOJIS[Math.round(avgMood)]} ${avgMood}`);
+        }
+        return parts.join(' · ') || 'Sin datos suficientes';
+    }, [currentWeight, weightDelta, chartWeeklyData, avgMood]);
+
+    // Adherence average for KPI
+    const adherenceAvg = useMemo(() => {
+        const recentWeeklies = chartWeeklyData.slice(-4);
+        const vals = recentWeeklies.filter(w => w.nutriAdherencia).map(w => w.nutriAdherencia);
+        if (vals.length === 0) return null;
+        return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10);
+    }, [chartWeeklyData]);
+
+    // Check-in streak (consecutive days)
+    const checkinStreak = useMemo(() => {
+        const last7 = sortedDailyData.filter(d => {
+            const daysDiff = (new Date() - new Date(d.date)) / (1000 * 60 * 60 * 24);
+            return daysDiff <= 7;
+        });
+        return last7.length;
+    }, [sortedDailyData]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 📊 SEGUIMIENTO 2.0: ALERTS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const alerts = useMemo(() => {
+        const result = [];
+        const objetivo = clientInfo?.info_user?.objetivoPrincipal;
+
+        // a) Weight spike/drop
+        if (weightDelta !== null) {
+            const pctChange = currentWeight ? Math.abs(weightDelta / currentWeight * 100) : 0;
+            if (weightDelta > 0 && pctChange > 1 && objetivo !== 'volumen') {
+                result.push({ type: 'weight_spike', severity: 'warning', text: `Peso ↑${pctChange.toFixed(1)}% esta semana`, icon: 'scale-outline' });
+            }
+            if (weightDelta < 0 && pctChange > 1.5 && objetivo !== 'definicion' && objetivo !== 'perdida') {
+                result.push({ type: 'weight_drop', severity: 'warning', text: `Peso ↓${pctChange.toFixed(1)}% esta semana`, icon: 'scale-outline' });
+            }
+        }
+
+        // b) Inactive client
+        if (sortedDailyData.length > 0) {
+            const lastDate = new Date(sortedDailyData[sortedDailyData.length - 1].date);
+            const daysSince = Math.floor((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+            if (daysSince > 5) {
+                result.push({ type: 'inactive', severity: 'critical', text: `${daysSince}d sin check-in`, icon: 'alert-circle-outline' });
+            } else if (daysSince > 3) {
+                result.push({ type: 'inactive', severity: 'warning', text: `${daysSince}d sin check-in`, icon: 'time-outline' });
+            }
+        } else {
+            result.push({ type: 'inactive', severity: 'critical', text: 'Sin check-ins', icon: 'alert-circle-outline' });
+        }
+
+        // c) Low mood sustained
+        const last14Days = sortedDailyData.filter(d => {
+            return (new Date() - new Date(d.date)) / (1000 * 60 * 60 * 24) <= 14 && d.animo;
+        });
+        if (last14Days.length >= 5) {
+            const avgMood14 = last14Days.reduce((s, d) => s + d.animo, 0) / last14Days.length;
+            if (avgMood14 < 3) {
+                result.push({ type: 'mood_low', severity: 'warning', text: 'Animo bajo sostenido', icon: 'sad-outline' });
+            }
+        }
+
+        // d) High fatigue
+        if (weeklyRecords.length > 0) {
+            const lastWeekly = weeklyRecords[0]; // most recent (sorted desc)
+            if (lastWeekly.entrenoFatiga >= 4) {
+                result.push({ type: 'high_fatigue', severity: 'warning', text: `Fatiga alta (${lastWeekly.entrenoFatiga}/5)`, icon: 'battery-dead-outline' });
+            }
+            if (lastWeekly.entrenoMolestias) {
+                result.push({ type: 'molestias', severity: 'critical', text: `Molestias: ${lastWeekly.entrenoMolestiasTexto || 'Si'}`, icon: 'medkit-outline' });
+            }
+        }
+
+        // Sort: critical first, then warning. Max 3.
+        result.sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1));
+        return result;
+    }, [sortedDailyData, weeklyRecords, weightDelta, currentWeight, clientInfo?.info_user?.objetivoPrincipal]);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 📊 SEGUIMIENTO 2.0: BODY MEASUREMENTS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const BODY_ZONES = [
+        { key: 'medCuello', label: 'Cuello', svgPos: { cx: 80, cy: 60 } },
+        { key: 'medHombros', label: 'Hombros', svgPos: { cx: 80, cy: 78 } },
+        { key: 'medPecho', label: 'Pecho', svgPos: { cx: 80, cy: 105 } },
+        { key: 'medBrazo', label: 'Brazo', svgPos: { cx: 22, cy: 115 } },
+        { key: 'medCintura', label: 'Cintura', svgPos: { cx: 80, cy: 148 } },
+        { key: 'medCadera', label: 'Cadera', svgPos: { cx: 80, cy: 178 } },
+        { key: 'medPierna', label: 'Pierna', svgPos: { cx: 56, cy: 245 } },
+        { key: 'medGemelo', label: 'Gemelo', svgPos: { cx: 56, cy: 300 } },
+    ];
+
+    const bodyMeasurements = useMemo(() => {
+        const sortedWeekly = [...chartWeeklyData].sort((a, b) => new Date(a.weekStartDate) - new Date(b.weekStartDate));
+        const objetivo = clientInfo?.info_user?.objetivoPrincipal;
+
+        const zones = BODY_ZONES.map(zone => {
+            const values = sortedWeekly
+                .filter(w => w[zone.key] != null && w[zone.key] > 0)
+                .map(w => ({ value: w[zone.key], date: w.weekStartDate }));
+
+            if (values.length === 0) return null;
+
+            const current = values[values.length - 1].value;
+            // Cambio neto: primer valor del rango vs último (no últimos 2)
+            const first = values.length >= 2 ? values[0].value : null;
+            const delta = first != null ? Math.round((current - first) * 10) / 10 : null;
+
+            // Determine trend
+            let trend = 'stable';
+            if (delta !== null) {
+                if (delta > 0.3) trend = 'up';
+                else if (delta < -0.3) trend = 'down';
+            }
+
+            // Determine color based on objective
+            let trendColor = '#3b82f6'; // default blue
+            const isWaistHip = zone.key === 'medCintura' || zone.key === 'medCadera';
+            const isMuscle = ['medPecho', 'medBrazo', 'medHombros', 'medPierna'].includes(zone.key);
+
+            if (objetivo === 'definicion' || objetivo === 'perdida') {
+                if (isWaistHip) trendColor = trend === 'down' ? '#10b981' : trend === 'up' ? '#ef4444' : '#94a3b8';
+                else if (isMuscle) trendColor = trend === 'up' ? '#10b981' : trend === 'down' ? '#f59e0b' : '#94a3b8';
+            } else if (objetivo === 'volumen') {
+                if (isMuscle) trendColor = trend === 'up' ? '#10b981' : trend === 'down' ? '#ef4444' : '#94a3b8';
+                else if (isWaistHip) trendColor = trend === 'up' ? '#f59e0b' : '#94a3b8';
+            } else {
+                trendColor = trend === 'stable' ? '#94a3b8' : '#3b82f6';
+            }
+
+            return {
+                ...zone,
+                current,
+                previous: first,
+                delta,
+                trend,
+                trendColor,
+                sparklineData: values.slice(-8).map(v => v.value),
+                history: values,
+            };
+        }).filter(Boolean);
+
+        return zones.length > 0 ? zones : null;
+    }, [chartWeeklyData, clientInfo?.info_user?.objetivoPrincipal]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // 📂 AGRUPAR REGISTROS POR MES (mes actual suelto, anteriores colapsados)
@@ -867,7 +1330,7 @@ export default function ClientSeguimientoDetailScreen() {
             )}
 
             {/* Mediciones */}
-            {(record.medCuello || record.medHombros || record.medPecho || record.medCintura) && (
+            {(record.medCuello || record.medHombros || record.medPecho || record.medBrazo || record.medCintura || record.medCadera || record.medPierna || record.medGemelo) && (
                 <>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionEmoji}>📐</Text>
@@ -892,10 +1355,34 @@ export default function ClientSeguimientoDetailScreen() {
                                 <Text style={styles.recordLabel}>Pecho</Text>
                             </View>
                         )}
+                        {record.medBrazo && (
+                            <View style={styles.recordItem}>
+                                <Text style={styles.recordValue}>{record.medBrazo} cm</Text>
+                                <Text style={styles.recordLabel}>Brazo</Text>
+                            </View>
+                        )}
                         {record.medCintura && (
                             <View style={styles.recordItem}>
                                 <Text style={styles.recordValue}>{record.medCintura} cm</Text>
                                 <Text style={styles.recordLabel}>Cintura</Text>
+                            </View>
+                        )}
+                        {record.medCadera && (
+                            <View style={styles.recordItem}>
+                                <Text style={styles.recordValue}>{record.medCadera} cm</Text>
+                                <Text style={styles.recordLabel}>Cadera</Text>
+                            </View>
+                        )}
+                        {record.medPierna && (
+                            <View style={styles.recordItem}>
+                                <Text style={styles.recordValue}>{record.medPierna} cm</Text>
+                                <Text style={styles.recordLabel}>Pierna</Text>
+                            </View>
+                        )}
+                        {record.medGemelo && (
+                            <View style={styles.recordItem}>
+                                <Text style={styles.recordValue}>{record.medGemelo} cm</Text>
+                                <Text style={styles.recordLabel}>Gemelo</Text>
                             </View>
                         )}
                     </View>
@@ -905,223 +1392,416 @@ export default function ClientSeguimientoDetailScreen() {
     );
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 📊 RENDER STATS VIEW (Vista de Estadísticas)
+    // 📊 SEGUIMIENTO 2.0: RENDER STATS VIEW (Rediseñado)
     // ─────────────────────────────────────────────────────────────────────────
+
+    // Helper: get chart width based on grid context
+    const getChartW = (inGrid) => inGrid && isWideScreen ? halfChartWidth : chartWidth;
+
+    // Macro color helper
+    const getMacroColor = (val) =>
+        val >= 90 && val <= 105 ? '#10B981' : val >= 80 && val <= 115 ? '#F59E0B' : '#EF4444';
+
     const renderStatsView = () => (
         <ScrollView
             contentContainerStyle={styles.statsScrollContent}
             refreshControl={
-                <RefreshControl
-                    refreshing={isRefreshing}
-                    onRefresh={onRefresh}
-                    colors={['#0ea5e9']}
-                />
+                <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#0ea5e9']} />
             }
         >
-            {/* PESO OBJETIVO (solo lectura) */}
-            <View style={styles.statsCard}>
-                <View style={styles.statsCardHeader}>
-                    <Text style={styles.statsCardIcon}>🎯</Text>
-                    <Text style={styles.statsCardTitle}>PESO OBJETIVO</Text>
-                </View>
-                {targetWeight ? (
-                    <View style={styles.targetContent}>
-                        <Text style={styles.targetWeight}>{targetWeight} kg</Text>
-                        <Text style={styles.targetSubtext}>
-                            Peso actual: <Text style={styles.targetValue}>{currentWeight || '--'} kg</Text>
-                        </Text>
-                        {currentWeight && targetWeight && (
-                            <Text style={[styles.targetDiff, { color: currentWeight <= targetWeight ? '#10b981' : '#f59e0b' }]}>
-                                {currentWeight > targetWeight
-                                    ? `↓ ${(currentWeight - targetWeight).toFixed(1)} kg para meta`
-                                    : currentWeight < targetWeight
-                                        ? `↑ ${(targetWeight - currentWeight).toFixed(1)} kg para meta`
-                                        : '✅ ¡Meta alcanzada!'}
-                            </Text>
+            {/* ═══════════════════ TIER 2: TENDENCIAS CLAVE ═══════════════════ */}
+            <View style={isWideScreen ? styles.tierRow : null}>
+                {/* EVOLUCIÓN DEL PESO */}
+                <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                    <View style={styles.statsCardHeader}>
+                        <Text style={styles.statsCardIcon}>📊</Text>
+                        <Text style={styles.statsCardTitle}>Evolucion del Peso</Text>
+                        {targetWeight && (
+                            <View style={[styles.avgBadge, { backgroundColor: '#10b98120' }]}>
+                                <Text style={[styles.avgBadgeText, { color: '#10b981' }]}>Meta: {targetWeight}kg</Text>
+                            </View>
                         )}
                     </View>
-                ) : (
-                    <Text style={styles.noDataText}>El cliente no tiene peso objetivo configurado</Text>
-                )}
-            </View>
-
-            {/* EVOLUCIÓN DEL PESO */}
-            <View style={styles.statsCard}>
-                <View style={styles.statsCardHeader}>
-                    <Text style={styles.statsCardIcon}>📊</Text>
-                    <Text style={styles.statsCardTitle}>Evolución del Peso</Text>
-                </View>
-                {weightChartData ? (
-                    <LineChart
-                        data={weightChartData}
-                        width={chartWidth}
-                        height={180}
-                        chartConfig={{
-                            ...chartConfig,
-                            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                        }}
-                        bezier
-                        style={styles.chart}
-                        yAxisSuffix=" kg"
-                    />
-                ) : (
-                    <View style={styles.noChartData}>
-                        <Ionicons name="scale-outline" size={40} color="#cbd5e1" />
-                        <Text style={styles.noDataText}>Datos insuficientes de peso</Text>
-                    </View>
-                )}
-            </View>
-
-            {/* ESTADO DE ÁNIMO */}
-            <View style={styles.statsCard}>
-                <View style={styles.statsCardHeader}>
-                    <Text style={styles.statsCardIcon}>😊</Text>
-                    <Text style={styles.statsCardTitle}>Estado de Ánimo</Text>
-                    {avgMood && (
-                        <View style={styles.avgBadge}>
-                            <Text style={styles.avgBadgeText}>{MOOD_EMOJIS[Math.round(avgMood)]} {avgMood}</Text>
+                    {weightChartData ? (
+                        <ResponsiveChart fallbackWidth={getChartW(true)}>
+                            {(w) => (
+                                <LineChart
+                                    data={weightChartData}
+                                    width={w}
+                                    height={160}
+                                    chartConfig={{
+                                        ...chartConfig,
+                                        color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                                        fillShadowGradient: '#10b981',
+                                        fillShadowGradientOpacity: 0.1,
+                                        propsForDots: { r: '3', strokeWidth: '1.5', stroke: '#fff', fill: '#10b981' },
+                                    }}
+                                    bezier
+                                    style={styles.chart}
+                                    yAxisSuffix=" kg"
+                                />
+                            )}
+                        </ResponsiveChart>
+                    ) : (
+                        <View style={styles.noChartData}>
+                            <Ionicons name="scale-outline" size={40} color="#cbd5e1" />
+                            <Text style={styles.noDataText}>Datos insuficientes de peso</Text>
                         </View>
                     )}
                 </View>
-                {moodChartData ? (
-                    <LineChart
-                        data={moodChartData}
-                        width={chartWidth}
-                        height={160}
-                        chartConfig={{
-                            ...chartConfig,
-                            color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-                        }}
-                        bezier
-                        style={styles.chart}
-                        fromZero
-                        segments={4}
-                    />
-                ) : (
-                    <View style={styles.noChartData}>
-                        <Ionicons name="happy-outline" size={40} color="#cbd5e1" />
-                        <Text style={styles.noDataText}>Datos insuficientes de ánimo</Text>
+
+                {/* ESTADO GENERAL — Ánimo + Energía multilínea */}
+                <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                    <View style={styles.statsCardHeader}>
+                        <Text style={styles.statsCardIcon}>🧠</Text>
+                        <Text style={styles.statsCardTitle}>Estado General</Text>
+                        {(avgMood || avgEnergy) && (
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                                {avgMood && (
+                                    <View style={[styles.avgBadge, { backgroundColor: '#fbbf2420' }]}>
+                                        <Text style={[styles.avgBadgeText, { color: '#d97706' }]}>
+                                            {MOOD_EMOJIS[Math.round(avgMood)]} {avgMood}
+                                        </Text>
+                                    </View>
+                                )}
+                                {avgEnergy && (
+                                    <View style={[styles.avgBadge, { backgroundColor: '#6366f120' }]}>
+                                        <Text style={[styles.avgBadgeText, { color: '#6366f1' }]}>
+                                            ⚡ {avgEnergy}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        )}
                     </View>
-                )}
+                    {wellbeingChartData ? (
+                        <>
+                            <View style={styles.legendRow}>
+                                <View style={styles.legendItem}>
+                                    <View style={[styles.legendDot, { backgroundColor: '#fbbf24' }]} />
+                                    <Text style={styles.legendText}>Ánimo</Text>
+                                </View>
+                                <View style={styles.legendItem}>
+                                    <View style={[styles.legendDot, { backgroundColor: '#6366f1' }]} />
+                                    <Text style={styles.legendText}>Energía</Text>
+                                </View>
+                            </View>
+                            <ResponsiveChart fallbackWidth={getChartW(true)}>
+                                {(w) => (
+                                    <LineChart
+                                        data={wellbeingChartData}
+                                        width={w}
+                                        height={160}
+                                        chartConfig={{
+                                            ...chartConfig,
+                                            fillShadowGradientOpacity: 0,
+                                        }}
+                                        bezier
+                                        style={styles.chart}
+                                        fromZero
+                                        segments={4}
+                                    />
+                                )}
+                            </ResponsiveChart>
+                        </>
+                    ) : (
+                        <View style={styles.noChartData}>
+                            <Ionicons name="happy-outline" size={32} color="#cbd5e1" />
+                            <Text style={styles.noDataText}>Sin datos de bienestar</Text>
+                        </View>
+                    )}
+                </View>
             </View>
 
-            {/* CUMPLIMIENTO DE DIETA */}
+            {/* ═══════════════════ TIER 3: PROFUNDIZACIÓN ═══════════════════ */}
+            <View style={isWideScreen ? styles.tierRow : null}>
+                {/* HORAS DE SUEÑO */}
+                <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                    <View style={styles.statsCardHeader}>
+                        <Text style={styles.statsCardIcon}>😴</Text>
+                        <Text style={styles.statsCardTitle}>Horas de Sueno</Text>
+                        {avgSleep && (
+                            <View style={[styles.avgBadge, { backgroundColor: parseFloat(avgSleep) >= 7 ? '#10b98120' : '#f59e0b20' }]}>
+                                <Text style={[styles.avgBadgeText, { color: parseFloat(avgSleep) >= 7 ? '#10b981' : '#f59e0b' }]}>
+                                    ⌀ {avgSleep}h
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                    {sleepChartData ? (
+                        <ResponsiveChart fallbackWidth={getChartW(true)}>
+                            {(w) => (
+                                <BarChart
+                                    data={sleepChartData}
+                                    width={w}
+                                    height={200}
+                                    chartConfig={barChartConfig}
+                                    style={styles.chart}
+                                    yAxisSuffix="h"
+                                    showValuesOnTopOfBars
+                                    fromZero
+                                />
+                            )}
+                        </ResponsiveChart>
+                    ) : (
+                        <View style={styles.noChartData}>
+                            <Ionicons name="bed-outline" size={40} color="#cbd5e1" />
+                            <Text style={styles.noDataText}>Datos insuficientes de sueno</Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* BODY MAP — MEDICIONES CORPORALES */}
+                <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                    <View style={styles.statsCardHeader}>
+                        <Text style={styles.statsCardIcon}>📐</Text>
+                        <Text style={styles.statsCardTitle}>Mediciones Corporales</Text>
+                    </View>
+                    {bodyMeasurements ? (
+                        <View style={isWideScreen ? styles.bodyMapLayout : undefined}>
+                            {/* SVG Silhouette con puntos coloreados — solo desktop */}
+                            {isWideScreen && (
+                                <View style={styles.bodyMapSvgContainer}>
+                                    <Svg width={120} height={260} viewBox="0 0 160 340">
+                                        <SvgCircle cx="80" cy="28" r="20" fill="#e2e8f0" />
+                                        <SvgRect x="70" y="48" width="20" height="14" fill="#e2e8f0" rx="4" />
+                                        <SvgRect x="35" y="62" width="90" height="70" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="12" y="68" width="24" height="60" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="124" y="68" width="24" height="60" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="40" y="132" width="80" height="52" fill="#e2e8f0" rx="6" />
+                                        <SvgRect x="42" y="184" width="30" height="90" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="88" y="184" width="30" height="90" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="44" y="274" width="26" height="40" fill="#e2e8f0" rx="6" />
+                                        <SvgRect x="90" y="274" width="26" height="40" fill="#e2e8f0" rx="6" />
+                                        {bodyMeasurements.map(z => (
+                                            <SvgCircle key={z.key} cx={z.svgPos.cx} cy={z.svgPos.cy} r={6} fill={z.trendColor} />
+                                        ))}
+                                    </Svg>
+                                </View>
+                            )}
+                            {/* Lista de zonas — a la derecha en desktop */}
+                            <View style={isWideScreen ? styles.bodyMapList : undefined}>
+                                <View style={styles.measureSummaryList}>
+                                    {bodyMeasurements.map(zone => {
+                                        const isExpZone = expandedZone === zone.key;
+                                        return (
+                                            <View key={zone.key}>
+                                                <TouchableOpacity
+                                                    style={[styles.measureSummaryRow, isExpZone && { backgroundColor: '#f8fafc' }]}
+                                                    onPress={() => setExpandedZone(isExpZone ? null : zone.key)}
+                                                    activeOpacity={0.7}
+                                                >
+                                                    <Text style={styles.measureSummaryLabel}>{zone.label}</Text>
+                                                    <Text style={styles.measureSummaryValue}>{zone.current} cm</Text>
+                                                    <Text style={[styles.measureSummaryDelta, { color: zone.trendColor }]}>
+                                                        {zone.delta != null
+                                                            ? `${zone.delta > 0 ? '+' : ''}${zone.delta}`
+                                                            : '--'}
+                                                    </Text>
+                                                    <View style={{ width: 50 }}>
+                                                        <Sparkline data={zone.sparklineData} height={18} color={zone.trendColor} />
+                                                    </View>
+                                                    <Ionicons name={isExpZone ? 'chevron-up' : 'chevron-down'} size={14} color="#94a3b8" />
+                                                </TouchableOpacity>
+                                                {isExpZone && zone.history.length >= 2 && (
+                                                    <View style={{ paddingHorizontal: 4, paddingBottom: 8 }}>
+                                                        <ResponsiveChart fallbackWidth={halfChartWidth - 40}>
+                                                            {(w) => <LineChart
+                                                                data={{
+                                                                    labels: zone.history.slice(-10).map(h => {
+                                                                        const d = new Date(h.date);
+                                                                        return `${d.getDate()}/${d.getMonth() + 1}`;
+                                                                    }),
+                                                                    datasets: [{
+                                                                        data: zone.history.slice(-10).map(h => h.value),
+                                                                        color: () => zone.trendColor,
+                                                                        strokeWidth: 2,
+                                                                    }],
+                                                                }}
+                                                                width={w}
+                                                                height={100}
+                                                                chartConfig={{
+                                                                    ...chartConfig,
+                                                                    color: () => zone.trendColor,
+                                                                }}
+                                                                bezier
+                                                                style={styles.chart}
+                                                                yAxisSuffix=" cm"
+                                                            />}
+                                                        </ResponsiveChart>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        </View>
+                    ) : (
+                        /* Preview generico — SVG izquierda + lista derecha en desktop, grid compacto en mobile */
+                        <View style={isWideScreen ? styles.bodyMapLayout : undefined}>
+                            {/* SVG Silhouette preview — solo desktop, al lado izquierdo */}
+                            {isWideScreen && (
+                                <View style={styles.bodyMapSvgContainer}>
+                                    <Svg width={120} height={260} viewBox="0 0 160 340">
+                                        <SvgCircle cx="80" cy="28" r="20" fill="#e2e8f0" />
+                                        <SvgRect x="70" y="48" width="20" height="14" fill="#e2e8f0" rx="4" />
+                                        <SvgRect x="35" y="62" width="90" height="70" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="12" y="68" width="24" height="60" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="124" y="68" width="24" height="60" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="40" y="132" width="80" height="52" fill="#e2e8f0" rx="6" />
+                                        <SvgRect x="42" y="184" width="30" height="90" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="88" y="184" width="30" height="90" fill="#e2e8f0" rx="8" />
+                                        <SvgRect x="44" y="274" width="26" height="40" fill="#e2e8f0" rx="6" />
+                                        <SvgRect x="90" y="274" width="26" height="40" fill="#e2e8f0" rx="6" />
+                                        {BODY_ZONES.map(z => (
+                                            <SvgCircle key={z.key} cx={z.svgPos.cx} cy={z.svgPos.cy} r={5} fill="#cbd5e1" />
+                                        ))}
+                                    </Svg>
+                                </View>
+                            )}
+                            {/* Lista de zonas — derecha en desktop, grid compacto en mobile */}
+                            <View style={isWideScreen ? styles.bodyMapList : undefined}>
+                                {isWideScreen ? (
+                                    <View style={styles.measureSummaryList}>
+                                        {BODY_ZONES.map(zone => (
+                                            <View key={zone.key} style={styles.measureSummaryRow}>
+                                                <Text style={styles.measureSummaryLabel}>{zone.label}</Text>
+                                                <Text style={[styles.measureSummaryValue, { color: '#cbd5e1' }]}>-- cm</Text>
+                                                <Text style={[styles.measureSummaryDelta, { color: '#cbd5e1' }]}>--</Text>
+                                                <View style={{ width: 50, height: 18, backgroundColor: '#f1f5f9', borderRadius: 4 }} />
+                                            </View>
+                                        ))}
+                                    </View>
+                                ) : (
+                                    <View style={styles.bodyMapMobileGrid}>
+                                        {BODY_ZONES.map(zone => (
+                                            <View key={zone.key} style={styles.bodyMapMobileItem}>
+                                                <Text style={styles.bodyMapMobileLabel}>{zone.label}</Text>
+                                                <Text style={[styles.bodyMapMobileValue, { color: '#cbd5e1' }]}>-- cm</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                                <View style={{ alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
+                                    <Text style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
+                                        El cliente puede registrar mediciones desde su check-in semanal
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+                </View>
+
+            </View>
+
+            {/* ═══════════════════ CUMPLIMIENTO DE DIETA (full width, horizontal) ═══════════════════ */}
             <View style={styles.statsCard}>
                 <View style={styles.statsCardHeader}>
                     <Text style={styles.statsCardIcon}>🍽️</Text>
                     <Text style={styles.statsCardTitle}>Cumplimiento de Dieta</Text>
                 </View>
                 {macroCompliance ? (
-                    <View style={styles.macroGrid}>
-                        <View style={styles.macroItem}>
-                            <Text style={styles.macroEmoji}>🔥</Text>
-                            <ProgressRing
-                                percentage={macroCompliance.kcal}
-                                color={macroCompliance.kcal >= 90 && macroCompliance.kcal <= 105 ? '#10B981' :
-                                    macroCompliance.kcal >= 80 && macroCompliance.kcal <= 115 ? '#F59E0B' : '#EF4444'}
-                            />
-                            <Text style={styles.macroLabel}>Kcal</Text>
-                        </View>
-                        <View style={styles.macroItem}>
-                            <Text style={styles.macroEmoji}>🥩</Text>
-                            <ProgressRing
-                                percentage={macroCompliance.protein}
-                                color={macroCompliance.protein >= 90 && macroCompliance.protein <= 105 ? '#10B981' :
-                                    macroCompliance.protein >= 80 && macroCompliance.protein <= 115 ? '#F59E0B' : '#EF4444'}
-                            />
-                            <Text style={styles.macroLabel}>Proteína</Text>
-                        </View>
-                        <View style={styles.macroItem}>
-                            <Text style={styles.macroEmoji}>🍞</Text>
-                            <ProgressRing
-                                percentage={macroCompliance.carbs}
-                                color={macroCompliance.carbs >= 90 && macroCompliance.carbs <= 105 ? '#10B981' :
-                                    macroCompliance.carbs >= 80 && macroCompliance.carbs <= 115 ? '#F59E0B' : '#EF4444'}
-                            />
-                            <Text style={styles.macroLabel}>Carbos</Text>
-                        </View>
-                        <View style={styles.macroItem}>
-                            <Text style={styles.macroEmoji}>🥑</Text>
-                            <ProgressRing
-                                percentage={macroCompliance.fat}
-                                color={macroCompliance.fat >= 90 && macroCompliance.fat <= 105 ? '#10B981' :
-                                    macroCompliance.fat >= 80 && macroCompliance.fat <= 115 ? '#F59E0B' : '#EF4444'}
-                            />
-                            <Text style={styles.macroLabel}>Grasa</Text>
-                        </View>
+                    <View style={styles.macroHorizontalRow}>
+                        {[
+                            { emoji: '🔥', val: macroCompliance.kcal, label: 'Kcal', flex: 2 },
+                            { emoji: '🥩', val: macroCompliance.protein, label: 'Proteína', flex: 1 },
+                            { emoji: '🍞', val: macroCompliance.carbs, label: 'Carbos', flex: 1 },
+                            { emoji: '🥑', val: macroCompliance.fat, label: 'Grasa', flex: 1 },
+                        ].map((m, i) => {
+                            const color = getMacroColor(m.val);
+                            const pct = Math.min(m.val, 100);
+                            return (
+                                <View key={i} style={[styles.macroHorizontalItem, { flex: m.flex }]}>
+                                    <Text style={styles.macroHorizontalEmoji}>{m.emoji}</Text>
+                                    <Text style={styles.macroHorizontalLabel}>{m.label}</Text>
+                                    <View style={styles.macroHorizontalTrack}>
+                                        <View style={[styles.macroHorizontalFill, { height: `${pct}%`, backgroundColor: color }]} />
+                                    </View>
+                                    <Text style={[styles.macroHorizontalValue, { color }]}>{Math.round(m.val)}%</Text>
+                                </View>
+                            );
+                        })}
                     </View>
                 ) : (
                     <View style={styles.noChartData}>
-                        <Ionicons name="nutrition-outline" size={40} color="#cbd5e1" />
+                        <Ionicons name="nutrition-outline" size={32} color="#cbd5e1" />
                         <Text style={styles.noDataText}>Sin datos de macros</Text>
                     </View>
                 )}
             </View>
 
-            {/* HORAS DE SUEÑO */}
-            <View style={styles.statsCard}>
-                <View style={styles.statsCardHeader}>
-                    <Text style={styles.statsCardIcon}>😴</Text>
-                    <Text style={styles.statsCardTitle}>Horas de Sueño</Text>
-                    {avgSleep && (
-                        <View style={[styles.avgBadge, { backgroundColor: parseFloat(avgSleep) >= 7 ? '#10b98120' : '#f59e0b20' }]}>
-                            <Text style={[styles.avgBadgeText, { color: parseFloat(avgSleep) >= 7 ? '#10b981' : '#f59e0b' }]}>
-                                ⌀ {avgSleep}h
-                            </Text>
-                        </View>
-                    )}
-                </View>
-                {sleepChartData ? (
-                    <BarChart
-                        data={sleepChartData}
-                        width={chartWidth}
-                        height={160}
-                        chartConfig={barChartConfig}
-                        style={styles.chart}
-                        yAxisSuffix="h"
-                        showValuesOnTopOfBars
-                        fromZero
-                    />
-                ) : (
-                    <View style={styles.noChartData}>
-                        <Ionicons name="bed-outline" size={40} color="#cbd5e1" />
-                        <Text style={styles.noDataText}>Datos insuficientes de sueño</Text>
-                    </View>
-                )}
-            </View>
+            {/* ═══════════════════ TIER 4: ANÁLISIS AVANZADO (colapsable) ═══════════════════ */}
+            <TouchableOpacity style={styles.advancedToggle} onPress={() => setShowAdvanced(!showAdvanced)}>
+                <Ionicons name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                <Text style={styles.advancedToggleText}>
+                    {showAdvanced ? 'Ocultar analisis avanzado' : 'Ver analisis avanzado'}
+                </Text>
+            </TouchableOpacity>
 
-            {/* HAMBRE VS ADHERENCIA */}
-            <View style={styles.statsCard}>
-                <View style={styles.statsCardHeader}>
-                    <Text style={styles.statsCardIcon}>📈</Text>
-                    <Text style={styles.statsCardTitle}>Hambre vs Adherencia</Text>
-                </View>
-                {hungerAdherenceData ? (
-                    <View style={styles.correlationContainer}>
-                        <View style={styles.correlationGrid}>
-                            {hungerAdherenceData.slice(-6).map((point, index) => (
-                                <View key={index} style={styles.correlationPoint}>
-                                    <Text style={styles.correlationHunger}>🍽️ {point.hunger.toFixed(1)}</Text>
-                                    <View style={[
-                                        styles.correlationBar,
-                                        {
-                                            height: point.adherence * 8,
-                                            backgroundColor: point.adherence >= 7 ? '#10b981' :
-                                                point.adherence >= 5 ? '#f59e0b' : '#ef4444'
-                                        }
-                                    ]} />
-                                    <Text style={styles.correlationAdherence}>{point.adherence}/10</Text>
-                                </View>
-                            ))}
+            {showAdvanced && (
+                <View style={isWideScreen ? styles.tierRow : null}>
+                    {/* HAMBRE VS ADHERENCIA */}
+                    <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                        <View style={styles.statsCardHeader}>
+                            <Text style={styles.statsCardIcon}>📈</Text>
+                            <Text style={styles.statsCardTitle}>Hambre vs Adherencia</Text>
                         </View>
+                        {hungerAdherenceData ? (
+                            <View style={styles.correlationContainer}>
+                                <View style={styles.correlationGrid}>
+                                    {hungerAdherenceData.slice(-6).map((point, index) => (
+                                        <View key={index} style={styles.correlationPoint}>
+                                            <Text style={styles.correlationHunger}>🍽️ {point.hunger.toFixed(1)}</Text>
+                                            <View style={[
+                                                styles.correlationBar,
+                                                {
+                                                    height: point.adherence * 8,
+                                                    backgroundColor: point.adherence >= 7 ? '#10b981' :
+                                                        point.adherence >= 5 ? '#f59e0b' : '#ef4444'
+                                                }
+                                            ]} />
+                                            <Text style={styles.correlationAdherence}>{point.adherence}/10</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </View>
+                        ) : (
+                            <View style={styles.noChartData}>
+                                <Ionicons name="analytics-outline" size={40} color="#cbd5e1" />
+                                <Text style={styles.noDataText}>Datos insuficientes para correlacion</Text>
+                            </View>
+                        )}
                     </View>
-                ) : (
-                    <View style={styles.noChartData}>
-                        <Ionicons name="analytics-outline" size={40} color="#cbd5e1" />
-                        <Text style={styles.noDataText}>Datos insuficientes para correlación</Text>
+
+                    {/* PESO OBJETIVO */}
+                    <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
+                        <View style={styles.statsCardHeader}>
+                            <Text style={styles.statsCardIcon}>🎯</Text>
+                            <Text style={styles.statsCardTitle}>Peso Objetivo</Text>
+                        </View>
+                        {targetWeight ? (
+                            <View style={styles.targetContent}>
+                                <Text style={styles.targetWeight}>{targetWeight} kg</Text>
+                                <Text style={styles.targetSubtext}>
+                                    Peso actual: <Text style={styles.targetValue}>{currentWeight || '--'} kg</Text>
+                                </Text>
+                                {currentWeight && targetWeight && (
+                                    <Text style={[styles.targetDiff, { color: currentWeight <= targetWeight ? '#10b981' : '#f59e0b' }]}>
+                                        {currentWeight > targetWeight
+                                            ? `↓ ${(currentWeight - targetWeight).toFixed(1)} kg para meta`
+                                            : currentWeight < targetWeight
+                                                ? `↑ ${(targetWeight - currentWeight).toFixed(1)} kg para meta`
+                                                : '✅ Meta alcanzada!'}
+                                    </Text>
+                                )}
+                            </View>
+                        ) : (
+                            <Text style={styles.noDataText}>El cliente no tiene peso objetivo configurado</Text>
+                        )}
                     </View>
-                )}
-            </View>
+                </View>
+            )}
 
             <View style={{ height: 24 }} />
         </ScrollView>
@@ -1133,9 +1813,9 @@ export default function ClientSeguimientoDetailScreen() {
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
-                <View style={styles.header}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
                     <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
-                        <Ionicons name="arrow-back" size={24} color="#1e293b" />
+                        <Ionicons name="arrow-back" size={22} color="#1e293b" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
                 </View>
@@ -1147,7 +1827,7 @@ export default function ClientSeguimientoDetailScreen() {
         );
     }
 
-    const records = activeTab === 'daily' ? dailyRecords : weeklyRecords;
+    const records = datosSubTab === 'daily' ? dailyRecords : weeklyRecords;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -1168,106 +1848,326 @@ export default function ClientSeguimientoDetailScreen() {
 
                 {/* Main content area */}
                 <View style={styles.contentArea}>
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <TouchableOpacity onPress={() => router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
-                            <Ionicons name="arrow-back" size={24} color="#1e293b" />
-                        </TouchableOpacity>
-                        <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
-                        <View style={{ flex: 1 }} />
-                        {/* Chat Button */}
-                        <TouchableOpacity
-                            style={styles.chatBtn}
-                            onPress={() => router.push({
-                                pathname: '/(coach)/chat',
-                                params: { clientId, clientName }
-                            })}
-                        >
-                            <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
-                            <Text style={styles.chatBtnText}>Chat</Text>
-                        </TouchableOpacity>
+                    {/* Header Card — info completa del cliente */}
+                    <View style={[styles.headerCard, { borderLeftColor: scoreState.color }]}>
+                        {/* Fila 1: Back + Avatar + Nombre + Score */}
+                        <View style={styles.headerTopRow}>
+                            <TouchableOpacity onPress={() => router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
+                                <Ionicons name="arrow-back" size={22} color="#1e293b" />
+                            </TouchableOpacity>
+                            <AvatarWithInitials
+                                avatarUrl={clientInfo?.avatarUrl}
+                                name={clientName || 'C'}
+                                size={36}
+                            />
+                            <View style={{ marginLeft: 10, flex: 1 }}>
+                                <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
+                                <Text style={[styles.headerSubtitle, { color: scoreState.color }]} numberOfLines={1}>
+                                    {scoreState.label}
+                                </Text>
+                            </View>
+                            <View style={[styles.scoreBadge, { backgroundColor: scoreState.bg, borderColor: scoreState.color }]}>
+                                <Text style={[styles.scoreBadgeValue, { color: scoreState.color }]}>{clientScore}</Text>
+                                <Text style={styles.scoreBadgeUnit}>/100</Text>
+                            </View>
+                        </View>
+                        {/* Resumen */}
+                        {summaryPhrase ? (
+                            <Text style={styles.headerSummary} numberOfLines={2}>{summaryPhrase}</Text>
+                        ) : null}
+                        {/* Alertas */}
+                        {alerts.length > 0 && (
+                            <View style={styles.alertChipsRow}>
+                                {alerts.slice(0, 3).map((alert, i) => (
+                                    <View key={i} style={[
+                                        styles.alertChip,
+                                        alert.severity === 'critical' ? styles.alertChipCritical : styles.alertChipWarning,
+                                    ]}>
+                                        <Ionicons name={alert.icon} size={10}
+                                            color={alert.severity === 'critical' ? '#ef4444' : '#f59e0b'} />
+                                        <Text style={[
+                                            styles.alertChipText,
+                                            { color: alert.severity === 'critical' ? '#ef4444' : '#f59e0b' },
+                                        ]}>{alert.text}</Text>
+                                    </View>
+                                ))}
+                                {alerts.length > 3 && (
+                                    <Text style={{ fontSize: 10, color: '#94a3b8' }}>+{alerts.length - 3}</Text>
+                                )}
+                            </View>
+                        )}
+                        {/* KPIs */}
+                        <View style={styles.headerKpiRow}>
+                            <View style={styles.headerKpiItem}>
+                                <Text style={styles.headerKpiValue}>{currentWeight || '--'}<Text style={styles.headerKpiUnit}> kg</Text></Text>
+                                {weightDelta != null && (
+                                    <Text style={[styles.headerKpiDelta, { color: weightDelta <= 0 ? '#10b981' : '#f59e0b' }]}>
+                                        {weightDelta > 0 ? '↑' : weightDelta < 0 ? '↓' : '='}{Math.abs(weightDelta)}
+                                    </Text>
+                                )}
+                            </View>
+                            <View style={styles.headerKpiItem}>
+                                <Text style={styles.headerKpiValue}>{adherenceAvg != null ? `${adherenceAvg}%` : '--'}</Text>
+                                <Text style={styles.headerKpiLabel}>Adher.</Text>
+                            </View>
+                            <View style={styles.headerKpiItem}>
+                                <Text style={styles.headerKpiValue}>{checkinStreak}<Text style={styles.headerKpiUnit}>/7</Text></Text>
+                                <Text style={styles.headerKpiLabel}>Check-in</Text>
+                            </View>
+                        </View>
                     </View>
 
-                    {/* 📊 VIEW MODE SELECTOR */}
+                    {/* 📊 MAIN TAB SELECTOR: GRÁFICOS | DATOS | GALERÍA */}
                     <View style={styles.viewModeRow}>
                         <TouchableOpacity
-                            style={[styles.viewModeBtn, viewMode === 'data' && styles.viewModeBtnActive]}
-                            onPress={() => setViewMode('data')}
+                            style={[styles.viewModeBtn, mainTab === 'graficos' && styles.viewModeBtnActive]}
+                            onPress={() => setMainTab('graficos')}
+                            activeOpacity={0.7}
                         >
-                            <Ionicons
-                                name="list"
-                                size={18}
-                                color={viewMode === 'data' ? '#fff' : '#64748b'}
-                            />
-                            <Text style={[styles.viewModeText, viewMode === 'data' && styles.viewModeTextActive]}>
-                                Datos por día
-                            </Text>
+                            <View style={styles.viewModeBtnInner}>
+                                <Ionicons
+                                    name="stats-chart"
+                                    size={15}
+                                    color={mainTab === 'graficos' ? '#fff' : '#64748b'}
+                                />
+                                <Text style={[styles.viewModeText, mainTab === 'graficos' && styles.viewModeTextActive]}>
+                                    Gráficos
+                                </Text>
+                            </View>
+                            {/* Time Range DENTRO del botón */}
+                            {mainTab === 'graficos' && (
+                                <View style={styles.timeRangeInside}>
+                                    {[
+                                        { key: '7d', label: '7D' },
+                                        { key: '30d', label: '30D' },
+                                        { key: '3m', label: '3M' },
+                                        { key: '6m', label: '6M' },
+                                        { key: 'all', label: 'All' },
+                                    ].map(opt => (
+                                        <TouchableOpacity
+                                            key={opt.key}
+                                            style={[styles.timeRangeBtn, timeRange === opt.key && styles.timeRangeBtnActive]}
+                                            onPress={(e) => { e.stopPropagation(); setTimeRange(opt.key); }}
+                                        >
+                                            <Text style={[styles.timeRangeText, timeRange === opt.key && styles.timeRangeTextActive]}>
+                                                {opt.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.viewModeBtn, viewMode === 'stats' && styles.viewModeBtnActive]}
-                            onPress={() => setViewMode('stats')}
+                            style={[styles.viewModeBtn, mainTab === 'datos' && styles.viewModeBtnActive]}
+                            onPress={() => setMainTab('datos')}
                         >
-                            <Ionicons
-                                name="stats-chart"
-                                size={18}
-                                color={viewMode === 'stats' ? '#fff' : '#64748b'}
-                            />
-                            <Text style={[styles.viewModeText, viewMode === 'stats' && styles.viewModeTextActive]}>
-                                Gráficos
-                            </Text>
+                            <View style={styles.viewModeBtnInner}>
+                                <Ionicons
+                                    name="list"
+                                    size={15}
+                                    color={mainTab === 'datos' ? '#fff' : '#64748b'}
+                                />
+                                <Text style={[styles.viewModeText, mainTab === 'datos' && styles.viewModeTextActive]}>
+                                    Datos
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.viewModeBtn, mainTab === 'galeria' && styles.viewModeBtnActive]}
+                            onPress={() => setMainTab('galeria')}
+                        >
+                            <View style={styles.viewModeBtnInner}>
+                                <Ionicons
+                                    name="images"
+                                    size={15}
+                                    color={mainTab === 'galeria' ? '#fff' : '#64748b'}
+                                />
+                                <Text style={[styles.viewModeText, mainTab === 'galeria' && styles.viewModeTextActive]}>
+                                    Galería
+                                </Text>
+                            </View>
                         </TouchableOpacity>
                     </View>
 
-                    {/* CONTENIDO CONDICIONAL */}
-                    {viewMode === 'stats' ? (
-                        renderStatsView()
-                    ) : (
+                    {/* ═══════════ CONTENIDO POR TAB ═══════════ */}
+
+                    {/* TAB GRÁFICOS (default) */}
+                    {mainTab === 'graficos' && renderStatsView()}
+
+                    {/* TAB DATOS */}
+                    {mainTab === 'datos' && (
                         <>
-                            {/* Tabs Diario/Semanal/Galería */}
+                            {/* Sub-tabs Diario/Semanal */}
                             <View style={styles.tabsRow}>
                                 <TouchableOpacity
-                                    style={[styles.tab, activeTab === 'daily' && styles.tabActive]}
-                                    onPress={() => setActiveTab('daily')}
+                                    style={[styles.tab, datosSubTab === 'daily' && styles.tabActive]}
+                                    onPress={() => setDatosSubTab('daily')}
                                 >
                                     <Ionicons
                                         name="calendar"
                                         size={18}
-                                        color={activeTab === 'daily' ? '#0ea5e9' : '#64748b'}
+                                        color={datosSubTab === 'daily' ? '#0ea5e9' : '#64748b'}
                                     />
-                                    <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>
+                                    <Text style={[styles.tabText, datosSubTab === 'daily' && styles.tabTextActive]}>
                                         Diario ({dailyRecords.length})
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    style={[styles.tab, activeTab === 'weekly' && styles.tabActive]}
-                                    onPress={() => setActiveTab('weekly')}
+                                    style={[styles.tab, datosSubTab === 'weekly' && styles.tabActive]}
+                                    onPress={() => setDatosSubTab('weekly')}
                                 >
                                     <Ionicons
                                         name="calendar-outline"
                                         size={18}
-                                        color={activeTab === 'weekly' ? '#0ea5e9' : '#64748b'}
+                                        color={datosSubTab === 'weekly' ? '#0ea5e9' : '#64748b'}
                                     />
-                                    <Text style={[styles.tabText, activeTab === 'weekly' && styles.tabTextActive]}>
+                                    <Text style={[styles.tabText, datosSubTab === 'weekly' && styles.tabTextActive]}>
                                         Semanal ({weeklyRecords.length})
-                                    </Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.tab, activeTab === 'gallery' && styles.tabActive]}
-                                    onPress={() => setActiveTab('gallery')}
-                                >
-                                    <Ionicons
-                                        name="images"
-                                        size={18}
-                                        color={activeTab === 'gallery' ? '#0ea5e9' : '#64748b'}
-                                    />
-                                    <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>
-                                        📷 Galería
                                     </Text>
                                 </TouchableOpacity>
                             </View>
 
-                            {/* Content - Gallery Tab */}
-                            {activeTab === 'gallery' ? (
+                            {/* Content - Daily/Weekly */}
+                            <ScrollView
+                                contentContainerStyle={styles.scrollContent}
+                                refreshControl={
+                                    <RefreshControl
+                                        refreshing={isRefreshing}
+                                        onRefresh={onRefresh}
+                                        colors={['#0ea5e9']}
+                                    />
+                                }
+                            >
+                                {records.length === 0 ? (
+                                    <View style={styles.emptyContainer}>
+                                        <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
+                                        <Text style={styles.emptyTitle}>Sin registros</Text>
+                                        <Text style={styles.emptyText}>
+                                            {datosSubTab === 'daily'
+                                                ? 'Este cliente aún no ha registrado check-ins diarios.'
+                                                : 'Este cliente aún no ha registrado check-ins semanales.'}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        {datosSubTab === 'daily' ? (
+                                            <>
+                                                {renderMonthlySummary()}
+
+                                                {groupedDailyRecords.currentMonthRecords.length > 0 && (
+                                                    <View style={styles.monthSection}>
+                                                        <View style={styles.monthHeaderCurrent}>
+                                                            <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                            <Text style={styles.monthCount}>
+                                                                {groupedDailyRecords.currentMonthRecords.length} registros
+                                                            </Text>
+                                                        </View>
+                                                        {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
+                                                    </View>
+                                                )}
+                                                {groupedDailyRecords.historicalGroups.map((group) => (
+                                                    <View key={`daily-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                        <TouchableOpacity
+                                                            style={styles.monthHeaderCollapsible}
+                                                            onPress={() => toggleMonth(`daily-${group.key}`)}
+                                                        >
+                                                            <Ionicons
+                                                                name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                                size={18}
+                                                                color="#64748b"
+                                                            />
+                                                            <Text style={styles.monthLabelCollapsible}>
+                                                                📁 {group.label}
+                                                            </Text>
+                                                            <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                        </TouchableOpacity>
+                                                        {expandedMonths[`daily-${group.key}`] && (
+                                                            <View style={styles.monthRecords}>
+                                                                {group.records.map(renderDailyRecord)}
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                ))}
+                                            </>
+                                        ) : (
+                                            <>
+                                                {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
+                                                    <View style={styles.monthSection}>
+                                                        <View style={styles.monthHeaderCurrent}>
+                                                            <Text style={styles.monthLabel}>📅 Este mes</Text>
+                                                            <Text style={styles.monthCount}>
+                                                                {groupedWeeklyRecords.currentMonthRecords.length} registros
+                                                            </Text>
+                                                        </View>
+                                                        {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
+                                                    </View>
+                                                )}
+                                                {groupedWeeklyRecords.historicalGroups.map((group) => (
+                                                    <View key={`weekly-${group.key}`} style={styles.monthSectionCollapsible}>
+                                                        <TouchableOpacity
+                                                            style={styles.monthHeaderCollapsible}
+                                                            onPress={() => toggleMonth(`weekly-${group.key}`)}
+                                                        >
+                                                            <Ionicons
+                                                                name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
+                                                                size={18}
+                                                                color="#64748b"
+                                                            />
+                                                            <Text style={styles.monthLabelCollapsible}>
+                                                                📁 {group.label}
+                                                            </Text>
+                                                            <Text style={styles.monthCount}>{group.records.length}</Text>
+                                                        </TouchableOpacity>
+                                                        {expandedMonths[`weekly-${group.key}`] && (
+                                                            <View style={styles.monthRecords}>
+                                                                {group.records.map(renderWeeklyRecord)}
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                ))}
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </ScrollView>
+                        </>
+                    )}
+
+                    {/* TAB GALERÍA */}
+                    {mainTab === 'galeria' && (
+                        <>
+                            {/* Sub-tabs Corporal/Nutrición */}
+                            <View style={styles.tabsRow}>
+                                <TouchableOpacity
+                                    style={[styles.tab, galeriaSubTab === 'corporal' && styles.tabActive]}
+                                    onPress={() => setGaleriaSubTab('corporal')}
+                                >
+                                    <Ionicons
+                                        name="body"
+                                        size={18}
+                                        color={galeriaSubTab === 'corporal' ? '#0ea5e9' : '#64748b'}
+                                    />
+                                    <Text style={[styles.tabText, galeriaSubTab === 'corporal' && styles.tabTextActive]}>
+                                        Corporal
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.tab, galeriaSubTab === 'nutricion' && styles.tabActive]}
+                                    onPress={() => setGaleriaSubTab('nutricion')}
+                                >
+                                    <Ionicons
+                                        name="restaurant"
+                                        size={18}
+                                        color={galeriaSubTab === 'nutricion' ? '#0ea5e9' : '#64748b'}
+                                    />
+                                    <Text style={[styles.tabText, galeriaSubTab === 'nutricion' && styles.tabTextActive]}>
+                                        Nutrición
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Galería Corporal */}
+                            {galeriaSubTab === 'corporal' && (
                                 <View style={{ flex: 1 }}>
                                     <PhotoGalleryTab
                                         clientId={clientId}
@@ -1281,114 +2181,14 @@ export default function ClientSeguimientoDetailScreen() {
                                         }}
                                     />
                                 </View>
-                            ) : (
-                                /* Content - Daily/Weekly */
-                                <ScrollView
-                                    contentContainerStyle={styles.scrollContent}
-                                    refreshControl={
-                                        <RefreshControl
-                                            refreshing={isRefreshing}
-                                            onRefresh={onRefresh}
-                                            colors={['#0ea5e9']}
-                                        />
-                                    }
-                                >
-                                    {records.length === 0 ? (
-                                        <View style={styles.emptyContainer}>
-                                            <Ionicons name="document-text-outline" size={60} color="#cbd5e1" />
-                                            <Text style={styles.emptyTitle}>Sin registros</Text>
-                                            <Text style={styles.emptyText}>
-                                                {activeTab === 'daily'
-                                                    ? 'Este cliente aún no ha registrado check-ins diarios.'
-                                                    : 'Este cliente aún no ha registrado check-ins semanales.'}
-                                            </Text>
-                                        </View>
-                                    ) : (
-                                        <>
-                                            {/* Registros del mes actual (sueltos) */}
-                                            {activeTab === 'daily' ? (
-                                                <>
-                                                    {/* Monthly Summary Card */}
-                                                    {renderMonthlySummary()}
+                            )}
 
-                                                    {groupedDailyRecords.currentMonthRecords.length > 0 && (
-                                                        <View style={styles.monthSection}>
-                                                            <View style={styles.monthHeaderCurrent}>
-                                                                <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                                <Text style={styles.monthCount}>
-                                                                    {groupedDailyRecords.currentMonthRecords.length} registros
-                                                                </Text>
-                                                            </View>
-                                                            {groupedDailyRecords.currentMonthRecords.map(renderDailyRecord)}
-                                                        </View>
-                                                    )}
-                                                    {/* Meses anteriores (colapsados) */}
-                                                    {groupedDailyRecords.historicalGroups.map((group) => (
-                                                        <View key={`daily-${group.key}`} style={styles.monthSectionCollapsible}>
-                                                            <TouchableOpacity
-                                                                style={styles.monthHeaderCollapsible}
-                                                                onPress={() => toggleMonth(`daily-${group.key}`)}
-                                                            >
-                                                                <Ionicons
-                                                                    name={expandedMonths[`daily-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                                    size={18}
-                                                                    color="#64748b"
-                                                                />
-                                                                <Text style={styles.monthLabelCollapsible}>
-                                                                    📁 {group.label}
-                                                                </Text>
-                                                                <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                            </TouchableOpacity>
-                                                            {expandedMonths[`daily-${group.key}`] && (
-                                                                <View style={styles.monthRecords}>
-                                                                    {group.records.map(renderDailyRecord)}
-                                                                </View>
-                                                            )}
-                                                        </View>
-                                                    ))}
-                                                </>
-                                            ) : (
-                                                <>
-                                                    {groupedWeeklyRecords.currentMonthRecords.length > 0 && (
-                                                        <View style={styles.monthSection}>
-                                                            <View style={styles.monthHeaderCurrent}>
-                                                                <Text style={styles.monthLabel}>📅 Este mes</Text>
-                                                                <Text style={styles.monthCount}>
-                                                                    {groupedWeeklyRecords.currentMonthRecords.length} registros
-                                                                </Text>
-                                                            </View>
-                                                            {groupedWeeklyRecords.currentMonthRecords.map(renderWeeklyRecord)}
-                                                        </View>
-                                                    )}
-                                                    {/* Meses anteriores (colapsados) */}
-                                                    {groupedWeeklyRecords.historicalGroups.map((group) => (
-                                                        <View key={`weekly-${group.key}`} style={styles.monthSectionCollapsible}>
-                                                            <TouchableOpacity
-                                                                style={styles.monthHeaderCollapsible}
-                                                                onPress={() => toggleMonth(`weekly-${group.key}`)}
-                                                            >
-                                                                <Ionicons
-                                                                    name={expandedMonths[`weekly-${group.key}`] ? 'chevron-down' : 'chevron-forward'}
-                                                                    size={18}
-                                                                    color="#64748b"
-                                                                />
-                                                                <Text style={styles.monthLabelCollapsible}>
-                                                                    📁 {group.label}
-                                                                </Text>
-                                                                <Text style={styles.monthCount}>{group.records.length}</Text>
-                                                            </TouchableOpacity>
-                                                            {expandedMonths[`weekly-${group.key}`] && (
-                                                                <View style={styles.monthRecords}>
-                                                                    {group.records.map(renderWeeklyRecord)}
-                                                                </View>
-                                                            )}
-                                                        </View>
-                                                    ))}
-                                                </>
-                                            )}
-                                        </>
-                                    )}
-                                </ScrollView>
+                            {/* Galería Nutrición */}
+                            {galeriaSubTab === 'nutricion' && (
+                                <NutritionGalleryTab
+                                    clientId={clientId}
+                                    token={token}
+                                />
                             )}
                         </>
                     )}
@@ -1435,37 +2235,90 @@ const styles = StyleSheet.create({
     contentArea: {
         flex: 1,
     },
-    header: {
+    headerCard: {
+        backgroundColor: '#fff',
+        marginHorizontal: 8,
+        marginTop: 8,
+        borderRadius: 14,
+        padding: 12,
+        borderLeftWidth: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+        elevation: 2,
+    },
+    headerTopRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        backgroundColor: '#fff',
-        borderColor: '#5f9ae92d',
-        borderWidth: 10,
-        borderRadius: 50,
-
     },
     backBtn: {
-        marginRight: 12,
+        marginRight: 8,
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '700',
         color: '#1e293b',
     },
-    chatBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#0ea5e9',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
-        gap: 6,
-    },
-    chatBtnText: {
-        color: '#fff',
-        fontSize: 13,
+    headerSubtitle: {
+        fontSize: 12,
         fontWeight: '600',
+        marginTop: 1,
+    },
+    headerSummary: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 6,
+        lineHeight: 16,
+        marginLeft: 30,
+    },
+    scoreBadge: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    scoreBadgeValue: {
+        fontSize: 18,
+        fontWeight: '800',
+    },
+    scoreBadgeUnit: {
+        fontSize: 10,
+        color: '#94a3b8',
+        fontWeight: '600',
+    },
+    headerKpiRow: {
+        flexDirection: 'row',
+        gap: 6,
+        marginTop: 8,
+    },
+    headerKpiItem: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        paddingVertical: 4,
+        paddingHorizontal: 6,
+        alignItems: 'center',
+    },
+    headerKpiValue: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    headerKpiUnit: {
+        fontSize: 10,
+        color: '#94a3b8',
+    },
+    headerKpiDelta: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    headerKpiLabel: {
+        fontSize: 9,
+        color: '#94a3b8',
+        fontWeight: '500',
     },
     loadingContainer: {
         flex: 1,
@@ -1682,27 +2535,34 @@ const styles = StyleSheet.create({
     viewModeRow: {
         flexDirection: 'row',
         backgroundColor: '#fff',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        gap: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        gap: 8,
+        alignItems: 'stretch',
         borderBottomWidth: 1,
         borderBottomColor: '#e2e8f0',
     },
     viewModeBtn: {
         flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        borderRadius: 10,
+        backgroundColor: '#f1f5f9',
+        gap: 4,
+    },
+    viewModeBtnInner: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 10,
-        backgroundColor: '#f1f5f9',
-        gap: 8,
+        gap: 5,
     },
     viewModeBtnActive: {
         backgroundColor: '#0ea5e9',
     },
     viewModeText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
         color: '#64748b',
     },
@@ -1714,23 +2574,26 @@ const styles = StyleSheet.create({
     // STATS VIEW
     // ═══════════════════════════════════════════════════════════════════════════
     statsScrollContent: {
-        padding: 16,
-        gap: 16,
+        padding: 12,
+        gap: 10,
     },
     statsCard: {
         backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 14,
+        padding: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 4,
+        elevation: 1,
     },
     statsCardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 10,
     },
     statsCardIcon: {
         fontSize: 20,
@@ -1774,13 +2637,13 @@ const styles = StyleSheet.create({
     },
     noChartData: {
         alignItems: 'center',
-        paddingVertical: 24,
+        paddingVertical: 16,
     },
 
     // Charts
     chart: {
-        borderRadius: 12,
-        marginVertical: 8,
+        marginLeft: -16,
+        marginRight: -8,
     },
     avgBadge: {
         backgroundColor: '#fbbf2420',
@@ -1795,24 +2658,77 @@ const styles = StyleSheet.create({
     },
 
     // Macro Grid
-    macroGrid: {
+    macroBarList: {
+        gap: 10,
+    },
+    macroBarRow: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-around',
-    },
-    macroItem: {
         alignItems: 'center',
-        paddingVertical: 8,
-        width: '25%',
+        gap: 8,
     },
-    macroEmoji: {
-        fontSize: 20,
-        marginBottom: 8,
+    macroBarEmoji: {
+        fontSize: 14,
+        width: 20,
+        textAlign: 'center',
     },
-    macroLabel: {
+    macroBarLabel: {
         fontSize: 12,
-        color: '#64748b',
-        marginTop: 8,
+        fontWeight: '600',
+        color: '#475569',
+        width: 58,
+    },
+    macroBarTrack: {
+        flex: 1,
+        height: 8,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 4,
+        overflow: 'hidden',
+    },
+    macroBarFill: {
+        height: '100%',
+        borderRadius: 4,
+    },
+    macroBarValue: {
+        fontSize: 12,
+        fontWeight: '700',
+        width: 36,
+        textAlign: 'right',
+    },
+
+    // Macros horizontal (full width card)
+    macroHorizontalRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: 8,
+        paddingTop: 4,
+    },
+    macroHorizontalItem: {
+        alignItems: 'center',
+        gap: 4,
+    },
+    macroHorizontalEmoji: {
+        fontSize: 16,
+    },
+    macroHorizontalLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    macroHorizontalTrack: {
+        width: '100%',
+        height: 50,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 6,
+        overflow: 'hidden',
+        justifyContent: 'flex-end',
+    },
+    macroHorizontalFill: {
+        width: '100%',
+        borderRadius: 6,
+    },
+    macroHorizontalValue: {
+        fontSize: 13,
+        fontWeight: '800',
     },
 
     // Correlation Chart
@@ -2075,5 +2991,249 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#64748b',
         letterSpacing: 0.5,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SEGUIMIENTO 2.0 STYLES
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Alert chips (header)
+    alertChipsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 6,
+        marginLeft: 30,
+    },
+
+    // Time Range Selector — dentro del botón Gráficos
+    timeRangeInside: {
+        flexDirection: 'row',
+        backgroundColor: 'rgba(255,255,255,0.25)',
+        borderRadius: 5,
+        padding: 1,
+        marginTop: 2,
+    },
+    timeRangeBtn: {
+        paddingVertical: 2,
+        paddingHorizontal: 5,
+        alignItems: 'center',
+        borderRadius: 4,
+    },
+    timeRangeBtnActive: {
+        backgroundColor: 'rgba(255,255,255,0.35)',
+    },
+    timeRangeText: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: 'rgba(255,255,255,0.6)',
+    },
+    timeRangeTextActive: {
+        color: '#fff',
+    },
+
+    // Grid layouts
+    tierRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    tierWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+    },
+    tierHalfCard: {
+        width: '49%',
+    },
+
+    // Sub chart labels
+    subChartLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#94a3b8',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 4,
+        marginLeft: 4,
+    },
+    legendRow: {
+        flexDirection: 'row',
+        gap: 16,
+        marginBottom: 4,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    legendDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    legendText: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+
+    // Alert chips
+    alertChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    alertChipCritical: {
+        backgroundColor: '#fef2f2',
+    },
+    alertChipWarning: {
+        backgroundColor: '#fffbeb',
+    },
+    alertChipText: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+
+    // Advanced toggle
+    advancedToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        marginTop: 4,
+        marginBottom: 4,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        gap: 6,
+    },
+    advancedToggleText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+
+    // Body Map
+    bodyMapLayout: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    bodyMapSvgContainer: {
+        width: '35%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+    },
+    measureSummaryList: {
+        gap: 2,
+    },
+    measureSummaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        borderRadius: 8,
+    },
+    measureSummaryLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#334155',
+        width: 70,
+    },
+    measureSummaryValue: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#1e293b',
+        width: 55,
+    },
+    measureSummaryDelta: {
+        fontSize: 12,
+        fontWeight: '600',
+        width: 40,
+        textAlign: 'center',
+    },
+    emptyMediciones: {
+        alignItems: 'center',
+        paddingVertical: 20,
+        gap: 6,
+    },
+    emptyMedicionesText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    emptyMedicionesHint: {
+        fontSize: 11,
+        color: '#94a3b8',
+        textAlign: 'center',
+    },
+    bodyMapList: {
+        flex: 1,
+    },
+    bodyMapRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        gap: 8,
+    },
+    bodyMapRowActive: {
+        backgroundColor: '#f0f9ff',
+        borderRadius: 8,
+    },
+    bodyMapZoneLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#334155',
+        width: 65,
+    },
+    bodyMapValue: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1e293b',
+        width: 60,
+    },
+    bodyMapDelta: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    bodyMapSparkline: {
+        flex: 1,
+        alignItems: 'flex-end',
+    },
+    bodyMapMobileGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    bodyMapMobileItem: {
+        width: '48%',
+        backgroundColor: '#f8fafc',
+        borderRadius: 10,
+        padding: 12,
+    },
+    bodyMapMobileLabel: {
+        fontSize: 11,
+        color: '#94a3b8',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    bodyMapMobileValue: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    expandedZoneChart: {
+        paddingVertical: 8,
+        paddingHorizontal: 4,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        marginTop: 4,
     },
 });

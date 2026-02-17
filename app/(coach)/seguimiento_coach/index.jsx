@@ -322,6 +322,7 @@ export default function CoachSeguimientoScreen() {
             <FlatList
                 data={filteredAndSortedClients}
                 keyExtractor={(item) => item._id}
+                style={{ flex: 1 }}
                 renderItem={({ item }) => (
                     <BiofeedbackCard
                         client={item}

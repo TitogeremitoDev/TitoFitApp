@@ -25,7 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartScalingModal from './SmartScalingModal'; // NEW Import
 
 // Import food service (uses correct API + token)
-import { searchFoods, getFavorites, saveFood } from '../../../../src/services/foodService';
+import { searchFoods, searchExternalFoods, getFavorites, saveFood, toggleFavorite } from '../../../../src/services/foodService';
 
 // Import local foods data
 import localFoods from '../../../../src/constants/localFoods.json';
@@ -105,6 +105,8 @@ function FoodRowItem({
     selectionData, // { amount, unit }
     onUpdateSelection,
     onRecipeSelect, // NEW Prop
+    onToggleFavorite, // ❤️ Favorite toggle
+    isFavorite, // ❤️ Current favorite state
 }) {
     const [expanded, setExpanded] = useState(false);
     const baseNutrients = food.nutrients || {};
@@ -134,16 +136,11 @@ function FoodRowItem({
 
     const handleAmountChange = (text) => {
         const amount = parseFloat(text) || 0;
-        console.log('handleAmountChange - food:', food, 'nutrients:', food?.nutrients);
-        // Always include food object to ensure it's stored
         onUpdateSelection(food._id, { food, amount, unit: selectionData?.unit || 'gramos' });
     };
 
     const handleUnitChange = (unitKey) => {
-        // Reset amount: 100 for grams, 1 for other units
         const newAmount = unitKey === 'gramos' ? 100 : 1;
-        console.log('handleUnitChange - food:', food, 'nutrients:', food?.nutrients);
-        // Always include food object to ensure it's stored
         onUpdateSelection(food._id, { food, amount: newAmount, unit: unitKey });
     };
 
@@ -159,6 +156,19 @@ function FoodRowItem({
 
     return (
         <View style={styles.foodRow}>
+            {/* Favorite Button */}
+            <TouchableOpacity
+                onPress={() => onToggleFavorite?.(food)}
+                style={styles.favBtn}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+                <Ionicons
+                    name={isFavorite ? 'heart' : 'heart-outline'}
+                    size={16}
+                    color={isFavorite ? '#ef4444' : '#cbd5e1'}
+                />
+            </TouchableOpacity>
+
             {/* Checkbox */}
             <TouchableOpacity
                 style={[styles.checkbox, isSelected && styles.checkboxSelected]}
@@ -281,6 +291,7 @@ export default function SmartFoodDrawer({
     onClose,
     onAddFoods, // (foods: Array<{ food, amount, unit, calculatedMacros }>) => void
     context, // { templateId, mealId, optionId }
+    favoritesVersion = 0, // Incremented by parent when favorites change externally
 }) {
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const isDesktop = windowWidth >= 768;
@@ -301,6 +312,8 @@ export default function SmartFoodDrawer({
     const [favorites, setFavorites] = useState([]);
     const [recentFoods, setRecentFoods] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isSearchingExternal, setIsSearchingExternal] = useState(false);
+    const externalAbortRef = useRef(null); // Cancel stale external searches
 
     // Manual Mode State
     const [manualForm, setManualForm] = useState({
@@ -344,6 +357,11 @@ export default function SmartFoodDrawer({
 
     // Fetch foods using foodService
     const fetchFoods = useCallback(async (query = '', options = {}) => {
+        // Cancel any previous external search (aborts the actual HTTP request)
+        if (externalAbortRef.current?.abort) {
+            externalAbortRef.current.abort();
+        }
+
         try {
             setIsLoading(true);
 
@@ -353,25 +371,45 @@ export default function SmartFoodDrawer({
             setIsLoading(false); // Render immediately
 
             // 2. Slow Load (External API - Background)
-            // Only if searching globally and few results found
             const layer = options.layer || 'ALL';
-            if ((layer === 'ALL' || layer === 'API') && internalResults.length < 10) {
-                const { searchExternalFoods } = require('../../../../src/services/foodService');
-                const externalResults = await searchExternalFoods(query);
+            const shouldSearchExternal = (layer === 'ALL' || layer === 'API')
+                && query.trim().length >= 3
+                && internalResults.length < 10;
 
-                if (externalResults.length > 0) {
-                    setAllFoods(prev => {
-                        // Deduplicate (External shouldn't override Local/Cloud if exists)
-                        const existingIds = new Set(prev.map(p => p.name.toLowerCase()));
-                        const newItems = externalResults.filter(e => !existingIds.has(e.name.toLowerCase()));
-                        return [...prev, ...newItems];
-                    });
+            if (shouldSearchExternal) {
+                // Create a real AbortController so we can cancel the HTTP request
+                const abortController = new AbortController();
+                externalAbortRef.current = abortController;
+
+                setIsSearchingExternal(true);
+
+                try {
+                    const externalResults = await searchExternalFoods(query, abortController.signal);
+
+                    // Only update if this search wasn't aborted by a newer one
+                    if (!abortController.signal.aborted) {
+                        if (externalResults.length > 0) {
+                            setAllFoods(prev => {
+                                const existingIds = new Set(prev.map(p => p.name.toLowerCase()));
+                                const newItems = externalResults.filter(e => !existingIds.has(e.name.toLowerCase()));
+                                return [...prev, ...newItems];
+                            });
+                        }
+                    }
+                } finally {
+                    // Always reset loading state, even on abort
+                    setIsSearchingExternal(false);
                 }
+            } else {
+                setIsSearchingExternal(false);
             }
 
         } catch (error) {
-            console.error('[SmartDrawer] Search error:', error);
+            if (error?.name !== 'AbortError') {
+                console.error('[SmartDrawer] Search error:', error);
+            }
             setIsLoading(false);
+            setIsSearchingExternal(false);
         }
     }, []);
 
@@ -397,6 +435,68 @@ export default function SmartFoodDrawer({
         }
     }, []);
 
+    // ❤️ Set of favorite IDs + names for quick lookup
+    const favoriteIds = useMemo(() => {
+        const set = new Set();
+        favorites.forEach(f => {
+            if (f._id) set.add(f._id);
+            if (f.name) set.add(f.name.toLowerCase().trim());
+        });
+        return set;
+    }, [favorites]);
+
+    // ❤️ Toggle Favorite Handler
+    const handleToggleFavorite = useCallback(async (food) => {
+        try {
+            const result = await toggleFavorite(food);
+            // Await refresh so favoriteIds updates before re-render
+            await fetchFavorites();
+
+            const isNowFavorite = !result.action?.startsWith('removed');
+
+            if (result.action === 'removed_deleted' || result.action === 'removed_kept') {
+                // Zombie cleanup: backend hard-deleted the CLOUD clone
+                // Remove the ghost food from allFoods so user can't click it again
+                setAllFoods(prev => {
+                    const cleaned = prev.filter(f => f._id !== food._id);
+                    // Also mark any remaining food with same name as not-favorite
+                    return cleaned.map(f =>
+                        f.name?.toLowerCase() === food.name?.toLowerCase()
+                            ? { ...f, isFavorite: false }
+                            : f
+                    );
+                });
+            } else if (result.action === 'cloned_and_favorited' && result.food) {
+                // Cloned from LOCAL/API: mark original as favorite too, don't duplicate
+                setAllFoods(prev => {
+                    // Mark the original food as favorite
+                    const updated = prev.map(f =>
+                        (f._id === food._id || f.name?.toLowerCase() === food.name?.toLowerCase())
+                            ? { ...f, isFavorite: true }
+                            : f
+                    );
+                    // Only add clone if it doesn't duplicate an existing entry by name
+                    const alreadyHasName = updated.some(f =>
+                        f.name?.toLowerCase() === result.food.name?.toLowerCase()
+                    );
+                    return alreadyHasName ? updated : [result.food, ...updated];
+                });
+            } else {
+                // Standard CLOUD toggle: just sync isFavorite
+                setAllFoods(prev => prev.map(f =>
+                    (f._id === food._id || f.name?.toLowerCase() === food.name?.toLowerCase())
+                        ? { ...f, isFavorite: isNowFavorite }
+                        : f
+                ));
+            }
+
+            showToast(isNowFavorite ? '❤️ Añadido a favoritos' : '💔 Eliminado de favoritos');
+        } catch (error) {
+            console.error('[SmartDrawer] Toggle favorite error:', error);
+            showToast('⚠️ Error al cambiar favorito');
+        }
+    }, [fetchFavorites, showToast]);
+
     // Initial fetch when drawer opens
     useEffect(() => {
         if (visible) {
@@ -405,6 +505,25 @@ export default function SmartFoodDrawer({
             loadRecentFoods();
         }
     }, [visible, fetchFoods, fetchFavorites, loadRecentFoods]);
+
+    // Sync favorites when parent toggles a favorite (e.g. from MealCard)
+    useEffect(() => {
+        if (favoritesVersion > 0) {
+            const syncAll = async () => {
+                const favs = await getFavorites();
+                setFavorites(favs);
+                // Build lookup sets from fresh favorites
+                const favIds = new Set(favs.map(f => f._id));
+                const favNames = new Set(favs.map(f => f.name?.toLowerCase?.().trim()));
+                // Sync isFavorite flag on all local food objects
+                setAllFoods(prev => prev.map(f => ({
+                    ...f,
+                    isFavorite: favIds.has(f._id) || favNames.has(f.name?.toLowerCase?.().trim())
+                })));
+            };
+            syncAll();
+        }
+    }, [favoritesVersion]);
 
     // Debounced search & Tab Sync
     useEffect(() => {
@@ -909,33 +1028,50 @@ export default function SmartFoodDrawer({
                             </View>
                         )}
 
-                        {/* Smart Suggestions for current meal */}
-                        {suggestedFoods.length > 0 && (
-                            <View style={styles.suggestionsSection}>
-                                <View style={styles.suggestionHeader}>
-                                    <Text style={styles.suggestionTitle}>
-                                        ⚡ Sugerencias para {mealDisplayName || 'esta comida'}
-                                    </Text>
+                        {/* Smart Suggestions for current meal (filtered to favorites on favorites tab, hidden on recientes) */}
+                        {(() => {
+                            // On favorites tab: only show suggested foods that are also favorites
+                            const displaySuggestions = activeTab === 'favoritos'
+                                ? suggestedFoods.filter(f => favoriteIds.has(f._id) || favoriteIds.has(f.name?.toLowerCase?.().trim()) || f.isFavorite)
+                                : activeTab === 'global'
+                                    ? suggestedFoods
+                                    : []; // Hide on recientes
+
+                            return displaySuggestions.length > 0 && (
+                                <View style={styles.suggestionsSection}>
+                                    <View style={styles.suggestionHeader}>
+                                        <Text style={styles.suggestionTitle}>
+                                            ⚡ Sugerencias para {mealDisplayName || 'esta comida'}
+                                        </Text>
+                                    </View>
+                                    {displaySuggestions.map(food => (
+                                        <FoodRowItem
+                                            key={`suggest-${food._id}`}
+                                            food={food}
+                                            isSelected={!!selections[food._id]}
+                                            selectionData={selections[food._id]}
+                                            onToggleSelect={handleToggleSelect}
+                                            onUpdateSelection={handleUpdateSelection}
+                                            onQuickAdd={handleQuickAdd}
+                                            onRecipeSelect={handleRecipeSelect}
+                                            onToggleFavorite={handleToggleFavorite}
+                                            isFavorite={favoriteIds.has(food._id) || favoriteIds.has(food.name?.toLowerCase?.().trim()) || food.isFavorite}
+                                        />
+                                    ))}
                                 </View>
-                                {suggestedFoods.map(food => (
-                                    <FoodRowItem
-                                        key={`suggest-${food._id}`}
-                                        food={food}
-                                        isSelected={!!selections[food._id]}
-                                        selectionData={selections[food._id]}
-                                        onToggleSelect={handleToggleSelect}
-                                        onUpdateSelection={handleUpdateSelection}
-                                        onQuickAdd={handleQuickAdd}
-                                        onRecipeSelect={handleRecipeSelect} // Pass Handler
-                                    />
-                                ))}
-                            </View>
-                        )}
+                            );
+                        })()}
 
                         {/* Search Results Header */}
                         {filteredFoods.length > 0 && (
                             <Text style={styles.resultsHeader}>
-                                {searchQuery.trim() ? 'Resultados' : 'Todos los alimentos'}
+                                {activeTab === 'favoritos'
+                                    ? '❤️ Tus favoritos'
+                                    : activeTab === 'recientes'
+                                        ? '🕐 Recientes'
+                                        : searchQuery.trim()
+                                            ? 'Resultados'
+                                            : 'Todos los alimentos'}
                             </Text>
                         )}
 
@@ -948,12 +1084,37 @@ export default function SmartFoodDrawer({
                                 onToggleSelect={handleToggleSelect}
                                 onUpdateSelection={handleUpdateSelection}
                                 onQuickAdd={handleQuickAdd}
-                                onRecipeSelect={handleRecipeSelect} // Pass Handler
+                                onRecipeSelect={handleRecipeSelect}
+                                onToggleFavorite={handleToggleFavorite}
+                                isFavorite={favoriteIds.has(food._id) || favoriteIds.has(food.name?.toLowerCase?.().trim()) || food.isFavorite}
                             />
                         ))}
 
-                        {/* Not Found CTA */}
-                        {filteredFoods.length === 0 && searchQuery.trim().length > 0 && (
+                        {/* Empty favorites message */}
+                        {activeTab === 'favoritos' && filteredFoods.length === 0 && !isLoading && (
+                            <View style={{ alignItems: 'center', paddingVertical: 40, gap: 8 }}>
+                                <Ionicons name="heart-outline" size={48} color="#cbd5e1" />
+                                <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+                                    Aún no tienes favoritos
+                                </Text>
+                                <Text style={{ color: '#64748b', fontSize: 12, textAlign: 'center' }}>
+                                    Pulsa ❤️ en cualquier alimento para añadirlo aquí
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* External search loading indicator */}
+                        {isSearchingExternal && (
+                            <View style={styles.externalSearchingContainer}>
+                                <ActivityIndicator size="small" color="#3b82f6" />
+                                <Text style={styles.externalSearchingText}>
+                                    Buscando en base de datos online...
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Not Found CTA - only show if NOT still searching externally */}
+                        {filteredFoods.length === 0 && searchQuery.trim().length > 0 && !isSearchingExternal && !isLoading && (
                             <View style={styles.notFoundContainer}>
                                 <Ionicons name="search-outline" size={48} color="#cbd5e1" />
                                 <Text style={styles.notFoundText}>
@@ -1335,6 +1496,10 @@ const styles = StyleSheet.create({
         marginBottom: 6,
         minHeight: 60,
     },
+    favBtn: {
+        marginRight: 4,
+        padding: 2,
+    },
     checkbox: {
         width: 22,
         height: 22,
@@ -1589,6 +1754,24 @@ const styles = StyleSheet.create({
     calculatedSeparator: {
         marginHorizontal: 6,
         color: '#cbd5e1',
+    },
+
+    // External search loading
+    externalSearchingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginBottom: 8,
+        backgroundColor: '#eff6ff',
+        borderRadius: 8,
+        gap: 8,
+    },
+    externalSearchingText: {
+        fontSize: 12,
+        color: '#3b82f6',
+        fontWeight: '500',
     },
 
     // Loading State

@@ -28,6 +28,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AvatarWithInitials from '../src/components/shared/AvatarWithInitials';
+import SignedImage from '../src/components/shared/SignedImage';
+import ChatMessageAudioPlayer from '../src/components/chat/ChatMessageAudioPlayer';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -147,28 +149,63 @@ const MessageBubble = ({ message, isMine, showAvatar, isFirst, isLast, avatarUrl
                             )}
                         </View>
                         <View style={styles.comparisonPhotos}>
-                            <Image
-                                source={{ uri: message.metadata.compareData.olderPhotoUrl }}
+                            <SignedImage
+                                r2Key={message.metadata.compareData.olderPhotoKey}
+                                fallbackUrl={message.metadata.compareData.olderPhotoUrl}
                                 style={styles.comparisonImg}
-                                resizeMode="cover"
+                                spinnerColor="#0ea5e9"
+                                errorIconSize={24}
                             />
                             <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
-                            <Image
-                                source={{ uri: message.metadata.compareData.newerPhotoUrl }}
+                            <SignedImage
+                                r2Key={message.metadata.compareData.newerPhotoKey}
+                                fallbackUrl={message.metadata.compareData.newerPhotoUrl}
                                 style={styles.comparisonImg}
-                                resizeMode="cover"
+                                spinnerColor="#0ea5e9"
+                                errorIconSize={24}
                             />
                         </View>
                     </View>
                 )}
 
-                {/* Message Text */}
-                <Text style={[
-                    styles.messageText,
-                    isMine ? styles.messageTextMine : styles.messageTextTheirs
-                ]}>
-                    {message.message}
-                </Text>
+                {/* Inline Media Attachment */}
+                {message.mediaUrl && message.mediaType && (
+                    <>
+                        {message.mediaType === 'image' && (
+                            <SignedImage
+                                r2Key={message.mediaUrl}
+                                style={styles.chatMediaImage}
+                                resizeMode="cover"
+                            />
+                        )}
+                        {message.mediaType === 'video' && (
+                            <View style={styles.chatMediaVideo}>
+                                <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.8)" />
+                                <Text style={{ color: '#fff', fontSize: 11, marginTop: 4 }}>Video</Text>
+                            </View>
+                        )}
+                        {message.mediaType === 'audio' && (
+                            <ChatMessageAudioPlayer
+                                r2Key={message.mediaUrl}
+                                duration={message.duration}
+                                isOwn={isMine}
+                            />
+                        )}
+                    </>
+                )}
+
+                {/* Message Text (strip media placeholders) */}
+                {(() => {
+                    const clean = (message.message || '').replace(/^\[(image|audio|video|document)\]$/i, '').trim();
+                    return clean ? (
+                        <Text style={[
+                            styles.messageText,
+                            isMine ? styles.messageTextMine : styles.messageTextTheirs
+                        ]}>
+                            {clean}
+                        </Text>
+                    ) : null;
+                })()}
 
                 {/* Time & Status */}
                 <View style={styles.messageFooter}>
@@ -1083,6 +1120,7 @@ const styles = StyleSheet.create({
         marginBottom: 6,
         borderWidth: 1,
         borderColor: 'rgba(14, 165, 233, 0.2)',
+        minWidth: 240,
     },
     comparisonHeader: {
         flexDirection: 'row',
@@ -1111,6 +1149,23 @@ const styles = StyleSheet.create({
         aspectRatio: 3 / 4,
         borderRadius: 6,
         backgroundColor: '#e2e8f0',
+    },
+
+    // Inline Media
+    chatMediaImage: {
+        width: '100%',
+        height: 180,
+        borderRadius: 8,
+        marginBottom: 6,
+    },
+    chatMediaVideo: {
+        width: '100%',
+        height: 120,
+        borderRadius: 8,
+        backgroundColor: '#1e293b',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 6,
     },
 
     // Type Badge

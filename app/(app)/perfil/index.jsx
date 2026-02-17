@@ -25,9 +25,9 @@ import { syncLocalToCloud } from '../../../src/lib/dataSyncService';
 import * as ImagePicker from 'expo-image-picker';
 import { avatarService } from '../../../src/services/avatarService';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
-import { ImageCropper } from '../../../src/components/shared/ImageCropper';
 import { useCoachBranding } from '../../../context/CoachBrandingContext';
 import { useTrainer } from '../../../context/TrainerContext';
+import { clearSignedUrlCache } from '../../../src/components/shared/SignedImage';
 
 const AVATARS = [
     // Avatares Gratuitos
@@ -195,9 +195,6 @@ export default function PerfilScreen() {
     };
 
     // 📸 MANEJO DE FOTO DE PERFIL
-    // 📸 MANEJO DE FOTO DE PERFIL
-    const [croppingImage, setCroppingImage] = useState(null); // State for custom cropper
-
     const handlePickImage = async () => {
         setShowPhotoOptions(false);
         try {
@@ -208,14 +205,14 @@ export default function PerfilScreen() {
             }
 
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
-                allowsEditing: false, // Disable native editing to use Custom Cropper
-                quality: 1, // Get full quality for cropping
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
             });
 
             if (!result.canceled) {
-                // Open Custom Cropper
-                setCroppingImage(result.assets[0].uri);
+                await processAndUploadAvatar(result.assets[0].uri);
             }
         } catch (error) {
             console.error('[Perfil] Error picking image:', error);
@@ -233,24 +230,19 @@ export default function PerfilScreen() {
             }
 
             const result = await ImagePicker.launchCameraAsync({
-                allowsEditing: false, // Disable native editing
-                quality: 1,
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
             });
 
             if (!result.canceled) {
-                // Open Custom Cropper
-                setCroppingImage(result.assets[0].uri);
+                await processAndUploadAvatar(result.assets[0].uri);
             }
         } catch (error) {
             console.error('[Perfil] Error taking photo:', error);
             Alert.alert('Error', 'No se pudo tomar la foto');
         }
-    };
-
-    const handleCropComplete = async (croppedUri) => {
-        setCroppingImage(null);
-        // Upload immediately after cropping
-        await processAndUploadAvatar(croppedUri);
     };
 
 
@@ -267,9 +259,7 @@ export default function PerfilScreen() {
             setSelectedAvatar(null);
         } catch (error) {
             console.error('[Perfil] Upload failed:', error);
-            console.error('[Perfil] Upload failed:', error);
             Alert.alert('Error al subir', error.message || 'Falló la subida de la imagen. Inténtalo de nuevo.');
-            setTempAvatarUri(null); // Revert optimistic update
             setTempAvatarUri(null); // Revert optimistic update
         } finally {
             setIsUploadingAvatar(false);
@@ -520,6 +510,7 @@ export default function PerfilScreen() {
     const handleLogout = async () => {
         try {
             console.log('[Perfil] Iniciando logout...');
+            clearSignedUrlCache(); // Clear cached signed URLs for security
             await logout();
             console.log('[Perfil] Logout completado, esperando limpieza de AsyncStorage...');
             // Pequeño delay para asegurar que AsyncStorage se limpie completamente
@@ -537,18 +528,28 @@ export default function PerfilScreen() {
     const cardGap = 12; // gap between cards
     // Limit effective width on web for better layout
     const effectiveWidth = Math.min(screenWidth, 600) - (cardPadding * 2);
-    const cardWidth = (effectiveWidth - cardGap) / 2;
+    // Subtract a small buffer (2px) to prevent sub-pixel rounding issues causing wrap
+    const cardWidth = ((effectiveWidth - (cardGap * 2)) / 3) - 1;
+
+    const hasCoach = !!user?.currentTrainerId;
 
     const menuItems = [
         { title: 'Información Personal', icon: 'person-outline', route: '/perfil/informacion-personal', color: '#3B82F6' },
+        { title: 'Rutinas', icon: 'clipboard-outline', route: '/rutinas', color: '#6366F1' },
         { title: 'Evolución', icon: 'trending-up-outline', route: '/perfil/evolucion', color: '#10B981' },
         { title: 'Mi Transformación', icon: 'body-outline', route: '/perfil/transformacion', color: '#8B5CF6' },
         { title: 'Logros', icon: 'trophy-outline', route: '/perfil/logros', color: '#F59E0B' },
+        { title: 'Entrenador', icon: 'fitness-outline', route: '/perfil/entrenador', color: '#F97316', requiresCoach: true },
         { title: 'Amigos', icon: 'people-outline', route: '/perfil/amigos', color: '#EC4899' },
         { title: 'Comunidad', icon: 'globe-outline', route: '/perfil/comunidad', color: '#06B6D4', webOnly: true },
         { title: 'Videoteca', icon: 'videocam-outline', route: '/perfil/videos', color: '#EF4444' },
         { title: 'Ajustes', icon: 'settings-outline', route: '/perfil/ajustes', color: '#6B7280' },
-    ].filter(item => !item.webOnly || Platform.OS === 'web');
+    ].filter(item => {
+        if (item.webOnly && Platform.OS !== 'web') return false;
+        if (item.hideWhenCoached && hasCoach) return false;
+        if (item.requiresCoach && !hasCoach) return false;
+        return true;
+    });
 
     // Modificación para usar colores del tema (incluyendo Branding del Coach)
     // Si hay un tema de coach activo, theme.background ya tendrá el color correcto
@@ -954,15 +955,6 @@ export default function PerfilScreen() {
                 </View>
             </Modal >
 
-            {/* Custom Image Cropper */}
-            {croppingImage && (
-                <ImageCropper
-                    visible={!!croppingImage}
-                    imageUri={croppingImage}
-                    onCancel={() => setCroppingImage(null)}
-                    onCrop={handleCropComplete}
-                />
-            )}
 
             {/* Premium Code Modal */}
             < Modal visible={showPremiumCodeModal} transparent animationType="fade" onRequestClose={() => setShowPremiumCodeModal(false)}>
@@ -1474,24 +1466,19 @@ const styles = StyleSheet.create({
     menuGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-start',
+        gap: 12,
         width: '100%',
-        ...Platform.select({
-            web: {
-                gap: 1,
-            },
-            default: {},
-        }),
     },
     menuCard: {
         marginVertical: 6,
         borderRadius: 16,
         borderWidth: 1,
-        paddingVertical: 16,
-        paddingHorizontal: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 8,
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 120,
+        minHeight: 100,
         marginBottom: Platform.OS === 'web' ? 0 : 12,
         ...Platform.select({
             ios: {
@@ -1511,18 +1498,18 @@ const styles = StyleSheet.create({
         }),
     },
     menuCardIconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
+        width: 42,
+        height: 42,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: 8,
     },
     menuCardTitle: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
         textAlign: 'center',
-        lineHeight: 18,
+        lineHeight: 16,
     },
     menuCardChevron: {
         position: 'absolute',

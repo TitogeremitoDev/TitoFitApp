@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotifications } from '../../../context/NotificationContext';
 import CoachHeader from '../components/CoachHeader';
-import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import BroadcastModal from '../../../components/BroadcastModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -39,16 +38,13 @@ const TABS = [
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ChatTab = ({ token }) => {
+    const router = useRouter();
     const [clientsList, setClientsList] = useState([]);
     const [feedbackSummary, setFeedbackSummary] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState('all');
     const [loading, setLoading] = useState(true);
     const { unreadChat: unreadMessages, refreshNotifications } = useNotifications();
-
-    // Chat Modal
-    const [chatModalVisible, setChatModalVisible] = useState(false);
-    const [selectedClient, setSelectedClient] = useState(null);
 
     // Broadcast Modal
     const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
@@ -81,16 +77,31 @@ const ChatTab = ({ token }) => {
         }
     };
 
-    const openClientChat = (client) => {
-        setSelectedClient(client);
-        setChatModalVisible(true);
-    };
-
-    const closeClientChat = () => {
-        setChatModalVisible(false);
-        setSelectedClient(null);
-        loadData(); // Refresh data after closing chat
-        refreshNotifications(); // Refresh unread count from context
+    const openClientChat = async (client) => {
+        try {
+            const res = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ clientId: client._id }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                router.push({
+                    pathname: '/(app)/chat/[conversationId]',
+                    params: {
+                        conversationId: data.conversation._id,
+                        displayName: client.nombre,
+                        isTrainerChat: 'true',
+                        type: 'trainer',
+                    },
+                });
+            }
+        } catch (error) {
+            console.error('[Communication] Error opening chat:', error);
+        }
     };
 
     // Filter and sort clients
@@ -202,6 +213,7 @@ const ChatTab = ({ token }) => {
             <FlatList
                 data={filteredClients}
                 keyExtractor={item => item._id}
+                style={{ flex: 1 }}
                 contentContainerStyle={styles.clientsListContent}
                 renderItem={({ item }) => {
                     const summary = feedbackSummary[item._id] || {};
@@ -281,15 +293,6 @@ const ChatTab = ({ token }) => {
                         </Text>
                     </View>
                 }
-            />
-
-            {/* Chat Modal */}
-            <FeedbackChatModal
-                visible={chatModalVisible}
-                onClose={closeClientChat}
-                clientId={selectedClient?._id}
-                clientName={selectedClient?.nombre}
-                isCoach={true}
             />
 
             {/* Broadcast Modal */}

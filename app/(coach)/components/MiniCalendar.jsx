@@ -26,7 +26,16 @@ const TYPE_COLORS = {
 };
 
 const MiniCalendar = ({ selectedDate, onSelectDate, events = [] }) => {
-    const [currentMonth, setCurrentMonth] = useState(moment());
+    const [currentMonth, setCurrentMonth] = useState(moment(selectedDate || new Date()));
+
+    useEffect(() => {
+        if (selectedDate) {
+            const dateMoment = moment(selectedDate);
+            if (!dateMoment.isSame(currentMonth, 'month')) {
+                setCurrentMonth(dateMoment.clone().startOf('month'));
+            }
+        }
+    }, [selectedDate]);
 
     // Generate days for the grid
     const startOfMonth = currentMonth.clone().startOf('month');
@@ -45,25 +54,23 @@ const MiniCalendar = ({ selectedDate, onSelectDate, events = [] }) => {
     const weekDays = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
 
     const getEventColors = (date) => {
-        // Get unique types for this day
         const dayEvents = events.filter(e => moment(e.startDate).isSame(date, 'day'));
         const types = [...new Set(dayEvents.map(e => e.type))];
-        // Take up to 3 for display
         return types.slice(0, 3).map(type => TYPE_COLORS[type] || '#94a3b8');
     };
 
     return (
         <View style={styles.container}>
-            {/* Header: Month Year + Navigation */}
+            {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => setCurrentMonth(prev => prev.clone().subtract(1, 'month'))}>
-                    <Ionicons name="chevron-back" size={20} color={COLORS.textMuted} />
+                <TouchableOpacity onPress={() => setCurrentMonth(prev => prev.clone().subtract(1, 'month'))} style={{ padding: 4 }}>
+                    <Ionicons name="chevron-back" size={16} color="#94a3b8" />
                 </TouchableOpacity>
                 <Text style={styles.monthTitle}>
                     {currentMonth.format('MMMM YYYY')}
                 </Text>
-                <TouchableOpacity onPress={() => setCurrentMonth(prev => prev.clone().add(1, 'month'))}>
-                    <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
+                <TouchableOpacity onPress={() => setCurrentMonth(prev => prev.clone().add(1, 'month'))} style={{ padding: 4 }}>
+                    <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
                 </TouchableOpacity>
             </View>
 
@@ -84,31 +91,34 @@ const MiniCalendar = ({ selectedDate, onSelectDate, events = [] }) => {
                     return (
                         <TouchableOpacity
                             key={index}
-                            style={[
-                                styles.dayCell,
-                                isSelected && styles.selectedDay,
-                                isToday && !isSelected && styles.todayCell
-                            ]}
+                            style={styles.dayCell}
                             onPress={() => onSelectDate(date.toDate())}
                         >
-                            <Text style={[
-                                styles.dayText,
-                                !isCurrentMonth && styles.outsideMonthText,
-                                isSelected && styles.selectedDayText
+                            <View style={[
+                                styles.dayContent,
+                                isSelected && styles.selectedDay,
+                                isToday && !isSelected && styles.todayCell
                             ]}>
-                                {date.date()}
-                            </Text>
+                                <Text style={[
+                                    styles.dayText,
+                                    !isCurrentMonth && styles.outsideMonthText,
+                                    isToday && !isSelected && { color: '#2563EB', fontWeight: 'bold' },
+                                    isSelected && styles.selectedDayText
+                                ]}>
+                                    {date.date()}
+                                </Text>
 
-                            <View style={styles.dotsContainer}>
-                                {getEventColors(date).map((color, i) => (
-                                    <View
-                                        key={i}
-                                        style={[
-                                            styles.eventDot,
-                                            { backgroundColor: isSelected ? '#fff' : color }
-                                        ]}
-                                    />
-                                ))}
+                                <View style={styles.dotsContainer}>
+                                    {getEventColors(date).map((color, i) => (
+                                        <View
+                                            key={i}
+                                            style={[
+                                                styles.eventDot,
+                                                { backgroundColor: isSelected ? '#fff' : color }
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
                             </View>
                         </TouchableOpacity>
                     );
@@ -120,64 +130,69 @@ const MiniCalendar = ({ selectedDate, onSelectDate, events = [] }) => {
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        // Shadow for elevation
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 2,
-        borderWidth: 1,
-        borderColor: COLORS.border
+        backgroundColor: 'transparent',
+        marginBottom: 4, // Reduced
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: 2, // Tighter
+        paddingHorizontal: 4
     },
     monthTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.text,
+        fontSize: 13, // Smaller
+        fontWeight: '700',
+        color: '#0f172a',
         textTransform: 'capitalize'
     },
     weekRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 8,
+        marginBottom: 2, // Tighter
     },
     weekDayText: {
-        width: 32,
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: COLORS.textMuted,
+        width: '14.28%',
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#94a3b8',
         textAlign: 'center',
+        textTransform: 'uppercase',
     },
     daysGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
     },
     dayCell: {
-        width: '14.28%', // 100% / 7
-        aspectRatio: 1,
+        width: '14.28%',
+        height: 28, // Shorter cells
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 4,
-        borderRadius: 20,
+        marginBottom: 0,
+    },
+    dayContent: {
+        width: 24, // Smaller circle
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     todayCell: {
-        backgroundColor: COLORS.todayBg,
+        // No background for today, just maybe bold or colored text if not selected
     },
     selectedDay: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: '#2563EB',
+        borderRadius: 50,
+        shadowColor: "#2563EB",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 2
     },
     dayText: {
-        fontSize: 12,
-        color: COLORS.text,
+        fontSize: 10, // Smaller text
+        color: '#334155',
+        fontWeight: '500'
     },
     outsideMonthText: {
         color: '#cbd5e1',
@@ -188,15 +203,16 @@ const styles = StyleSheet.create({
     },
     dotsContainer: {
         flexDirection: 'row',
-        marginTop: 2,
-        gap: 2,
+        position: 'absolute',
+        bottom: 1, // Tighter
+        gap: 1,
         justifyContent: 'center',
-        height: 4
     },
     eventDot: {
-        width: 4,
-        height: 4,
-        borderRadius: 2,
+        width: 2.5, // Tiny dot
+        height: 2.5,
+        borderRadius: 1.25,
+        backgroundColor: '#94a3b8',
     }
 });
 

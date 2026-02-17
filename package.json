@@ -1,14 +1,15 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "1.1.5",
+  "version": "1.1.8",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/lato": "^0.4.1",
@@ -43,6 +44,7 @@
     "expo-constants": "~18.0.12",
     "expo-crypto": "~15.0.8",
     "expo-dev-client": "~6.0.20",
+    "expo-device": "~7.1.4",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
     "expo-font": "~14.0.10",
@@ -78,7 +80,7 @@
     "react-hook-form": "^7.58.1",
     "react-native": "0.81.5",
     "react-native-chart-kit": "^6.12.0",
-    "react-native-compressor": "^1.13.0",
+    "react-native-compressor": "^1.16.0",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-markdown-display": "^7.0.2",
     "react-native-modal": "^14.0.0-rc.1",
@@ -107,6 +109,7 @@
     "babel-plugin-module-resolver": "^5.0.2",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "patch-package": "^8.0.1",
     "sharp": "^0.34.5",
     "typescript": "~5.9.2"
   },

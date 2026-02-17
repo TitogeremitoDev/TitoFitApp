@@ -66,10 +66,10 @@ export default function HomeMobileLayout({
                             source={{ uri: logoUrl }}
                             resizeMode="contain"
                             style={[styles.logoImage, {
-                                width: width * 0.25,
-                                height: width * 0.25,
-                                maxHeight: 110,
-                                maxWidth: 110,
+                                width: width * 0.3,
+                                height: width * 0.3,
+                                maxHeight: 140,
+                                maxWidth: 140,
                             }]}
                         />
                     ) : (
@@ -77,10 +77,10 @@ export default function HomeMobileLayout({
                             source={require('../assets/logo.png')}
                             resizeMode="contain"
                             style={[styles.logoImage, {
-                                width: width * 0.25,
-                                height: width * 0.25,
-                                maxHeight: 110,
-                                maxWidth: 110,
+                                width: width * 0.3,
+                                height: width * 0.3,
+                                maxHeight: 140,
+                                maxWidth: 140,
                             }]}
                         />
                     )}
@@ -102,9 +102,11 @@ export default function HomeMobileLayout({
                 </Link>
             </View>
 
+
+
             <View style={styles.buttonWrapper}>
-                <Link href="/rutinas" asChild>
-                    <ActionButton title="Crear rutina" icon="construct-outline" variant="secondary" />
+                <Link href="/nutricion" asChild>
+                    <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
                 </Link>
             </View>
 
@@ -122,12 +124,6 @@ export default function HomeMobileLayout({
                         <Text style={seguimientoBadgeTextStyle}>+{unreadFeedbackReports}</Text>
                     </View>
                 ) : null}
-            </View>
-
-            <View style={styles.buttonWrapper}>
-                <Link href="/nutricion" asChild>
-                    <ActionButton title="Nutrición" icon="nutrition-outline" variant="secondary" />
-                </Link>
             </View>
 
             <View style={styles.buttonWrapper}>

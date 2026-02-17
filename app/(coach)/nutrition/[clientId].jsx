@@ -22,6 +22,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition, ACTIVITY_FACTORS } from '../../../src/utils/nutritionCalculator';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
@@ -474,6 +475,7 @@ export default function ClientNutritionEditor() {
     const { clientId, clientName } = useLocalSearchParams();
     const { token, user } = useAuth();
     const { theme } = useTheme();
+    const { branding: coachBrandingCtx, activeTheme: activeCoachTheme } = useCoachBranding();
 
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -979,7 +981,9 @@ export default function ClientNutritionEditor() {
         setIsExportingPDF(true);
         try {
             const coachBranding = {
-                primaryColor: theme?.primary || '#3b82f6',
+                primaryColor: activeCoachTheme?.colors?.primary || theme?.primary || '#3b82f6',
+                secondaryColor: activeCoachTheme?.colors?.secondary || theme?.primary || '#3b82f6',
+                fontFamily: coachBrandingCtx?.fontFamily || 'System',
                 coachName: user?.nombre || 'Entrenador',
                 logoUrl: user?.trainerProfile?.logoUrl || null,
             };

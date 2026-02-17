@@ -28,7 +28,7 @@ if (Platform.OS !== 'web') {
 }
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
 
@@ -204,74 +204,38 @@ export default function UnifiedFeedbackModal({
     // ═══════════════════════════════════════════════════════════════════════════
     const handlePickFile = async () => {
         try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['video/*', 'image/*', 'audio/*'],
-                copyToCacheDirectory: true,
+            // En iOS 14+, PHPickerViewController no requiere permisos explícitos.
+            // Solo pedimos permisos en Android para compatibilidad.
+            if (Platform.OS === 'android') {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert('Permiso necesario', 'Se necesita acceso a tu galería para seleccionar fotos o videos.');
+                    return;
+                }
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images', 'videos'],
+                quality: 0.8,
+                allowsEditing: false,
             });
 
             if (result.canceled) return;
 
-            const file = result.assets ? result.assets[0] : result;
-            const { uri, mimeType, name } = file;
+            const file = result.assets[0];
+            const { uri, type, fileName, mimeType } = file;
 
-            console.log('[UnifiedFeedbackModal] File picked:', { uri, mimeType, name });
+            console.log('[UnifiedFeedbackModal] File picked:', { uri, type, fileName, mimeType });
 
-            // Determinar tipo de media con fallback a extensión
-            let detectedType = null;
-
-            // Primero intentar con mimeType
-            if (mimeType?.startsWith('video/')) {
-                detectedType = 'video';
-            } else if (mimeType?.startsWith('image/')) {
-                detectedType = 'photo';
-            } else if (mimeType?.startsWith('audio/')) {
-                detectedType = 'audio';
-            }
-
-            // Fallback: detectar por extensión si mimeType es null/undefined
-            if (!detectedType && name) {
-                const ext = name.toLowerCase().split('.').pop();
-                console.log('[UnifiedFeedbackModal] Fallback extension detection:', ext);
-
-                const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp', 'm4v'];
-                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'];
-                const audioExtensions = ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac'];
-
-                if (videoExtensions.includes(ext)) {
-                    detectedType = 'video';
-                } else if (imageExtensions.includes(ext)) {
-                    detectedType = 'photo';
-                } else if (audioExtensions.includes(ext)) {
-                    detectedType = 'audio';
-                }
-            }
-
-            // Último fallback: detectar por URI
-            if (!detectedType && uri) {
-                const uriLower = uri.toLowerCase();
-                if (uriLower.match(/\.(jpg|jpeg|png|gif|webp|heic)$/)) {
-                    detectedType = 'photo';
-                } else if (uriLower.match(/\.(mp4|mov|avi|mkv|webm)$/)) {
-                    detectedType = 'video';
-                } else if (uriLower.match(/\.(mp3|m4a|wav|aac)$/)) {
-                    detectedType = 'audio';
-                }
-            }
-
-            console.log('[UnifiedFeedbackModal] Detected type:', detectedType);
-
-            if (detectedType === 'video') {
+            // ImagePicker devuelve type: 'image' o 'video'
+            if (type === 'video' || mimeType?.startsWith('video/')) {
                 setMediaUri(uri);
                 setMediaType('video');
                 setTrimStart(0);
                 setTrimEnd(0);
-            } else if (detectedType === 'photo') {
+            } else {
                 setMediaUri(uri);
                 setMediaType('photo');
-            } else if (detectedType === 'audio') {
-                setAudioUri(uri);
-            } else {
-                Alert.alert('Formato no soportado', `No se pudo detectar el tipo de archivo. MimeType: ${mimeType || 'desconocido'}`);
             }
         } catch (err) {
             console.error('[UnifiedFeedbackModal] Error picking file:', err);
@@ -532,13 +496,13 @@ export default function UnifiedFeedbackModal({
                         </Text>
                     </TouchableOpacity>
 
-                    {/* Botón Subir Archivo (Carpeta) */}
+                    {/* Botón Galería */}
                     <TouchableOpacity
                         style={[styles.folderBtn, { borderColor: theme?.border || '#333' }]}
                         onPress={handlePickFile}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="folder-open-outline" size={22} color={theme?.textSecondary || '#94a3b8'} />
+                        <Ionicons name="images-outline" size={22} color={theme?.textSecondary || '#94a3b8'} />
                     </TouchableOpacity>
                 </View>
             ) : (

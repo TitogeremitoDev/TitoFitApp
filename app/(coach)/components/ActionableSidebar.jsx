@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutAnimation } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import moment from 'moment';
 import MiniCalendar from './MiniCalendar';
@@ -159,8 +159,45 @@ const ActionableSidebar = ({ clients = [], refreshTrigger = 0 }) => {
         }
     };
 
+    const [expandedAI, setExpandedAI] = useState(false);
+
+    // Find next day with events
+    const nextDateWithEvents = React.useMemo(() => {
+        if (!events.length) return null;
+
+        const startOfNextDay = moment(selectedDate).add(1, 'day').startOf('day');
+        // Filter events strictly after selected date (next day onwards)
+        // Sort by date ascending
+        const futureEvents = events
+            .filter(e => moment(e.startDate).isSameOrAfter(startOfNextDay))
+            .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+
+        if (futureEvents.length > 0) {
+            const firstNextEvent = futureEvents[0];
+            const nextDayMoment = moment(firstNextEvent.startDate);
+            // Get events for that specific day
+            const dayEvents = futureEvents.filter(e => moment(e.startDate).isSame(nextDayMoment, 'day'));
+
+            return {
+                date: nextDayMoment.toDate(),
+                events: dayEvents,
+                count: dayEvents.length,
+                label: nextDayMoment.calendar(null, {
+                    sameDay: '[Hoy]',
+                    nextDay: '[Mañana]',
+                    nextWeek: 'dddd D',
+                    lastDay: '[Ayer]',
+                    lastWeek: '[El] dddd [pasado]',
+                    sameElse: 'DD/MM/YYYY'
+                })
+            };
+        }
+        return null;
+    }, [events, selectedDate]);
+
     return (
         <View style={styles.container}>
+            {/* ... (Header, Calendar, Filters, Divider) */}
             <View style={styles.headerRow}>
                 <Text style={styles.headerTitle}>Agenda Inteligente</Text>
                 <TouchableOpacity
@@ -201,31 +238,9 @@ const ActionableSidebar = ({ clients = [], refreshTrigger = 0 }) => {
                 </View>
             </View>
 
-
-
             <View style={styles.divider} />
 
             <ScrollView style={styles.eventList} showsVerticalScrollIndicator={false}>
-                {/* AI Suggestions Section - Always visible if relevant */}
-                {suggestions.length > 0 && selectedDate && moment(selectedDate).isSame(new Date(), 'day') && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Sugerencias IA</Text>
-                        {suggestions.map((suggestion, index) => (
-                            <EventCard
-                                key={`sugg-${index}`}
-                                event={{
-                                    type: 'seguimiento', // hardcoded for now based on logic
-                                    startDate: new Date(),
-                                    athleteId: suggestion.client,
-                                    description: suggestion.description
-                                }}
-                                isSuggestion={true}
-                                onPress={() => handleCreateSuggestion(suggestion)}
-                            />
-                        ))}
-                    </View>
-                )}
-
                 <Text style={styles.sectionTitle}>
                     Eventos del {moment(selectedDate).format('D MMMM')}
                 </Text>
@@ -243,7 +258,63 @@ const ActionableSidebar = ({ clients = [], refreshTrigger = 0 }) => {
                 ) : (
                     <Text style={styles.emptyText}>No hay eventos para este día.</Text>
                 )}
+
+                {/* Next Day Events List*/}
+                {nextDateWithEvents && (
+                    <View style={{ marginTop: 24, paddingBottom: 16 }}>
+                        <Text style={styles.sectionTitle}>
+                            Eventos del {nextDateWithEvents.label}
+                        </Text>
+                        {nextDateWithEvents.events.map(event => (
+                            <EventCard
+                                key={event._id}
+                                event={event}
+                                onPress={() => handleEventPress(event)}
+                            />
+                        ))}
+                    </View>
+                )}
             </ScrollView>
+
+            {/* AI Suggestions Footer */}
+            {suggestions.length > 0 && selectedDate && moment(selectedDate).isSame(new Date(), 'day') && (
+                <View style={styles.aiFooterContainer}>
+                    <TouchableOpacity
+                        style={styles.aiHeader}
+                        onPress={() => {
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setExpandedAI(!expandedAI);
+                        }}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name="sparkles" size={16} color="#9333ea" />
+                            <Text style={styles.aiTitle}>Sugerencias IA</Text>
+                            <View style={styles.aiBadge}>
+                                <Text style={styles.aiBadgeText}>{suggestions.length}</Text>
+                            </View>
+                        </View>
+                        <Ionicons name={expandedAI ? "chevron-down" : "chevron-up"} size={16} color="#64748b" />
+                    </TouchableOpacity>
+
+                    {expandedAI && (
+                        <ScrollView style={styles.aiContent} nestedScrollEnabled>
+                            {suggestions.map((suggestion, index) => (
+                                <EventCard
+                                    key={`sugg-${index}`}
+                                    event={{
+                                        type: 'seguimiento', // hardcoded for now
+                                        startDate: new Date(),
+                                        athleteId: suggestion.client,
+                                        description: suggestion.description
+                                    }}
+                                    isSuggestion={true}
+                                    onPress={() => handleCreateSuggestion(suggestion)}
+                                />
+                            ))}
+                        </ScrollView>
+                    )}
+                </View>
+            )}
 
             <CreateEventModal
                 visible={createModalVisible}
@@ -255,7 +326,7 @@ const ActionableSidebar = ({ clients = [], refreshTrigger = 0 }) => {
                 onDelete={handleDeleteEvent}
                 initialDate={selectedDate}
                 clients={clients}
-                initialEvent={selectedEvent} // Pass the event for editing
+                initialEvent={selectedEvent}
             />
         </View>
     );
@@ -264,56 +335,57 @@ const ActionableSidebar = ({ clients = [], refreshTrigger = 0 }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8fafc',
-        padding: 16,
+        backgroundColor: '#fff', // White background
+        padding: 24, // More padding
+        borderLeftWidth: 1,
+        borderLeftColor: '#f1f5f9'
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#1e293b',
+        fontSize: 20,
+        fontWeight: '800', // Boldest
+        color: '#0f172a',
+        letterSpacing: -0.5
     },
     headerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 24,
     },
     addButton: {
-        backgroundColor: '#2563EB',
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        backgroundColor: '#3b82f6', // Bright blue
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
+        shadowColor: "#3b82f6",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4
     },
-    filterScroll: {
-        maxHeight: 40,
-        marginBottom: 16,
-    },
+    // ...
     filterRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        alignItems: 'center',
-        paddingBottom: 8,
+        gap: 6, // Reduced gap
+        marginBottom: 24,
     },
     filterChip: {
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        marginRight: 8,
-        marginBottom: 8,
+        paddingHorizontal: 10, // Reduced padding
+        paddingVertical: 6, // Reduced padding
+        borderRadius: 100, // Pill shape
+        backgroundColor: '#f8fafc',
+        borderWidth: 0, // No border by default
     },
     filterChipActive: {
         backgroundColor: '#2563EB',
-        borderColor: '#2563EB',
     },
     filterText: {
-        fontSize: 12,
+        fontSize: 11, // Smaller font
+        fontWeight: '600',
         color: '#64748b',
-        fontWeight: '500',
     },
     filterTextActive: {
         color: '#ffffff',
@@ -343,6 +415,44 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         textAlign: 'center',
         marginTop: 20,
+    },
+    aiFooterContainer: {
+        marginTop: 'auto',
+        marginHorizontal: -24,
+        marginBottom: -24,
+        paddingHorizontal: 24,
+        paddingBottom: 24, // Restore padding
+        backgroundColor: '#faf5ff',
+        borderTopWidth: 1,
+        borderTopColor: '#f3e8ff',
+    },
+    aiHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 16,
+    },
+    aiTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#9333ea'
+    },
+    aiBadge: {
+        backgroundColor: '#d8b4fe',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 10,
+        minWidth: 20,
+        alignItems: 'center'
+    },
+    aiBadgeText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: '#fff'
+    },
+    aiContent: {
+        maxHeight: 250,
+        paddingBottom: 12
     }
 });
 

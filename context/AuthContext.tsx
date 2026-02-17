@@ -262,6 +262,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const logout = useCallback(async () => {
+    // Limpiar push token del backend antes de cerrar sesión (fire-and-forget)
+    // Evita que otro usuario en el mismo dispositivo reciba notificaciones del anterior
+    const currentToken = tokenRef.current;
+    if (currentToken) {
+      axios.delete('/notifications/unregister-token', {
+        headers: { Authorization: `Bearer ${currentToken}` }
+      }).catch(() => {}); // Silent fail — no bloquear logout
+    }
     await clearSession();
     setToken(null);
     setUser(null);

@@ -31,7 +31,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // ─────────────────────────────────────────────────────────────
 // Componente de Item de Alimento (Versión Mini para Lista)
 // ─────────────────────────────────────────────────────────────
-const FoodSearchItem = React.memo(({ food, onSelect }) => {
+const FoodSearchItem = React.memo(({ food, onSelect, isFavorite, onToggleFavorite }) => {
     const isApi = food.source === 'api';
 
     return (
@@ -70,6 +70,22 @@ const FoodSearchItem = React.memo(({ food, onSelect }) => {
                     <Ionicons name="cloud-download" size={12} color="#3b82f6" />
                 </View>
             )}
+
+            {/* Favorite Button */}
+            <TouchableOpacity
+                onPress={(e) => {
+                    e.stopPropagation?.();
+                    onToggleFavorite?.(food);
+                }}
+                style={styles.favBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+                <Ionicons
+                    name={isFavorite ? 'heart' : 'heart-outline'}
+                    size={18}
+                    color={isFavorite ? '#ef4444' : '#cbd5e1'}
+                />
+            </TouchableOpacity>
         </TouchableOpacity>
     );
 });
@@ -101,6 +117,8 @@ const FoodSearchModal = ({
     foods = [], // Local foods
     onSearchApi, // Function to trigger external API search (optional)
     isLoadingApi = false,
+    onToggleFavorite, // ❤️ Favorite toggle handler
+    favoriteIds = new Set(), // ❤️ Set of favorite food IDs
 }) => {
     const [query, setQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState('TODO');
@@ -158,8 +176,13 @@ const FoodSearchModal = ({
     }, [onSelect, onClose]);
 
     const renderItem = useCallback(({ item }) => (
-        <FoodSearchItem food={item} onSelect={handleSelect} />
-    ), [handleSelect]);
+        <FoodSearchItem
+            food={item}
+            onSelect={handleSelect}
+            isFavorite={favoriteIds.has(item._id) || item.isFavorite}
+            onToggleFavorite={onToggleFavorite}
+        />
+    ), [handleSelect, favoriteIds, onToggleFavorite]);
 
     return (
         <Modal
@@ -388,6 +411,10 @@ const styles = StyleSheet.create({
         padding: 4,
         backgroundColor: '#eff6ff',
         borderRadius: 4,
+    },
+    favBtn: {
+        marginLeft: 8,
+        padding: 4,
     },
     initialStateContainer: {
         flex: 1,

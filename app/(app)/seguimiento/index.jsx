@@ -23,7 +23,6 @@ import { useAchievements } from '../../../context/AchievementsContext';
 import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import FeedbackHistoryModal from '../../../components/FeedbackHistoryModal';
 // Componentes mejorados para iOS
 import {
@@ -32,7 +31,7 @@ import {
     EnhancedPressable as Pressable,
     EnhancedTextInput as TextInput,
 } from '../../../components/ui';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect } from 'expo-router';
 import PhotoTaggingModal from '../../../src/components/shared/PhotoTaggingModal';
 
@@ -505,8 +504,6 @@ export default function SeguimientoScreen() {
     const [currentPhotoToTag, setCurrentPhotoToTag] = useState(null);
     const [taggingModalVisible, setTaggingModalVisible] = useState(false);
 
-    // Feedback del entrenador
-    const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
     const feedbackGlowAnim = useRef(new Animated.Value(1)).current;
 
     // Feedback Reports (separado del chat)
@@ -621,7 +618,9 @@ export default function SeguimientoScreen() {
         medCuello: '',
         medHombros: '',
         medPecho: '',
+        medBrazo: '',
         medCintura: '',
+        medCadera: '',
         medPierna: '',
         medGemelo: '',
     });
@@ -640,6 +639,8 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     // Helper para normalizar separador decimal (coma -> punto)
     const normalizeDecimal = (val) => typeof val === 'string' ? val.replace(/,/g, '.') : val;
+    // Helper para formatear fecha local sin problemas de timezone (evita toISOString que convierte a UTC)
+    const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
     const updateDiario = (key, value) => setDiario(prev => ({ ...prev, [key]: normalizeDecimal(value) }));
     const updateSemanal = (key, value) => setSemanal(prev => ({ ...prev, [key]: normalizeDecimal(value) }));
@@ -655,6 +656,7 @@ export default function SeguimientoScreen() {
     // NAVEGACIÓN DE FECHAS
     // ─────────────────────────────────────────────────────────────────────────
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const loadedWeekKeyRef = useRef(null);
 
     // Helpers de navegación
     const todayStr = new Date().toISOString().split('T')[0];
@@ -720,10 +722,6 @@ export default function SeguimientoScreen() {
         }
     }, []);
 
-    const handleFeedbackClose = () => {
-        setFeedbackModalVisible(false);
-        refreshNotifications(); // Refresh unread count from context
-    };
 
     // ─────────────────────────────────────────────────────────────────────────────
     // CARGAR OBJETIVOS DE NUTRICIÓN Y DATOS DEL DÍA
@@ -980,17 +978,28 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         const loadWeeklyData = async () => {
-            if (!semanalExpanded || semanalExistente) return; // Solo cargar si se expande y no hay datos
+            if (!semanalExpanded) return;
+
+            // Calcular inicio de semana (lunes) basado en fecha seleccionada
+            const sel = new Date(selectedDate + 'T00:00:00');
+            const dayOfWeek = sel.getDay();
+            const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const weekStart = new Date(sel);
+            weekStart.setDate(sel.getDate() - diff);
+            const weekKey = toLocalDateStr(weekStart);
+
+            // Si ya cargamos datos de esta misma semana, no recargar
+            if (loadedWeekKeyRef.current === weekKey && semanalExistente) return;
+
+            // Si cambió de semana, resetear datos
+            if (loadedWeekKeyRef.current !== weekKey) {
+                setSemanalExistente(false);
+                setSemanalOriginal(null);
+                setSemanal(initialSemanal);
+            }
+            loadedWeekKeyRef.current = weekKey;
 
             try {
-                // Calcular inicio de semana actual (lunes)
-                const now = new Date();
-                const dayOfWeek = now.getDay();
-                const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-                const weekStart = new Date(now);
-                weekStart.setDate(now.getDate() - diff);
-                const weekKey = weekStart.toISOString().split('T')[0];
-
                 if (user?.tipoUsuario === 'FREEUSER') {
                     const storageKey = `weekly_monitoring_${weekKey}`;
                     const saved = await AsyncStorage.getItem(storageKey);
@@ -1020,7 +1029,9 @@ export default function SeguimientoScreen() {
                             medCuello: parsed.medCuello?.toString() || '',
                             medHombros: parsed.medHombros?.toString() || '',
                             medPecho: parsed.medPecho?.toString() || '',
+                            medBrazo: parsed.medBrazo?.toString() || '',
                             medCintura: parsed.medCintura?.toString() || '',
+                            medCadera: parsed.medCadera?.toString() || '',
                             medPierna: parsed.medPierna?.toString() || '',
                             medGemelo: parsed.medGemelo?.toString() || '',
                         }));
@@ -1029,10 +1040,10 @@ export default function SeguimientoScreen() {
                         console.log('[Seguimiento] Datos semanales cargados (FREEUSER)');
                     }
                 } else if (token) {
-                    const res = await axios.get(`/monitoring/weekly?limit=1`);
+                    const res = await axios.get(`/monitoring/weekly?weekStartDate=${weekKey}&limit=1`);
                     if (res.data?.data?.length > 0) {
                         const weekData = res.data.data[0];
-                        // Verificar que es de esta semana
+                        // Verificar que es de la semana seleccionada
                         const dataWeekStart = weekData.weekStartDate?.split('T')[0];
                         if (dataWeekStart === weekKey) {
                             setSemanal(prev => ({
@@ -1059,7 +1070,9 @@ export default function SeguimientoScreen() {
                                 medCuello: weekData.medCuello?.toString() || '',
                                 medHombros: weekData.medHombros?.toString() || '',
                                 medPecho: weekData.medPecho?.toString() || '',
+                                medBrazo: weekData.medBrazo?.toString() || '',
                                 medCintura: weekData.medCintura?.toString() || '',
+                                medCadera: weekData.medCadera?.toString() || '',
                                 medPierna: weekData.medPierna?.toString() || '',
                                 medGemelo: weekData.medGemelo?.toString() || '',
                             }));
@@ -1075,7 +1088,7 @@ export default function SeguimientoScreen() {
         };
 
         loadWeeklyData();
-    }, [semanalExpanded, user?.tipoUsuario, token, semanalExistente]);
+    }, [semanalExpanded, user?.tipoUsuario, token, semanalExistente, selectedDate]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // GUARDAR DATOS MÍNIMOS
@@ -1171,7 +1184,9 @@ export default function SeguimientoScreen() {
         medCuello: '',
         medHombros: '',
         medPecho: '',
+        medBrazo: '',
         medCintura: '',
+        medCadera: '',
         medPierna: '',
         medGemelo: '',
     };
@@ -1274,23 +1289,31 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     const handlePickPhotos = async () => {
         try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['image/*'],
-                copyToCacheDirectory: true,
-                multiple: true,
+            // En iOS 14+, PHPickerViewController no requiere permisos explícitos.
+            // Solo pedimos permisos en Android para compatibilidad.
+            if (Platform.OS === 'android') {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert('Permiso necesario', 'Se necesita acceso a tu galería de fotos para subir imágenes de progreso.');
+                    return;
+                }
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsMultipleSelection: true,
+                quality: 0.8,
+                allowsEditing: false,
             });
 
             if (result.canceled) return;
 
-            const files = result.assets || [result];
-            const newPhotos = files
-                .filter(f => f.mimeType?.startsWith('image/') ||
-                    f.name?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|heic)$/))
-                .map(f => ({
-                    uri: f.uri,
-                    name: f.name,
-                    mimeType: f.mimeType,
-                }));
+            const files = result.assets || [];
+            const newPhotos = files.map(f => ({
+                uri: f.uri,
+                name: f.fileName || `progress_${Date.now()}.jpg`,
+                mimeType: f.mimeType || 'image/jpeg',
+            }));
 
             if (newPhotos.length === 0) {
                 Alert.alert('Error', 'No se detectaron imágenes válidas');
@@ -1418,7 +1441,8 @@ export default function SeguimientoScreen() {
                     `${API_URL}/api/progress-photos/upload`,
                     {
                         tags: photo.tags || [],
-                        visibility: photo.visibility || 'coach_only'
+                        visibility: photo.visibility || 'coach_only',
+                        takenAt: selectedDate
                     },
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
@@ -1464,13 +1488,13 @@ export default function SeguimientoScreen() {
 
     const handleGuardarSemanal = async () => {
         try {
-            // Calcular inicio de semana (lunes)
-            const now = new Date();
-            const dayOfWeek = now.getDay();
+            // Calcular inicio de semana (lunes) basado en la fecha seleccionada
+            const sel = new Date(selectedDate + 'T00:00:00');
+            const dayOfWeek = sel.getDay();
             const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            const weekStart = new Date(now);
-            weekStart.setDate(now.getDate() - diff);
-            const weekKey = weekStart.toISOString().split('T')[0];
+            const weekStart = new Date(sel);
+            weekStart.setDate(sel.getDate() - diff);
+            const weekKey = toLocalDateStr(weekStart);
 
             // 📌 Para FREEUSER: hacer merge con datos existentes
             let dataToSave = { ...semanal, weekStartDate: weekKey };
@@ -2115,7 +2139,11 @@ export default function SeguimientoScreen() {
                         </View>
                         <View style={styles.measureRow}>
                             <MeasureInput label="Pecho" value={semanal.medPecho} onChangeText={(v) => updateSemanal('medPecho', v)} placeholder="100" theme={theme} />
+                            <MeasureInput label="Brazo" value={semanal.medBrazo} onChangeText={(v) => updateSemanal('medBrazo', v)} placeholder="35" theme={theme} />
+                        </View>
+                        <View style={styles.measureRow}>
                             <MeasureInput label="Cintura" value={semanal.medCintura} onChangeText={(v) => updateSemanal('medCintura', v)} placeholder="80" theme={theme} />
+                            <MeasureInput label="Cadera" value={semanal.medCadera} onChangeText={(v) => updateSemanal('medCadera', v)} placeholder="95" theme={theme} />
                         </View>
                         <View style={styles.measureRow}>
                             <MeasureInput label="Pierna" value={semanal.medPierna} onChangeText={(v) => updateSemanal('medPierna', v)} placeholder="60" theme={theme} />
@@ -2221,16 +2249,6 @@ export default function SeguimientoScreen() {
                     </View>
                 </View>
             </Modal>
-
-            {/* Modal Feedback del Entrenador */}
-            <FeedbackChatModal
-                visible={feedbackModalVisible}
-                onClose={handleFeedbackClose}
-                clientId={user?._id}
-                clientName={user?.nombre}
-                trainerId={user?.currentTrainerId}
-                isCoach={false}
-            />
 
             {/* Modal Historial de Feedback Reports */}
             <FeedbackHistoryModal

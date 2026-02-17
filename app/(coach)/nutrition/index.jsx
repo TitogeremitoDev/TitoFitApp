@@ -760,7 +760,7 @@ export default function NutritionClientsScreen() {
                     <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#22c55e" />
                 }
                 ListEmptyComponent={renderEmpty}
-                style={{ overflow: 'visible', zIndex: 1 }} // Help with tooltips
+                style={{ flex: 1 }}
             />
         </SafeAreaView>
     );
@@ -956,8 +956,7 @@ const styles = StyleSheet.create({
     list: {
         paddingHorizontal: 12,
         paddingTop: 8,
-        paddingBottom: 24,
-        overflow: 'visible',
+        paddingBottom: 100,
     },
     emptyList: {
         flex: 1,

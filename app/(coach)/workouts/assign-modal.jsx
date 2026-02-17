@@ -21,6 +21,12 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [assigning, setAssigning] = useState(false);
+    // Confirmation step state
+    const [confirmStep, setConfirmStep] = useState(false);
+    const [pendingRoutineId, setPendingRoutineId] = useState(null);
+    const [pendingClientId, setPendingClientId] = useState(null);
+    const [pendingRoutineName, setPendingRoutineName] = useState('');
+    const [editedName, setEditedName] = useState('');
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -30,6 +36,11 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
     useEffect(() => {
         if (visible) {
             setSearchQuery('');
+            setConfirmStep(false);
+            setPendingRoutineId(null);
+            setPendingClientId(null);
+            setPendingRoutineName('');
+            setEditedName('');
             if (mode === 'selectClient') {
                 fetchClients();
             } else {
@@ -94,10 +105,18 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
         }
     };
 
-    const handleAssign = async (routineId, clientId) => {
+    const showConfirmation = (routineId, clientId, routineName) => {
+        setPendingRoutineId(routineId);
+        setPendingClientId(clientId);
+        setPendingRoutineName(routineName);
+        setEditedName(routineName);
+        setConfirmStep(true);
+    };
+
+    const handleConfirmAssign = async () => {
         try {
             setAssigning(true);
-            // Usar el nuevo endpoint que crea una copia en CurrentRoutine
+            const finalName = editedName.trim() || pendingRoutineName;
             const response = await fetch(`${API_URL}/api/current-routines/assign`, {
                 method: 'POST',
                 headers: {
@@ -105,8 +124,9 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
                     Authorization: `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    routineId,
-                    clientId
+                    routineId: pendingRoutineId,
+                    clientId: pendingClientId,
+                    customName: finalName !== pendingRoutineName ? finalName : undefined
                 })
             });
             const data = await response.json();
@@ -138,11 +158,11 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
     };
 
     const handleSelectClient = (client) => {
-        handleAssign(routine._id, client._id);
+        showConfirmation(routine._id, client._id, routine?.nombre || '');
     };
 
     const handleSelectRoutine = (selectedRoutine) => {
-        handleAssign(selectedRoutine._id, preselectedClient._id);
+        showConfirmation(selectedRoutine._id, preselectedClient._id, selectedRoutine.nombre || '');
     };
 
     const filteredClients = clients.filter(client =>
@@ -208,53 +228,96 @@ export default function AssignRoutineModal({ visible, onClose, routine, preselec
                         </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.subtitle}>
-                        {mode === 'selectClient'
-                            ? `Selecciona un cliente para asignarle "${routine?.nombre}"`
-                            : `Selecciona una rutina para ${preselectedClient?.nombre}`
-                        }
-                    </Text>
-
-                    <View style={styles.searchContainer}>
-                        <Ionicons name="search" size={20} color="#94a3b8" />
-                        <EnhancedTextInput
-                            style={styles.searchInputText}
-                            containerStyle={styles.searchInputContainer}
-                            placeholder={mode === 'selectClient' ? "Buscar cliente..." : "Buscar rutina..."}
-                            placeholderTextColor="#94a3b8"
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                        />
-                    </View>
-
-                    {loading ? (
-                        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 20 }} />
-                    ) : mode === 'selectClient' ? (
-                        <FlatList
-                            data={filteredClients}
-                            renderItem={renderClientItem}
-                            keyExtractor={item => item._id}
-                            contentContainerStyle={styles.listContent}
-                            ListEmptyComponent={
-                                <Text style={styles.emptyText}>No se encontraron clientes</Text>
-                            }
-                        />
+                    {confirmStep ? (
+                        <View style={styles.confirmContainer}>
+                            <View style={styles.confirmIconWrap}>
+                                <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" />
+                            </View>
+                            <Text style={styles.confirmTitle}>
+                                Esta rutina aparecerá con este nombre:
+                            </Text>
+                            <EnhancedTextInput
+                                style={styles.confirmInputText}
+                                containerStyle={styles.confirmInputContainer}
+                                value={editedName}
+                                onChangeText={setEditedName}
+                                placeholder="Nombre de la rutina"
+                                placeholderTextColor="#94a3b8"
+                                selectTextOnFocus
+                            />
+                            <Text style={styles.confirmHint}>
+                                Puedes modificar el nombre antes de asignarla para que el cliente la identifique correctamente.
+                            </Text>
+                            <TouchableOpacity
+                                style={[styles.confirmButton, (!editedName.trim()) && styles.confirmButtonDisabled]}
+                                onPress={handleConfirmAssign}
+                                disabled={assigning || !editedName.trim()}
+                            >
+                                {assigning ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Text style={styles.confirmButtonText}>Asignar rutina</Text>
+                                )}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.confirmBackButton}
+                                onPress={() => setConfirmStep(false)}
+                                disabled={assigning}
+                            >
+                                <Text style={styles.confirmBackText}>Volver</Text>
+                            </TouchableOpacity>
+                        </View>
                     ) : (
-                        <FlatList
-                            data={filteredRoutines}
-                            renderItem={renderRoutineItem}
-                            keyExtractor={item => item._id}
-                            contentContainerStyle={styles.listContent}
-                            ListEmptyComponent={
-                                <View style={styles.emptyContainer}>
-                                    <Ionicons name="barbell-outline" size={48} color="#cbd5e1" />
-                                    <Text style={styles.emptyText}>No tienes rutinas creadas</Text>
-                                    <Text style={styles.emptySubtext}>
-                                        Ve a "Mis Rutinas" para crear una
-                                    </Text>
-                                </View>
-                            }
-                        />
+                        <>
+                            <Text style={styles.subtitle}>
+                                {mode === 'selectClient'
+                                    ? `Selecciona un cliente para asignarle "${routine?.nombre}"`
+                                    : `Selecciona una rutina para ${preselectedClient?.nombre}`
+                                }
+                            </Text>
+
+                            <View style={styles.searchContainer}>
+                                <Ionicons name="search" size={20} color="#94a3b8" />
+                                <EnhancedTextInput
+                                    style={styles.searchInputText}
+                                    containerStyle={styles.searchInputContainer}
+                                    placeholder={mode === 'selectClient' ? "Buscar cliente..." : "Buscar rutina..."}
+                                    placeholderTextColor="#94a3b8"
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                />
+                            </View>
+
+                            {loading ? (
+                                <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 20 }} />
+                            ) : mode === 'selectClient' ? (
+                                <FlatList
+                                    data={filteredClients}
+                                    renderItem={renderClientItem}
+                                    keyExtractor={item => item._id}
+                                    contentContainerStyle={styles.listContent}
+                                    ListEmptyComponent={
+                                        <Text style={styles.emptyText}>No se encontraron clientes</Text>
+                                    }
+                                />
+                            ) : (
+                                <FlatList
+                                    data={filteredRoutines}
+                                    renderItem={renderRoutineItem}
+                                    keyExtractor={item => item._id}
+                                    contentContainerStyle={styles.listContent}
+                                    ListEmptyComponent={
+                                        <View style={styles.emptyContainer}>
+                                            <Ionicons name="barbell-outline" size={48} color="#cbd5e1" />
+                                            <Text style={styles.emptyText}>No tienes rutinas creadas</Text>
+                                            <Text style={styles.emptySubtext}>
+                                                Ve a "Mis Rutinas" para crear una
+                                            </Text>
+                                        </View>
+                                    }
+                                />
+                            )}
+                        </>
                     )}
 
                     {assigning && (
@@ -403,6 +466,72 @@ const styles = StyleSheet.create({
         color: '#cbd5e1',
         marginTop: 4,
         fontSize: 13
+    },
+    // Confirmation step
+    confirmContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 16
+    },
+    confirmIconWrap: {
+        marginBottom: 16
+    },
+    confirmTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#1e293b',
+        textAlign: 'center',
+        marginBottom: 20
+    },
+    confirmInputContainer: {
+        width: '100%',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: '#e2e8f0',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        marginBottom: 12
+    },
+    confirmInputText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1e293b',
+        textAlign: 'center'
+    },
+    confirmHint: {
+        fontSize: 13,
+        color: '#94a3b8',
+        textAlign: 'center',
+        marginBottom: 28,
+        lineHeight: 18
+    },
+    confirmButton: {
+        backgroundColor: '#3b82f6',
+        borderRadius: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 32,
+        width: '100%',
+        alignItems: 'center',
+        marginBottom: 12
+    },
+    confirmButtonDisabled: {
+        opacity: 0.5
+    },
+    confirmButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700'
+    },
+    confirmBackButton: {
+        paddingVertical: 10,
+        paddingHorizontal: 20
+    },
+    confirmBackText: {
+        color: '#64748b',
+        fontSize: 15,
+        fontWeight: '500'
     },
     // Assigning overlay
     assigningOverlay: {

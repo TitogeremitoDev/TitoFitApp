@@ -71,44 +71,35 @@ export const avatarService = {
 
     /**
      * Sube el avatar al servidor
-     * @param {string} imageUri - URI local de la imagen
+     * La imagen ya viene cropeada y comprimida del picker nativo (allowsEditing + quality 0.8)
+     * @param {string} imageUri - URI local de la imagen (ya cropeada por el picker nativo)
      * @param {string} token - Token de autenticación del usuario
      * @returns {Promise<string>} - URL del avatar subido
      */
     uploadAvatar: async (imageUri, token) => {
         try {
-            // 1. Procesar imagen (Compresión)
-            const processedImage = await avatarService.processImage(imageUri);
-
-            // 2. Preparar FormData
             const formData = new FormData();
 
-            const filename = imageUri.split('/').pop();
-            const match = /\.(\w+)$/.exec(filename);
-            const type = match ? `image/${match[1]}` : 'image/jpeg';
-
             if (Platform.OS === 'web') {
-                // En Web necesitamos un Blob real
+                // En Web: processImage para resize via canvas, luego blob
+                const processedImage = await avatarService.processImage(imageUri);
                 const response = await fetch(processedImage.uri);
                 const blob = await response.blob();
-                console.log(`[AvatarService] Web Upload: Size=${blob.size}, Type=${blob.type}`);
-                formData.append('avatar', blob, 'avatar.jpg'); // Enforce safe filename
+                formData.append('avatar', blob, 'avatar.jpg');
             } else {
-                // En Native usamos el objeto { uri, name, type }
+                // En Native: subir directamente la URI del picker (ya cropeada y comprimida)
                 formData.append('avatar', {
-                    uri: Platform.OS === 'android' ? processedImage.uri : processedImage.uri.replace('file://', ''),
+                    uri: imageUri,
                     name: `avatar_${Date.now()}.jpg`,
                     type: 'image/jpeg'
                 });
             }
 
-            // 3. Subir
             const response = await fetch(`${API_URL}/api/users/avatar`, {
                 method: 'POST',
                 body: formData,
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    // No poner 'Content-Type': 'multipart/form-data', fetch lo pone solo con el boundary
                 }
             });
 

@@ -248,7 +248,9 @@ export default function ProgressPhotoCaptureScreen() {
                 </View>
 
                 <View style={styles.hintTag}>
-                    <Text style={styles.hintText}>Haz una foto de frente, perfil o espalda</Text>
+                    <Text style={styles.hintText}>
+                        {returnTo === 'nutricion' ? 'Haz una foto de tu comida' : 'Haz una foto de frente, perfil o espalda'}
+                    </Text>
                 </View>
             </View>
 

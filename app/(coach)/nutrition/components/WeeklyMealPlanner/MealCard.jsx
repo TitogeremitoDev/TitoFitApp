@@ -31,6 +31,193 @@ import { SUPPLEMENT_TIMINGS } from '../../../../../src/constants/commonSupplemen
 import SmartScalingModal from '../SmartScalingModal';
 import SupplementDrawer from '../SupplementDrawer';
 
+// 🔄 Web Drag & Drop - Shared drag state (module-level for cross-component access)
+let _draggedFood = null;
+let _autoScrollCleanup = null;
+
+// 🔄 Find the nearest scrollable parent (ScrollView renders as div with overflow)
+const findScrollParent = (el) => {
+    let node = el;
+    while (node && node !== document.body) {
+        const { overflowY } = window.getComputedStyle(node);
+        if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+            return node;
+        }
+        node = node.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+};
+
+// 🔄 Auto-scroll: edge proximity + mouse wheel during drag
+const startAutoScroll = (sourceNode) => {
+    let frame = null;
+    const EDGE = 80;
+    const MAX_SPEED = 18;
+    let lastY = 0;
+    const scroller = findScrollParent(sourceNode);
+
+    const onDragOver = (e) => { lastY = e.clientY; };
+
+    // Mouse wheel during drag: try on scroller, document, AND window (browsers vary)
+    const onWheel = (e) => {
+        if (_draggedFood && scroller) {
+            scroller.scrollTop += e.deltaY > 0 ? 60 : -60;
+        }
+    };
+
+    const tick = () => {
+        if (scroller) {
+            const rect = scroller.getBoundingClientRect();
+            if (lastY > 0 && lastY < rect.top + EDGE) {
+                const speed = Math.ceil(MAX_SPEED * (1 - (lastY - rect.top) / EDGE));
+                scroller.scrollTop -= speed;
+            } else if (lastY > rect.bottom - EDGE && lastY < rect.bottom) {
+                const speed = Math.ceil(MAX_SPEED * (1 - (rect.bottom - lastY) / EDGE));
+                scroller.scrollTop += speed;
+            }
+        }
+        frame = requestAnimationFrame(tick);
+    };
+
+    document.addEventListener('dragover', onDragOver);
+    // Attach wheel to multiple targets - browsers are inconsistent during drag
+    scroller && scroller.addEventListener('wheel', onWheel, { passive: true });
+    document.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('wheel', onWheel, { passive: true });
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+        document.removeEventListener('dragover', onDragOver);
+        scroller && scroller.removeEventListener('wheel', onWheel);
+        document.removeEventListener('wheel', onWheel);
+        window.removeEventListener('wheel', onWheel);
+        cancelAnimationFrame(frame);
+    };
+};
+
+// 🔄 Web-only Drag Handle (native addEventListener - RNW props don't forward drag events)
+const DragHandle = Platform.OS === 'web'
+    ? React.memo(({ food }) => {
+        const ref = useRef(null);
+        const foodRef = useRef(food);
+        foodRef.current = food;
+
+        useEffect(() => {
+            const node = ref.current;
+            if (!node || !node.setAttribute) return;
+
+            node.setAttribute('draggable', 'true');
+            node.style.cursor = 'grab';
+
+            const handleDragStart = (evt) => {
+                const food = foodRef.current;
+                _draggedFood = food;
+                evt.dataTransfer.effectAllowed = 'copy';
+                evt.dataTransfer.setData('text/plain', food?.name || '');
+
+                // Custom drag image: pill with food name + macros
+                const ghost = document.createElement('div');
+                ghost.style.cssText = 'position:fixed;top:-1000px;left:-1000px;display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border:2px solid #3b82f6;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-family:system-ui;z-index:99999;max-width:280px;';
+                if (food?.image) {
+                    const img = document.createElement('img');
+                    img.src = food.image;
+                    img.style.cssText = 'width:32px;height:32px;border-radius:6px;object-fit:cover;flex-shrink:0;';
+                    ghost.appendChild(img);
+                }
+                const text = document.createElement('div');
+                text.style.cssText = 'display:flex;flex-direction:column;min-width:0;';
+                text.innerHTML = `<span style="font-size:13px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${food?.name || 'Alimento'}</span><span style="font-size:10px;color:#64748b;">🔥${Math.round(food?.kcal||0)} · P:${Math.round(food?.protein||0)} · C:${Math.round(food?.carbs||0)} · G:${Math.round(food?.fat||0)}</span>`;
+                ghost.appendChild(text);
+                document.body.appendChild(ghost);
+                evt.dataTransfer.setDragImage(ghost, 20, 20);
+                requestAnimationFrame(() => document.body.removeChild(ghost));
+
+                if (node.parentElement) node.parentElement.style.opacity = '0.4';
+
+                // Start auto-scroll
+                _autoScrollCleanup = startAutoScroll(node);
+            };
+            const handleDragEnd = () => {
+                _draggedFood = null;
+                if (node.parentElement) node.parentElement.style.opacity = '1';
+                // Stop auto-scroll
+                if (_autoScrollCleanup) { _autoScrollCleanup(); _autoScrollCleanup = null; }
+            };
+
+            node.addEventListener('dragstart', handleDragStart);
+            node.addEventListener('dragend', handleDragEnd);
+            return () => {
+                node.removeEventListener('dragstart', handleDragStart);
+                node.removeEventListener('dragend', handleDragEnd);
+                if (_autoScrollCleanup) { _autoScrollCleanup(); _autoScrollCleanup = null; }
+            };
+        }, []);
+
+        return (
+            <View ref={ref} style={{ padding: 4, marginRight: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Ionicons name="reorder-two" size={14} color="#cbd5e1" />
+            </View>
+        );
+    })
+    : () => null;
+
+// 🔄 Web-only Drop Zone hook (native addEventListener - RNW props don't forward drag events)
+const useDropZone = Platform.OS === 'web'
+    ? (ref, onDropFood) => {
+        const [isDragOver, setIsDragOver] = useState(false);
+        const counterRef = useRef(0);
+        const cbRef = useRef(onDropFood);
+        cbRef.current = onDropFood;
+        const attachedRef = useRef(false);
+
+        useEffect(() => {
+            // Retry pattern: ref.current may not be ready on first effect
+            const attach = () => {
+                const node = ref.current;
+                if (!node || attachedRef.current) return;
+                attachedRef.current = true;
+
+                const onOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
+                const onEnter = (e) => {
+                    e.preventDefault();
+                    counterRef.current++;
+                    if (counterRef.current === 1) setIsDragOver(true);
+                };
+                const onLeave = () => {
+                    counterRef.current--;
+                    if (counterRef.current <= 0) { counterRef.current = 0; setIsDragOver(false); }
+                };
+                const onDrop = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    counterRef.current = 0;
+                    setIsDragOver(false);
+                    if (_draggedFood) {
+                        const cloned = JSON.parse(JSON.stringify(_draggedFood));
+                        cbRef.current?.(cloned);
+                        _draggedFood = null;
+                    }
+                };
+
+                // capture:true → intercepts events BEFORE children, so drop works anywhere on the card
+                node.addEventListener('dragover', onOver, true);
+                node.addEventListener('dragenter', onEnter, true);
+                node.addEventListener('dragleave', onLeave, true);
+                node.addEventListener('drop', onDrop, true);
+            };
+
+            attach();
+            // Fallback: if ref wasn't ready, retry after a tick
+            if (!attachedRef.current) {
+                const timer = setTimeout(attach, 100);
+                return () => clearTimeout(timer);
+            }
+        }, [ref]);
+
+        return isDragOver;
+    }
+    : () => false;
+
 // Meal icons
 const MEAL_ICONS = {
     'Desayuno': { icon: 'sunny', color: '#f59e0b' },
@@ -136,15 +323,19 @@ export default function MealCard({
     onRemoveFood,
     onUpdateFood,
     onReplaceFood, // 🟢 NEW PROP
+    onDropFood, // 🔄 Web DnD: drop food into option
     onRemoveSupplement,
     onAddOption,
     onRemoveOption,
     onDuplicateOption,
     onEditOptionName,
+    onUpdateOptionNote,
     onBulkRename,
     onUpdateOptionImage,
     onSmartEdit,
     onOpenImageModal,
+    onToggleFavorite, // ❤️ Favorite toggle
+    favoriteIds, // ❤️ Set of favorite food IDs
 }) {
     const mealConfig = MEAL_ICONS[meal.name] || { icon: 'restaurant', color: '#64748b' };
     const optionsCount = meal.options?.length || 0;
@@ -188,7 +379,7 @@ export default function MealCard({
             carbs: item.calculatedMacros.carbs,
             fat: item.calculatedMacros.fat,
             // Ensure compatibility
-            sourceType: mode === 'explode' ? 'generated' : (item.food.sourceType || 'manual'),
+            sourceType: mode === 'explode' ? 'AI_GENERATED' : (item.food.sourceType || 'manual'),
             isComposite: mode === 'block' ? true : false
         });
 
@@ -311,10 +502,13 @@ export default function MealCard({
                         onDuplicate={() => onDuplicateOption?.(option.id)}
                         onDelete={() => onRemoveOption?.(option.id)}
                         onEditName={(newName) => onEditOptionName?.(option.id, newName)}
-                        // onUpdateImage REMOVED -> Now handled by parent modal
+                        onUpdateNote={(note) => onUpdateOptionNote?.(option.id, note)}
                         onOpenImageModal={() => onOpenImageModal?.(option.id)}
                         onSmartEdit={onSmartEdit}
                         onRecipeClick={(foodIdx, food) => handleRecipeClick(option.id, foodIdx, food)}
+                        onToggleFavorite={onToggleFavorite}
+                        favoriteIds={favoriteIds}
+                        onDropFood={(food) => onDropFood?.(option.id, food)}
                     />
                 ))}
             </ScrollView>
@@ -469,6 +663,8 @@ function ExpandableRecipeItem({
                 onPress={() => setExpanded(!expanded)}
                 activeOpacity={0.9}
             >
+                {/* 🔄 Drag Handle (Web only) */}
+                <DragHandle food={food} />
                 {/* Image */}
                 {food.image ? (
                     <Image source={{ uri: food.image }} style={styles.recipeImage} />
@@ -980,14 +1176,25 @@ function OptionCard({
     onDuplicate,
     onDelete,
     onEditName,
+    onUpdateNote,
     onOpenImageModal, // 🟢 NEW prop (Lifted State)
     onSmartEdit, // 🟢 NEW prop
     onRecipeClick, // 🟢 NEW prop for opening modal
+    onToggleFavorite, // ❤️ Favorite toggle
+    favoriteIds, // ❤️ Set of favorite food IDs
+    onDropFood, // 🔄 Web DnD: handle dropped food
 }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [showNote, setShowNote] = useState(!!option.coachNote);
+    const [localNote, setLocalNote] = useState(option.coachNote || '');
+    const noteTimerRef = useRef(null);
     const [editingFoodIdx, setEditingFoodIdx] = useState(null);
     const [editAmount, setEditAmount] = useState('');
     const [editUnit, setEditUnit] = useState('gramos');
+
+    // 🔄 Web Drag & Drop - Drop zone (native events via hook)
+    const dropZoneRef = useRef(null);
+    const isDragOver = useDropZone(dropZoneRef, onDropFood);
 
     // 🟢 Helper: Cycle to next unit
     const cycleUnit = (currentUnit) => {
@@ -1019,7 +1226,7 @@ function OptionCard({
     const hasFoods = option.foods?.length > 0;
 
     return (
-        <View style={styles.optionCard}>
+        <View ref={dropZoneRef} style={[styles.optionCard, isDragOver && styles.dropZoneActive]}>
             {/* Option Header */}
             <View style={[styles.optionHeader, { borderLeftColor: templateColor }]}>
                 <View style={styles.optionTitleRow}>
@@ -1142,6 +1349,8 @@ function OptionCard({
 
                             return (
                                 <View key={`${food.name}_${foodIdx}`} style={styles.foodCard}>
+                                    {/* 🔄 Drag Handle (Web only) */}
+                                    <DragHandle food={food} />
                                     {/* Left: Photo or Placeholder */}
                                     {food.image ? (
                                         <Image source={{ uri: food.image }} style={styles.foodPhoto} />
@@ -1150,6 +1359,49 @@ function OptionCard({
                                             <Ionicons name="fast-food-outline" size={18} color="#94a3b8" />
                                         </View>
                                     )}
+
+                                    {/* ❤️ Favorite Button */}
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            const isValidId = (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
+                                            const realId = food.foodId || food._id;
+                                            const hasValidId = isValidId(realId);
+
+                                            const foodForFav = {
+                                                ...food,
+                                                _id: hasValidId ? realId : undefined,
+                                                // If valid ID, assume CLOUD unless specified otherwise. If invalid ID, force LOCAL to clone.
+                                                layer: hasValidId ? (food.layer || 'CLOUD') : 'LOCAL',
+                                                nutrients: food.nutrients || {
+                                                    kcal: food.kcal || 0,
+                                                    protein: food.protein || 0,
+                                                    carbs: food.carbs || 0,
+                                                    fat: food.fat || 0,
+                                                },
+                                            };
+                                            onToggleFavorite?.(foodForFav);
+                                        }}
+                                        style={styles.foodFavBtn}
+                                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                    >
+                                        <Ionicons
+                                            name={(() => {
+                                                const isFav = favoriteIds?.has(food.foodId) ||
+                                                    favoriteIds?.has(food._id) ||
+                                                    favoriteIds?.has(food.name?.toLowerCase?.().trim()) ||
+                                                    food.isFavorite;
+                                                return isFav ? 'heart' : 'heart-outline';
+                                            })()}
+                                            size={14}
+                                            color={(() => {
+                                                const isFav = favoriteIds?.has(food.foodId) ||
+                                                    favoriteIds?.has(food._id) ||
+                                                    favoriteIds?.has(food.name?.toLowerCase?.().trim()) ||
+                                                    food.isFavorite;
+                                                return isFav ? '#ef4444' : '#cbd5e1';
+                                            })()}
+                                        />
+                                    </TouchableOpacity>
 
                                     {/* Center: Name + Macros */}
                                     <View style={styles.foodDetails}>
@@ -1365,6 +1617,52 @@ function OptionCard({
                     </View>
                 )
             }
+
+            {/* Coach Note */}
+            {showNote ? (
+                <View style={styles.coachNoteContainer}>
+                    <View style={styles.coachNoteHeader}>
+                        <Text style={styles.coachNoteLabel}>📝 Nota</Text>
+                        <TouchableOpacity
+                            onPress={() => {
+                                clearTimeout(noteTimerRef.current);
+                                setLocalNote('');
+                                onUpdateNote?.('');
+                                setShowNote(false);
+                            }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Ionicons name="close" size={14} color="#94a3b8" />
+                        </TouchableOpacity>
+                    </View>
+                    <EnhancedTextInput
+                        containerStyle={styles.coachNoteInputContainer}
+                        style={styles.coachNoteInput}
+                        value={localNote}
+                        onChangeText={(text) => {
+                            setLocalNote(text);
+                            clearTimeout(noteTimerRef.current);
+                            noteTimerRef.current = setTimeout(() => onUpdateNote?.(text), 400);
+                        }}
+                        onBlur={() => {
+                            clearTimeout(noteTimerRef.current);
+                            onUpdateNote?.(localNote);
+                        }}
+                        placeholder="Ej: Mézclalo todo en la batidora..."
+                        placeholderTextColor="#94a3b8"
+                        multiline
+                    />
+                </View>
+            ) : (
+                <TouchableOpacity
+                    style={styles.addNoteBtn}
+                    onPress={() => setShowNote(true)}
+                >
+                    <Text style={styles.addNoteBtnText}>
+                        📝 Añadir Nota
+                    </Text>
+                </TouchableOpacity>
+            )}
         </View >
     );
 }
@@ -1539,6 +1837,14 @@ const styles = StyleSheet.create({
         padding: 12,
         minHeight: 100,
     },
+    // 🔄 Web DnD: Drop zone highlight
+    dropZoneActive: {
+        // boxShadow inset works with overflow:hidden (border doesn't)
+        ...Platform.select({
+            web: { boxShadow: 'inset 0 0 0 3px #3b82f6', backgroundColor: '#eff6ff' },
+            default: {},
+        }),
+    },
     emptyOption: {
         flex: 1,
         alignItems: 'center',
@@ -1640,6 +1946,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    foodFavBtn: {
+        marginHorizontal: 4,
+        padding: 2,
+    },
     foodDetails: {
         flex: 1,
         minWidth: 0,
@@ -1702,6 +2012,48 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 10,
+    },
+    // 📝 Coach Note
+    coachNoteContainer: {
+        marginHorizontal: 12,
+        marginBottom: 12,
+        backgroundColor: '#fefce8',
+        borderRadius: 8,
+        padding: 10,
+        borderWidth: 1,
+        borderColor: '#fde68a',
+    },
+    coachNoteHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
+    coachNoteLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#92400e',
+    },
+    coachNoteInputContainer: {
+        backgroundColor: 'transparent',
+        padding: 0,
+        margin: 0,
+        borderWidth: 0,
+    },
+    coachNoteInput: {
+        fontSize: 13,
+        color: '#78350f',
+        minHeight: 36,
+        textAlignVertical: 'top',
+    },
+    addNoteBtn: {
+        paddingHorizontal: 12,
+        paddingBottom: 10,
+    },
+    addNoteBtnText: {
+        fontSize: 11,
+        color: '#94a3b8',
+        fontWeight: '500',
     },
     // 💊 Supplements Section (Meal level)
     supplementsSection: {

@@ -760,8 +760,10 @@ export default function CoachStudioModal({
                                                 mediaType: 'photo',
                                                 compareData: {
                                                     olderPhotoUrl: older.fullUrl,
+                                                    olderPhotoKey: older.r2Key,
                                                     olderDate: older.takenAt,
                                                     newerPhotoUrl: newer.fullUrl,
+                                                    newerPhotoKey: newer.r2Key,
                                                     newerDate: newer.takenAt,
                                                     delta: compareDelta,
                                                     note: compareNoteRef.current,
@@ -1366,8 +1368,10 @@ export default function CoachStudioModal({
                                                 isComparison: true,
                                                 compareData: {
                                                     olderPhotoUrl: older.fullUrl,
+                                                    olderPhotoKey: older.r2Key,
                                                     olderDate: older.takenAt,
                                                     newerPhotoUrl: newer.fullUrl,
+                                                    newerPhotoKey: newer.r2Key,
                                                     newerDate: newer.takenAt,
                                                     delta: compareDelta,
                                                     note: compareNoteRef.current,
@@ -1403,7 +1407,7 @@ export default function CoachStudioModal({
                                             message: annotationNote || 'Foto de progreso',
                                             type: 'evolucion',
                                             isCoach: true,
-                                            mediaUrl: annotatedUrl || currentPhoto.fullUrl,
+                                            mediaUrl: annotatedUrl || currentPhoto.r2Key || currentPhoto.fullUrl,
                                             mediaType: 'image',
                                         };
                                         const res = await fetch(`${API_URL}/api/chat`, {

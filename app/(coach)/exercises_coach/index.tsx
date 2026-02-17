@@ -525,6 +525,7 @@ export default function ExercisesCoach() {
                         />
                     )}
                     keyExtractor={(item) => item._id}
+                    style={{ flex: 1 }}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>

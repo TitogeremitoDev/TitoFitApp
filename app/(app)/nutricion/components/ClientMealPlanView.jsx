@@ -1,12 +1,16 @@
 /* app/(app)/nutricion/components/ClientMealPlanView.jsx */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated, TouchableOpacity, ActivityIndicator, Platform, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, TouchableOpacity, ActivityIndicator, Platform, Alert, Modal, Image, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { useMealTracking } from '../../../../src/context/MealTrackingContext';
 import { useTheme } from '../../../../context/ThemeContext';
+import { useAuth } from '../../../../context/AuthContext';
+import { useCoachBranding } from '../../../../context/CoachBrandingContext';
 import { generateAndShareNutritionPDF } from '../../../../src/services/pdfGenerator';
 
 import { getRecipePlaceholder } from '../../../../src/utils/recipePlaceholder';
@@ -19,9 +23,11 @@ import DailyMealList from './DailyMealList';
 import RecipeWalkthroughModal from './RecipeWalkthroughModal';
 import { getContrastColor } from '../../../../utils/colors';
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+
 const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user, clientSettings, coachInfo }) => {
-    const router = useRouter();
     const { isMealCompleted, getDailyProgress, toggleMealCompletion } = useMealTracking();
+    const { branding: coachBrandingCtx, activeTheme: activeCoachTheme } = useCoachBranding();
     const [activeTab, setActiveTab] = useState('TODAY'); // TODAY, WEEK, SHOPPING
     const [selectedOptions, setSelectedOptions] = useState({}); // { [mealId]: optionIndex }
 
@@ -32,6 +38,20 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
 
     // PDF Export State
     const [isExporting, setIsExporting] = useState(false);
+
+    // 📸 Meal Photo State
+    const [mealPhotoModalVisible, setMealPhotoModalVisible] = useState(false);
+    const [selectedMealForPhoto, setSelectedMealForPhoto] = useState(null);
+    const [uploadingMealPhoto, setUploadingMealPhoto] = useState(false);
+
+    // 📱 Story Share State
+    const [storyModalVisible, setStoryModalVisible] = useState(false);
+    const [storyPhotoUri, setStoryPhotoUri] = useState(null);
+    const [storyMealName, setStoryMealName] = useState('');
+    const storyViewRef = useRef(null);
+
+    const { token } = useAuth();
+
 
     const hideMacros = clientSettings?.hideMacros || false;
     const dateKey = new Date().toISOString().split('T')[0];
@@ -44,7 +64,9 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
         try {
             // Use coachInfo from API (has nombre, logoUrl, brandColor)
             const coachBranding = {
-                primaryColor: coachInfo?.brandColor || theme?.primary || '#3b82f6',
+                primaryColor: activeCoachTheme?.colors?.primary || coachInfo?.brandColor || theme?.primary || '#3b82f6',
+                secondaryColor: activeCoachTheme?.colors?.secondary || coachInfo?.brandColor || theme?.primary || '#3b82f6',
+                fontFamily: coachBrandingCtx?.fontFamily || 'System',
                 coachName: coachInfo?.nombre || 'Entrenador',
                 logoUrl: coachInfo?.logoUrl || null,
             };
@@ -70,6 +92,164 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
             setIsExporting(false);
         }
     };
+
+    // --- 📸 MEAL PHOTO HANDLERS ---
+    const handleMealPhoto = useCallback((meal, activeOptionIdx, mealIndex) => {
+        const rawOptions = meal.options || [];
+        const activeOption = rawOptions[activeOptionIdx] || rawOptions[0];
+        // Extraer lista de alimentos de la opción activa
+        const foods = (activeOption?.foods || []).map(f => ({
+            name: f.name,
+            amount: f.amount,
+            unit: f.unit,
+        }));
+        setSelectedMealForPhoto({
+            mealName: meal.name || `Comida ${mealIndex + 1}`,
+            mealIndex: mealIndex,
+            optionName: activeOption?.name || null,
+            foods,
+            date: new Date().toISOString(),
+        });
+        setMealPhotoModalVisible(true);
+    }, []);
+
+    const showStoryPrompt = useCallback((photoUri, mealName) => {
+        setStoryPhotoUri(photoUri);
+        setStoryMealName(mealName || '');
+        setStoryModalVisible(true);
+    }, []);
+
+    const handleShareToStories = useCallback(async () => {
+        try {
+            if (!storyViewRef.current) return;
+            const uri = await storyViewRef.current.capture();
+
+            const available = await Sharing.isAvailableAsync();
+            if (!available) {
+                Alert.alert('Error', 'Compartir no está disponible en este dispositivo.');
+                return;
+            }
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir en Stories',
+            });
+            setStoryModalVisible(false);
+        } catch (error) {
+            console.error('[Story] Share error:', error);
+            Alert.alert('Error', 'No se pudo compartir la imagen.');
+        }
+    }, []);
+
+    const handleOpenMealCamera = useCallback(async () => {
+        setMealPhotoModalVisible(false);
+        // Wait for modal to fully dismiss before presenting camera (iOS requirement)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permisos', 'Se necesitan permisos para usar la cámara.');
+            return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+            quality: 0.8,
+            allowsEditing: false,
+        });
+        if (result.canceled || !result.assets?.length) return;
+        const photoUri = result.assets[0].uri;
+        setUploadingMealPhoto(true);
+        const ok = await uploadMealPhotoToBackend(photoUri, selectedMealForPhoto);
+        setUploadingMealPhoto(false);
+        if (ok) {
+            showStoryPrompt(photoUri, selectedMealForPhoto?.mealName);
+        } else {
+            Alert.alert('Error', 'No se pudo subir la foto.');
+        }
+    }, [selectedMealForPhoto, uploadMealPhotoToBackend, showStoryPrompt]);
+
+    const uploadMealPhotoToBackend = useCallback(async (photoUri, mealInfo) => {
+        if (!token) return false;
+        try {
+            // Step 1: Prepare upload
+            const prepRes = await fetch(`${API_URL}/api/progress-photos/upload`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    category: 'nutrition',
+                    mealInfo,
+                    visibility: 'coach_only',
+                    tags: [],
+                    takenAt: new Date().toISOString(),
+                }),
+            });
+            const prepData = await prepRes.json();
+            if (!prepData.success) throw new Error(prepData.message);
+
+            // Step 2: Upload to R2
+            const blob = await fetch(photoUri).then(r => r.blob());
+            await fetch(prepData.uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: { 'Content-Type': 'image/jpeg' },
+            });
+
+            // Step 3: Confirm
+            await fetch(`${API_URL}/api/progress-photos/${prepData.photoId}/confirm`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            console.error('[MealPhoto] Upload error:', error);
+            return false;
+        }
+    }, [token]);
+
+    const handlePickMealPhotos = useCallback(async () => {
+        setMealPhotoModalVisible(false);
+        // Wait for modal to fully dismiss before presenting picker (iOS requirement)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Permission check for Android
+        if (Platform.OS === 'android') {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permisos', 'Se necesitan permisos para acceder a la galería.');
+                return;
+            }
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsMultipleSelection: true,
+            quality: 0.8,
+            allowsEditing: false,
+        });
+
+        if (result.canceled || !result.assets?.length) return;
+
+        setUploadingMealPhoto(true);
+        let successCount = 0;
+
+        for (const asset of result.assets) {
+            const ok = await uploadMealPhotoToBackend(asset.uri, selectedMealForPhoto);
+            if (ok) successCount++;
+        }
+
+        setUploadingMealPhoto(false);
+
+        if (successCount > 0) {
+            // Show story prompt with the first photo
+            showStoryPrompt(result.assets[0].uri, selectedMealForPhoto?.mealName);
+        } else {
+            Alert.alert('Error', 'No se pudieron subir las fotos. Inténtalo de nuevo.');
+        }
+    }, [selectedMealForPhoto, uploadMealPhotoToBackend, showStoryPrompt]);
 
     // --- 1. RESOLVE TODAY TARGET (Local Timezone Logic) ---
     const todayTarget = useMemo(() => {
@@ -334,8 +514,8 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                         activeOptions={selectedOptions}
                         onOptionSelect={handleOptionSelect}
                         onNavigate={handleNavigate}
-                        trackingDate={dateKey} // ✨ Pass specific date for storage unique keys
-                        // ✨ Pass current day key for day-specific option filtering
+                        onMealPhoto={handleMealPhoto}
+                        trackingDate={dateKey}
                         dayKey={
                             ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()]
                         }
@@ -413,9 +593,422 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                     setRecipeModalVisible(false);
                 }}
             />
+
+            {/* 📸 MEAL PHOTO MODAL */}
+            <Modal
+                visible={mealPhotoModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setMealPhotoModalVisible(false)}
+            >
+                <View style={photoStyles.modalOverlay}>
+                    <View style={[photoStyles.modalContent, { backgroundColor: theme.cardBackground }]}>
+                        <TouchableOpacity
+                            style={photoStyles.modalClose}
+                            onPress={() => setMealPhotoModalVisible(false)}
+                        >
+                            <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+                        </TouchableOpacity>
+                        <Text style={photoStyles.modalEmoji}>📸</Text>
+                        <Text style={[photoStyles.modalTitle, { color: theme.text }]}>
+                            Foto de comida
+                        </Text>
+                        <Text style={[photoStyles.modalText, { color: theme.textSecondary }]}>
+                            {selectedMealForPhoto?.mealName
+                                ? `Sube una foto de "${selectedMealForPhoto.mealName}"`
+                                : 'Sube una foto de tu comida'}
+                        </Text>
+
+                        {Platform.OS !== 'web' && (
+                            <TouchableOpacity
+                                style={[photoStyles.modalBtn, { backgroundColor: theme.primary }]}
+                                onPress={handleOpenMealCamera}
+                            >
+                                <Ionicons name="camera-outline" size={20} color="#FFF" />
+                                <Text style={photoStyles.modalBtnText}>Hacer foto</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={[photoStyles.modalBtn, { backgroundColor: '#6366f1' }]}
+                            onPress={handlePickMealPhotos}
+                        >
+                            <Ionicons name="images-outline" size={20} color="#FFF" />
+                            <Text style={photoStyles.modalBtnText}>Seleccionar de galería</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[photoStyles.modalBtn, { backgroundColor: theme.inputBackground, borderWidth: 1, borderColor: theme.inputBorder }]}
+                            onPress={() => setMealPhotoModalVisible(false)}
+                        >
+                            <Text style={[photoStyles.modalBtnTextSecondary, { color: theme.textSecondary }]}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Upload indicator */}
+            {uploadingMealPhoto && (
+                <View style={photoStyles.uploadOverlay}>
+                    <View style={photoStyles.uploadCard}>
+                        <ActivityIndicator size="large" color="#0ea5e9" />
+                        <Text style={photoStyles.uploadText}>Subiendo fotos...</Text>
+                    </View>
+                </View>
+            )}
+
+            {/* 📱 STORY SHARE MODAL */}
+            <Modal
+                visible={storyModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setStoryModalVisible(false)}
+            >
+                <View style={storyStyles.overlay}>
+                    <View style={[storyStyles.container, { backgroundColor: theme.cardBackground }]}>
+                        <TouchableOpacity
+                            style={storyStyles.closeBtn}
+                            onPress={() => setStoryModalVisible(false)}
+                        >
+                            <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
+                        </TouchableOpacity>
+
+                        <Text style={[storyStyles.title, { color: theme.text }]}>
+                            Foto subida correctamente
+                        </Text>
+                        <Text style={[storyStyles.subtitle, { color: theme.textSecondary }]}>
+                            Comparte tu comida en Instagram Stories
+                        </Text>
+
+                        {/* Story Preview (captured by ViewShot) */}
+                        <View style={storyStyles.previewWrapper}>
+                            <ViewShot
+                                ref={storyViewRef}
+                                options={{ format: 'png', quality: 1, width: 1080, height: 1920 }}
+                                style={storyStyles.storyCanvas}
+                            >
+                                {/* Background photo */}
+                                {storyPhotoUri && (
+                                    <Image
+                                        source={{ uri: storyPhotoUri }}
+                                        style={storyStyles.storyPhoto}
+                                        resizeMode="cover"
+                                    />
+                                )}
+
+                                {/* Dark gradient overlay at bottom */}
+                                <LinearGradient
+                                    colors={['transparent', 'rgba(0,0,0,0.85)']}
+                                    style={storyStyles.storyGradient}
+                                />
+
+                                {/* Top badge */}
+                                <View style={storyStyles.storyTopBadge}>
+                                    <Text style={storyStyles.storyTopBadgeText}>
+                                        🍽️ {storyMealName || 'Mi comida'}
+                                    </Text>
+                                </View>
+
+                                {/* Bottom content: message + logo */}
+                                <View style={storyStyles.storyBottomContent}>
+                                    <View style={storyStyles.storyTextBlock}>
+                                        <Text style={storyStyles.storyMainText}>
+                                            Siguiendo mi plan con{'\n'}
+                                            <Text style={[storyStyles.storyCoachName, { color: coachInfo?.brandColor || '#60a5fa' }]}>
+                                                {coachInfo?.nombre || 'mi entrenador'}
+                                            </Text>
+                                        </Text>
+                                        <Text style={storyStyles.storyAppText}>
+                                            Powered by TotalGains 💪
+                                        </Text>
+                                    </View>
+
+                                    {/* Coach logo */}
+                                    {coachInfo?.logoUrl ? (
+                                        <Image
+                                            source={{ uri: coachInfo.logoUrl }}
+                                            style={[storyStyles.storyLogo, { borderColor: coachInfo?.brandColor || '#60a5fa' }]}
+                                            resizeMode="contain"
+                                        />
+                                    ) : (
+                                        <View style={[storyStyles.storyLogoFallback, { backgroundColor: coachInfo?.brandColor || '#60a5fa' }]}>
+                                            <Text style={storyStyles.storyLogoFallbackText}>
+                                                {(coachInfo?.nombre || 'E').charAt(0).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </ViewShot>
+                        </View>
+
+                        {/* Action buttons */}
+                        <TouchableOpacity
+                            style={storyStyles.shareBtn}
+                            onPress={handleShareToStories}
+                        >
+                            <LinearGradient
+                                colors={['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={storyStyles.shareBtnGradient}
+                            >
+                                <Ionicons name="logo-instagram" size={22} color="#FFF" />
+                                <Text style={storyStyles.shareBtnText}>Compartir en Stories</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[storyStyles.skipBtn, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}
+                            onPress={() => setStoryModalVisible(false)}
+                        >
+                            <Text style={[storyStyles.skipBtnText, { color: theme.textSecondary }]}>
+                                Ahora no
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
+
+const photoStyles = StyleSheet.create({
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 20,
+        padding: 28,
+        alignItems: 'center',
+    },
+    modalClose: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 10,
+    },
+    modalEmoji: {
+        fontSize: 48,
+        marginBottom: 12,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        marginBottom: 8,
+    },
+    modalText: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    modalBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 10,
+    },
+    modalBtnText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    modalBtnTextSecondary: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    uploadOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 999,
+    },
+    uploadCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 32,
+        alignItems: 'center',
+        gap: 12,
+    },
+    uploadText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#334155',
+    },
+});
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const PREVIEW_WIDTH = SCREEN_WIDTH - 80;
+const PREVIEW_HEIGHT = PREVIEW_WIDTH * (16 / 9);
+
+const storyStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    container: {
+        width: '100%',
+        maxWidth: 380,
+        borderRadius: 24,
+        padding: 20,
+        alignItems: 'center',
+    },
+    closeBtn: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 10,
+    },
+    title: {
+        fontSize: 18,
+        fontWeight: '800',
+        marginTop: 8,
+        marginBottom: 4,
+    },
+    subtitle: {
+        fontSize: 13,
+        marginBottom: 16,
+    },
+    previewWrapper: {
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: 20,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    storyCanvas: {
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        backgroundColor: '#000',
+    },
+    storyPhoto: {
+        ...StyleSheet.absoluteFillObject,
+        width: '100%',
+        height: '100%',
+    },
+    storyGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '45%',
+    },
+    storyTopBadge: {
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    storyTopBadgeText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    storyBottomContent: {
+        position: 'absolute',
+        bottom: 20,
+        left: 16,
+        right: 16,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+    },
+    storyTextBlock: {
+        flex: 1,
+        marginRight: 12,
+    },
+    storyMainText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '600',
+        lineHeight: 22,
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    storyCoachName: {
+        fontSize: 20,
+        fontWeight: '900',
+    },
+    storyAppText: {
+        color: 'rgba(255,255,255,0.75)',
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 6,
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+    },
+    storyLogo: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,
+        borderWidth: 2,
+    },
+    storyLogoFallback: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    storyLogoFallbackText: {
+        color: '#FFF',
+        fontSize: 24,
+        fontWeight: '900',
+    },
+    shareBtn: {
+        width: '100%',
+        borderRadius: 14,
+        overflow: 'hidden',
+        marginBottom: 10,
+    },
+    shareBtnGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        paddingVertical: 16,
+    },
+    shareBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    skipBtn: {
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+        borderWidth: 1,
+    },
+    skipBtnText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+});
 
 const styles = StyleSheet.create({
     container: {

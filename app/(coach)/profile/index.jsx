@@ -160,7 +160,7 @@ export default function ProfileScreen() {
             }
 
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
                 quality: 1,
             });
@@ -184,6 +184,7 @@ export default function ProfileScreen() {
             }
 
             const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
                 quality: 1,
             });

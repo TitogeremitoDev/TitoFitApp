@@ -15,6 +15,73 @@ const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'satur
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 /**
+ * Convert hex color to rgba string with given alpha
+ */
+const hexToRgba = (hex, alpha = 1) => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substr(0, 2), 16);
+    const g = parseInt(cleanHex.substr(2, 2), 16);
+    const b = parseInt(cleanHex.substr(4, 2), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+/**
+ * Get relative luminance of a hex color (0 = black, 1 = white)
+ */
+const getLuminance = (hex) => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substr(0, 2), 16) / 255;
+    const g = parseInt(cleanHex.substr(2, 2), 16) / 255;
+    const b = parseInt(cleanHex.substr(4, 2), 16) / 255;
+    // Perceived brightness (YIQ formula)
+    return (r * 0.299 + g * 0.587 + b * 0.114);
+};
+
+/**
+ * Darken a hex color by a given factor (0-1, where 0 = black)
+ */
+const darkenHex = (hex, factor) => {
+    const cleanHex = hex.replace('#', '');
+    const r = Math.round(parseInt(cleanHex.substr(0, 2), 16) * factor);
+    const g = Math.round(parseInt(cleanHex.substr(2, 2), 16) * factor);
+    const b = Math.round(parseInt(cleanHex.substr(4, 2), 16) * factor);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+
+/**
+ * Ensure a color has enough contrast to be used as TEXT on a light/white background.
+ * If the color is too light (like gold, yellow, lime), darken it.
+ * Returns a CSS-safe color string.
+ */
+const ensureTextContrast = (hex) => {
+    const lum = getLuminance(hex);
+    // If luminance is high (light color), darken it for readability
+    if (lum > 0.55) {
+        // Darken proportionally: the lighter it is, the more we darken
+        const factor = Math.max(0.35, 0.55 / lum);
+        return darkenHex(hex, factor);
+    }
+    return hex;
+};
+
+/**
+ * Get white or dark text color for use ON a colored background.
+ */
+const getContrastTextOnColor = (hex) => {
+    return getLuminance(hex) > 0.55 ? '#1e293b' : '#ffffff';
+};
+
+/**
+ * Map internal font names to Google Fonts CSS import URLs and family names
+ */
+const FONT_MAP = {
+    'Montserrat-Bold': { family: 'Montserrat', weight: '700', import: 'Montserrat:wght@400;600;700;800' },
+    'PlayfairDisplay-Bold': { family: 'Playfair Display', weight: '700', import: 'Playfair+Display:wght@400;600;700;800' },
+    'Oswald-Bold': { family: 'Oswald', weight: '700', import: 'Oswald:wght@400;500;600;700' },
+    'Roboto-Bold': { family: 'Roboto', weight: '700', import: 'Roboto:wght@400;500;700' },
+};
+
+/**
  * Detect if plan is structured by DAYS or by OPTIONS
  */
 const detectPlanType = (plan) => {
@@ -131,8 +198,8 @@ const generateSupplementsHTML = (supplements) => {
     return `<div class="supplements-container">
         <span class="supplements-label">💊 Suplementos:</span>
         ${supplements.map(s =>
-            `<span class="supplement-pill">${s.name} — ${s.amount} ${s.unit}</span>`
-        ).join('')}
+        `<span class="supplement-pill">${s.name} — ${s.amount} ${s.unit}</span>`
+    ).join('')}
     </div>`;
 };
 
@@ -192,8 +259,29 @@ const generateCellHTML = (option, hideMacros, primaryColor, supplements) => {
  */
 const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) => {
     const primaryColor = coachBranding?.primaryColor || '#3b82f6';
+    const secondaryColor = coachBranding?.secondaryColor || primaryColor;
+    const fontFamily = coachBranding?.fontFamily || 'System';
     const coachName = coachBranding?.coachName || '';
     const logoUrl = coachBranding?.logoUrl || null;
+
+    // Resolve Google Font import and CSS family
+    const fontConfig = FONT_MAP[fontFamily];
+    const googleFontImport = fontConfig
+        ? `@import url('https://fonts.googleapis.com/css2?family=${fontConfig.import}&display=swap');`
+        : '';
+    const cssFontFamily = fontConfig
+        ? `'${fontConfig.family}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`
+        : `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+
+    // Pre-compute rgba colors for cell fills
+    const primaryBgLight = hexToRgba(primaryColor, 0.06);
+    const secondaryBgLight = hexToRgba(secondaryColor, 0.06);
+    const primaryBorderColor = hexToRgba(primaryColor, 0.35);
+    const primaryMealLabelBg = hexToRgba(primaryColor, 0.10);
+
+    // Contrast-safe text colors (darkens light colors like gold/yellow/lime)
+    const primaryTextColor = ensureTextContrast(primaryColor);
+    const thTextColor = getContrastTextOnColor(primaryColor);
 
     // Detect plan type
     const planType = detectPlanType(plan);
@@ -226,6 +314,8 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
     <meta charset="UTF-8">
     <title>Plan Nutricional - ${clientName}</title>
     <style>
+        ${googleFontImport}
+
         @page {
             size: A4 landscape;
             margin: 8mm;
@@ -234,7 +324,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: ${cssFontFamily};
             font-size: 10px;
             color: #1e293b;
             background: #fff;
@@ -320,7 +410,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         .header-title {
             font-size: 18px;
             font-weight: 800;
-            color: ${primaryColor};
+            color: ${primaryTextColor};
         }
         
         .header-subtitle {
@@ -349,7 +439,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         }
         
         th, td {
-            border: 1px solid ${primaryColor}50;
+            border: 1px solid ${primaryBorderColor};
             padding: 5px 4px;
             text-align: left;
             vertical-align: top;
@@ -359,7 +449,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         
         th {
             background: ${primaryColor};
-            color: white;
+            color: ${thTextColor};
             font-weight: 700;
             font-size: 9px;
             text-align: center;
@@ -376,10 +466,10 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         tr { page-break-inside: avoid; }
         
         .meal-label {
-            background: ${primaryColor}10;
+            background: ${primaryMealLabelBg};
             font-weight: 700;
             font-size: 9px;
-            color: ${primaryColor};
+            color: ${primaryTextColor};
             text-align: center;
             vertical-align: middle;
             padding: 8px 4px;
@@ -388,6 +478,14 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         .meal-icon { display: block; font-size: 14px; margin-bottom: 2px; }
         .meal-name { display: block; font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; }
         
+        /* Alternate cell colors using branding */
+        tr:nth-child(odd) .meal-cell {
+            background: ${primaryBgLight};
+        }
+        tr:nth-child(even) .meal-cell {
+            background: ${secondaryBgLight};
+        }
+
         .meal-cell {
             font-size: 8px;
             line-height: 1.3;
@@ -404,10 +502,10 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         .option-name {
             font-weight: 700;
             font-size: 9px;
-            color: ${primaryColor};
+            color: ${primaryTextColor};
             margin-bottom: 4px;
             padding-bottom: 3px;
-            border-bottom: 1px solid ${primaryColor}30;
+            border-bottom: 1px solid ${hexToRgba(primaryColor, 0.18)};
         }
         
         .foods-list { margin-bottom: 4px; }
@@ -421,12 +519,12 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         .option-macros {
             margin-top: 4px;
             padding-top: 3px;
-            border-top: 1px dashed ${primaryColor}30;
+            border-top: 1px dashed ${hexToRgba(primaryColor, 0.18)};
         }
         
         .macro-badge {
-            background: ${primaryColor}20;
-            color: ${primaryColor};
+            background: ${hexToRgba(primaryColor, 0.12)};
+            color: ${primaryTextColor};
             padding: 2px 4px;
             border-radius: 3px;
             font-size: 7px;
@@ -492,7 +590,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             : `<div class="header-logo-placeholder">${(coachName || 'C').charAt(0).toUpperCase()}</div>`
         }
             <div>
-                <div class="header-title">Plan Nutricional Semanal</div>
+                <div class="header-title">Plan Nutricional</div>
                 <div class="header-subtitle">Diseñado por ${coachName || 'Tu Entrenador'}</div>
             </div>
         </div>

@@ -22,7 +22,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useRouter } from 'expo-router';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
-import FeedbackChatModal from '../../components/FeedbackChatModal';
 import BroadcastModal from '../../components/BroadcastModal';
 import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials';
 // Componentes mejorados para iOS
@@ -251,8 +250,6 @@ export default function TrainerDashboard() {
     const [messagesModalVisible, setMessagesModalVisible] = useState(false);
     const [clientsList, setClientsList] = useState([]);
     const [feedbackSummary, setFeedbackSummary] = useState({});
-    const [chatModalVisible, setChatModalVisible] = useState(false);
-    const [selectedClient, setSelectedClient] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState('all');
     const [loadingClients, setLoadingClients] = useState(false);
@@ -356,23 +353,32 @@ export default function TrainerDashboard() {
         loadMessagesData();
     };
 
-    const openClientChat = (client) => {
-        setSelectedClient(client);
-        // NO cerramos el modal de mensajes para que al volver siga abierto
-        // setMessagesModalVisible(false);
-        setChatModalVisible(true);
-    };
-
-    const closeClientChat = () => {
-        setChatModalVisible(false);
-        setSelectedClient(null);
-
-        // Si el modal de mensajes está abierto, refrescamos los datos
-        if (messagesModalVisible) {
-            loadMessagesData();
+    const openClientChat = async (client) => {
+        try {
+            const res = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ clientId: client._id }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setMessagesModalVisible(false);
+                router.push({
+                    pathname: '/(app)/chat/[conversationId]',
+                    params: {
+                        conversationId: data.conversation._id,
+                        displayName: client.nombre,
+                        isTrainerChat: 'true',
+                        type: 'trainer',
+                    },
+                });
+            }
+        } catch (error) {
+            console.error('[TrainerDashboard] Error opening chat:', error);
         }
-
-        refreshNotifications();
     };
 
     const copyCodeToClipboard = () => {
@@ -882,16 +888,6 @@ Cualquier duda me escribes. Vamos a por tus objetivos!`;
                     )}
                 </SafeAreaView>
             </Modal>
-
-            {/* Modal Chat Individual */}
-            <FeedbackChatModal
-                visible={chatModalVisible}
-                onClose={closeClientChat}
-                clientId={selectedClient?._id}
-                clientName={selectedClient?.nombre}
-                clientAvatarUrl={selectedClient?.avatarUrl}
-                isCoach={true}
-            />
 
             {/* Broadcast Modal */}
             <BroadcastModal

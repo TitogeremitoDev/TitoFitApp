@@ -59,9 +59,7 @@ const EventCard = ({ event, onPress, isSuggestion = false }) => {
                 ) : null}
             </View>
 
-            <TouchableOpacity style={styles.actionBtn}>
-                <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-            </TouchableOpacity>
+
         </TouchableOpacity>
     );
 };

@@ -60,6 +60,8 @@ import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAud
 import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
 import { useVideoFeedback } from '../../src/hooks/useVideoFeedback';
 import { getContrastColor } from '../../utils/colors';
+import ActionToast from '../../src/components/shared/ActionToast';
+import { predefinedRoutines } from '../../src/data/predefinedRoutines';
 
 
 const { width } = Dimensions.get('window');
@@ -2526,6 +2528,12 @@ export default function Entreno() {
   // Modal de Sin Rutina Activa
   const [showNoRoutineModal, setShowNoRoutineModal] = useState(false);
 
+  // Rutina de prueba (fullbody trial para clientes con coach sin rutina asignada)
+  const [isTrialRoutine, setIsTrialRoutine] = useState(false);
+
+  // Toast de nueva rutina asignada por el coach
+  const [coachRoutineToast, setCoachRoutineToast] = useState({ visible: false, name: '' });
+
   // 🎓 Tutorial Modal (solo primera vez)
   const [showTutorial, setShowTutorial] = useState(false);
 
@@ -2600,6 +2608,7 @@ export default function Entreno() {
   }, [exercisesIndex]);
   // 🆕 Fetch exercises from API
   const fetchAllExercises = useCallback(async () => {
+    if (!token) return;
     try {
       const response = await fetch(`${API_URL}/api/exercises`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -2729,33 +2738,140 @@ export default function Entreno() {
   );
 
   /* Hidratar todo (rutina activa, días, progreso y última sesión) */
+  // ════════════════════════════════════════════════════════════════════════
+  // Cargar rutina fullbody de prueba para clientes con coach sin rutina asignada
+  // ════════════════════════════════════════════════════════════════════════
+  const handleStartTrialRoutine = useCallback(async () => {
+    try {
+      const fullbody = predefinedRoutines[0]; // Rutina Full-Body Principiantes
+      const rutinaData = {};
+      fullbody.diasArr.forEach((diaEjercicios, diaIndex) => {
+        rutinaData[`dia${diaIndex + 1}`] = diaEjercicios.map((ej, ejIndex) => ({
+          ...ej,
+          id: ej.id || `${fullbody.id}_d${diaIndex + 1}_e${ejIndex + 1}_${ej.code}`,
+        }));
+      });
+
+      await AsyncStorage.setItem(`routine_${fullbody.id}`, JSON.stringify(rutinaData));
+      await AsyncStorage.multiSet([
+        ['active_routine', fullbody.id],
+        ['active_routine_name', fullbody.nombre],
+        ['active_routine_is_trial', 'true'],
+      ]);
+      await AsyncStorage.removeItem('active_routine_from_coach');
+
+      const diasNorm = ensureUniqueExerciseIds(normalizeDias(fullbody.diasArr));
+
+      setActiveId(fullbody.id);
+      setRutina({
+        id: fullbody.id,
+        nombre: fullbody.nombre,
+        dias: fullbody.dias,
+        isTrial: true,
+      });
+      setDiasEj(diasNorm);
+      setIsTrialRoutine(true);
+      setShowNoRoutineModal(false);
+      setSemana(1);
+      setDiaIdx(0);
+      setHydrated(true);
+    } catch (e) {
+      console.error('[Entreno] Error cargando rutina de prueba:', e);
+    }
+  }, []);
+
   const hydrate = useCallback(async () => {
     const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
     // ════════════════════════════════════════════════════════════════════════
     // Leer la rutina activa de AsyncStorage primero
     // ════════════════════════════════════════════════════════════════════════
-    const activeRoutineId = await AsyncStorage.getItem('active_routine');
-    const isFromCoachFlag = await AsyncStorage.getItem('active_routine_from_coach');
+    let activeRoutineId = await AsyncStorage.getItem('active_routine');
+    let isFromCoachFlag = await AsyncStorage.getItem('active_routine_from_coach');
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AUTO-ASIGNACIÓN + CARGA: Fetch único de CurrentRoutines del coach
+    // Si hay rutinas del coach, seleccionar la más reciente automáticamente
+    // ════════════════════════════════════════════════════════════════════════
+    let cachedCoachRoutines = null;
+    if (token) {
+      try {
+        const autoRes = await fetch(`${API_URL}/api/current-routines/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const autoData = await autoRes.json();
+
+        if (autoData.success && autoData.routines?.length > 0) {
+          cachedCoachRoutines = autoData.routines;
+
+          // Encontrar la rutina asignada más recientemente
+          const sorted = [...autoData.routines].sort(
+            (a, b) => new Date(b.assignedAt) - new Date(a.assignedAt)
+          );
+          const latestCoachRoutine = sorted[0];
+
+          // Auto-asignar si: no hay rutina activa, O hay una más nueva del coach
+          if (!activeRoutineId || latestCoachRoutine._id !== activeRoutineId) {
+            const wasEmpty = !activeRoutineId;
+            console.log('[Entreno] 🔄 Auto-asignando rutina del coach:', latestCoachRoutine.nombre);
+            await AsyncStorage.setItem('active_routine', latestCoachRoutine._id);
+            await AsyncStorage.setItem('active_routine_name', latestCoachRoutine.nombre);
+            await AsyncStorage.setItem('active_routine_from_coach', 'true');
+            await AsyncStorage.removeItem('active_routine_is_trial');
+            activeRoutineId = latestCoachRoutine._id;
+            isFromCoachFlag = 'true';
+            setIsTrialRoutine(false);
+
+            // Mostrar toast solo si ya había una rutina anterior (no primera carga vacía)
+            if (!wasEmpty) {
+              setCoachRoutineToast({ visible: true, name: latestCoachRoutine.nombre });
+            }
+          }
+        }
+      } catch (e) {
+        console.log('[Entreno] Auto-asignación: sin rutinas del coach o error:', e.message);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CHECKPOINT: Usuario con coach pero sin rutinas asignadas
+    // Si tiene coach y no hay CurrentRoutines, solo permitir rutina trial
+    // Cualquier rutina previa (no-trial) se descarta y se muestra el modal
+    // ════════════════════════════════════════════════════════════════════════
+    if (user?.currentTrainerId && !cachedCoachRoutines?.length) {
+      const trialFlag = await AsyncStorage.getItem('active_routine_is_trial');
+      if (trialFlag !== 'true') {
+        console.log('[Entreno] 👨‍🏫 Tiene coach pero sin rutinas asignadas, mostrando modal trial');
+        await AsyncStorage.removeItem('active_routine');
+        await AsyncStorage.removeItem('active_routine_name');
+        await AsyncStorage.removeItem('active_routine_from_coach');
+        setShowNoRoutineModal(true);
+        setHydrated(true);
+        return;
+      }
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // Si la rutina es de coach (flag establecido), cargar de CurrentRoutine
-    // Esto funciona incluso si el usuario es también un entrenador con rutinas asignadas
+    // Reusar datos ya fetched si están disponibles
     // ════════════════════════════════════════════════════════════════════════
     if (token && isFromCoachFlag === 'true') {
       try {
         console.log('[Entreno] 👨‍🏫 Rutina de entrenador, cargando de CurrentRoutine...');
-        const response = await fetch(`${API_URL}/api/current-routines/me`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await response.json();
+        let routines = cachedCoachRoutines;
+        if (!routines) {
+          const response = await fetch(`${API_URL}/api/current-routines/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await response.json();
+          routines = (data.success && data.routines) || [];
+        }
 
-        if (data.success && data.routines?.length > 0) {
-          // 🆕 Buscar la rutina específica que el usuario seleccionó (por activeRoutineId)
-          // Si no hay activeRoutineId, tomar la primera
-          let currentRoutine = data.routines[0];
+        if (routines.length > 0) {
+          // Buscar la rutina específica (por activeRoutineId)
+          let currentRoutine = routines[0];
           if (activeRoutineId) {
-            const found = data.routines.find(r => r._id === activeRoutineId);
+            const found = routines.find(r => r._id === activeRoutineId);
             if (found) {
               currentRoutine = found;
             }
@@ -2828,6 +2944,7 @@ export default function Entreno() {
       'active_routine_name', // 🆕 Cargar también el nombre guardado
       'rutinas',
       'progress',
+      'active_routine_is_trial',
     ]);
 
     const idAct = result[0]?.[1] || null;
@@ -2836,6 +2953,8 @@ export default function Entreno() {
 
     const listJSON = result[2]?.[1] || '[]';
     const progStr = result[3]?.[1] || '{}';
+    const isTrialFlag = result[4]?.[1] === 'true';
+    setIsTrialRoutine(isTrialFlag);
 
     if (!idAct) {
       setShowNoRoutineModal(true);
@@ -3808,6 +3927,7 @@ export default function Entreno() {
   };
 
   if (!rutina) {
+    const hasCoach = !!user?.currentTrainerId;
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Modal Sin Rutina Activa */}
@@ -3823,28 +3943,47 @@ export default function Entreno() {
               borderColor: theme.border
             }]}>
               <View style={styles.noRoutineIconContainer}>
-                <Ionicons name="fitness-outline" size={64} color={theme.primary} />
+                <Ionicons
+                  name={hasCoach ? 'people-outline' : 'fitness-outline'}
+                  size={64}
+                  color={theme.primary}
+                />
               </View>
 
               <Text style={[styles.noRoutineTitle, { color: theme.text }]}>
-                Sin rutina activa
+                {hasCoach
+                  ? 'Tu entrenador aún no te ha asignado una rutina'
+                  : 'Sin rutina activa'}
               </Text>
 
               <Text style={[styles.noRoutineDescription, { color: theme.textSecondary }]}>
-                Para comenzar a entrenar, primero necesitas seleccionar una rutina activa.
+                {hasCoach
+                  ? 'Mientras tanto, puedes probar una rutina de prueba para familiarizarte con la app.'
+                  : 'Para comenzar a entrenar, primero necesitas seleccionar una rutina activa.'}
               </Text>
 
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: theme.primary }]}
-                onPress={() => {
-                  setShowNoRoutineModal(false);
-                  navigation.navigate('rutinas/index');
-                }}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.actionButtonText}>Ir a Rutinas</Text>
-              </TouchableOpacity>
+              {hasCoach ? (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  onPress={handleStartTrialRoutine}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="barbell-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.actionButtonText}>Probar Rutina de Prueba</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowNoRoutineModal(false);
+                    navigation.navigate('rutinas/index');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.actionButtonText}>Ir a Rutinas</Text>
+                </TouchableOpacity>
+              )}
 
             </View>
           </View>
@@ -4783,6 +4922,18 @@ export default function Entreno() {
       <TutorialModal
         visible={showTutorial}
         onComplete={completeTutorial}
+      />
+
+      {/* Toast: nueva rutina asignada por el coach */}
+      <ActionToast
+        visible={coachRoutineToast.visible}
+        message="Nueva rutina asignada"
+        submessage={coachRoutineToast.name}
+        icon="barbell-outline"
+        iconColor="#3b82f6"
+        onDismiss={() => setCoachRoutineToast({ visible: false, name: '' })}
+        duration={5000}
+        position="top"
       />
     </KeyboardAvoidingView>
   );

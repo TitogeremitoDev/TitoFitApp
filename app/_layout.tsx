@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
+import ActionToast from '../src/components/shared/ActionToast';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Sentry from '@sentry/react-native';
@@ -20,8 +21,39 @@ import { SupplementInventoryProvider } from '../src/context/SupplementInventoryC
 import { ImpersonationProvider } from '../context/ImpersonationContext';
 import { GodModeBar } from '../components/GodModeBar';
 import { SupervisorInviteModal } from '../components/SupervisorInviteModal';
+import { usePushNotifications } from '../src/hooks/usePushNotifications';
 import { StripeProvider } from '../utils/stripeWrapper';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
+
+// FIX: Safari con cookies/website data restringidos devuelve window.localStorage === null.
+// expo-auth-session y expo-notifications hacen localStorage.getItem() sin comprobar → crash.
+// También en SSR (Node.js) localStorage es undefined.
+// Polyfill in-memory cuando localStorage no existe o es null (no afecta flujo normal).
+const _createMemoryStorage = (): Storage => {
+  const _data: Record<string, string> = {};
+  return {
+    getItem(key: string) { return _data[key] ?? null; },
+    setItem(key: string, value: string) { _data[key] = String(value); },
+    removeItem(key: string) { delete _data[key]; },
+    clear() { Object.keys(_data).forEach(k => delete _data[k]); },
+    key(i: number) { return Object.keys(_data)[i] ?? null; },
+    get length() { return Object.keys(_data).length; },
+  } as Storage;
+};
+
+// Polyfill for Node.js SSR context (Metro server-side evaluation)
+// Node.js 25 provides experimental localStorage that is BROKEN without --localstorage-file
+// (localStorage exists but getItem is not a function). Also covers undefined/null cases.
+if (typeof globalThis !== 'undefined' &&
+  (!globalThis.localStorage || typeof (globalThis.localStorage as any).getItem !== 'function')) {
+  (globalThis as any).localStorage = _createMemoryStorage();
+}
+
+// Polyfill for browser contexts where localStorage is null/broken (e.g. Safari restricted mode)
+if (Platform.OS === 'web' && typeof window !== 'undefined' &&
+  (!window.localStorage || typeof window.localStorage.getItem !== 'function')) {
+  (window as any).localStorage = _createMemoryStorage();
+}
 
 // Inicializar Sentry (debe estar antes de cualquier otro código)
 Sentry.init({
@@ -50,14 +82,14 @@ try { SplashScreen.preventAutoHideAsync(); } catch { }
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const emojiFonts = ', "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
   const patchEmojiFonts = () => {
-    const rnwEl = document.getElementById('react-native-stylesheet');
+    const rnwEl = document.getElementById('react-native-stylesheet') as HTMLStyleElement | null;
     if (!rnwEl || !rnwEl.sheet) return;
     const rules = rnwEl.sheet.cssRules;
     for (let i = 0; i < rules.length; i++) {
-      const rule = rules[i];
-      if (rule.style && rule.style.fontFamily &&
-          rule.style.fontFamily.includes('sans-serif') &&
-          !rule.style.fontFamily.includes('Apple Color Emoji')) {
+      const rule = rules[i] as CSSStyleRule;
+      if (rule.style?.fontFamily &&
+        rule.style.fontFamily.includes('sans-serif') &&
+        !rule.style.fontFamily.includes('Apple Color Emoji')) {
         rule.style.fontFamily = rule.style.fontFamily + emojiFonts;
       }
     }
@@ -70,7 +102,7 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
   }
   // Observer para reglas que RNW inyecte después dinámicamente
   const obs = new MutationObserver(patchEmojiFonts);
-  const target = document.getElementById('react-native-stylesheet');
+  const target = document.getElementById('react-native-stylesheet') as HTMLStyleElement | null;
   if (target) obs.observe(target, { childList: true, characterData: true, subtree: true });
 }
 
@@ -149,6 +181,23 @@ function RootLayoutNav() {
   const navState = useRootNavigationState(); // router listo cuando tiene key
   const splashHidden = useRef(false);
   const redirectingRef = useRef(false);
+
+  // Push Notifications: registro de token + listener foreground
+  const { notification } = usePushNotifications();
+  const [toast, setToast] = useState<{ visible: boolean; message: string; submessage: string }>({
+    visible: false, message: '', submessage: ''
+  });
+
+  // Mostrar ActionToast cuando llega notificación en foreground
+  useEffect(() => {
+    if (!notification) return;
+    const content = notification.request.content;
+    setToast({
+      visible: true,
+      message: content.title || 'Recordatorio',
+      submessage: content.body || '',
+    });
+  }, [notification]);
 
   // Reset redirect guard on logout
   useEffect(() => {
@@ -349,6 +398,15 @@ function RootLayoutNav() {
         <Stack.Screen name="(supervisor)" />
         <Stack.Screen name="(admin)" />
       </Stack>
+      <ActionToast
+        visible={toast.visible}
+        message={toast.message}
+        submessage={toast.submessage}
+        icon="notifications"
+        iconColor="#2563EB"
+        duration={5000}
+        onDismiss={() => setToast(prev => ({ ...prev, visible: false }))}
+      />
     </>
   );
 }

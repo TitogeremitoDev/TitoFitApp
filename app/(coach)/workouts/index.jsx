@@ -527,6 +527,7 @@ export default function WorkoutsClientsScreen() {
                 keyExtractor={(item) => item._id}
                 renderItem={renderClientCard}
                 ListEmptyComponent={renderEmpty}
+                style={{ flex: 1 }}
                 contentContainerStyle={clients.length === 0 ? styles.emptyList : styles.list}
                 refreshControl={
                     <RefreshControl

@@ -16,7 +16,7 @@ if (Platform.OS === 'android') {
     }
 }
 
-const DailyMealList = ({ meals, hideMacros, completedMeals = {}, onToggleComplete, activeOptions = {}, onOptionSelect, onNavigate, dayKey, trackingDate }) => {
+const DailyMealList = ({ meals, hideMacros, completedMeals = {}, onToggleComplete, activeOptions = {}, onOptionSelect, onNavigate, onMealPhoto, dayKey, trackingDate }) => {
     return (
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
             {meals.map((meal, index) => (
@@ -25,11 +25,12 @@ const DailyMealList = ({ meals, hideMacros, completedMeals = {}, onToggleComplet
                     meal={meal}
                     mealIndex={index}
                     hideMacros={hideMacros}
-                    isCompleted={completedMeals[meal.id || index]} // Match parent logic
+                    isCompleted={completedMeals[meal.id || index]}
                     onToggleComplete={() => onToggleComplete(meal.id || index)}
                     activeOptionIndex={activeOptions[meal.id || index]}
                     onOptionSelect={onOptionSelect}
                     onNavigate={onNavigate}
+                    onMealPhoto={onMealPhoto}
                     dayKey={dayKey}
                     trackingDate={trackingDate}
                 />
@@ -39,7 +40,7 @@ const DailyMealList = ({ meals, hideMacros, completedMeals = {}, onToggleComplet
     );
 };
 
-const MealItem = ({ meal, mealIndex, hideMacros, isCompleted, onToggleComplete, activeOptionIndex, onOptionSelect, onNavigate, dayKey, trackingDate }) => {
+const MealItem = ({ meal, mealIndex, hideMacros, isCompleted, onToggleComplete, activeOptionIndex, onOptionSelect, onNavigate, onMealPhoto, dayKey, trackingDate }) => {
     const { theme } = useTheme();
 
     // Animations for completion
@@ -172,13 +173,24 @@ const MealItem = ({ meal, mealIndex, hideMacros, isCompleted, onToggleComplete, 
                     <Text style={[styles.mealTitle, { color: theme.text }]}>{meal.name}</Text>
                 </View>
 
-                {/* Check Button with Animation */}
-                <TouchableOpacity
-                    onPress={handleCheck}
-                    style={[styles.checkBtn, { borderColor: theme.borderLight }]}
-                >
-                    <Ionicons name="checkmark" size={20} color={theme.textTertiary} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {/* Camera Button */}
+                    {onMealPhoto && (
+                        <TouchableOpacity
+                            onPress={() => onMealPhoto(meal, activeOptionIdx, mealIndex)}
+                            style={[styles.checkBtn, { borderColor: theme.borderLight }]}
+                        >
+                            <Ionicons name="camera-outline" size={18} color={theme.textTertiary} />
+                        </TouchableOpacity>
+                    )}
+                    {/* Check Button with Animation */}
+                    <TouchableOpacity
+                        onPress={handleCheck}
+                        style={[styles.checkBtn, { borderColor: theme.borderLight }]}
+                    >
+                        <Ionicons name="checkmark" size={20} color={theme.textTertiary} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Options Buttons */}
@@ -249,6 +261,16 @@ const MealItem = ({ meal, mealIndex, hideMacros, isCompleted, onToggleComplete, 
                         ))}
                         {(!ingredientsToRender.length) && <Text style={{ color: theme.textSecondary, fontStyle: 'italic' }}>Sin ingredientes</Text>}
                     </View>
+
+                    {/* 📝 Coach Note (a nivel de opción) */}
+                    {activeOption.coachNote ? (
+                        <View style={[styles.coachNoteBox, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '25' }]}>
+                            <Ionicons name="chatbubble-ellipses-outline" size={14} color={theme.primary} style={{ marginRight: 8, marginTop: 2 }} />
+                            <Text style={[styles.coachNoteText, { color: theme.text }]}>
+                                {activeOption.coachNote}
+                            </Text>
+                        </View>
+                    ) : null}
 
                     {/* 💊 Supplements Footer (a nivel de meal, no de option) */}
                     {meal.supplements && meal.supplements.length > 0 && (
@@ -383,7 +405,23 @@ const styles = StyleSheet.create({
     ingredientAmount: {
         fontSize: 14,
         fontWeight: '600',
-    }
+    },
+    // 📝 Coach Note
+    coachNoteBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+    },
+    coachNoteText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '500',
+        fontStyle: 'italic',
+        lineHeight: 18,
+    },
 });
 
 const IngredientRow = ({ food, theme, storageKey }) => {

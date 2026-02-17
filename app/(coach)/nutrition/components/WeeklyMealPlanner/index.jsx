@@ -28,7 +28,7 @@ import SmartFoodDrawer from '../SmartFoodDrawer';
 import ActionsFooter from './ActionsFooter'; // Import Footer
 import axios from 'axios'; // Import Axios
 import FoodCreatorModal from '../../../../../components/FoodCreatorModal'; // 🟢 Import Creator
-import { saveFood } from '../../../../../src/services/foodService'; // 🟢 Import Save Service
+import { saveFood, getFavorites, toggleFavorite } from '../../../../../src/services/foodService'; // 🟢 Import Save Service + Favorites
 
 // Helper: UUID Generator (Lightweight)
 const uuidv4 = () => {
@@ -98,7 +98,7 @@ const hydrateTemplate = (templateData) => {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
 // Import shared constants
-import { MEAL_STRUCTURES } from '../../../../../src/constants/nutrition';
+import { MEAL_STRUCTURES, ALL_MEAL_TYPES } from '../../../../../src/constants/nutrition';
 
 // Import shared units
 import { UNIT_CONVERSIONS } from '../../../../../src/constants/units';
@@ -200,6 +200,47 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     // 🟢 GLOBAL IMAGE MODAL (To prevent unmounting issues)
     // Store complete option object to survive ID regeneration
     const [imageModalState, setImageModalState] = useState({ visible: false, option: null });
+
+    // ❤️ FAVORITES STATE
+    const [favorites, setFavorites] = useState([]);
+    const [favoritesVersion, setFavoritesVersion] = useState(0);
+    // Include both _id AND lowercase name for matching snapshot foods in meal plans
+    const favoriteIds = useMemo(() => {
+        const set = new Set();
+        favorites.forEach(f => {
+            if (f._id) set.add(f._id);
+            if (f.name) set.add(f.name.toLowerCase().trim());
+        });
+        return set;
+    }, [favorites]);
+
+    // ❤️ Fetch favorites on mount
+    useEffect(() => {
+        const loadFavs = async () => {
+            try {
+                const favs = await getFavorites();
+                setFavorites(favs);
+            } catch (e) {
+                console.error('[MealPlanner] Favorites fetch error:', e);
+            }
+        };
+        loadFavs();
+    }, []);
+
+    // ❤️ Toggle Favorite Handler
+    const handleToggleFavorite = useCallback(async (food) => {
+        try {
+            const result = await toggleFavorite(food);
+            // Refresh the favorites list
+            const favs = await getFavorites();
+            setFavorites(favs);
+            // Notify SmartFoodDrawer to sync
+            setFavoritesVersion(v => v + 1);
+        } catch (error) {
+            console.error('[MealPlanner] Toggle favorite error:', error);
+            Alert.alert('Error', 'No se pudo marcar como favorito');
+        }
+    }, []);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // ACTIONS & LOGIC (CORREGIDO PARA ENVIAR DATOS REALES)
@@ -502,24 +543,27 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         }));
     };
 
-    const updateTemplateName = (templateId, name, icon, macros, mealCount) => {
+    const updateTemplateName = (templateId, name, icon, macros, selectedMealTypes) => {
         updatePlan(prev => ({
             ...prev,
             dayTemplates: prev.dayTemplates.map(t => {
                 if (t.id !== templateId) return t;
 
-                // Handle meal structure changes if count changed
+                // Handle meal structure changes if selectedMealTypes provided
                 let newMeals = t.meals;
-                const currentCount = t.meals?.length || 0;
 
-                if (mealCount && mealCount !== currentCount) {
-                    const structure = MEAL_STRUCTURES[mealCount] || MEAL_STRUCTURES[3];
+                if (selectedMealTypes && Array.isArray(selectedMealTypes) && selectedMealTypes.length > 0) {
+                    // Build structure from selected meal type IDs
+                    const structure = selectedMealTypes
+                        .map(typeId => ALL_MEAL_TYPES.find(mt => mt.id === typeId))
+                        .filter(Boolean);
 
-                    // Re-map meals based on new structure
+                    // Re-map meals: preserve existing data, create new for additions
                     newMeals = structure.map((def, idx) => {
-                        // Try to find existing meal by name (fuzzy match logic could go here)
-                        // For now, strict name match to preserve data
-                        const existingMeal = t.meals.find(m => m.name === def.name);
+                        // Try to find existing meal by id or name to preserve data
+                        const existingMeal = t.meals.find(m =>
+                            m.name === def.name || m.id?.includes(def.id)
+                        );
 
                         if (existingMeal) {
                             return {
@@ -805,6 +849,25 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         }));
     };
 
+    const updateOptionNote = (templateId, mealId, optionId, note) => {
+        updatePlan(prev => ({
+            ...prev,
+            dayTemplates: prev.dayTemplates.map(t =>
+                t.id !== templateId ? t : {
+                    ...t,
+                    meals: t.meals.map(m =>
+                        m.id !== mealId ? m : {
+                            ...m,
+                            options: m.options.map(o =>
+                                o.id !== optionId ? o : { ...o, coachNote: note }
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }));
+    };
+
     const bulkRenameOptions = (templateId, mealId, mode) => {
         updatePlan(prev => ({
             ...prev,
@@ -1039,17 +1102,22 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                                 onAddSupplement={(supplement) => addSupplementToMeal(meal.id, supplement)}
                                 onRemoveFood={(optionId, foodIdx) => removeFoodFromMeal(meal.id, optionId, foodIdx)}
                                 onUpdateFood={(optionId, foodIdx, data) => updateFoodInMeal(meal.id, optionId, foodIdx, data)}
+                                onDropFood={(optionId, food) => addFoodToMeal(meal.id, optionId, JSON.parse(JSON.stringify(food)))}
                                 onRemoveSupplement={(suppIdx) => removeSupplementFromMeal(meal.id, suppIdx)}
                                 onAddOption={() => addOptionToMeal(meal.id)}
                                 onRemoveOption={(optionId) => removeOptionFromMeal(meal.id, optionId)}
                                 onDuplicateOption={(optionId) => duplicateOption(meal.id, optionId)}
                                 onEditOptionName={(optionId, newName) => updateOptionName(currentTemplate.id, meal.id, optionId, newName)}
+                                onUpdateOptionNote={(optionId, note) => updateOptionNote(currentTemplate.id, meal.id, optionId, note)}
                                 onUpdateOptionImage={(optionId, uri) => updateOptionImage(currentTemplate.id, meal.id, optionId, uri)}
                                 onBulkRename={(mode) => bulkRenameOptions(currentTemplate.id, meal.id, mode)}
                                 // 🟢 PASS SMART EDIT HANDLER
                                 onSmartEdit={handleSmartEdit}
                                 // 🟢 PASS IMAGE MODAL HANDLER
                                 onOpenImageModal={(optionId) => handleOpenImageModal(meal.id, optionId)}
+                                // ❤️ PASS FAVORITE HANDLERS
+                                onToggleFavorite={handleToggleFavorite}
+                                favoriteIds={favoriteIds}
                             />
                         ))}
                     </View>
@@ -1085,6 +1153,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             {/* ═══════════════════════════════════════════════════════════════ */}
             <SmartFoodDrawer
                 visible={activeModal?.type === 'food'}
+                favoritesVersion={favoritesVersion}
                 onClose={() => setActiveModal(null)}
                 context={{
                     templateId: selectedTemplateId,
@@ -1133,9 +1202,9 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                 visible={!!editingTemplate}
                 template={editingTemplate}
                 onClose={() => setEditingTemplate(null)}
-                onSave={(name, icon, macros, mealCount) => {
+                onSave={(name, icon, macros, selectedMealTypes) => {
                     if (editingTemplate) {
-                        updateTemplateName(editingTemplate.id, name, icon, macros, mealCount);
+                        updateTemplateName(editingTemplate.id, name, icon, macros, selectedMealTypes);
                     }
                     setEditingTemplate(null);
                 }}
@@ -1282,7 +1351,20 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
     const [name, setName] = useState(template?.name || '');
     const [icon, setIcon] = useState(template?.icon || '📋');
     const [mode, setMode] = useState('macros'); // 'macros' or 'kcal'
-    const [mealCount, setMealCount] = useState(template?.meals?.length || 3);
+
+    // Selected meal types (array of meal type IDs)
+    const [selectedMealTypes, setSelectedMealTypes] = useState(() => {
+        if (template?.meals?.length > 0) {
+            // Derive from existing meals by matching against ALL_MEAL_TYPES
+            return template.meals
+                .map(m => {
+                    const match = ALL_MEAL_TYPES.find(mt => mt.name === m.name || mt.id === m.id?.split('_')[1]);
+                    return match?.id;
+                })
+                .filter(Boolean);
+        }
+        return ['desayuno', 'comida', 'cena']; // Default
+    });
 
     // Mode: macros (auto-calc kcal)
     const [protein, setProtein] = useState(String(template?.targetMacros?.protein || 150));
@@ -1316,6 +1398,23 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
         };
     }, [kcal, proteinPct, carbsPct, fatPct]);
 
+    // Toggle a meal type on/off
+    const toggleMealType = (mealId) => {
+        setSelectedMealTypes(prev => {
+            if (prev.includes(mealId)) {
+                // Don't allow removing the last meal
+                if (prev.length <= 1) return prev;
+                return prev.filter(id => id !== mealId);
+            } else {
+                // Add and sort by the order in ALL_MEAL_TYPES
+                const newSelection = [...prev, mealId];
+                return ALL_MEAL_TYPES
+                    .filter(mt => newSelection.includes(mt.id))
+                    .map(mt => mt.id);
+            }
+        });
+    };
+
     React.useEffect(() => {
         if (template) {
             setName(template.name);
@@ -1324,7 +1423,18 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
             setCarbs(String(template.targetMacros?.carbs || 200));
             setFat(String(template.targetMacros?.fat || 70));
             setKcal(String(template.targetMacros?.kcal || 2000));
-            setMealCount(template.meals?.length || 3);
+            // Derive selected meal types from template meals
+            if (template.meals?.length > 0) {
+                const derived = template.meals
+                    .map(m => {
+                        const match = ALL_MEAL_TYPES.find(mt => mt.name === m.name || mt.id === m.id?.split('_')[1]);
+                        return match?.id;
+                    })
+                    .filter(Boolean);
+                if (derived.length > 0) {
+                    setSelectedMealTypes(derived);
+                }
+            }
         }
     }, [template]);
 
@@ -1341,7 +1451,7 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
             fat: macrosFromKcal.fat,
         };
 
-        onSave(name, icon, macros, mealCount);
+        onSave(name, icon, macros, selectedMealTypes);
     };
 
     const ICONS = ['💪', '💤', '🔥', '🥗', '🍽️', '⚡', '🏋️', '🧘', '📋', '✨'];
@@ -1349,141 +1459,159 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
             <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>⚙️ Editar Tipo de Día</Text>
-                        <TouchableOpacity onPress={onClose}>
-                            <Ionicons name="close" size={24} color="#64748b" />
-                        </TouchableOpacity>
-                    </View>
-
-                    <Text style={styles.modalLabel}>Nombre</Text>
-                    <EnhancedTextInput
-                        containerStyle={styles.modalInputContainer}
-                        style={styles.modalInputText}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Día de Entrenamiento"
-                    />
-
-                    <Text style={styles.modalLabel}>Icono</Text>
-                    <View style={styles.iconRow}>
-                        {ICONS.map(i => (
-                            <TouchableOpacity
-                                key={i}
-                                style={[styles.iconOption, icon === i && styles.iconOptionActive]}
-                                onPress={() => setIcon(i)}
-                            >
-                                <Text style={styles.iconOptionText}>{i}</Text>
+                <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>⚙️ Editar Tipo de Día</Text>
+                            <TouchableOpacity onPress={onClose}>
+                                <Ionicons name="close" size={24} color="#64748b" />
                             </TouchableOpacity>
-                        ))}
-                    </View>
+                        </View>
 
-                    {/* Mode Toggle */}
-                    <Text style={styles.modalLabel}>Método de cálculo</Text>
-                    <View style={styles.modeToggle}>
-                        <TouchableOpacity
-                            style={[styles.modeBtn, mode === 'macros' && styles.modeBtnActive]}
-                            onPress={() => setMode('macros')}
-                        >
-                            <Text style={[styles.modeBtnText, mode === 'macros' && styles.modeBtnTextActive]}>
-                                📊 Macros → Kcal
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.modeBtn, mode === 'kcal' && styles.modeBtnActive]}
-                            onPress={() => setMode('kcal')}
-                        >
-                            <Text style={[styles.modeBtnText, mode === 'kcal' && styles.modeBtnTextActive]}>
-                                🔥 Kcal + %
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
+                        <Text style={styles.modalLabel}>Nombre</Text>
+                        <EnhancedTextInput
+                            containerStyle={styles.modalInputContainer}
+                            style={styles.modalInputText}
+                            value={name}
+                            onChangeText={setName}
+                            placeholder="Día de Entrenamiento"
+                        />
 
-                    {/* Meal Count Selector */}
-                    <Text style={styles.modalLabel}>Número de Comidas</Text>
-                    <View style={styles.mealCountRow}>
-                        {[3, 4, 5, 6].map(count => (
+                        <Text style={styles.modalLabel}>Icono</Text>
+                        <View style={styles.iconRow}>
+                            {ICONS.map(i => (
+                                <TouchableOpacity
+                                    key={i}
+                                    style={[styles.iconOption, icon === i && styles.iconOptionActive]}
+                                    onPress={() => setIcon(i)}
+                                >
+                                    <Text style={styles.iconOptionText}>{i}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Mode Toggle */}
+                        <Text style={styles.modalLabel}>Método de cálculo</Text>
+                        <View style={styles.modeToggle}>
                             <TouchableOpacity
-                                key={count}
-                                style={[styles.mealCountOption, mealCount === count && styles.mealCountOptionActive]}
-                                onPress={() => setMealCount(count)}
+                                style={[styles.modeBtn, mode === 'macros' && styles.modeBtnActive]}
+                                onPress={() => setMode('macros')}
                             >
-                                <Text style={[styles.mealCountText, mealCount === count && styles.mealCountTextActive]}>
-                                    {count}
+                                <Text style={[styles.modeBtnText, mode === 'macros' && styles.modeBtnTextActive]}>
+                                    📊 Macros → Kcal
                                 </Text>
                             </TouchableOpacity>
-                        ))}
-                    </View>
-
-                    {mode === 'macros' ? (
-                        <>
-                            {/* Mode: Macros -> Auto Kcal */}
-                            <View style={styles.calculatedKcalBox}>
-                                <Text style={styles.calculatedKcalLabel}>🔥 Kcal Totales (calculadas)</Text>
-                                <Text style={styles.calculatedKcalValue}>{calculatedKcal}</Text>
-                                <Text style={styles.calculatedKcalFormula}>P×4 + C×4 + G×9</Text>
-                            </View>
-
-                            <View style={styles.macrosRow}>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>Proteína (g)</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={protein} onChangeText={setProtein} keyboardType="numeric" />
-                                </View>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#22c55e' }]}>Carbos (g)</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
-                                </View>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>Grasa (g)</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fat} onChangeText={setFat} keyboardType="numeric" />
-                                </View>
-                            </View>
-                        </>
-                    ) : (
-                        <>
-                            {/* Mode: Kcal + Percentages */}
-                            <View style={styles.kcalInputBox}>
-                                <Text style={styles.kcalInputLabel}>🔥 Kcal Totales</Text>
-                                <EnhancedTextInput
-                                    containerStyle={styles.kcalInputFieldContainer}
-                                    style={styles.kcalInputFieldText}
-                                    value={kcal}
-                                    onChangeText={setKcal}
-                                    keyboardType="numeric"
-                                    placeholder="2000"
-                                />
-                            </View>
-
-                            <Text style={[styles.modalLabel, { marginTop: 8 }]}>Distribución (%)</Text>
-                            <View style={styles.macrosRow}>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>P %</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={proteinPct} onChangeText={setProteinPct} keyboardType="numeric" />
-                                </View>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#22c55e' }]}>C %</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbsPct} onChangeText={setCarbsPct} keyboardType="numeric" />
-                                </View>
-                                <View style={styles.macroInput}>
-                                    <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>G %</Text>
-                                    <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fatPct} onChangeText={setFatPct} keyboardType="numeric" />
-                                </View>
-                            </View>
-
-                            {/* Show calculated grams */}
-                            <View style={styles.calculatedGramsBox}>
-                                <Text style={styles.calculatedGramsText}>
-                                    = P:{macrosFromKcal.protein}g · C:{macrosFromKcal.carbs}g · G:{macrosFromKcal.fat}g
+                            <TouchableOpacity
+                                style={[styles.modeBtn, mode === 'kcal' && styles.modeBtnActive]}
+                                onPress={() => setMode('kcal')}
+                            >
+                                <Text style={[styles.modeBtnText, mode === 'kcal' && styles.modeBtnTextActive]}>
+                                    🔥 Kcal + %
                                 </Text>
-                            </View>
-                        </>
-                    )}
+                            </TouchableOpacity>
+                        </View>
 
-                    <TouchableOpacity style={[styles.modalAddBtn, { backgroundColor: '#3b82f6' }]} onPress={handleSave}>
-                        <Ionicons name="checkmark" size={20} color="#fff" />
-                        <Text style={styles.modalAddBtnText}>Guardar Cambios</Text>
-                    </TouchableOpacity>
+                        {/* Meal Type Selector - Toggle Chips */}
+                        <Text style={styles.modalLabel}>Comidas del día ({selectedMealTypes.length} seleccionadas)</Text>
+                        <View style={styles.mealTypeGrid}>
+                            {ALL_MEAL_TYPES.map(mealType => {
+                                const isSelected = selectedMealTypes.includes(mealType.id);
+                                return (
+                                    <TouchableOpacity
+                                        key={mealType.id}
+                                        style={[
+                                            styles.mealTypeChip,
+                                            isSelected && styles.mealTypeChipActive
+                                        ]}
+                                        onPress={() => toggleMealType(mealType.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text style={styles.mealTypeChipIcon}>{mealType.icon}</Text>
+                                        <Text style={[
+                                            styles.mealTypeChipText,
+                                            isSelected && styles.mealTypeChipTextActive
+                                        ]}>
+                                            {mealType.name}
+                                        </Text>
+                                        {isSelected && (
+                                            <View style={styles.mealTypeCheckmark}>
+                                                <Ionicons name="checkmark" size={12} color="#fff" />
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        {mode === 'macros' ? (
+                            <>
+                                {/* Mode: Macros -> Auto Kcal */}
+                                <View style={styles.calculatedKcalBox}>
+                                    <Text style={styles.calculatedKcalLabel}>🔥 Kcal Totales (calculadas)</Text>
+                                    <Text style={styles.calculatedKcalValue}>{calculatedKcal}</Text>
+                                    <Text style={styles.calculatedKcalFormula}>P×4 + C×4 + G×9</Text>
+                                </View>
+
+                                <View style={styles.macrosRow}>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>Proteína (g)</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={protein} onChangeText={setProtein} keyboardType="numeric" />
+                                    </View>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#22c55e' }]}>Carbos (g)</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
+                                    </View>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>Grasa (g)</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fat} onChangeText={setFat} keyboardType="numeric" />
+                                    </View>
+                                </View>
+                            </>
+                        ) : (
+                            <>
+                                {/* Mode: Kcal + Percentages */}
+                                <View style={styles.kcalInputBox}>
+                                    <Text style={styles.kcalInputLabel}>🔥 Kcal Totales</Text>
+                                    <EnhancedTextInput
+                                        containerStyle={styles.kcalInputFieldContainer}
+                                        style={styles.kcalInputFieldText}
+                                        value={kcal}
+                                        onChangeText={setKcal}
+                                        keyboardType="numeric"
+                                        placeholder="2000"
+                                    />
+                                </View>
+
+                                <Text style={[styles.modalLabel, { marginTop: 8 }]}>Distribución (%)</Text>
+                                <View style={styles.macrosRow}>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#3b82f6' }]}>P %</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={proteinPct} onChangeText={setProteinPct} keyboardType="numeric" />
+                                    </View>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#22c55e' }]}>C %</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={carbsPct} onChangeText={setCarbsPct} keyboardType="numeric" />
+                                    </View>
+                                    <View style={styles.macroInput}>
+                                        <Text style={[styles.macroLabel, { color: '#f59e0b' }]}>G %</Text>
+                                        <EnhancedTextInput containerStyle={styles.macroFieldContainer} style={styles.macroFieldText} value={fatPct} onChangeText={setFatPct} keyboardType="numeric" />
+                                    </View>
+                                </View>
+
+                                {/* Show calculated grams */}
+                                <View style={styles.calculatedGramsBox}>
+                                    <Text style={styles.calculatedGramsText}>
+                                        = P:{macrosFromKcal.protein}g · C:{macrosFromKcal.carbs}g · G:{macrosFromKcal.fat}g
+                                    </Text>
+                                </View>
+                            </>
+                        )}
+
+                        <TouchableOpacity style={[styles.modalAddBtn, { backgroundColor: '#3b82f6' }]} onPress={handleSave}>
+                            <Ionicons name="checkmark" size={20} color="#fff" />
+                            <Text style={styles.modalAddBtnText}>Guardar Cambios</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
                 </View>
             </View>
         </Modal>
@@ -1520,154 +1648,154 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                             return (
                                 <View key={mealDef.id} style={styles.mealRow}>
                                     <View style={styles.mealRowInner}>
-                                    {/* Left Column: Meal Label & Tools */}
-                                    <View style={styles.mealLabelColumn}>
-                                        <View style={styles.mealIconCircle}>
-                                            <Text style={styles.mealIcon}>{mealDef.icon}</Text>
+                                        {/* Left Column: Meal Label & Tools */}
+                                        <View style={styles.mealLabelColumn}>
+                                            <View style={styles.mealIconCircle}>
+                                                <Text style={styles.mealIcon}>{mealDef.icon}</Text>
+                                            </View>
+                                            <Text style={styles.mealName}>{mealDef.name}</Text>
+                                            {/* Time removed as requested */}
+
+                                            {/* Bulk Rename Tools */}
+                                            <View style={styles.bulkToolsContainer}>
+                                                <TouchableOpacity
+                                                    style={styles.bulkToolBtn}
+                                                    onPress={() => onBulkRename(template.id, meal.id, 'weekly')}
+                                                >
+                                                    <Text style={styles.bulkToolText}>📅 Semanal</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={styles.bulkToolBtn}
+                                                    onPress={() => onBulkRename(template.id, meal.id, 'numeric')}
+                                                >
+                                                    <Text style={styles.bulkToolText}>🔢 Numérico</Text>
+                                                </TouchableOpacity>
+                                            </View>
                                         </View>
-                                        <Text style={styles.mealName}>{mealDef.name}</Text>
-                                        {/* Time removed as requested */}
 
-                                        {/* Bulk Rename Tools */}
-                                        <View style={styles.bulkToolsContainer}>
-                                            <TouchableOpacity
-                                                style={styles.bulkToolBtn}
-                                                onPress={() => onBulkRename(template.id, meal.id, 'weekly')}
-                                            >
-                                                <Text style={styles.bulkToolText}>📅 Semanal</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                style={styles.bulkToolBtn}
-                                                onPress={() => onBulkRename(template.id, meal.id, 'numeric')}
-                                            >
-                                                <Text style={styles.bulkToolText}>🔢 Numérico</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
+                                        {/* Right Column: Dynamic Options Grid */}
+                                        <View style={styles.optionsGrid}>
+                                            {options.length > 0 ? (
+                                                options.map((option, idx) => (
+                                                    <View key={option.id} style={styles.optionCard}>
+                                                        {/* Card Header with Editable Title */}
+                                                        <View style={styles.optionHeader}>
+                                                            <EnhancedTextInput
+                                                                containerStyle={styles.optionTitleInputContainer}
+                                                                style={styles.optionTitleInputText}
+                                                                value={option.name}
+                                                                onChangeText={(text) => onUpdateOptionName(template.id, meal.id, option.id, text)}
+                                                                placeholder={`Opción ${idx + 1}`}
+                                                                placeholderTextColor="#94a3b8"
+                                                            />
+                                                            {/* 'A' badge removed */}
+                                                        </View>
 
-                                    {/* Right Column: Dynamic Options Grid */}
-                                    <View style={styles.optionsGrid}>
-                                        {options.length > 0 ? (
-                                            options.map((option, idx) => (
-                                                <View key={option.id} style={styles.optionCard}>
-                                                    {/* Card Header with Editable Title */}
-                                                    <View style={styles.optionHeader}>
-                                                        <EnhancedTextInput
-                                                            containerStyle={styles.optionTitleInputContainer}
-                                                            style={styles.optionTitleInputText}
-                                                            value={option.name}
-                                                            onChangeText={(text) => onUpdateOptionName(template.id, meal.id, option.id, text)}
-                                                            placeholder={`Opción ${idx + 1}`}
-                                                            placeholderTextColor="#94a3b8"
-                                                        />
-                                                        {/* 'A' badge removed */}
-                                                    </View>
+                                                        {/* Card Body: Rich Ingredient Stack */}
+                                                        <TouchableOpacity
+                                                            style={styles.richStackContainer}
+                                                            onPress={() => onAddFood(template.id, meal.id, option.id, mealDef.name)} // Pass mealDef.name
+                                                        >
+                                                            {option.foods && option.foods.length > 0 ? (
+                                                                <>
+                                                                    {option.foods.slice(0, 4).map((food, fIdx) => {
+                                                                        const isRecipe = food.isRecipe || food.isComposite;
+                                                                        const hasSubIngredients = isRecipe && food.subIngredients?.length > 0;
 
-                                                    {/* Card Body: Rich Ingredient Stack */}
-                                                    <TouchableOpacity
-                                                        style={styles.richStackContainer}
-                                                        onPress={() => onAddFood(template.id, meal.id, option.id, mealDef.name)} // Pass mealDef.name
-                                                    >
-                                                        {option.foods && option.foods.length > 0 ? (
-                                                            <>
-                                                                {option.foods.slice(0, 4).map((food, fIdx) => {
-                                                                    const isRecipe = food.isRecipe || food.isComposite;
-                                                                    const hasSubIngredients = isRecipe && food.subIngredients?.length > 0;
+                                                                        return (
+                                                                            <View key={fIdx} style={styles.richRow}>
+                                                                                {/* Left: Image or Fallback */}
+                                                                                {food.image ? (
+                                                                                    <View style={{ position: 'relative' }}>
+                                                                                        <Image
+                                                                                            source={{ uri: food.image }}
+                                                                                            style={styles.foodThumb}
+                                                                                            resizeMode="cover"
+                                                                                        />
+                                                                                        {isRecipe && (
+                                                                                            <View style={styles.recipeBadge}>
+                                                                                                <Ionicons name="restaurant" size={10} color="#fff" />
+                                                                                            </View>
+                                                                                        )}
+                                                                                    </View>
+                                                                                ) : (
+                                                                                    <View style={styles.foodThumbPlaceholder}>
+                                                                                        <Ionicons name={isRecipe ? "restaurant" : "restaurant-outline"} size={16} color={isRecipe ? "#8b5cf6" : "#94a3b8"} />
+                                                                                    </View>
+                                                                                )}
 
-                                                                    return (
-                                                                        <View key={fIdx} style={styles.richRow}>
-                                                                            {/* Left: Image or Fallback */}
-                                                                            {food.image ? (
-                                                                                <View style={{ position: 'relative' }}>
-                                                                                    <Image
-                                                                                        source={{ uri: food.image }}
-                                                                                        style={styles.foodThumb}
-                                                                                        resizeMode="cover"
-                                                                                    />
-                                                                                    {isRecipe && (
-                                                                                        <View style={styles.recipeBadge}>
-                                                                                            <Ionicons name="restaurant" size={10} color="#fff" />
-                                                                                        </View>
+                                                                                {/* Right: Details */}
+                                                                                <View style={styles.foodInfo}>
+                                                                                    <Text style={[styles.foodName, isRecipe && { color: '#8b5cf6' }]} numberOfLines={1}>
+                                                                                        {food.name} {isRecipe && '🍳'}
+                                                                                    </Text>
+                                                                                    <Text style={styles.foodMeta}>
+                                                                                        {food.amount} {food.unit}
+                                                                                        {/* Always show calories if > 0 */}
+                                                                                        {food.kcal > 0 && ` • 🔥 ${Math.round(food.kcal)}`}
+                                                                                    </Text>
+                                                                                    {/* Show subIngredients summary */}
+                                                                                    {hasSubIngredients && (
+                                                                                        <Text style={styles.subIngredientsSummary}>
+                                                                                            ↳ {food.subIngredients.slice(0, 3).map(s => s.name).join(', ')}
+                                                                                            {food.subIngredients.length > 3 && ` +${food.subIngredients.length - 3}`}
+                                                                                        </Text>
                                                                                     )}
                                                                                 </View>
-                                                                            ) : (
-                                                                                <View style={styles.foodThumbPlaceholder}>
-                                                                                    <Ionicons name={isRecipe ? "restaurant" : "restaurant-outline"} size={16} color={isRecipe ? "#8b5cf6" : "#94a3b8"} />
-                                                                                </View>
-                                                                            )}
-
-                                                                            {/* Right: Details */}
-                                                                            <View style={styles.foodInfo}>
-                                                                                <Text style={[styles.foodName, isRecipe && { color: '#8b5cf6' }]} numberOfLines={1}>
-                                                                                    {food.name} {isRecipe && '🍳'}
-                                                                                </Text>
-                                                                                <Text style={styles.foodMeta}>
-                                                                                    {food.amount} {food.unit}
-                                                                                    {/* Always show calories if > 0 */}
-                                                                                    {food.kcal > 0 && ` • 🔥 ${Math.round(food.kcal)}`}
-                                                                                </Text>
-                                                                                {/* Show subIngredients summary */}
-                                                                                {hasSubIngredients && (
-                                                                                    <Text style={styles.subIngredientsSummary}>
-                                                                                        ↳ {food.subIngredients.slice(0, 3).map(s => s.name).join(', ')}
-                                                                                        {food.subIngredients.length > 3 && ` +${food.subIngredients.length - 3}`}
-                                                                                    </Text>
-                                                                                )}
                                                                             </View>
-                                                                        </View>
-                                                                    );
-                                                                })}
+                                                                        );
+                                                                    })}
 
-                                                                {/* Overflow Footer */}
-                                                                {option.foods.length > 4 && (
-                                                                    <View style={styles.overflowFooter}>
-                                                                        <Text style={styles.overflowText}>
-                                                                            + {option.foods.length - 4} ingredientes menores...
-                                                                        </Text>
-                                                                    </View>
-                                                                )}
-                                                            </>
-                                                        ) : (
-                                                            <View style={styles.emptyStackPlaceholder}>
-                                                                <Ionicons name="basket-outline" size={24} color="#e2e8f0" />
-                                                                <Text style={styles.emptyOptionText}>Añadir alimentos</Text>
+                                                                    {/* Overflow Footer */}
+                                                                    {option.foods.length > 4 && (
+                                                                        <View style={styles.overflowFooter}>
+                                                                            <Text style={styles.overflowText}>
+                                                                                + {option.foods.length - 4} ingredientes menores...
+                                                                            </Text>
+                                                                        </View>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <View style={styles.emptyStackPlaceholder}>
+                                                                    <Ionicons name="basket-outline" size={24} color="#e2e8f0" />
+                                                                    <Text style={styles.emptyOptionText}>Añadir alimentos</Text>
+                                                                </View>
+                                                            )}
+                                                        </TouchableOpacity>
+
+                                                        {/* Card Footer: Macros Totals */}
+                                                        {option.foods && option.foods.length > 0 && (
+                                                            <View style={styles.optionMacros}>
+                                                                {/* Calculate totals on the fly */}
+                                                                {(() => {
+                                                                    const totals = option.foods.reduce((acc, f) => ({
+                                                                        kcal: acc.kcal + (f.kcal || 0),
+                                                                        p: acc.p + (f.protein || 0),
+                                                                        c: acc.c + (f.carbs || 0),
+                                                                        g: acc.g + (f.fat || 0),
+                                                                    }), { kcal: 0, p: 0, c: 0, g: 0 });
+
+                                                                    return (
+                                                                        <>
+                                                                            <Text style={styles.totalKcalText}>{Math.round(totals.kcal)} kcal</Text>
+                                                                            <View style={styles.verticalDivider} />
+                                                                            <Text style={[styles.miniMacroText, { color: '#3b82f6' }]}>P:{Math.round(totals.p)}</Text>
+                                                                            <Text style={[styles.miniMacroText, { color: '#22c55e' }]}>C:{Math.round(totals.c)}</Text>
+                                                                            <Text style={[styles.miniMacroText, { color: '#f59e0b' }]}>G:{Math.round(totals.g)}</Text>
+                                                                        </>
+                                                                    );
+                                                                })()}
                                                             </View>
                                                         )}
-                                                    </TouchableOpacity>
-
-                                                    {/* Card Footer: Macros Totals */}
-                                                    {option.foods && option.foods.length > 0 && (
-                                                        <View style={styles.optionMacros}>
-                                                            {/* Calculate totals on the fly */}
-                                                            {(() => {
-                                                                const totals = option.foods.reduce((acc, f) => ({
-                                                                    kcal: acc.kcal + (f.kcal || 0),
-                                                                    p: acc.p + (f.protein || 0),
-                                                                    c: acc.c + (f.carbs || 0),
-                                                                    g: acc.g + (f.fat || 0),
-                                                                }), { kcal: 0, p: 0, c: 0, g: 0 });
-
-                                                                return (
-                                                                    <>
-                                                                        <Text style={styles.totalKcalText}>{Math.round(totals.kcal)} kcal</Text>
-                                                                        <View style={styles.verticalDivider} />
-                                                                        <Text style={[styles.miniMacroText, { color: '#3b82f6' }]}>P:{Math.round(totals.p)}</Text>
-                                                                        <Text style={[styles.miniMacroText, { color: '#22c55e' }]}>C:{Math.round(totals.c)}</Text>
-                                                                        <Text style={[styles.miniMacroText, { color: '#f59e0b' }]}>G:{Math.round(totals.g)}</Text>
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                        </View>
-                                                    )}
+                                                    </View>
+                                                ))
+                                            ) : (
+                                                <View style={styles.emptyMealPlaceholder}>
+                                                    <Text style={styles.emptyMealText}>Sin opciones configuradas</Text>
                                                 </View>
-                                            ))
-                                        ) : (
-                                            <View style={styles.emptyMealPlaceholder}>
-                                                <Text style={styles.emptyMealText}>Sin opciones configuradas</Text>
-                                            </View>
-                                        )}
+                                            )}
 
-                                    </View>
+                                        </View>
                                     </View>
 
                                     {/* 💊 Supplements (if any) - full width below options */}
@@ -2432,32 +2560,48 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#0369a1',
     },
-    // Meal Count Selector
-    mealCountRow: {
+    // Meal Type Selector (Toggle Chips)
+    mealTypeGrid: {
         flexDirection: 'row',
-        gap: 12,
+        flexWrap: 'wrap',
+        gap: 8,
         marginBottom: 16,
     },
-    mealCountOption: {
-        flex: 1,
-        backgroundColor: '#f1f5f9',
-        borderRadius: 8,
-        paddingVertical: 10,
+    mealTypeChip: {
+        flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#f1f5f9',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 20,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderWidth: 1.5,
+        borderColor: '#e2e8f0',
+        gap: 6,
     },
-    mealCountOptionActive: {
+    mealTypeChipActive: {
         backgroundColor: '#dbeafe',
         borderColor: '#3b82f6',
     },
-    mealCountText: {
+    mealTypeChipIcon: {
         fontSize: 16,
-        fontWeight: '700',
+    },
+    mealTypeChipText: {
+        fontSize: 13,
+        fontWeight: '600',
         color: '#64748b',
     },
-    mealCountTextActive: {
-        color: '#3b82f6',
+    mealTypeChipTextActive: {
+        color: '#1e40af',
+        fontWeight: '700',
+    },
+    mealTypeCheckmark: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: '#3b82f6',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 2,
     },
     modalAddBtn: {
         flexDirection: 'row',

@@ -8,7 +8,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import CoachHeader from '../components/CoachHeader';
-import FeedbackChatModal from '../../../components/FeedbackChatModal';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
 // Componentes mejorados para iOS
@@ -94,9 +93,6 @@ export default function ClientsScreen() {
     // Expanded State
     const [expandedClients, setExpandedClients] = useState({});
 
-    // Feedback modal state
-    const [chatModalVisible, setChatModalVisible] = useState(false);
-    const [selectedClient, setSelectedClient] = useState(null);
     const [notificationDrawerVisible, setNotificationDrawerVisible] = useState(false);
 
     // Event Modal State
@@ -175,10 +171,32 @@ export default function ClientsScreen() {
         }));
     }, []);
 
-    const handleAction = (action, client) => {
+    const handleAction = async (action, client) => {
         if (action === 'chat') {
-            setSelectedClient({ _id: client._id, nombre: client.nombre });
-            setChatModalVisible(true);
+            try {
+                const res = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ clientId: client._id }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    router.push({
+                        pathname: '/(app)/chat/[conversationId]',
+                        params: {
+                            conversationId: data.conversation._id,
+                            displayName: client.nombre,
+                            isTrainerChat: 'true',
+                            type: 'trainer',
+                        },
+                    });
+                }
+            } catch (error) {
+                console.error('[ClientsScreen] Error opening chat:', error);
+            }
         } else if (action === 'edit') {
             router.push({
                 pathname: '/(coach)/client-detail/[clientId]',
@@ -398,6 +416,7 @@ export default function ClientsScreen() {
                         data={filteredClients}
                         extraData={expandedClients}
                         keyExtractor={item => item._id}
+                        style={{ flex: 1 }}
                         renderItem={({ item }) => (
                             <ClientListRow
                                 client={item}
@@ -446,13 +465,6 @@ export default function ClientsScreen() {
             </View >
 
             {/* Modals */}
-            < FeedbackChatModal
-                visible={chatModalVisible}
-                onClose={() => setChatModalVisible(false)
-                }
-                client={selectedClient}
-            />
-
             <CreateEventModal
                 visible={createEventModalVisible}
                 clients={clients}

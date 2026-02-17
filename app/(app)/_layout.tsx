@@ -292,6 +292,9 @@ export default function RootLayout() {
                           animation: 'slide_from_right',
                         }}
                       />
+                      <Stack.Screen name="nutricion" options={{ headerShown: false, gestureEnabled: true, animation: 'slide_from_right' }} />
+                      <Stack.Screen name="seguimiento" options={{ headerShown: false, gestureEnabled: true, animation: 'slide_from_right' }} />
+                      <Stack.Screen name="perfil" options={{ headerShown: false, gestureEnabled: true, animation: 'slide_from_right' }} />
                       <Stack.Screen name="perfil/evolucion" />
                       <Stack.Screen name="videos" />
 

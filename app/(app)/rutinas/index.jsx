@@ -91,7 +91,8 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
   folders,
   selectedFolder,
   onFolderSelect,
-  onCreateFolder
+  onCreateFolder,
+  isCliente
 }) {
   return (
     <View style={[styles.header, {
@@ -105,11 +106,13 @@ const ListHeaderComponent = React.memo(function ListHeaderComponent({
           <Text style={styles.buttonText}>Nueva Rutina Manual</Text>
         </TouchableOpacity>
 
-        {/* Botón IA PRO - disponible para todos */}
-        <TouchableOpacity style={[styles.button, { backgroundColor: theme.premium }]} onPress={onImportIA}>
-          <Ionicons name="sparkles" size={18} color="#fff" />
-          <Text style={styles.buttonText}>IA PRO</Text>
-        </TouchableOpacity>
+        {/* Botón IA PRO - oculto para clientes */}
+        {!isCliente && (
+          <TouchableOpacity style={[styles.button, { backgroundColor: theme.premium }]} onPress={onImportIA}>
+            <Ionicons name="sparkles" size={18} color="#fff" />
+            <Text style={styles.buttonText}>IA PRO</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Search Bar */}
@@ -730,6 +733,7 @@ export default function RutinasScreen() {
             selectedFolder={selectedFolder}
             onFolderSelect={setSelectedFolder}
             onCreateFolder={() => setFolderModalVisible(true)}
+            isCliente={tipoUsuario === PLAN.CLIENTE}
           />
         }
 

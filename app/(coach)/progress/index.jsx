@@ -275,6 +275,7 @@ export default function ProgressDashboard() {
             <FlatList
                 data={filteredClients}
                 keyExtractor={(item) => item._id}
+                style={{ flex: 1 }}
                 renderItem={({ item }) => (
                     <ProgressListRow
                         client={item}
