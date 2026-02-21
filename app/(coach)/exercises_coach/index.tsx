@@ -358,7 +358,7 @@ export default function ExercisesCoach() {
     };
 
     // Open modal for editing own exercise
-    const handleEditExercise = (exercise: Exercise) => {
+    const handleEditExercise = useCallback((exercise: Exercise) => {
         setIsEditMode(true);
         setEditingExercise(exercise);
         setFormName(exercise.name);
@@ -374,10 +374,10 @@ export default function ExercisesCoach() {
         setFormImageUrl(exercise.imagen_ejercicio_ID || '');
         setSearchedImages([]);
         setModalVisible(true);
-    };
+    }, []);
 
     // Open modal for forking official exercise
-    const handleForkExercise = (exercise: Exercise) => {
+    const handleForkExercise = useCallback((exercise: Exercise) => {
         setIsEditMode(false);
         setEditingExercise(exercise);
         setFormName(exercise.name);
@@ -389,7 +389,18 @@ export default function ExercisesCoach() {
         setFormImageUrl(exercise.imagen_ejercicio_ID || '');
         setSearchedImages([]);
         setModalVisible(true);
-    };
+    }, []);
+
+    // Memoized renderItem to prevent re-creation on every render
+    const renderItem = useCallback(({ item }: { item: Exercise }) => (
+        <ExerciseListCard
+            item={item}
+            isLargeScreen={isLargeScreen}
+            adminTrainerId={ADMIN_TRAINER_ID}
+            onEdit={handleEditExercise}
+            onFork={handleForkExercise}
+        />
+    ), [isLargeScreen, handleEditExercise, handleForkExercise]);
 
     // Save exercise using upsert endpoint
     const handleSave = async () => {
@@ -515,15 +526,7 @@ export default function ExercisesCoach() {
             ) : (
                 <FlatList
                     data={filteredExercises}
-                    renderItem={({ item }) => (
-                        <ExerciseListCard
-                            item={item}
-                            isLargeScreen={isLargeScreen}
-                            adminTrainerId={ADMIN_TRAINER_ID}
-                            onEdit={handleEditExercise}
-                            onFork={handleForkExercise}
-                        />
-                    )}
+                    renderItem={renderItem}
                     keyExtractor={(item) => item._id}
                     style={{ flex: 1 }}
                     contentContainerStyle={styles.listContent}

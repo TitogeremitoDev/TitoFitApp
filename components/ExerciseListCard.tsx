@@ -35,7 +35,8 @@ const getYouTubeId = (urlOrId: string) => {
 
 const getYouTubeThumb = (id: string) => `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
 
-export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) {
+// Optimized with React.memo to prevent unnecessary re-renders when parent list updates
+export default React.memo(function ExerciseListCard({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) {
     const isCustom = item.id_trainer && item.id_trainer !== adminTrainerId;
     const videoId = getYouTubeId(item.videoId || '');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -213,7 +214,7 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
             </View>
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     exerciseCard: {
