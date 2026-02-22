@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubePlayer from "react-native-youtube-iframe";
@@ -35,7 +35,7 @@ const getYouTubeId = (urlOrId: string) => {
 
 const getYouTubeThumb = (id: string) => `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
 
-export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) {
+const ExerciseListCard = memo(({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) => {
     const isCustom = item.id_trainer && item.id_trainer !== adminTrainerId;
     const videoId = getYouTubeId(item.videoId || '');
     const [isPlaying, setIsPlaying] = useState(false);
@@ -213,7 +213,11 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
             </View>
         </View>
     );
-}
+});
+
+ExerciseListCard.displayName = 'ExerciseListCard';
+
+export default ExerciseListCard;
 
 const styles = StyleSheet.create({
     exerciseCard: {
