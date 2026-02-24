@@ -16,10 +16,10 @@ import {
     Alert,
     ActivityIndicator,
     Platform,
-    useWindowDimensions,
     KeyboardAvoidingView,
     Image
 } from 'react-native';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioRecorder, RecordingPresets, AudioModule, setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import Video from 'react-native-video';
@@ -49,7 +49,7 @@ export default function VideoFeedbackResponseModal({
     const { token } = useAuth();
     const { addTechnicalNote } = useFeedbackDraft();
     const insets = useSafeAreaInsets();
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
     const isWeb = Platform.OS === 'web';
     const isLargeScreen = windowWidth > 768; // Desktop/tablet
 
@@ -65,6 +65,8 @@ export default function VideoFeedbackResponseModal({
     const [mediaUrl, setMediaUrl] = useState(null);
     const [loadingMedia, setLoadingMedia] = useState(false); // ⚠️ Restored
     const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+    const [mediaExpired, setMediaExpired] = useState(false);
+    const [mediaExpiredMessage, setMediaExpiredMessage] = useState('');
 
     // 🆕 AI Transcription State
     const [aiExpanded, setAiExpanded] = useState(initialAiExpanded);
@@ -123,6 +125,8 @@ export default function VideoFeedbackResponseModal({
             }
             // 🆕 Clear media and audio state on close
             setMediaUrl(null);
+            setMediaExpired(false);
+            setMediaExpiredMessage('');
             setIsPlayingAthleteAudio(false);
             setAudioDuration(0);
             setAiExpanded(false);
@@ -158,8 +162,12 @@ export default function VideoFeedbackResponseModal({
                 startPolling(feedback._id);
             }
 
-            if (data.mediaUrl) {
-                // console.log('[MediaModal] URL cargada:', data.mediaType, data.mediaUrl.slice(0, 100)); // Cleanup log
+            // Verificar si el media ha expirado/desaparecido de R2
+            if (data.mediaExpired) {
+                setMediaExpired(true);
+                setMediaExpiredMessage(data.mediaExpiredMessage || 'Este archivo ya no está disponible');
+                setMediaUrl(null);
+            } else if (data.mediaUrl) {
                 setMediaUrl(data.mediaUrl);
             }
         } catch (error) {
@@ -509,6 +517,30 @@ export default function VideoFeedbackResponseModal({
                                     <View style={styles.mediaLoading}>
                                         <ActivityIndicator size="large" color="#4361ee" />
                                         <Text style={styles.mediaLoadingText}>Cargando media...</Text>
+                                    </View>
+                                ) : mediaExpired ? (
+                                    <View style={styles.mediaExpiredContainer}>
+                                        <View style={styles.mediaExpiredIconWrap}>
+                                            <Ionicons
+                                                name={feedback.mediaType === 'photo' ? 'image-outline' : feedback.mediaType === 'audio' ? 'mic-off-outline' : 'videocam-off-outline'}
+                                                size={40}
+                                                color="#f59e0b"
+                                            />
+                                        </View>
+                                        <Text style={styles.mediaExpiredTitle}>
+                                            {feedback.mediaType === 'photo' ? '📷 Foto no disponible' :
+                                                feedback.mediaType === 'audio' ? '🎤 Audio no disponible' :
+                                                    '📹 Video no disponible'}
+                                        </Text>
+                                        <Text style={styles.mediaExpiredText}>
+                                            {mediaExpiredMessage}
+                                        </Text>
+                                        <View style={styles.mediaExpiredNote}>
+                                            <Ionicons name="information-circle" size={14} color="#92400e" />
+                                            <Text style={styles.mediaExpiredNoteText}>
+                                                El archivo fue eliminado del almacenamiento pero el registro se mantiene
+                                            </Text>
+                                        </View>
                                     </View>
                                 ) : mediaUrl ? (
                                     <>
@@ -1161,6 +1193,53 @@ const styles = StyleSheet.create({
     mediaPlaceholderText: {
         color: '#666',
         fontSize: 14,
+    },
+    // Media expired/deleted from R2
+    mediaExpiredContainer: {
+        padding: 24,
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: '#fef3c7',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#fbbf24',
+    },
+    mediaExpiredIconWrap: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: '#fffbeb',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fbbf24',
+    },
+    mediaExpiredTitle: {
+        color: '#92400e',
+        fontSize: 16,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    mediaExpiredText: {
+        color: '#a16207',
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 18,
+    },
+    mediaExpiredNote: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: '#fde68a',
+        borderRadius: 8,
+    },
+    mediaExpiredNoteText: {
+        color: '#92400e',
+        fontSize: 11,
+        flex: 1,
     },
     audioPreview: {
         padding: 40,

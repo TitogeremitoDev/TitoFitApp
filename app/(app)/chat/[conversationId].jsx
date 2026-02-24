@@ -3,7 +3,7 @@
  * Reutiliza lógica similar a FeedbackChatModal pero para conversaciones sociales
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -551,7 +551,7 @@ const MessageBubble = ({ message, isOwn, isTrainerChat, showSender, theme, isDar
 
 export default function ConversationScreen() {
     const router = useRouter();
-    const { conversationId, displayName, isTrainerChat, type } = useLocalSearchParams();
+    const { conversationId, displayName, displayImage, isTrainerChat, type } = useLocalSearchParams();
     const { token, user } = useAuth();
     const { chatTheme, fontSizeValue } = useChatTheme();
     const isDark = chatTheme.isDark;
@@ -585,10 +585,14 @@ export default function ConversationScreen() {
         { key: 'seguimiento', label: 'Seguimiento', icon: 'calendar-outline', color: '#f59e0b' }
     ];
 
-    // Filter messages by selected category
-    const filteredMessages = selectedCategory === 'all'
-        ? messages
-        : messages.filter(m => m.type === selectedCategory);
+    // Filter messages by selected category (memoized to avoid array copies on every render)
+    const filteredMessages = useMemo(() => {
+        const filtered = selectedCategory === 'all'
+            ? messages
+            : messages.filter(m => m.type === selectedCategory);
+        // Pre-reverse for inverted FlatList (single copy instead of per-render)
+        return [...filtered].reverse();
+    }, [messages, selectedCategory]);
 
     // 🆕 Preview Logic
     const [previewModalVisible, setPreviewModalVisible] = useState(false);
@@ -973,8 +977,9 @@ export default function ConversationScreen() {
                         // Actualizar si hay diferencia en cantidad o en el último mensaje
                         if (newCount !== currentCount || lastNewId !== lastCurrentId) {
                             console.log('[Chat] ✅ Actualizando de', currentCount, 'a', newCount);
-                            // Con inverted=true, nuevos mensajes aparecen automáticamente
-                            return uniqueMessages;
+                            // Cap a 150 mensajes para evitar WatchdogTermination por RAM
+                            const capped = uniqueMessages.length > 150 ? uniqueMessages.slice(-150) : uniqueMessages;
+                            return capped;
                         }
                         return currentMessages;
                     });
@@ -1049,7 +1054,10 @@ export default function ConversationScreen() {
             const data = await res.json();
 
             if (data.success) {
-                setMessages(prev => [...prev, data.message]);
+                setMessages(prev => {
+                    const updated = [...prev, data.message];
+                    return updated.length > 150 ? updated.slice(-150) : updated;
+                });
                 setNewMessage('');
                 setMessageType('general');
                 setAttachment(null); // Clear attachment
@@ -1076,6 +1084,21 @@ export default function ConversationScreen() {
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={24} color={chatTheme.text} />
                 </TouchableOpacity>
+
+                {/* Avatar */}
+                <View style={[styles.headerAvatar, { backgroundColor: chatTheme.textTertiary, overflow: 'hidden' }]}>
+                    {displayImage ? (
+                        <Image
+                            source={{ uri: displayImage }}
+                            style={{ width: '100%', height: '100%', borderRadius: 18 }}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Text style={styles.headerAvatarText}>
+                            {displayName?.charAt(0)?.toUpperCase() || '?'}
+                        </Text>
+                    )}
+                </View>
 
                 <View style={styles.headerInfo}>
                     <Text style={[styles.headerTitle, { color: chatTheme.text }]} numberOfLines={1}>
@@ -1120,9 +1143,9 @@ export default function ConversationScreen() {
                 ) : (
                     <FlatList
                         ref={flatListRef}
-                        data={[...filteredMessages].reverse()}
+                        data={filteredMessages}
                         inverted={true}
-                        keyExtractor={(item, idx) => item._id || `msg-${idx}-${Date.now()}`}
+                        keyExtractor={(item, idx) => item._id || `msg-${idx}`}
                         renderItem={({ item }) => (
                             <MessageBubble
                                 message={item}
@@ -1144,7 +1167,10 @@ export default function ConversationScreen() {
                         contentContainerStyle={styles.messagesList}
                         keyboardShouldPersistTaps="handled"
                         keyboardDismissMode="interactive"
-                        removeClippedSubviews={false}
+                        removeClippedSubviews={true}
+                        maxToRenderPerBatch={10}
+                        windowSize={10}
+                        initialNumToRender={20}
                         ListEmptyComponent={
                             <View style={styles.emptyMessages}>
                                 <Ionicons name="chatbubble-ellipses-outline" size={48} color={chatTheme.textTertiary} />
@@ -1843,8 +1869,21 @@ const styles = StyleSheet.create({
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        marginLeft: 12,
+        marginLeft: 8,
         gap: 8
+    },
+    headerAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 8
+    },
+    headerAvatarText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#fff'
     },
     headerTitle: {
         fontSize: 18,

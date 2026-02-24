@@ -1,19 +1,20 @@
 /* ClientSidebar.jsx - Enhanced collapsible sidebar with search, sorting, hover tooltips */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
+    FlatList,
     ScrollView,
     TouchableOpacity,
     Pressable,
-    Image,
     ActivityIndicator,
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
+import AvatarWithInitials from '../shared/AvatarWithInitials';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STATUS HELPERS
@@ -107,14 +108,48 @@ export default function ClientSidebar({
         return { criticalClients: critical, warningClients: warning, activeClients: active };
     }, [sortedClients, sortBy]);
 
-    const renderClientItem = (client) => {
+    // Build flat list data with section headers for urgency mode
+    const flatListData = useMemo(() => {
+        if (sortBy !== 'urgency') return sortedClients;
+
+        const data = [];
+        if (criticalClients.length > 0) {
+            data.push({ _type: 'header', key: 'h-critical', label: '⚠️ Atención' });
+            data.push(...criticalClients);
+        }
+        if (warningClients.length > 0) {
+            if (criticalClients.length > 0) data.push({ _type: 'divider', key: 'd-warning' });
+            data.push(...warningClients);
+        }
+        if (activeClients.length > 0) {
+            if (criticalClients.length > 0 || warningClients.length > 0) data.push({ _type: 'divider', key: 'd-active' });
+            data.push(...activeClients);
+        }
+        return data;
+    }, [sortBy, sortedClients, criticalClients, warningClients, activeClients]);
+
+    const renderClientItem = useCallback(({ item: client }) => {
+        // Section header
+        if (client._type === 'header') {
+            if (isCollapsed) return null;
+            return (
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{client.label}</Text>
+                </View>
+            );
+        }
+        // Divider
+        if (client._type === 'divider') {
+            if (isCollapsed) return null;
+            return <View style={styles.sectionDivider} />;
+        }
+
         const isActive = client._id === currentClientId;
-        const isHovered = hoveredClientId === client._id;
         const statusConfig = STATUS_CONFIG[client.status] || STATUS_CONFIG.active;
 
         return (
             <Pressable
-                key={client._id}
+                focusable={false}
                 style={[{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -126,30 +161,16 @@ export default function ClientSidebar({
                 },
                 isActive && styles.clientItemActive,
                 isCollapsed && styles.clientItemCollapsed,
-                isHovered && styles.clientItemHovered,
                 ]}
                 onPress={() => onClientSelect(client)}
-                onHoverIn={() => setHoveredClientId(client._id)}
-                onHoverOut={() => setHoveredClientId(null)}
             >
                 {/* Avatar with status indicator */}
                 <View style={styles.avatarWrapper}>
-                    {client.avatarUrl ? (
-                        <Image
-                            source={{ uri: client.avatarUrl }}
-                            style={[styles.avatar, isActive && styles.avatarActive]}
-                        />
-                    ) : (
-                        <View style={[styles.avatarPlaceholder, isActive && styles.avatarActive]}>
-                            <Ionicons
-                                name="person"
-                                size={isCollapsed ? 18 : 20}
-                                color="#94a3b8"
-                            />
-                        </View>
-                    )}
-
-                    {/* Status dot */}
+                    <AvatarWithInitials
+                        name={client.nombre}
+                        avatarUrl={client.avatarUrl}
+                        size={isCollapsed ? 28 : 32}
+                    />
                     <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
                 </View>
 
@@ -170,18 +191,11 @@ export default function ClientSidebar({
                         </Text>
                     </View>
                 )}
-
-                {/* Hover tooltip (web only) */}
-                {Platform.OS === 'web' && isHovered && !isCollapsed && client.statusLabel && (
-                    <View style={styles.tooltip}>
-                        <Text style={styles.tooltipText}>
-                            {client.nombre}: {client.statusLabel}
-                        </Text>
-                    </View>
-                )}
             </Pressable>
         );
-    };
+    }, [currentClientId, isCollapsed, onClientSelect]);
+
+    const keyExtractor = useCallback((item) => item._id || item.key, []);
 
     if (isLoading) {
         return (
@@ -257,59 +271,43 @@ export default function ClientSidebar({
                 </View>
             )}
 
-            {/* Client list */}
-            <ScrollView
-                style={styles.clientList}
-                showsVerticalScrollIndicator={false}
-            >
-                {sortBy === 'urgency' ? (
-                    <>
-                        {/* CRITICAL Section */}
-                        {criticalClients.length > 0 && (
-                            <>
-                                {!isCollapsed && (
-                                    <View style={styles.sectionHeader}>
-                                        <Text style={styles.sectionTitle}>⚠️ Atención</Text>
-                                    </View>
-                                )}
-                                {criticalClients.map(renderClientItem)}
-                            </>
-                        )}
-
-                        {/* WARNING Section */}
-                        {warningClients.length > 0 && (
-                            <>
-                                {!isCollapsed && criticalClients.length > 0 && (
-                                    <View style={styles.sectionDivider} />
-                                )}
-                                {warningClients.map(renderClientItem)}
-                            </>
-                        )}
-
-                        {/* ACTIVE Section */}
-                        {activeClients.length > 0 && (
-                            <>
-                                {!isCollapsed && (criticalClients.length > 0 || warningClients.length > 0) && (
-                                    <View style={styles.sectionDivider} />
-                                )}
-                                {activeClients.map(renderClientItem)}
-                            </>
-                        )}
-                    </>
-                ) : (
-                    // Simple list for name/date sorting
-                    sortedClients.map(renderClientItem)
-                )}
-
-                {/* Empty state */}
-                {sortedClients.length === 0 && (
-                    <View style={styles.emptyState}>
-                        <Text style={styles.emptyText}>
-                            {searchQuery ? 'Sin resultados' : 'Sin clientes'}
-                        </Text>
-                    </View>
-                )}
-            </ScrollView>
+            {/* Client list - ScrollView on web (avoids non-passive wheel handler from FlatList), FlatList on native */}
+            {Platform.OS === 'web' ? (
+                <ScrollView style={styles.clientList} showsVerticalScrollIndicator={false}>
+                    {flatListData.length > 0 ? (
+                        flatListData.map((item, index) => (
+                            <React.Fragment key={keyExtractor(item, index)}>
+                                {renderClientItem({ item, index })}
+                            </React.Fragment>
+                        ))
+                    ) : (
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyText}>
+                                {searchQuery ? 'Sin resultados' : 'Sin clientes'}
+                            </Text>
+                        </View>
+                    )}
+                </ScrollView>
+            ) : (
+                <FlatList
+                    style={styles.clientList}
+                    data={flatListData}
+                    renderItem={renderClientItem}
+                    keyExtractor={keyExtractor}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={5}
+                    windowSize={5}
+                    removeClippedSubviews
+                    ListEmptyComponent={
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyText}>
+                                {searchQuery ? 'Sin resultados' : 'Sin clientes'}
+                            </Text>
+                        </View>
+                    }
+                />
+            )}
 
             {/* Footer with count */}
             {!isCollapsed && (

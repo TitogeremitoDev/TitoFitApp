@@ -9,7 +9,8 @@
  */
 
 import React from 'react';
-import { View, Text, Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
+import { useStableWindowDimensions } from '../src/hooks/useStableBreakpoint';
 import { Link } from 'expo-router';
 import ActionButton from './ActionButton';
 
@@ -31,7 +32,7 @@ export default function HomeMobileLayout({
     seguimientoBadgeTextStyle,
     seguimientoBtnGoldenStyle,
 }) {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
 
     // Colores glassmorphism
     const glassCardBg = isDark

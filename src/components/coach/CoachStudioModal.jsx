@@ -13,7 +13,6 @@ import {
     Pressable,
     Animated,
     Easing,
-    useWindowDimensions,
     TouchableOpacity,
     SafeAreaView,
     ActivityIndicator,
@@ -21,6 +20,7 @@ import {
     Platform,
     ScrollView,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
@@ -82,7 +82,7 @@ export default function CoachStudioModal({
     const hasMultiplePhotos = totalPhotos > 1;
 
     // Responsive
-    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+    const { width: windowWidth, height: windowHeight } = useStableWindowDimensions();
     const isLargeScreen = windowWidth >= 768; // Only use Smart Drawer on Tablets+
     const isMobile = !isLargeScreen;
 

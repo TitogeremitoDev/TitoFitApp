@@ -194,17 +194,28 @@ export default function ClientDetailScreen() {
 
         try {
             setSendingFeedback(true);
-            const response = await fetch(`${API_URL}/api/chat`, {
+            // 1. Obtener o crear la conversación unificada
+            const convRes = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ clientId }),
+            });
+            const convData = await convRes.json();
+            if (!convData.success) throw new Error('No se pudo obtener la conversación');
+
+            // 2. Enviar mensaje por la API de conversaciones
+            const response = await fetch(`${API_URL}/api/conversations/${convData.conversation._id}/messages`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    clientId,
                     message: feedbackMessage.trim(),
                     type: feedbackType,
-                    isCoach: true,
                 }),
             });
 

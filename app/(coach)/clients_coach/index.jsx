@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Modal, View, Text, StyleSheet, SafeAreaView, FlatList, RefreshControl,
     ActivityIndicator, LayoutAnimation, Platform, UIManager,
-    useWindowDimensions, Animated, ScrollView
+    Animated, ScrollView
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -52,7 +53,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 export default function ClientsScreen() {
     const router = useRouter();
     const { token, refreshUser } = useAuth();
-    const { width: screenWidth } = useWindowDimensions();
+    const { width: screenWidth } = useStableWindowDimensions();
 
     // Responsive breakpoints
     const isDesktop = screenWidth >= 1024;

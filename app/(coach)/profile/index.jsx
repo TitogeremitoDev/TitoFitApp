@@ -152,6 +152,10 @@ export default function ProfileScreen() {
 
     const handlePickImage = async () => {
         setShowPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar el picker
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
@@ -166,6 +170,10 @@ export default function ProfileScreen() {
             });
 
             if (!result.canceled) {
+                // iOS: esperar a que el picker se cierre antes de presentar el cropper
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
                 setCroppingImage(result.assets[0].uri);
             }
         } catch (error) {
@@ -176,6 +184,10 @@ export default function ProfileScreen() {
 
     const handleTakePhoto = async () => {
         setShowPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar la cámara
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status !== 'granted') {
@@ -190,6 +202,10 @@ export default function ProfileScreen() {
             });
 
             if (!result.canceled) {
+                // iOS: esperar a que la cámara se cierre antes de presentar el cropper
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
                 setCroppingImage(result.assets[0].uri);
             }
         } catch (error) {

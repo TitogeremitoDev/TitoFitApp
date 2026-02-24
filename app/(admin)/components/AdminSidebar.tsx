@@ -12,7 +12,7 @@ const MENU_ITEMS = [
     { title: 'Marketing', route: '/(admin)/marketing', icon: 'megaphone' },
     { title: 'Contenido', route: '/(admin)/content', icon: 'folder' },
     { title: 'Ejercicios', route: '/(admin)/exercises', icon: 'barbell' },
-    { title: 'Ajustes', route: '/(admin)/settings', icon: 'settings' },
+    { title: 'Ajustes', route: '/(admin)/admin-settings', icon: 'settings' },
 ];
 
 export default function AdminSidebar() {

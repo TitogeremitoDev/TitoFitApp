@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useStableWindowDimensions } from '../../../../../src/hooks/useStableBreakpoint';
 
 /**
  * ACTIONS FOOTER
@@ -16,7 +17,7 @@ export default function ActionsFooter({
     onSaveTemplate,
     onActivate
 }) {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isDesktop = width >= 768;
 
     return (

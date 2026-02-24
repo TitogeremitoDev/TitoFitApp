@@ -14,7 +14,6 @@ import {
     TouchableOpacity,
     Animated,
     Platform,
-    useWindowDimensions,
     Pressable,
     Image,
     ActivityIndicator,
@@ -23,9 +22,13 @@ import { EnhancedTextInput } from '../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartScalingModal from './SmartScalingModal'; // NEW Import
+import { useStableWindowDimensions } from '../../../../src/hooks/useStableBreakpoint';
 
 // Import food service (uses correct API + token)
 import { searchFoods, searchExternalFoods, getFavorites, saveFood, toggleFavorite } from '../../../../src/services/foodService';
+
+// Import meal combo service
+import { searchCombos, toggleComboFavorite, trackComboUsage } from '../../../../src/services/mealComboService';
 
 // Import local foods data
 import localFoods from '../../../../src/constants/localFoods.json';
@@ -47,9 +50,31 @@ const MODE_TABS = [
 // Food filter tabs (for search mode)
 const FOOD_TABS = [
     { id: 'global', label: 'Global', icon: 'globe-outline' },
-    { id: 'recetas', label: 'Recetas', icon: 'restaurant-outline' }, // NEW Tab
+    { id: 'recetas', label: 'Recetas', icon: 'restaurant-outline' },
+    { id: 'combos', label: 'Combos', icon: 'layers-outline' },
     { id: 'recientes', label: 'Recientes', icon: 'time-outline' },
     { id: 'favoritos', label: 'Favoritos', icon: 'star-outline' },
+];
+
+// Combo category chips
+const COMBO_CATEGORIES = [
+    { id: 'all', label: 'Todos' },
+    { id: 'desayuno', label: 'Desayuno' },
+    { id: 'comida', label: 'Comida' },
+    { id: 'cena', label: 'Cena' },
+    { id: 'snack', label: 'Snack' },
+    { id: 'pre-entreno', label: 'Pre-Entreno' },
+    { id: 'post-entreno', label: 'Post-Entreno' },
+];
+
+const COMBO_SORT_OPTIONS = [
+    { id: 'recent', label: 'Recientes', icon: 'time-outline' },
+    { id: 'kcal', label: 'Kcal', icon: 'flame-outline' },
+    { id: 'protein', label: 'Proteína', icon: 'fitness-outline' },
+    { id: 'carbs', label: 'Carbos', icon: 'leaf-outline' },
+    { id: 'fat', label: 'Grasa', icon: 'water-outline' },
+    { id: 'name', label: 'A-Z', icon: 'text-outline' },
+    { id: 'usage', label: 'Más usados', icon: 'trending-up-outline' },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -107,6 +132,7 @@ function FoodRowItem({
     onRecipeSelect, // NEW Prop
     onToggleFavorite, // ❤️ Favorite toggle
     isFavorite, // ❤️ Current favorite state
+    onOpenFoodEditor, // 🟢 Open food editor from image tap
 }) {
     const [expanded, setExpanded] = useState(false);
     const baseNutrients = food.nutrients || {};
@@ -154,47 +180,71 @@ function FoodRowItem({
 
     const extraTagsCount = displayTags.length > 2 ? displayTags.length - 2 : 0;
 
+    const isRecipe = food.isComposite;
+
     return (
-        <View style={styles.foodRow}>
+        <View style={[styles.foodRow, isRecipe && { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' }]}>
             {/* Favorite Button */}
             <TouchableOpacity
                 onPress={() => onToggleFavorite?.(food)}
                 style={styles.favBtn}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
                 <Ionicons
                     name={isFavorite ? 'heart' : 'heart-outline'}
-                    size={16}
-                    color={isFavorite ? '#ef4444' : '#cbd5e1'}
+                    size={18}
+                    color={isFavorite ? '#ef4444' : '#94a3b8'}
                 />
             </TouchableOpacity>
 
-            {/* Checkbox */}
-            <TouchableOpacity
-                style={[styles.checkbox, isSelected && styles.checkboxSelected]}
-                onPress={handleToggle}
-            >
-                {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
-            </TouchableOpacity>
+            {/* Checkbox (normal foods) or Recipe Action Button */}
+            {isRecipe ? (
+                <TouchableOpacity
+                    style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}
+                    onPress={handleToggle}
+                >
+                    <Ionicons name="add" size={16} color="#fff" />
+                </TouchableOpacity>
+            ) : (
+                <TouchableOpacity
+                    style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+                    onPress={handleToggle}
+                >
+                    {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                </TouchableOpacity>
+            )}
 
             {/* BLOCK 1: Food Info (Left - Flex Grow) */}
             <View style={styles.foodInfoBlock}>
-                {/* Thumbnail */}
-                {food.image ? (
-                    <Image
-                        source={{ uri: food.image }}
-                        style={styles.foodThumb}
-                        resizeMode="cover"
-                    />
-                ) : (
-                    <View style={styles.foodThumbPlaceholder}>
-                        <Ionicons name="fast-food-outline" size={18} color="#94a3b8" />
-                    </View>
-                )}
+                {/* Thumbnail (tappable to edit) */}
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => onOpenFoodEditor?.(food)}
+                    disabled={!onOpenFoodEditor}
+                >
+                    {food.image ? (
+                        <Image
+                            source={{ uri: food.image }}
+                            style={styles.foodThumb}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <View style={styles.foodThumbPlaceholder}>
+                            <Ionicons name={isRecipe ? "restaurant-outline" : "fast-food-outline"} size={18} color={isRecipe ? "#22c55e" : "#94a3b8"} />
+                        </View>
+                    )}
+                </TouchableOpacity>
 
                 {/* Text Content */}
                 <View style={styles.foodTextContent}>
-                    <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
+                        {isRecipe && (
+                            <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 8, fontWeight: '700', color: '#16a34a' }}>RECETA</Text>
+                            </View>
+                        )}
+                    </View>
                     {/* Tags Row */}
                     {displayTags.length > 0 && (
                         <View style={styles.tagsRow}>
@@ -226,7 +276,6 @@ function FoodRowItem({
 
             {/* BLOCK 2: Stats + Input (Center-Right) */}
             <View style={styles.controlBlock}>
-                {/* A. Dynamic Macros (Vertical Column) */}
                 {/* A. Dynamic Macros (Vertical Column) */}
                 <View style={styles.statsColumn}>
                     {selectionData?.unit === 'a_gusto' ? (
@@ -292,8 +341,11 @@ export default function SmartFoodDrawer({
     onAddFoods, // (foods: Array<{ food, amount, unit, calculatedMacros }>) => void
     context, // { templateId, mealId, optionId }
     favoritesVersion = 0, // Incremented by parent when favorites change externally
+    combosVersion = 0, // Incremented by parent when combos change externally (e.g. save from MealCard)
+    onSetOptionImage, // (imageUri) => void — called when combo insert should set option image
+    onOpenFoodEditor, // (food) => void — opens FoodCreatorModal for this food
 }) {
-    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
     const isDesktop = windowWidth >= 768;
     const drawerWidth = isDesktop ? Math.min(windowWidth * 0.35, 450) : windowWidth;
 
@@ -334,6 +386,12 @@ export default function SmartFoodDrawer({
         carbs: '',
         fat: '',
     });
+
+    // Combos State
+    const [combos, setCombos] = useState([]);
+    const [comboCategoryFilter, setComboCategoryFilter] = useState('all');
+    const [isLoadingCombos, setIsLoadingCombos] = useState(false);
+    const [comboSortBy, setComboSortBy] = useState('recent'); // recent, kcal, protein, carbs, fat, name, usage
 
     // Smart Scaling State
     const [scalingRecipe, setScalingRecipe] = useState(null);
@@ -407,6 +465,7 @@ export default function SmartFoodDrawer({
         } catch (error) {
             if (error?.name !== 'AbortError') {
                 console.error('[SmartDrawer] Search error:', error);
+                showToast('Error buscando alimentos');
             }
             setIsLoading(false);
             setIsSearchingExternal(false);
@@ -422,6 +481,34 @@ export default function SmartFoodDrawer({
             console.error('[SmartDrawer] Favorites error:', error);
         }
     }, []);
+
+    // Fetch combos
+    const fetchCombos = useCallback(async (query = '', category = 'all') => {
+        try {
+            setIsLoadingCombos(true);
+            const results = await searchCombos(query, { category: category !== 'all' ? category : undefined });
+            setCombos(results);
+        } catch (error) {
+            console.error('[SmartDrawer] Combos error:', error);
+            showToast('Error buscando combos');
+        } finally {
+            setIsLoadingCombos(false);
+        }
+    }, []);
+
+    // Sorted combos
+    const sortedCombos = useMemo(() => {
+        const sorted = [...combos];
+        switch (comboSortBy) {
+            case 'kcal': return sorted.sort((a, b) => (b.totals?.kcal || 0) - (a.totals?.kcal || 0));
+            case 'protein': return sorted.sort((a, b) => (b.totals?.protein || 0) - (a.totals?.protein || 0));
+            case 'carbs': return sorted.sort((a, b) => (b.totals?.carbs || 0) - (a.totals?.carbs || 0));
+            case 'fat': return sorted.sort((a, b) => (a.totals?.fat || 0) - (b.totals?.fat || 0));
+            case 'name': return sorted.sort((a, b) => a.name.localeCompare(b.name));
+            case 'usage': return sorted.sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0));
+            default: return sorted; // 'recent' - already sorted by API (updatedAt desc)
+        }
+    }, [combos, comboSortBy]);
 
     // Load recent foods from localStorage
     const loadRecentFoods = useCallback(async () => {
@@ -525,6 +612,13 @@ export default function SmartFoodDrawer({
         }
     }, [favoritesVersion]);
 
+    // Re-fetch combos when combosVersion changes (e.g. after saving combo from MealCard)
+    useEffect(() => {
+        if (combosVersion > 0) {
+            fetchCombos('', 'all');
+        }
+    }, [combosVersion]);
+
     // Debounced search & Tab Sync
     useEffect(() => {
         if (!visible) return;
@@ -535,31 +629,44 @@ export default function SmartFoodDrawer({
                     fetchFoods(searchQuery, { layer: 'ALL' });
                 }
             } else if (activeTab === 'recetas') {
-                // Fetch recipes (filtered by query if exists)
                 fetchFoods(searchQuery, { layer: 'RECIPE' });
+            } else if (activeTab === 'combos') {
+                fetchCombos(searchQuery, comboCategoryFilter);
             }
         }, 300);
 
         return () => clearTimeout(timeoutId);
-    }, [searchQuery, activeTab, visible, fetchFoods]);
+    }, [searchQuery, activeTab, visible, fetchFoods, fetchCombos, comboCategoryFilter]);
 
     // Animate in/out
     useEffect(() => {
+        let animation;
         if (visible) {
-            Animated.spring(slideAnim, {
+            animation = Animated.spring(slideAnim, {
                 toValue: 0,
-                useNativeDriver: true,
+                useNativeDriver: Platform.OS !== 'web',
                 tension: 65,
                 friction: 11,
-            }).start();
+            });
         } else {
-            Animated.timing(slideAnim, {
+            animation = Animated.timing(slideAnim, {
                 toValue: drawerWidth,
                 duration: 200,
-                useNativeDriver: true,
-            }).start();
+                useNativeDriver: Platform.OS !== 'web',
+            });
         }
+        animation.start();
+        return () => animation.stop();
     }, [visible, drawerWidth]);
+
+    // Pre-fetch combos when drawer opens (fetch every time to stay fresh)
+    useEffect(() => {
+        if (visible) {
+            searchCombos('', {}).then(results => {
+                if (results?.length > 0) setCombos(results);
+            }).catch(() => {});
+        }
+    }, [visible]);
 
     // Combine and filter foods based on search and tab
     const filteredFoods = useMemo(() => {
@@ -833,6 +940,80 @@ export default function SmartFoodDrawer({
         setDrawerMode('manual');
     }, []);
 
+    // Handle Combo Insert (adds all foods from combo at once)
+    // Maps combo foods to the SAME format that normal food selection uses,
+    // so onAddFoods callback transforms them correctly (image, sourceId, _savedPer100g, etc.)
+    const handleComboInsert = useCallback((combo) => {
+        if (!combo.foods || combo.foods.length === 0) return;
+
+        const foodsToAdd = combo.foods.map(food => {
+            const amount = food.amount || 100;
+            const unitKey = food.unit || 'gramos';
+
+            // Combo stores absolute macros for the saved amount.
+            // We need to reconstruct per-100g base nutrients so the plan
+            // can recalculate when the coach changes amounts/units later.
+            const conversion = UNIT_CONVERSIONS[unitKey] || UNIT_CONVERSIONS.gramos;
+            const gramsEquiv = amount * (conversion?.factor || 1);
+            const divisor = gramsEquiv / 100 || 1;
+
+            const nutrientsPer100g = {
+                kcal: Math.round((food.kcal || 0) / divisor),
+                protein: Math.round(((food.protein || 0) / divisor) * 10) / 10,
+                carbs: Math.round(((food.carbs || 0) / divisor) * 10) / 10,
+                fat: Math.round(((food.fat || 0) / divisor) * 10) / 10,
+            };
+
+            return {
+                food: {
+                    _id: food.foodId || food.sourceId || `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`,
+                    name: food.name,
+                    nutrients: nutrientsPer100g,
+                    image: food.image,
+                    layer: food.sourceType || 'CLOUD',
+                    isComposite: food.isComposite || food.isRecipe || false,
+                    ingredients: food.subIngredients || [],
+                },
+                amount,
+                unit: unitKey,
+                calculatedMacros: {
+                    kcal: food.kcal || 0,
+                    protein: food.protein || 0,
+                    carbs: food.carbs || 0,
+                    fat: food.fat || 0,
+                },
+            };
+        });
+
+        onAddFoods(foodsToAdd);
+        // Set option image from combo if available
+        if (combo.image && onSetOptionImage) {
+            onSetOptionImage(combo.image);
+        }
+        trackComboUsage(combo._id);
+        showToast(`📦 Combo "${combo.name}" insertado (${combo.foods.length} alimentos)`);
+    }, [onAddFoods, showToast]);
+
+    // Handle Combo Favorite Toggle (with guard against rapid clicks)
+    const togglingFavRef = useRef(false);
+    const handleToggleComboFavorite = useCallback(async (combo) => {
+        if (togglingFavRef.current) return;
+        togglingFavRef.current = true;
+        try {
+            const result = await toggleComboFavorite(combo._id);
+            if (result) {
+                setCombos(prev => prev.map(c =>
+                    c._id === combo._id ? { ...c, isFavorite: result.isFavorite } : c
+                ));
+                showToast(result.isFavorite ? '❤️ Combo favorito' : '💔 Combo quitado de favoritos');
+            }
+        } catch (error) {
+            showToast('⚠️ Error al cambiar favorito');
+        } finally {
+            togglingFavRef.current = false;
+        }
+    }, [showToast]);
+
     // Handle Recipe Selection (Triggers Modal)
     const handleRecipeSelect = useCallback((food) => {
         setScalingRecipe(food);
@@ -842,17 +1023,17 @@ export default function SmartFoodDrawer({
     const handleSmartAdd = useCallback((items, mode) => {
         // items is array of { food, amount, unit, calculatedMacros }
         onAddFoods(items);
-        setScalingRecipe(null);
 
         const msg = mode === 'block'
             ? `📦 Receta añadida como bloque`
             : `📝 ${items.length} ingredientes desglosados`;
         showToast(msg);
 
-        // Also save original recipe to recent, not the exploded parts?
-        // Actually saveToRecent handles this in onAddFoods wrapper usually, 
-        // but let's call it manually for the base recipe to be safe
+        // Save original recipe to recent
         if (scalingRecipe) saveToRecent([scalingRecipe]);
+
+        // Close scaling modal AFTER saving to recent
+        setScalingRecipe(null);
 
     }, [onAddFoods, scalingRecipe, saveToRecent, showToast]);
 
@@ -982,6 +1163,11 @@ export default function SmartFoodDrawer({
                                         ]}>
                                             {tab.label}
                                         </Text>
+                                        {tab.id === 'combos' && combos.length > 0 && (
+                                            <View style={{ backgroundColor: '#d97706', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                                                <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>{combos.length}</Text>
+                                            </View>
+                                        )}
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -989,8 +1175,8 @@ export default function SmartFoodDrawer({
                     )}
                 </View>
 
-                {/* Add Button Bar (Search Mode) - Always visible above scroll */}
-                {drawerMode === 'search' && (
+                {/* Add Button Bar (Search Mode) - Only show for ingredient tabs (not combos/recetas) */}
+                {drawerMode === 'search' && activeTab !== 'combos' && activeTab !== 'recetas' && (
                     <View style={styles.addBar}>
                         <TouchableOpacity
                             style={[
@@ -1012,9 +1198,156 @@ export default function SmartFoodDrawer({
                 )}
 
                 {/* ═══════════════════════════════════════════════════════════════ */}
-                {/* CONTENT: Search Mode */}
+                {/* CONTENT: Combos Tab */}
                 {/* ═══════════════════════════════════════════════════════════════ */}
-                {drawerMode === 'search' && (
+                {drawerMode === 'search' && activeTab === 'combos' && (
+                    <ScrollView
+                        style={styles.foodList}
+                        contentContainerStyle={styles.foodListContent}
+                        keyboardShouldPersistTaps="handled"
+                    >
+                        {/* Category Filter Chips */}
+                        <View style={{ marginBottom: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {COMBO_CATEGORIES.map(cat => (
+                                <TouchableOpacity
+                                    key={cat.id}
+                                    style={{
+                                        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: '#f1f5f9',
+                                        ...(comboCategoryFilter === cat.id ? { backgroundColor: '#dbeafe', borderWidth: 1, borderColor: '#3b82f6' } : {}),
+                                    }}
+                                    onPress={() => setComboCategoryFilter(cat.id)}
+                                >
+                                    <Text style={{
+                                        fontSize: 12, fontWeight: '500', color: '#64748b',
+                                        ...(comboCategoryFilter === cat.id ? { color: '#3b82f6', fontWeight: '700' } : {}),
+                                    }}>
+                                        {cat.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Sort Options */}
+                        <View style={{ marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                            <Ionicons name="swap-vertical-outline" size={14} color="#94a3b8" style={{ marginRight: 2 }} />
+                            {COMBO_SORT_OPTIONS.map(opt => (
+                                <TouchableOpacity
+                                    key={opt.id}
+                                    style={[
+                                        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, backgroundColor: '#f1f5f9' },
+                                        comboSortBy === opt.id && { backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#d97706' }
+                                    ]}
+                                    onPress={() => setComboSortBy(opt.id)}
+                                >
+                                    <Ionicons name={opt.icon} size={12} color={comboSortBy === opt.id ? '#d97706' : '#64748b'} />
+                                    <Text style={{ fontSize: 11, fontWeight: comboSortBy === opt.id ? '700' : '500', color: comboSortBy === opt.id ? '#92400e' : '#64748b' }}>
+                                        {opt.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Loading */}
+                        {isLoadingCombos && (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="small" color="#3b82f6" />
+                                <Text style={styles.loadingText}>Cargando combos...</Text>
+                            </View>
+                        )}
+
+                        {/* Combo Cards */}
+                        {sortedCombos.map(combo => (
+                            <View key={combo._id} style={[styles.foodRow, { backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d', flexDirection: 'column', alignItems: 'stretch', padding: 12 }]}>
+                                {/* Top Row: Insert + Image + Name + Favorite */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                    <TouchableOpacity
+                                        style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: '#d97706', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}
+                                        onPress={() => handleComboInsert(combo)}
+                                    >
+                                        <Ionicons name="add" size={16} color="#fff" />
+                                    </TouchableOpacity>
+                                    {combo.image ? (
+                                        <Image
+                                            source={{ uri: combo.image }}
+                                            accessibilityLabel={`Imagen del combo ${combo.name}`}
+                                            style={{ width: 36, height: 36, borderRadius: 8, marginRight: 8, backgroundColor: '#f1f5f9' }}
+                                            resizeMode="cover"
+                                        />
+                                    ) : (
+                                        <View style={{ width: 36, height: 36, borderRadius: 8, marginRight: 8, backgroundColor: '#fef9c3', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Ionicons name="layers" size={18} color="#d97706" />
+                                        </View>
+                                    )}
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Text style={[styles.foodName, { color: '#92400e' }]} numberOfLines={1}>{combo.name}</Text>
+                                        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+                                            <View style={{ backgroundColor: '#fde68a', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                                                <Text style={{ fontSize: 9, fontWeight: '700', color: '#92400e' }}>COMBO</Text>
+                                            </View>
+                                            <Text style={{ fontSize: 10, color: '#b45309' }}>{combo.foods?.length || 0} items</Text>
+                                            {combo.category !== 'otro' && (
+                                                <Text style={{ fontSize: 10, color: '#92400e' }}>· {combo.category}</Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        onPress={() => handleToggleComboFavorite(combo)}
+                                        style={styles.favBtn}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    >
+                                        <Ionicons
+                                            name={combo.isFavorite ? 'heart' : 'heart-outline'}
+                                            size={18}
+                                            color={combo.isFavorite ? '#ef4444' : '#94a3b8'}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Macro Totals */}
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#fffbeb', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginBottom: 8 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#f97316' }}>🔥 {Math.round(combo.totals?.kcal || 0)}</Text>
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: '#3b82f6' }}>P:{Math.round(combo.totals?.protein || 0)}</Text>
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: '#22c55e' }}>C:{Math.round(combo.totals?.carbs || 0)}</Text>
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: '#f59e0b' }}>G:{Math.round(combo.totals?.fat || 0)}</Text>
+                                </View>
+
+                                {/* Food List Preview */}
+                                <View style={{ gap: 2 }}>
+                                    {combo.foods?.slice(0, 4).map((food, idx) => (
+                                        <Text key={idx} style={{ fontSize: 11, color: '#78350f' }} numberOfLines={1}>
+                                            · {food.name} ({food.amount}{food.unit === 'gramos' ? 'g' : ` ${food.unit}`})
+                                        </Text>
+                                    ))}
+                                    {(combo.foods?.length || 0) > 4 && (
+                                        <Text style={{ fontSize: 11, color: '#b45309', fontStyle: 'italic' }}>
+                                            +{combo.foods.length - 4} más...
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+                        ))}
+
+                        {/* Empty State */}
+                        {sortedCombos.length === 0 && !isLoadingCombos && (
+                            <View style={{ alignItems: 'center', paddingVertical: 40, gap: 8 }}>
+                                <Ionicons name="layers-outline" size={48} color="#cbd5e1" />
+                                <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+                                    {searchQuery.trim() ? `No se encontraron combos para "${searchQuery}"` : 'Aún no tienes combos guardados'}
+                                </Text>
+                                <Text style={{ color: '#64748b', fontSize: 12, textAlign: 'center', paddingHorizontal: 20 }}>
+                                    Guarda combos desde cualquier opción de comida usando el botón de guardar
+                                </Text>
+                            </View>
+                        )}
+
+                        <View style={{ height: 40 }} />
+                    </ScrollView>
+                )}
+
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                {/* CONTENT: Search Mode (Foods) */}
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                {drawerMode === 'search' && activeTab !== 'combos' && (
                     <ScrollView
                         style={styles.foodList}
                         contentContainerStyle={styles.foodListContent}
@@ -1056,6 +1389,7 @@ export default function SmartFoodDrawer({
                                             onRecipeSelect={handleRecipeSelect}
                                             onToggleFavorite={handleToggleFavorite}
                                             isFavorite={favoriteIds.has(food._id) || favoriteIds.has(food.name?.toLowerCase?.().trim()) || food.isFavorite}
+                                            onOpenFoodEditor={onOpenFoodEditor}
                                         />
                                     ))}
                                 </View>
@@ -1087,6 +1421,7 @@ export default function SmartFoodDrawer({
                                 onRecipeSelect={handleRecipeSelect}
                                 onToggleFavorite={handleToggleFavorite}
                                 isFavorite={favoriteIds.has(food._id) || favoriteIds.has(food.name?.toLowerCase?.().trim()) || food.isFavorite}
+                                onOpenFoodEditor={onOpenFoodEditor}
                             />
                         ))}
 

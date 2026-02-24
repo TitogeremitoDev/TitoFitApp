@@ -1,6 +1,7 @@
 import { Stack, router, usePathname } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
-import { Alert, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ScrollView } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView } from 'react-native';
+import { useStableWindowDimensions } from '../../src/hooks/useStableBreakpoint';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -123,7 +124,7 @@ export default function SupervisorLayout() {
     const { user } = useAuth();
     const { isImpersonating } = useImpersonation();
     const insets = useSafeAreaInsets();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const pathname = usePathname();
 
     const showSidebar = Platform.OS === 'web' && width >= 900;

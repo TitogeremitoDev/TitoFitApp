@@ -13,11 +13,12 @@ import {
     TouchableOpacity,
     ScrollView,
     Platform,
-    Image,
+    Image as RNImage,
     Modal,
     Alert,
     ActivityIndicator
 } from 'react-native';
+import { Image } from 'expo-image';
 import { EnhancedTextInput } from '../../../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { getRecipePlaceholder } from '../../../../../src/utils/recipePlaceholder';
@@ -30,6 +31,14 @@ import { UNIT_CONVERSIONS } from '../../../../../src/constants/units';
 import { SUPPLEMENT_TIMINGS } from '../../../../../src/constants/commonSupplements';
 import SmartScalingModal from '../SmartScalingModal';
 import SupplementDrawer from '../SupplementDrawer';
+import { saveFromMeal } from '../../../../../src/services/mealComboService';
+
+// Helper: filter out file:// URIs on web (they only work on the device that picked them)
+const getDisplayableImage = (uri) => {
+    if (!uri) return null;
+    if (Platform.OS === 'web' && uri.startsWith('file://')) return null;
+    return uri;
+};
 
 // 🔄 Web Drag & Drop - Shared drag state (module-level for cross-component access)
 let _draggedFood = null;
@@ -118,7 +127,7 @@ const DragHandle = Platform.OS === 'web'
                 // Custom drag image: pill with food name + macros
                 const ghost = document.createElement('div');
                 ghost.style.cssText = 'position:fixed;top:-1000px;left:-1000px;display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border:2px solid #3b82f6;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-family:system-ui;z-index:99999;max-width:280px;';
-                if (food?.image) {
+                if (food?.image && !food.image.startsWith('file://')) {
                     const img = document.createElement('img');
                     img.src = food.image;
                     img.style.cssText = 'width:32px;height:32px;border-radius:6px;object-fit:cover;flex-shrink:0;';
@@ -334,11 +343,20 @@ export default function MealCard({
     onUpdateOptionImage,
     onSmartEdit,
     onOpenImageModal,
+    onComboSaved, // Called after saving a combo to refresh SmartFoodDrawer
+    onOpenFoodEditor, // (food, foodIdx, optionId) => void — opens FoodCreatorModal for this food
     onToggleFavorite, // ❤️ Favorite toggle
     favoriteIds, // ❤️ Set of favorite food IDs
+    activeOptionId, // 🔵 Currently selected option (for food drawer)
 }) {
     const mealConfig = MEAL_ICONS[meal.name] || { icon: 'restaurant', color: '#64748b' };
     const optionsCount = meal.options?.length || 0;
+
+    // 🌐 Web DOM optimization: collapse meal section & limit visible options
+    const [mealCollapsed, setMealCollapsed] = useState(false);
+    const MAX_VISIBLE_OPTIONS_WEB = 3;
+    const [expandedOptions, setExpandedOptions] = useState(false);
+    const shouldCollapseOptions = Platform.OS === 'web' && !expandedOptions && optionsCount > MAX_VISIBLE_OPTIONS_WEB;
 
     // 🟢 Refs for Edit Mode (prevent blur on unit change)
     const changingUnitRef = useRef(false);
@@ -407,10 +425,22 @@ export default function MealCard({
             {/* ══════════════════════════════════════════════════════════════ */}
             <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleRow}>
+                    {/* 🌐 Web: collapse/expand meal */}
+                    {Platform.OS === 'web' && (
+                        <TouchableOpacity
+                            onPress={() => setMealCollapsed(prev => !prev)}
+                            style={{ marginRight: 4, padding: 2 }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Ionicons name={mealCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
                     <View style={[styles.mealIcon, { backgroundColor: mealConfig.color + '15' }]}>
                         <Ionicons name={mealConfig.icon} size={18} color={mealConfig.color} />
                     </View>
-                    <Text style={styles.sectionTitle}>{meal.name.toUpperCase()}</Text>
+                    <TouchableOpacity onPress={Platform.OS === 'web' ? () => setMealCollapsed(prev => !prev) : undefined} activeOpacity={Platform.OS === 'web' ? 0.7 : 1}>
+                        <Text style={styles.sectionTitle}>{meal.name.toUpperCase()}</Text>
+                    </TouchableOpacity>
                     <View style={styles.optionsBadge}>
                         <Text style={styles.optionsBadgeText}>
                             {optionsCount} {optionsCount === 1 ? 'opción' : 'opciones'}
@@ -453,6 +483,9 @@ export default function MealCard({
                 </View>
             </View>
 
+            {/* 🌐 Web: collapsible meal body (supplements + options) */}
+            {!(Platform.OS === 'web' && mealCollapsed) && (
+            <>
             {/* 💊 SUPPLEMENTS SECTION (A nivel de comida) */}
             {meal.supplements?.length > 0 && (
                 <View style={styles.supplementsSection}>
@@ -489,7 +522,7 @@ export default function MealCard({
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.optionsCarousel}
             >
-                {meal.options?.map((option, index) => (
+                {(shouldCollapseOptions ? meal.options.slice(0, MAX_VISIBLE_OPTIONS_WEB) : meal.options)?.map((option, index) => (
                     <OptionCard
                         key={option.id}
                         option={option}
@@ -509,9 +542,26 @@ export default function MealCard({
                         onToggleFavorite={onToggleFavorite}
                         favoriteIds={favoriteIds}
                         onDropFood={(food) => onDropFood?.(option.id, food)}
+                        isActive={activeOptionId === option.id}
+                        mealName={meal.name}
+                        onOpenFoodEditor={onOpenFoodEditor}
                     />
                 ))}
+                {/* 🌐 Web: show more options button */}
+                {Platform.OS === 'web' && optionsCount > MAX_VISIBLE_OPTIONS_WEB && (
+                    <TouchableOpacity
+                        style={{ justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16, minWidth: 80 }}
+                        onPress={() => setExpandedOptions(prev => !prev)}
+                    >
+                        <Ionicons name={expandedOptions ? 'chevron-back' : 'chevron-forward'} size={20} color="#64748b" />
+                        <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4, textAlign: 'center' }}>
+                            {expandedOptions ? 'Ver menos' : `+${optionsCount - MAX_VISIBLE_OPTIONS_WEB} más`}
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </ScrollView>
+            </>
+            )}
 
             {/* Recalculate Modal */}
             {scalingRecipe && (
@@ -543,9 +593,14 @@ export default function MealCard({
 function ExpandableRecipeItem({
     food,
     index,
+    pct,
+    favoriteIds,
+    onToggleFavorite,
     onUpdate,
     onRemove,
-    onRecipeClick
+    onRecipeClick,
+    onOpenFoodEditor,
+    optionId,
 }) {
     const [expanded, setExpanded] = useState(false);
     const [editingIngIdx, setEditingIngIdx] = useState(null);
@@ -655,108 +710,87 @@ function ExpandableRecipeItem({
         onUpdate(newFood);
     };
 
+    const isFav = favoriteIds?.has(food.foodId) ||
+        favoriteIds?.has(food._id) ||
+        favoriteIds?.has(food.sourceId) ||
+        favoriteIds?.has(food.name?.toLowerCase?.().trim()) ||
+        food.isFavorite;
+
+    // Recipes: solo el número, sin unidad
+    const displayUnit = '';
+
     return (
         <View style={styles.recipeContainer}>
-            {/* COMPACT HEADER (Click to Expand) */}
-            <TouchableOpacity
-                style={[styles.recipeCard, expanded && styles.recipeCardExpanded]}
-                onPress={() => setExpanded(!expanded)}
-                activeOpacity={0.9}
-            >
-                {/* 🔄 Drag Handle (Web only) */}
-                <DragHandle food={food} />
-                {/* Image */}
-                {food.image ? (
-                    <Image source={{ uri: food.image }} style={styles.recipeImage} />
-                ) : (
-                    <View style={[styles.recipeImage, { backgroundColor: placeholder.backgroundColor, alignItems: 'center', justifyContent: 'center' }]}>
-                        <Text style={styles.fontSize24}>{placeholder.icon}</Text>
-                    </View>
-                )}
-
-                <View style={styles.recipeContent}>
-                    <View style={styles.recipeHeader}>
-                        <View style={styles.recipeBadge}>
-                            <Ionicons name="restaurant" size={10} color="#fff" />
-                            <Text style={styles.recipeBadgeText}>RECETA</Text>
+            <View style={styles.foodCard}>
+                {/* Top: Name + X */}
+                <View style={styles.foodTopRow}>
+                    <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
+                    <TouchableOpacity onPress={onRemove} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                        <Ionicons name="close" size={14} color="#9ca3af" />
+                    </TouchableOpacity>
+                </View>
+                {/* Bottom: original row layout */}
+                <View style={styles.foodMainRow}>
+                    <DragHandle food={food} />
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => onOpenFoodEditor?.(food, index, optionId)}
+                    >
+                        {getDisplayableImage(food.image) ? (
+                            <Image source={{ uri: getDisplayableImage(food.image) }} style={styles.foodPhoto} cachePolicy="memory-disk" />
+                        ) : (
+                            <View style={[styles.foodPhotoPlaceholder, { backgroundColor: '#dcfce7' }]}>
+                                <Ionicons name="restaurant" size={16} color="#22c55e" />
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => {
+                            const isValidId = (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
+                            const realId = food.foodId || food._id || food.sourceId;
+                            const hasValidId = isValidId(realId);
+                            onToggleFavorite?.({ ...food, _id: hasValidId ? realId : undefined, layer: hasValidId ? (food.layer || 'CLOUD') : 'LOCAL', isComposite: true, nutrients: food.nutrients || { kcal: food.kcal || 0, protein: food.protein || 0, carbs: food.carbs || 0, fat: food.fat || 0 } });
+                        }}
+                        style={styles.foodFavBtn}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                        <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={13} color={isFav ? '#ef4444' : '#cbd5e1'} />
+                    </TouchableOpacity>
+                    {/* Macros (flex:1) */}
+                    <View style={styles.foodDetails}>
+                        <View style={styles.foodMacrosRow}>
+                            <Text style={styles.foodKcal}>🔥{Math.round(food.kcal || 0)}</Text>
+                            <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
+                            <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
+                            <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
                         </View>
-                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                            {/* Smart Edit / Tools */}
-                            <TouchableOpacity onPress={(e) => { e.stopPropagation(); onRecipeClick(); }}>
-                                <Ionicons name="create-outline" size={16} color="#94a3b8" />
-                            </TouchableOpacity>
-                            {/* Remove */}
-                            <TouchableOpacity onPress={(e) => { e.stopPropagation(); onRemove(); }}>
-                                <Ionicons name="close" size={18} color="#94a3b8" />
-                            </TouchableOpacity>
-                        </View>
                     </View>
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.recipeName} numberOfLines={1}>{food.name}</Text>
-                        <Ionicons
-                            name={expanded ? "chevron-up" : "chevron-down"}
-                            size={16}
-                            color="#64748b"
-                            style={{ marginRight: 4 }}
-                        />
-                    </View>
-
-                    <View style={styles.recipeFooter}>
-                        {/* Macro Pills Row */}
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            {/* Kcal */}
-                            <View style={[styles.macroPill, { backgroundColor: '#fff7ed' }]}>
-                                <Ionicons name="flame" size={10} color="#f97316" />
-                                <Text style={[styles.macroPillText, { color: '#f97316' }]}>{Math.round(food.kcal || 0)}</Text>
-                            </View>
-
-                            {/* Protein */}
-                            <View style={[styles.macroPill, { backgroundColor: '#eff6ff' }]}>
-                                <Text style={styles.fontSize10}>🥩</Text>
-                                <Text style={[styles.macroPillText, { color: '#3b82f6' }]}>{Math.round(food.protein || 0)}g</Text>
-                            </View>
-
-                            {/* Carbs */}
-                            <View style={[styles.macroPill, { backgroundColor: '#f0fdf4' }]}>
-                                <Text style={styles.fontSize10}>🌾</Text>
-                                <Text style={[styles.macroPillText, { color: '#22c55e' }]}>{Math.round(food.carbs || 0)}g</Text>
-                            </View>
-
-                            {/* Fat */}
-                            <View style={[styles.macroPill, { backgroundColor: '#fffbeb' }]}>
-                                <Text style={styles.fontSize10}>🥑</Text>
-                                <Text style={[styles.macroPillText, { color: '#f59e0b' }]}>{Math.round(food.fat || 0)}g</Text>
-                            </View>
+                    {/* Right group */}
+                    <View style={styles.foodRightSection}>
+                        <View style={[styles.pctBadge, pct >= 50 && { backgroundColor: '#fee2e2' }]}>
+                            <Text style={[styles.pctText, pct >= 50 && { color: '#ef4444' }]}>{pct || 0}%</Text>
                         </View>
-
                         {isEditingAmount ? (
-                            <EnhancedTextInput
-                                containerStyle={styles.ingInputContainer}
-                                style={styles.ingInputText}
-                                value={recipeAmountStr}
-                                onChangeText={setRecipeAmountStr}
-                                keyboardType="numeric"
-                                autoFocus
-                                selectTextOnFocus
-                                onBlur={handleRecipePortionChange}
-                                onSubmitEditing={handleRecipePortionChange}
-                            />
+                            <EnhancedTextInput containerStyle={styles.ingInputContainer} style={styles.ingInputText} value={recipeAmountStr} onChangeText={setRecipeAmountStr} keyboardType="numeric" autoFocus selectTextOnFocus onBlur={handleRecipePortionChange} onSubmitEditing={handleRecipePortionChange} />
                         ) : (
                             <TouchableOpacity
-                                onPress={() => {
-                                    setIsEditingAmount(true);
-                                    setRecipeAmountStr(String(food.amount || 1));
-                                }}
+                                style={[styles.foodAmount, { flexDirection: 'row', alignItems: 'center', gap: 2 }]}
+                                onPress={() => { setIsEditingAmount(true); setRecipeAmountStr(String(food.amount || 1)); }}
                             >
-                                <Text style={styles.recipePortion}>
-                                    {food.amount || 1} {food.unit || 'Ración'}
-                                </Text>
+                                <Text style={styles.foodAmountText}>{food.amount || 1}</Text>
+                                <Text style={[styles.foodAmountText, { fontSize: 10, color: '#94a3b8' }]}>{displayUnit}</Text>
                             </TouchableOpacity>
                         )}
+                        {/* RECETA + expand */}
+                        <TouchableOpacity onPress={() => setExpanded(!expanded)} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                            <View style={{ backgroundColor: '#16a34a', paddingHorizontal: 3, paddingVertical: 1, borderRadius: 3 }}>
+                                <Text style={{ fontSize: 7, fontWeight: '800', color: '#fff' }}>RECETA</Text>
+                            </View>
+                            <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={12} color="#64748b" />
+                        </TouchableOpacity>
                     </View>
                 </View>
-            </TouchableOpacity>
+            </View>
 
             {/* EXPANDED INGREDIENTS LIST */}
             {expanded && (
@@ -1016,11 +1050,12 @@ function ExpandableRecipeItem({
 function ImageSelectionModal({ visible, option, onClose, onUpdateImage }) {
     const [imageUrlInput, setImageUrlInput] = useState('');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     if (!visible || !option) return null;
 
 
-    // 1. GALLERY
+    // 1. GALLERY — upload to R2 so image works across devices/web
     const handlePickImage = async () => {
         const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (permissionResult.granted === false) {
@@ -1036,7 +1071,53 @@ function ImageSelectionModal({ visible, option, onClose, onUpdateImage }) {
         });
 
         if (!result.canceled) {
-            onUpdateImage(result.assets[0].uri);
+            const localUri = result.assets[0].uri;
+
+            // On web, data URIs / blob URIs work fine without upload
+            if (Platform.OS === 'web') {
+                onUpdateImage(localUri);
+                return;
+            }
+
+            // On native, upload to R2 so the image is accessible everywhere
+            try {
+                setIsUploading(true);
+                const token = await AsyncStorage.getItem('totalgains_token');
+                if (!token) throw new Error('No token');
+
+                const formData = new FormData();
+                const filename = localUri.split('/').pop() || 'option_image.jpg';
+                const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+                const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+                formData.append('image', {
+                    uri: localUri,
+                    name: `option_${Date.now()}.${ext}`,
+                    type: mimeType,
+                });
+
+                const response = await fetch(`${API_BASE_URL}/nutrition-plans/upload-option-image`, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                const data = await response.json();
+                if (data.success && data.imageUrl) {
+                    onUpdateImage(data.imageUrl);
+                } else {
+                    throw new Error(data.message || 'Upload failed');
+                }
+            } catch (err) {
+                console.error('[ImageSelectionModal] Upload error:', err);
+                // Fallback: use local URI (works on the device that picked it)
+                onUpdateImage(localUri);
+                if (Platform.OS !== 'web') {
+                    Alert.alert('Aviso', 'La imagen se guardó localmente. Puede no ser visible en otros dispositivos.');
+                }
+            } finally {
+                setIsUploading(false);
+            }
         }
     };
 
@@ -1107,21 +1188,20 @@ function ImageSelectionModal({ visible, option, onClose, onUpdateImage }) {
                     <Text style={styles.modalTitle}>📸 Portada de la Opción</Text>
 
                     {/* Preview Current Image */}
-                    {option.image && (
+                    {getDisplayableImage(option.image) && (
                         <View style={styles.modalWithImageContainer}>
                             <Image
-                                source={{ uri: option.image }}
+                                source={{ uri: getDisplayableImage(option.image) }}
                                 style={styles.modalImagePreview}
-                                onError={(e) => console.log("Img Err:", e.nativeEvent.error)}
                             />
                         </View>
                     )}
 
                     {/* A. GALLERY */}
-                    <TouchableOpacity style={styles.imgOptionBtn} onPress={handlePickImage}>
-                        <Ionicons name="images-outline" size={20} color="#3b82f6" />
+                    <TouchableOpacity style={styles.imgOptionBtn} onPress={handlePickImage} disabled={isUploading}>
+                        {isUploading ? <ActivityIndicator size="small" color="#3b82f6" /> : <Ionicons name="images-outline" size={20} color="#3b82f6" />}
                         <View>
-                            <Text style={styles.imgOptionTitle}>Galería de Fotos</Text>
+                            <Text style={styles.imgOptionTitle}>{isUploading ? 'Subiendo...' : 'Galería de Fotos'}</Text>
                             <Text style={styles.imgOptionSub}>Subir desde tu dispositivo</Text>
                         </View>
                     </TouchableOpacity>
@@ -1183,6 +1263,9 @@ function OptionCard({
     onToggleFavorite, // ❤️ Favorite toggle
     favoriteIds, // ❤️ Set of favorite food IDs
     onDropFood, // 🔄 Web DnD: handle dropped food
+    isActive, // 🔵 This option is selected for adding foods
+    mealName, // 📦 Meal name for combo category detection
+    onOpenFoodEditor, // 🟢 Open food editor from image tap
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [showNote, setShowNote] = useState(!!option.coachNote);
@@ -1196,18 +1279,104 @@ function OptionCard({
     const dropZoneRef = useRef(null);
     const isDragOver = useDropZone(dropZoneRef, onDropFood);
 
+    // 🌐 Web DOM optimization: collapse foods beyond MAX_VISIBLE
+    const MAX_VISIBLE_FOODS_WEB = 4;
+    const [expandedFoods, setExpandedFoods] = useState(false);
+    const foodCount = option.foods?.length || 0;
+    const shouldCollapseFoods = Platform.OS === 'web' && !expandedFoods && foodCount > MAX_VISIBLE_FOODS_WEB;
+
+    // 📦 Save as Combo state
+    const [showSaveCombo, setShowSaveCombo] = useState(false);
+    const [comboName, setComboName] = useState('');
+    const [comboCategory, setComboCategory] = useState('otro');
+    const [comboImage, setComboImage] = useState(null);
+    const [isGeneratingComboImage, setIsGeneratingComboImage] = useState(false);
+    const [isSavingCombo, setIsSavingCombo] = useState(false);
+
+    // Detect combo category from meal name
+    const detectCategory = useCallback(() => {
+        if (!mealName) return 'otro';
+        const lower = mealName.toLowerCase();
+        if (lower.includes('desayuno')) return 'desayuno';
+        if (lower.includes('almuerzo')) return 'almuerzo';
+        if (lower.includes('comida')) return 'comida';
+        if (lower.includes('merienda')) return 'merienda';
+        if (lower.includes('cena')) return 'cena';
+        if (lower.includes('snack')) return 'snack';
+        return 'otro';
+    }, [mealName]);
+
+    const handleSaveAsCombo = useCallback(async () => {
+        if (!comboName.trim()) {
+            Alert.alert('Error', 'Introduce un nombre para el combo');
+            return;
+        }
+        if (!option.foods || option.foods.length === 0) {
+            Alert.alert('Error', 'La opción no tiene alimentos');
+            return;
+        }
+
+        setIsSavingCombo(true);
+        try {
+            // Auto-generate image if none set
+            let finalImage = comboImage || option.image || null;
+            if (!finalImage) {
+                try {
+                    const token = await AsyncStorage.getItem('token');
+                    const foodNames = option.foods?.map(f => f.name).join(', ') || comboName.trim();
+                    const res = await fetch(`${API_BASE_URL}/foods/ai-image`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ foodName: foodNames, index: 0 }),
+                    });
+                    const data = await res.json();
+                    if (data.imageUrl) finalImage = data.imageUrl;
+                } catch (e) { /* ignore image error */ }
+            }
+
+            await saveFromMeal({
+                name: comboName.trim(),
+                category: comboCategory,
+                foods: option.foods,
+                supplements: option.supplements || [],
+                image: finalImage,
+            });
+            Alert.alert('Combo guardado', `"${comboName.trim()}" guardado con ${option.foods.length} alimentos`);
+            setShowSaveCombo(false);
+            setComboName('');
+            setComboImage(null);
+            onComboSaved?.();
+        } catch (error) {
+            Alert.alert('Error', error.message || 'Error al guardar combo');
+        } finally {
+            setIsSavingCombo(false);
+        }
+    }, [comboName, comboCategory, comboImage, option]);
+
+    const generateComboImage = useCallback(async () => {
+        const foodNames = option?.foods?.map(f => f.name).join(', ') || comboName || 'combo';
+        setIsGeneratingComboImage(true);
+        try {
+            const token = await AsyncStorage.getItem('token');
+            const res = await fetch(`${API_BASE_URL}/foods/ai-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ foodName: foodNames, index: 0 }),
+            });
+            const data = await res.json();
+            if (data.imageUrl) setComboImage(data.imageUrl);
+        } catch (e) {
+            Alert.alert('Error', 'No se pudo generar la imagen');
+        } finally {
+            setIsGeneratingComboImage(false);
+        }
+    }, [option, comboName]);
+
     // 🟢 Helper: Cycle to next unit
     const cycleUnit = (currentUnit) => {
         const keys = Object.keys(UNIT_CONVERSIONS);
         const currentIdx = keys.indexOf(currentUnit);
-        const nextKey = keys[(currentIdx + 1) % keys.length];
-
-        // DEBUG: Temporary alert
-        console.log('🔄 CYCLING UNIT:', { currentUnit, currentIdx, nextKey });
-        if (Platform.OS === 'web') alert(`Debug: Cur: ${currentUnit} -> Next: ${nextKey}`);
-        else Alert.alert('Debug', `Cur: ${currentUnit} (${currentIdx}) -> Next: ${nextKey}`);
-
-        return nextKey;
+        return keys[(currentIdx + 1) % keys.length];
     };
 
     // Removed local Image logic
@@ -1226,7 +1395,7 @@ function OptionCard({
     const hasFoods = option.foods?.length > 0;
 
     return (
-        <View ref={dropZoneRef} style={[styles.optionCard, isDragOver && styles.dropZoneActive]}>
+        <View ref={dropZoneRef} style={[styles.optionCard, isDragOver && styles.dropZoneActive, isActive && { borderWidth: 2, borderColor: '#3b82f6' }]}>
             {/* Option Header */}
             <View style={[styles.optionHeader, { borderLeftColor: templateColor }]}>
                 <View style={styles.optionTitleRow}>
@@ -1242,7 +1411,7 @@ function OptionCard({
                             || (typeof firstFood?.item === 'object' && firstFood?.item?.image)
                             || (typeof firstFood?.food === 'object' && firstFood?.food?.image);
 
-                        const displayImage = option.image || fallbackImage;
+                        const displayImage = getDisplayableImage(option.image) || fallbackImage;
 
                         return (
                             <TouchableOpacity onPress={onOpenImageModal}>
@@ -1290,6 +1459,21 @@ function OptionCard({
                         <Ionicons name="copy-outline" size={14} color="#64748b" />
                     </TouchableOpacity>
 
+                    {/* 📦 Save as Combo */}
+                    {hasFoods && (
+                        <TouchableOpacity
+                            style={styles.optionActionBtn}
+                            onPress={() => {
+                                setComboName(option.name || '');
+                                setComboCategory(detectCategory());
+                                setComboImage(option.image || null);
+                                setShowSaveCombo(true);
+                            }}
+                        >
+                            <Ionicons name="layers-outline" size={14} color="#d97706" />
+                        </TouchableOpacity>
+                    )}
+
                     {/* Delete */}
                     {!isOnlyOption && (
                         <TouchableOpacity
@@ -1326,7 +1510,7 @@ function OptionCard({
                     </TouchableOpacity>
                 ) : (
                     <>
-                        {option.foods.map((food, foodIdx) => {
+                        {(shouldCollapseFoods ? option.foods.slice(0, MAX_VISIBLE_FOODS_WEB) : option.foods).map((food, foodIdx) => {
                             // Calculate percentage of total option kcal
                             const pct = optionMacros.kcal > 0
                                 ? Math.round((food.kcal / optionMacros.kcal) * 100)
@@ -1340,263 +1524,152 @@ function OptionCard({
                                         key={`${food.name}_${foodIdx}`}
                                         food={food}
                                         index={foodIdx}
+                                        pct={pct}
+                                        favoriteIds={favoriteIds}
+                                        onToggleFavorite={onToggleFavorite}
                                         onUpdate={(newFood) => onUpdateFood?.(foodIdx, newFood)}
                                         onRemove={() => onRemoveFood(foodIdx)}
-                                        onRecipeClick={() => onRecipeClick?.(foodIdx, food)} // Opens Smart Modal if desired
+                                        onRecipeClick={() => onRecipeClick?.(foodIdx, food)}
+                                        onOpenFoodEditor={onOpenFoodEditor}
+                                        optionId={option.id}
                                     />
                                 );
                             }
 
+                            // Compute isFav once
+                            const isFav = favoriteIds?.has(food.foodId) || favoriteIds?.has(food._id) || favoriteIds?.has(food.name?.toLowerCase?.().trim()) || food.isFavorite;
+
                             return (
                                 <View key={`${food.name}_${foodIdx}`} style={styles.foodCard}>
-                                    {/* 🔄 Drag Handle (Web only) */}
-                                    <DragHandle food={food} />
-                                    {/* Left: Photo or Placeholder */}
-                                    {food.image ? (
-                                        <Image source={{ uri: food.image }} style={styles.foodPhoto} />
-                                    ) : (
-                                        <View style={styles.foodPhotoPlaceholder}>
-                                            <Ionicons name="fast-food-outline" size={18} color="#94a3b8" />
-                                        </View>
-                                    )}
-
-                                    {/* ❤️ Favorite Button */}
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            const isValidId = (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
-                                            const realId = food.foodId || food._id;
-                                            const hasValidId = isValidId(realId);
-
-                                            const foodForFav = {
-                                                ...food,
-                                                _id: hasValidId ? realId : undefined,
-                                                // If valid ID, assume CLOUD unless specified otherwise. If invalid ID, force LOCAL to clone.
-                                                layer: hasValidId ? (food.layer || 'CLOUD') : 'LOCAL',
-                                                nutrients: food.nutrients || {
-                                                    kcal: food.kcal || 0,
-                                                    protein: food.protein || 0,
-                                                    carbs: food.carbs || 0,
-                                                    fat: food.fat || 0,
-                                                },
-                                            };
-                                            onToggleFavorite?.(foodForFav);
-                                        }}
-                                        style={styles.foodFavBtn}
-                                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                    >
-                                        <Ionicons
-                                            name={(() => {
-                                                const isFav = favoriteIds?.has(food.foodId) ||
-                                                    favoriteIds?.has(food._id) ||
-                                                    favoriteIds?.has(food.name?.toLowerCase?.().trim()) ||
-                                                    food.isFavorite;
-                                                return isFav ? 'heart' : 'heart-outline';
-                                            })()}
-                                            size={14}
-                                            color={(() => {
-                                                const isFav = favoriteIds?.has(food.foodId) ||
-                                                    favoriteIds?.has(food._id) ||
-                                                    favoriteIds?.has(food.name?.toLowerCase?.().trim()) ||
-                                                    food.isFavorite;
-                                                return isFav ? '#ef4444' : '#cbd5e1';
-                                            })()}
-                                        />
-                                    </TouchableOpacity>
-
-                                    {/* Center: Name + Macros */}
-                                    <View style={styles.foodDetails}>
+                                    {/* Top: Name + X */}
+                                    <View style={styles.foodTopRow}>
                                         <Text style={styles.foodName} numberOfLines={1}>{food.name}</Text>
-                                        <View style={styles.foodMacrosRow}>
-                                            {food.unit === 'a_gusto' ? (
-                                                <View style={{ backgroundColor: '#ecfccb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' }}>
-                                                    <Text style={{ color: '#4d7c0f', fontSize: 10, fontWeight: '700' }}>CONSUMO LIBRE</Text>
-                                                </View>
-                                            ) : (
-                                                <>
-                                                    <Text style={styles.foodKcal}>🔥 {Math.round(food.kcal || 0)}</Text>
-                                                    <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
-                                                    <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
-                                                    <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
-                                                </>
-                                            )}
-                                        </View>
-                                    </View>
-
-                                    {/* Right: Percentage + Portion */}
-                                    <View style={styles.foodRightSection}>
-                                        {/* Percentage Badge */}
-                                        <View style={[styles.pctBadge, pct >= 50 && { backgroundColor: '#fee2e2' }]}>
-                                            <Text style={[styles.pctText, pct >= 50 && { color: '#ef4444' }]}>{pct}%</Text>
-                                        </View>
-
-                                        {/* Editable Portion */}
-                                        {/* Editable Portion */}
-                                        {editingFoodIdx === foodIdx ? (
-                                            <EditablePortionControl
-                                                amount={food.amount || 0}
-                                                unit={food.unit || 'gramos'}
-                                                styleInput={styles.foodAmountInput}
-                                                styleUnit={styles.foodAmountUnit}
-                                                onUpdate={(newAmt, newUnit, shouldClose) => {
-                                                    const wasLibre = (food.unit === 'a_gusto' || food.unit === 'Libre');
-                                                    const isNewLibre = (newUnit === 'a_gusto' || newUnit === 'Libre');
-
-                                                    let updates = { amount: newAmt, unit: newUnit };
-
-                                                    // 1. To Libre
-                                                    if (!wasLibre && isNewLibre) {
-                                                        const curAmt = food.amount || 100;
-                                                        // 🟢 FIX: Convert to grams using unit factor before calculating per-100g
-                                                        const unitFactor = UNIT_CONVERSIONS[food.unit]?.factor ?? 1;
-                                                        const curWeightGrams = curAmt * unitFactor;
-
-                                                        if (curWeightGrams > 0) {
-                                                            updates._savedPer100g = {
-                                                                kcal: (food.kcal || 0) * 100 / curWeightGrams,
-                                                                protein: (food.protein || 0) * 100 / curWeightGrams,
-                                                                carbs: (food.carbs || 0) * 100 / curWeightGrams,
-                                                                fat: (food.fat || 0) * 100 / curWeightGrams
-                                                            };
-                                                        } else if (food._savedPer100g) updates._savedPer100g = food._savedPer100g;
-
-                                                        // Force visual 0
-                                                        updates.amount = 0;
-                                                        updates.kcal = 0; updates.protein = 0; updates.carbs = 0; updates.fat = 0;
-                                                    }
-                                                    // 2. From Libre
-                                                    else if (wasLibre && !isNewLibre) {
-                                                        const restoreAmt = newAmt > 0 ? newAmt : 100; // Default 100 if coming from 0
-                                                        updates.amount = restoreAmt;
-
-                                                        if (food._savedPer100g) {
-                                                            const base = food._savedPer100g;
-                                                            // 🟢 FIX: Convert restoreAmt to grams using new unit factor
-                                                            const newUnitFactor = UNIT_CONVERSIONS[newUnit]?.factor ?? 1;
-                                                            const restoreWeightGrams = restoreAmt * newUnitFactor;
-
-                                                            updates.kcal = Math.round(base.kcal * restoreWeightGrams / 100);
-                                                            updates.protein = Math.round(base.protein * restoreWeightGrams / 100 * 10) / 10;
-                                                            updates.carbs = Math.round(base.carbs * restoreWeightGrams / 100 * 10) / 10;
-                                                            updates.fat = Math.round(base.fat * restoreWeightGrams / 100 * 10) / 10;
-                                                        }
-                                                    }
-                                                    // 3. Normal (Amount or Unit change)
-                                                    else {
-                                                        const amountChanged = Math.abs((food.amount || 0) - newAmt) > 0.01;
-                                                        const unitChanged = updates.unit !== food.unit;
-
-                                                        // A. Unit Changed
-                                                        if (unitChanged) {
-                                                            const oldFactor = UNIT_CONVERSIONS[food.unit]?.factor ?? 1;
-                                                            const newFactor = UNIT_CONVERSIONS[newUnit]?.factor ?? 1;
-
-                                                            // 🛡️ SAFETY: Detect risky conversions that could cause multiplication explosion
-                                                            // - From a_gusto (factor 0) to anything
-                                                            // - Between units with factor 1 (Libre/unidad -> gramos)
-                                                            const isFromAGusto = oldFactor === 0 || food.unit === 'a_gusto' || food.unit === 'Libre';
-                                                            const isRiskyConversion = isFromAGusto || (oldFactor === 1 && newFactor === 1);
-
-                                                            if (amountChanged) {
-                                                                // 🟢 Correction: User changed Amount AND Unit
-                                                                updates.amount = newAmt;
-
-                                                                // 1. Try Density (Preferred - accurate)
-                                                                if (food._savedPer100g) {
-                                                                    const base = food._savedPer100g;
-                                                                    const newWeight = newAmt * newFactor;
-                                                                    updates.kcal = Math.round(base.kcal * newWeight / 100);
-                                                                    updates.protein = Math.round(base.protein * newWeight / 100 * 10) / 10;
-                                                                    updates.carbs = Math.round(base.carbs * newWeight / 100 * 10) / 10;
-                                                                    updates.fat = Math.round(base.fat * newWeight / 100 * 10) / 10;
-                                                                }
-                                                                // 2. Risky? -> PRESERVE MACROS (assume user is defining weight for current macros)
-                                                                else if (isRiskyConversion) {
-                                                                    // Do NOT touch macros - user says "these calories are for this new amount"
-                                                                }
-                                                                // 3. Normal Ratio Fallback
-                                                                else {
-                                                                    const oldWeight = (food.amount || 0) * oldFactor;
-                                                                    if (oldWeight > 0) {
-                                                                        const ratio = (newAmt * newFactor) / oldWeight;
-                                                                        updates.kcal = Math.round((food.kcal || 0) * ratio);
-                                                                        updates.protein = Math.round((food.protein || 0) * ratio * 10) / 10;
-                                                                        updates.carbs = Math.round((food.carbs || 0) * ratio * 10) / 10;
-                                                                        updates.fat = Math.round((food.fat || 0) * ratio * 10) / 10;
-                                                                    }
-                                                                }
-                                                            }
-                                                            // 🟢 Conversion: User ONLY switched Unit
-                                                            else {
-                                                                // If from a_gusto or risky, preserve amount and macros
-                                                                // CRITICAL FIX: If switching to 'gramos' or 'ml' from risky unit, default to 100g to anchor density
-                                                                if (isFromAGusto || oldFactor === 0) {
-                                                                    if (newUnit === 'gramos' || newUnit === 'ml') {
-                                                                        updates.amount = 100; // Force 100g default anchor
-                                                                    } else {
-                                                                        updates.amount = food.amount || 1;
-                                                                    }
-                                                                    // Macros preserved
-                                                                }
-                                                                else if (newFactor > 0) {
-                                                                    const weight = (food.amount || 0) * oldFactor;
-                                                                    updates.amount = Math.round((weight / newFactor) * 100) / 100;
-                                                                }
-                                                                // Macros always preserved in pure unit conversion
-                                                            }
-                                                        }
-                                                        // B. Only Amount Changed
-                                                        else if (amountChanged && (food.amount || 0) > 0) {
-                                                            const ratio = newAmt / food.amount;
-                                                            updates.kcal = Math.round((food.kcal || 0) * ratio);
-                                                            updates.protein = Math.round((food.protein || 0) * ratio * 10) / 10;
-                                                            updates.carbs = Math.round((food.carbs || 0) * ratio * 10) / 10;
-                                                            updates.fat = Math.round((food.fat || 0) * ratio * 10) / 10;
-                                                        }
-                                                    }
-
-                                                    if (updates.amount !== food.amount || updates.unit !== food.unit) {
-                                                        onUpdateFood?.(foodIdx, updates);
-                                                    }
-                                                    if (shouldClose) setEditingFoodIdx(null);
-                                                }}
-                                            />
-                                        ) : (
-                                            <TouchableOpacity
-                                                style={[styles.foodAmount, { flexDirection: 'row', alignItems: 'center', gap: 2 }]}
-                                                onPress={() => {
-                                                    setEditingFoodIdx(foodIdx);
-                                                    setEditAmount(String(food.amount || 100));
-                                                    setEditUnit(food.unit || 'gramos');
-                                                }}
-                                            >
-                                                {(food.unit === 'a_gusto' || food.unit === 'Libre') ? (
-                                                    <Text style={styles.libreText}>Libre</Text>
-                                                ) : (
-                                                    <>
-                                                        <Text style={styles.foodAmountText}>
-                                                            {food.amount}
-                                                        </Text>
-                                                        <Text style={[styles.foodAmountText, { fontSize: 13, color: '#94a3b8' }]}>
-                                                            {UNIT_CONVERSIONS[food.unit]?.label || food.unit}
-                                                        </Text>
-                                                    </>
-                                                )}
-                                            </TouchableOpacity>
-                                        )}
-
-
-                                        {/* Remove Button */}
-                                        <TouchableOpacity
-                                            style={styles.foodRemove}
-                                            onPress={() => onRemoveFood(foodIdx)}
-                                        >
+                                        <TouchableOpacity onPress={() => onRemoveFood(foodIdx)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                                             <Ionicons name="close" size={14} color="#9ca3af" />
                                         </TouchableOpacity>
                                     </View>
-
+                                    {/* Bottom: original row layout */}
+                                    <View style={styles.foodMainRow}>
+                                        <DragHandle food={food} />
+                                        <TouchableOpacity
+                                            activeOpacity={0.7}
+                                            onPress={() => onOpenFoodEditor?.(food, foodIdx, option.id)}
+                                        >
+                                            {getDisplayableImage(food.image) ? (
+                                                <Image source={{ uri: getDisplayableImage(food.image) }} style={styles.foodPhoto} cachePolicy="memory-disk" />
+                                            ) : (
+                                                <View style={styles.foodPhotoPlaceholder}>
+                                                    <Ionicons name="fast-food-outline" size={16} color="#94a3b8" />
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                const isValidId = (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
+                                                const realId = food.foodId || food._id;
+                                                const hasValidId = isValidId(realId);
+                                                onToggleFavorite?.({ ...food, _id: hasValidId ? realId : undefined, layer: hasValidId ? (food.layer || 'CLOUD') : 'LOCAL', nutrients: food.nutrients || { kcal: food.kcal || 0, protein: food.protein || 0, carbs: food.carbs || 0, fat: food.fat || 0 } });
+                                            }}
+                                            style={styles.foodFavBtn}
+                                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                        >
+                                            <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={13} color={isFav ? '#ef4444' : '#cbd5e1'} />
+                                        </TouchableOpacity>
+                                        {/* Macros (flex:1) */}
+                                        <View style={styles.foodDetails}>
+                                            <View style={styles.foodMacrosRow}>
+                                                {food.unit === 'a_gusto' ? (
+                                                    <View style={{ backgroundColor: '#ecfccb', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 }}>
+                                                        <Text style={{ color: '#4d7c0f', fontSize: 9, fontWeight: '700' }}>LIBRE</Text>
+                                                    </View>
+                                                ) : (
+                                                    <>
+                                                        <Text style={styles.foodKcal}>🔥{Math.round(food.kcal || 0)}</Text>
+                                                        <Text style={[styles.foodMacro, { color: '#3b82f6' }]}>P:{Math.round(food.protein || 0)}</Text>
+                                                        <Text style={[styles.foodMacro, { color: '#22c55e' }]}>C:{Math.round(food.carbs || 0)}</Text>
+                                                        <Text style={[styles.foodMacro, { color: '#f59e0b' }]}>G:{Math.round(food.fat || 0)}</Text>
+                                                    </>
+                                                )}
+                                            </View>
+                                        </View>
+                                        {/* Right group */}
+                                        <View style={styles.foodRightSection}>
+                                            <View style={[styles.pctBadge, pct >= 50 && { backgroundColor: '#fee2e2' }]}>
+                                                <Text style={[styles.pctText, pct >= 50 && { color: '#ef4444' }]}>{pct}%</Text>
+                                            </View>
+                                            {editingFoodIdx === foodIdx ? (
+                                                <EditablePortionControl
+                                                    amount={food.amount || 0}
+                                                    unit={food.unit || 'gramos'}
+                                                    styleInput={styles.foodAmountInput}
+                                                    styleUnit={styles.foodAmountUnit}
+                                                    onUpdate={(newAmt, newUnit, shouldClose) => {
+                                                        const wasLibre = (food.unit === 'a_gusto' || food.unit === 'Libre');
+                                                        const isNewLibre = (newUnit === 'a_gusto' || newUnit === 'Libre');
+                                                        let updates = { amount: newAmt, unit: newUnit };
+                                                        if (!wasLibre && isNewLibre) {
+                                                            const curAmt = food.amount || 100;
+                                                            const unitFactor = UNIT_CONVERSIONS[food.unit]?.factor ?? 1;
+                                                            const curWeightGrams = curAmt * unitFactor;
+                                                            if (curWeightGrams > 0) { updates._savedPer100g = { kcal: (food.kcal||0)*100/curWeightGrams, protein: (food.protein||0)*100/curWeightGrams, carbs: (food.carbs||0)*100/curWeightGrams, fat: (food.fat||0)*100/curWeightGrams }; }
+                                                            else if (food._savedPer100g) updates._savedPer100g = food._savedPer100g;
+                                                            updates.amount = 0; updates.kcal = 0; updates.protein = 0; updates.carbs = 0; updates.fat = 0;
+                                                        } else if (wasLibre && !isNewLibre) {
+                                                            const restoreAmt = newAmt > 0 ? newAmt : 100; updates.amount = restoreAmt;
+                                                            if (food._savedPer100g) { const base = food._savedPer100g; const nuf = UNIT_CONVERSIONS[newUnit]?.factor ?? 1; const rw = restoreAmt * nuf; updates.kcal = Math.round(base.kcal*rw/100); updates.protein = Math.round(base.protein*rw/100*10)/10; updates.carbs = Math.round(base.carbs*rw/100*10)/10; updates.fat = Math.round(base.fat*rw/100*10)/10; }
+                                                        } else {
+                                                            const amountChanged = Math.abs((food.amount||0)-newAmt) > 0.01;
+                                                            const unitChanged = updates.unit !== food.unit;
+                                                            if (unitChanged) {
+                                                                const oldFactor = UNIT_CONVERSIONS[food.unit]?.factor ?? 1; const newFactor = UNIT_CONVERSIONS[newUnit]?.factor ?? 1;
+                                                                const isFromAGusto = oldFactor === 0 || food.unit === 'a_gusto' || food.unit === 'Libre';
+                                                                const isRiskyConversion = isFromAGusto || (oldFactor === 1 && newFactor === 1);
+                                                                if (amountChanged) { updates.amount = newAmt;
+                                                                    if (food._savedPer100g) { const base = food._savedPer100g; const nw = newAmt*newFactor; updates.kcal = Math.round(base.kcal*nw/100); updates.protein = Math.round(base.protein*nw/100*10)/10; updates.carbs = Math.round(base.carbs*nw/100*10)/10; updates.fat = Math.round(base.fat*nw/100*10)/10; }
+                                                                    else if (!isRiskyConversion) { const ow = (food.amount||0)*oldFactor; if (ow > 0) { const r = (newAmt*newFactor)/ow; updates.kcal = Math.round((food.kcal||0)*r); updates.protein = Math.round((food.protein||0)*r*10)/10; updates.carbs = Math.round((food.carbs||0)*r*10)/10; updates.fat = Math.round((food.fat||0)*r*10)/10; } }
+                                                                } else {
+                                                                    if (isFromAGusto || oldFactor === 0) { updates.amount = (newUnit === 'gramos' || newUnit === 'ml') ? 100 : (food.amount || 1); }
+                                                                    else if (newFactor > 0) { updates.amount = Math.round(((food.amount||0)*oldFactor/newFactor)*100)/100; }
+                                                                }
+                                                            } else if (amountChanged && (food.amount||0) > 0) { const r = newAmt/food.amount; updates.kcal = Math.round((food.kcal||0)*r); updates.protein = Math.round((food.protein||0)*r*10)/10; updates.carbs = Math.round((food.carbs||0)*r*10)/10; updates.fat = Math.round((food.fat||0)*r*10)/10; }
+                                                        }
+                                                        if (updates.amount !== food.amount || updates.unit !== food.unit) onUpdateFood?.(foodIdx, updates);
+                                                        if (shouldClose) setEditingFoodIdx(null);
+                                                    }}
+                                                />
+                                            ) : (
+                                                <TouchableOpacity
+                                                    style={[styles.foodAmount, { flexDirection: 'row', alignItems: 'center', gap: 2 }]}
+                                                    onPress={() => { setEditingFoodIdx(foodIdx); setEditAmount(String(food.amount || 100)); setEditUnit(food.unit || 'gramos'); }}
+                                                >
+                                                    {(food.unit === 'a_gusto' || food.unit === 'Libre') ? (
+                                                        <Text style={styles.libreText}>Libre</Text>
+                                                    ) : (
+                                                        <>
+                                                            <Text style={styles.foodAmountText}>{food.amount}</Text>
+                                                            <Text style={[styles.foodAmountText, { fontSize: 10, color: '#94a3b8' }]}>{UNIT_CONVERSIONS[food.unit]?.label || food.unit}</Text>
+                                                        </>
+                                                    )}
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    </View>
                                 </View>
                             );
                         })}
+
+                        {/* Web: show/hide collapsed foods */}
+                        {Platform.OS === 'web' && foodCount > MAX_VISIBLE_FOODS_WEB && (
+                            <TouchableOpacity
+                                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4, gap: 4 }}
+                                onPress={() => setExpandedFoods(prev => !prev)}
+                            >
+                                <Ionicons name={expandedFoods ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
+                                <Text style={{ fontSize: 11, color: '#64748b' }}>
+                                    {expandedFoods ? 'Ver menos' : `+${foodCount - MAX_VISIBLE_FOODS_WEB} alimentos más`}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
 
                         <TouchableOpacity style={styles.addFoodBtn} onPress={onAddFood}>
                             <Ionicons name="add-circle-outline" size={14} color="#3b82f6" />
@@ -1662,6 +1735,153 @@ function OptionCard({
                         📝 Añadir Nota
                     </Text>
                 </TouchableOpacity>
+            )}
+
+            {/* 📦 SAVE AS COMBO MODAL */}
+            {showSaveCombo && (
+                <Modal
+                    visible={showSaveCombo}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setShowSaveCombo(false)}
+                >
+                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 400, gap: 16 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 18, fontWeight: '700', color: '#1e293b' }}>📦 Guardar como Combo</Text>
+                                <TouchableOpacity onPress={() => setShowSaveCombo(false)}>
+                                    <Ionicons name="close" size={24} color="#64748b" />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Image + Name row */}
+                            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                                {/* Image preview / generate */}
+                                <TouchableOpacity
+                                    onPress={generateComboImage}
+                                    disabled={isGeneratingComboImage}
+                                    style={{
+                                        width: 72, height: 72, borderRadius: 12,
+                                        backgroundColor: '#fef3c7', borderWidth: 1.5, borderColor: '#fde68a',
+                                        alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                                    }}
+                                >
+                                    {isGeneratingComboImage ? (
+                                        <ActivityIndicator size="small" color="#d97706" />
+                                    ) : comboImage ? (
+                                        <Image source={{ uri: comboImage }} style={{ width: 72, height: 72, borderRadius: 12 }} />
+                                    ) : (
+                                        <View style={{ alignItems: 'center', gap: 2 }}>
+                                            <Ionicons name="sparkles" size={20} color="#d97706" />
+                                            <Text style={{ fontSize: 9, color: '#b45309', fontWeight: '600' }}>Generar</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                                {comboImage && (
+                                    <TouchableOpacity
+                                        onPress={() => setComboImage(null)}
+                                        style={{ position: 'absolute', left: 56, top: -4, backgroundColor: '#fff', borderRadius: 10, padding: 2, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 }}
+                                    >
+                                        <Ionicons name="close-circle" size={18} color="#ef4444" />
+                                    </TouchableOpacity>
+                                )}
+                                {/* Name input */}
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 6 }}>Nombre del combo</Text>
+                                    <EnhancedTextInput
+                                        containerStyle={{ backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12 }}
+                                        style={{ fontSize: 15, color: '#1e293b' }}
+                                        value={comboName}
+                                        onChangeText={setComboName}
+                                        placeholder="Ej: Desayuno Definición"
+                                        placeholderTextColor="#94a3b8"
+                                        autoFocus
+                                    />
+                                </View>
+                            </View>
+
+                            {/* Categoría */}
+                            <View>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 6 }}>Categoría</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                                        {[
+                                            { id: 'desayuno', label: 'Desayuno' },
+                                            { id: 'almuerzo', label: 'Almuerzo' },
+                                            { id: 'comida', label: 'Comida' },
+                                            { id: 'merienda', label: 'Merienda' },
+                                            { id: 'cena', label: 'Cena' },
+                                            { id: 'snack', label: 'Snack' },
+                                            { id: 'pre-entreno', label: 'Pre-Entreno' },
+                                            { id: 'post-entreno', label: 'Post-Entreno' },
+                                            { id: 'otro', label: 'Otro' },
+                                        ].map(cat => (
+                                            <TouchableOpacity
+                                                key={cat.id}
+                                                style={{
+                                                    paddingHorizontal: 12,
+                                                    paddingVertical: 8,
+                                                    borderRadius: 20,
+                                                    backgroundColor: comboCategory === cat.id ? '#d97706' : '#f1f5f9',
+                                                }}
+                                                onPress={() => setComboCategory(cat.id)}
+                                            >
+                                                <Text style={{
+                                                    fontSize: 13,
+                                                    fontWeight: '600',
+                                                    color: comboCategory === cat.id ? '#fff' : '#64748b',
+                                                }}>
+                                                    {cat.label}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </ScrollView>
+                            </View>
+
+                            {/* Preview */}
+                            <View style={{ backgroundColor: '#fef3c7', borderRadius: 10, padding: 10, gap: 4 }}>
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: '#92400e' }}>
+                                    {option.foods?.length || 0} alimentos · {Math.round(optionMacros.kcal)} kcal
+                                </Text>
+                                {option.foods?.slice(0, 3).map((food, idx) => (
+                                    <Text key={idx} style={{ fontSize: 11, color: '#78350f' }} numberOfLines={1}>
+                                        · {food.name} ({food.amount}{food.unit === 'gramos' ? 'g' : ` ${food.unit}`})
+                                    </Text>
+                                ))}
+                                {(option.foods?.length || 0) > 3 && (
+                                    <Text style={{ fontSize: 11, color: '#b45309', fontStyle: 'italic' }}>
+                                        +{option.foods.length - 3} más
+                                    </Text>
+                                )}
+                            </View>
+
+                            {/* Save Button */}
+                            <TouchableOpacity
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    backgroundColor: isSavingCombo ? '#94a3b8' : '#d97706',
+                                    paddingVertical: 14,
+                                    borderRadius: 12,
+                                }}
+                                onPress={handleSaveAsCombo}
+                                disabled={isSavingCombo}
+                            >
+                                {isSavingCombo ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Ionicons name="layers" size={20} color="#fff" />
+                                )}
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>
+                                    {isSavingCombo ? 'Guardando...' : 'GUARDAR COMBO'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
             )}
         </View >
     );
@@ -1872,7 +2092,8 @@ const styles = StyleSheet.create({
     },
     foodName: {
         flex: 1,
-        fontSize: 13,
+        fontSize: 12,
+        fontWeight: '600',
         color: '#374151',
     },
     foodAmount: {
@@ -1923,31 +2144,40 @@ const styles = StyleSheet.create({
         marginLeft: 4,
     },
 
-    // NEW: Rich Food Card Styles
+    // Food Card: compact 2-line (name+X top, row bottom)
     foodCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
         backgroundColor: '#fafafa',
         borderRadius: 8,
-        padding: 8,
-        marginBottom: 6,
-        gap: 8,
+        paddingHorizontal: 6,
+        paddingVertical: 5,
+        marginBottom: 4,
+        gap: 2,
+    },
+    foodTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 4,
+    },
+    foodMainRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     foodPhoto: {
-        width: 36,
-        height: 36,
-        borderRadius: 6,
+        width: 30,
+        height: 30,
+        borderRadius: 5,
     },
     foodPhotoPlaceholder: {
-        width: 36,
-        height: 36,
-        borderRadius: 6,
+        width: 30,
+        height: 30,
+        borderRadius: 5,
         backgroundColor: '#f1f5f9',
         alignItems: 'center',
         justifyContent: 'center',
     },
     foodFavBtn: {
-        marginHorizontal: 4,
         padding: 2,
     },
     foodDetails: {
@@ -1957,8 +2187,7 @@ const styles = StyleSheet.create({
     foodMacrosRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        marginTop: 2,
+        gap: 5,
     },
     foodKcal: {
         fontSize: 10,
@@ -1972,7 +2201,7 @@ const styles = StyleSheet.create({
     },
     foodRightSection: {
         alignItems: 'flex-end',
-        gap: 4,
+        gap: 3,
     },
     pctBadge: {
         backgroundColor: '#e0f2fe',

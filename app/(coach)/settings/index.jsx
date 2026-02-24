@@ -1,14 +1,91 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView, Platform, Switch, ActivityIndicator, LayoutAnimation, UIManager } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import CoachHeader from '../components/CoachHeader';
 import { resetCoachOnboarding } from '../../../components/CoachOnboardingModal';
+import { useAuth } from '../../../context/AuthContext';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
+
+// Habilitar LayoutAnimation en Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const NOTIFICATION_OPTIONS = [
+    { key: 'videoFeedback', label: 'Videos, fotos y audios', description: 'Cuando un cliente sube contenido de entreno', icon: '🎬' },
+    { key: 'progressPhotos', label: 'Fotos de progreso', description: 'Fotos corporales y de comida de clientes', icon: '📸' },
+    { key: 'weeklyCheckin', label: 'Check-ins semanales', description: 'Cuando un cliente completa su seguimiento', icon: '📋' },
+];
 
 export default function SettingsScreen() {
     const router = useRouter();
+    const { token } = useAuth();
     const [resettingTutorial, setResettingTutorial] = useState(false);
+    const [notifExpanded, setNotifExpanded] = useState(false);
+    const [notifPrefs, setNotifPrefs] = useState(null);
+    const [notifLoading, setNotifLoading] = useState(false);
+    const [notifError, setNotifError] = useState(null);
+
+    // Cargar preferencias de notificación al expandir
+    const loadNotifPrefs = useCallback(async () => {
+        if (notifPrefs) return; // Ya cargadas
+        setNotifLoading(true);
+        setNotifError(null);
+        try {
+            const response = await fetch(`${API_URL}/api/notifications/preferences`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.success) {
+                setNotifPrefs(data.preferences);
+            } else {
+                setNotifError('Error al cargar preferencias');
+            }
+        } catch (err) {
+            console.error('[Settings] Error loading notification prefs:', err);
+            setNotifError('Error de conexión');
+        } finally {
+            setNotifLoading(false);
+        }
+    }, [token, notifPrefs]);
+
+    // Toggle una preferencia individual
+    const togglePref = async (key, newValue) => {
+        // Optimistic update
+        const oldPrefs = { ...notifPrefs };
+        setNotifPrefs(prev => ({ ...prev, [key]: newValue }));
+
+        try {
+            const response = await fetch(`${API_URL}/api/notifications/preferences`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ preferences: { [key]: newValue } })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                // Revert on failure
+                setNotifPrefs(oldPrefs);
+            }
+        } catch (err) {
+            console.error('[Settings] Error updating notification pref:', err);
+            setNotifPrefs(oldPrefs);
+        }
+    };
+
+    // Manejar expand/collapse con animación
+    const handleNotifToggle = () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        const newExpanded = !notifExpanded;
+        setNotifExpanded(newExpanded);
+        if (newExpanded) {
+            loadNotifPrefs();
+        }
+    };
 
     // Reiniciar el tutorial de onboarding
     const handleResetTutorial = async () => {
@@ -54,6 +131,11 @@ export default function SettingsScreen() {
             );
         }
     };
+
+    // Contar notificaciones activas
+    const activeCount = notifPrefs
+        ? NOTIFICATION_OPTIONS.filter(opt => notifPrefs[opt.key] !== false).length
+        : null;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -137,25 +219,81 @@ export default function SettingsScreen() {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Configuración General</Text>
 
-                    {/* Notificaciones - Placeholder */}
+                    {/* Notificaciones - Expandible */}
                     <TouchableOpacity
-                        style={[styles.settingCard, styles.settingCardDisabled]}
-                        activeOpacity={1}
+                        style={[styles.settingCard, notifExpanded && styles.settingCardExpanded]}
+                        onPress={handleNotifToggle}
+                        activeOpacity={0.7}
                     >
                         <View style={[styles.settingIcon, { backgroundColor: '#f59e0b15' }]}>
                             <Ionicons name="notifications-outline" size={24} color="#f59e0b" />
                         </View>
                         <View style={styles.settingInfo}>
-                            <Text style={[styles.settingTitle, styles.settingTitleDisabled]}>
+                            <Text style={styles.settingTitle}>
                                 Notificaciones
-                                <Text style={styles.comingSoon}> 🚧</Text>
                             </Text>
                             <Text style={styles.settingDescription}>
-                                Configura alertas y recordatorios
+                                {activeCount !== null
+                                    ? `${activeCount} de ${NOTIFICATION_OPTIONS.length} activas`
+                                    : 'Configura qué alertas recibes'
+                                }
                             </Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={22} color="#94a3b8" />
+                        <Ionicons
+                            name={notifExpanded ? 'chevron-up' : 'chevron-down'}
+                            size={22}
+                            color="#64748b"
+                        />
                     </TouchableOpacity>
+
+                    {/* Panel expandido de notificaciones */}
+                    {notifExpanded && (
+                        <View style={styles.notifPanel}>
+                            {notifLoading ? (
+                                <View style={styles.notifLoadingContainer}>
+                                    <ActivityIndicator size="small" color="#f59e0b" />
+                                    <Text style={styles.notifLoadingText}>Cargando preferencias...</Text>
+                                </View>
+                            ) : notifError ? (
+                                <View style={styles.notifErrorContainer}>
+                                    <Ionicons name="warning-outline" size={20} color="#ef4444" />
+                                    <Text style={styles.notifErrorText}>{notifError}</Text>
+                                    <TouchableOpacity onPress={() => { setNotifPrefs(null); loadNotifPrefs(); }}>
+                                        <Text style={styles.notifRetryText}>Reintentar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            ) : notifPrefs ? (
+                                <>
+                                    <Text style={styles.notifSectionLabel}>Notificaciones de clientes</Text>
+                                    {NOTIFICATION_OPTIONS.map((opt, index) => (
+                                        <View
+                                            key={opt.key}
+                                            style={[
+                                                styles.notifRow,
+                                                index < NOTIFICATION_OPTIONS.length - 1 && styles.notifRowBorder
+                                            ]}
+                                        >
+                                            <Text style={styles.notifEmoji}>{opt.icon}</Text>
+                                            <View style={styles.notifRowInfo}>
+                                                <Text style={styles.notifRowLabel}>{opt.label}</Text>
+                                                <Text style={styles.notifRowDesc}>{opt.description}</Text>
+                                            </View>
+                                            <Switch
+                                                value={notifPrefs[opt.key] !== false}
+                                                onValueChange={(val) => togglePref(opt.key, val)}
+                                                trackColor={{ false: '#e2e8f0', true: '#fbbf24' }}
+                                                thumbColor={notifPrefs[opt.key] !== false ? '#f59e0b' : '#94a3b8'}
+                                                ios_backgroundColor="#e2e8f0"
+                                            />
+                                        </View>
+                                    ))}
+                                    <Text style={styles.notifHint}>
+                                        Las notificaciones desactivadas no se enviarán a tu dispositivo, pero seguirás viendo el contenido en la app.
+                                    </Text>
+                                </>
+                            ) : null}
+                        </View>
+                    )}
 
                     {/* Privacidad - Placeholder */}
                     <TouchableOpacity
@@ -181,7 +319,7 @@ export default function SettingsScreen() {
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>TotalGain Coach Panel</Text>
-                    <Text style={styles.footerVersion}>v1.1.5</Text>
+                    <Text style={styles.footerVersion}>v1.1.10</Text>
                 </View>
             </ScrollView>
         </SafeAreaView>
@@ -225,6 +363,11 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 2,
     },
+    settingCardExpanded: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        marginBottom: 0,
+    },
     settingCardDisabled: {
         opacity: 0.6,
     },
@@ -255,6 +398,97 @@ const styles = StyleSheet.create({
     comingSoon: {
         fontSize: 12,
     },
+    // ═══════════════════════════════════════
+    // NOTIFICATION PANEL STYLES
+    // ═══════════════════════════════════════
+    notifPanel: {
+        backgroundColor: '#fff',
+        borderBottomLeftRadius: 14,
+        borderBottomRightRadius: 14,
+        paddingHorizontal: 16,
+        paddingBottom: 16,
+        marginBottom: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    notifSectionLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#94a3b8',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginTop: 12,
+        marginBottom: 8,
+    },
+    notifRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+    },
+    notifRowBorder: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    notifEmoji: {
+        fontSize: 20,
+        marginRight: 12,
+        width: 28,
+        textAlign: 'center',
+    },
+    notifRowInfo: {
+        flex: 1,
+        marginRight: 12,
+    },
+    notifRowLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1e293b',
+        marginBottom: 2,
+    },
+    notifRowDesc: {
+        fontSize: 12,
+        color: '#94a3b8',
+    },
+    notifHint: {
+        fontSize: 11,
+        color: '#94a3b8',
+        fontStyle: 'italic',
+        marginTop: 12,
+        lineHeight: 16,
+    },
+    notifLoadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 20,
+        gap: 8,
+    },
+    notifLoadingText: {
+        fontSize: 13,
+        color: '#94a3b8',
+    },
+    notifErrorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        gap: 8,
+    },
+    notifErrorText: {
+        fontSize: 13,
+        color: '#ef4444',
+    },
+    notifRetryText: {
+        fontSize: 13,
+        color: '#3b82f6',
+        fontWeight: '600',
+    },
+    // ═══════════════════════════════════════
     footer: {
         alignItems: 'center',
         marginTop: 24,

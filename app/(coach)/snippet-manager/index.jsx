@@ -8,8 +8,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
-    Platform, useWindowDimensions, Dimensions
+    Platform, Dimensions
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
@@ -30,7 +31,7 @@ const CATEGORIES = {
 export default function SnippetManagerScreen() {
     const router = useRouter();
     const { token } = useAuth();
-    const { width: screenWidth } = useWindowDimensions();
+    const { width: screenWidth } = useStableWindowDimensions();
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);

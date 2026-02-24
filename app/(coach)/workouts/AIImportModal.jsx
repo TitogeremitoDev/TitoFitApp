@@ -12,8 +12,8 @@ import {
     Platform,
     Alert,
     Dimensions,
-    useWindowDimensions
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -163,7 +163,7 @@ const ExercisePreviewItem = ({ exercise, onSelectExercise, allExercises, searchQ
 
 export default function AIImportModal({ visible, onClose, onRoutineSaved }) {
     const { token, user } = useAuth();
-    const { height: windowHeight } = useWindowDimensions();
+    const { height: windowHeight } = useStableWindowDimensions();
     const modalMaxHeight = Math.min(windowHeight * 0.85, windowHeight - 60);
     const abortControllerRef = useRef(null);
     const [step, setStep] = useState(1); // 1: Upload, 2: Preview

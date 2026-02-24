@@ -10,8 +10,6 @@ import {
     Alert,
     Platform,
     Modal,
-    FlatList,
-    useWindowDimensions,
     Animated,
     Share,
     Linking
@@ -19,11 +17,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useStableWindowDimensions } from '../../src/hooks/useStableBreakpoint';
 import { useNotifications } from '../../context/NotificationContext';
 import { useRouter } from 'expo-router';
 import CoachOnboardingModal, { hasCompletedCoachOnboarding } from '../../components/CoachOnboardingModal';
 import BroadcastModal from '../../components/BroadcastModal';
-import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials';
 // Componentes mejorados para iOS
 import {
     EnhancedScrollView as ScrollView,
@@ -238,7 +236,7 @@ export default function TrainerDashboard() {
     const { token, user } = useAuth();
     const { unreadChat: unreadMessages, refreshNotifications } = useNotifications();
     const router = useRouter();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isMobile = width <= 768;
     // Removido: La visibilidad del CoachFloatingTabBar ahora se controla en _layout.jsx
 
@@ -247,12 +245,6 @@ export default function TrainerDashboard() {
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [currentClients, setCurrentClients] = useState(0);
     const [showOnboarding, setShowOnboarding] = useState(false);
-    const [messagesModalVisible, setMessagesModalVisible] = useState(false);
-    const [clientsList, setClientsList] = useState([]);
-    const [feedbackSummary, setFeedbackSummary] = useState({});
-    const [searchQuery, setSearchQuery] = useState('');
-    const [activeFilter, setActiveFilter] = useState('all');
-    const [loadingClients, setLoadingClients] = useState(false);
     const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
 
     // 🚀 Estados para Sistema de Invitación Atletas
@@ -329,57 +321,6 @@ export default function TrainerDashboard() {
         }));
     };
 
-    const loadMessagesData = async () => {
-        try {
-            const [clientsRes, summaryRes] = await Promise.all([
-                fetch(`${API_URL}/api/trainers/clients-extended`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                }),
-                fetch(`${API_URL}/api/chat/summary`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                })
-            ]);
-            const clientsData = await clientsRes.json();
-            const summaryData = await summaryRes.json();
-            setClientsList(clientsData.clients || []);
-            setFeedbackSummary(summaryData.summary || {});
-        } catch (error) {
-            console.error('Error loading messages:', error);
-        }
-    };
-
-    const openMessagesModal = () => {
-        setMessagesModalVisible(true);
-        loadMessagesData();
-    };
-
-    const openClientChat = async (client) => {
-        try {
-            const res = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ clientId: client._id }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                setMessagesModalVisible(false);
-                router.push({
-                    pathname: '/(app)/chat/[conversationId]',
-                    params: {
-                        conversationId: data.conversation._id,
-                        displayName: client.nombre,
-                        isTrainerChat: 'true',
-                        type: 'trainer',
-                    },
-                });
-            }
-        } catch (error) {
-            console.error('[TrainerDashboard] Error opening chat:', error);
-        }
-    };
 
     const copyCodeToClipboard = () => {
         const code = trainerProfile?.trainerCode;
@@ -629,7 +570,7 @@ Cualquier duda me escribes. Vamos a por tus objetivos!`;
                             {/* Botones Secundarios */}
                             <TouchableOpacity
                                 style={styles.secondaryBtn}
-                                onPress={openMessagesModal}
+                                onPress={() => router.push('/(coach)/communication')}
                             >
                                 <Ionicons name="chatbubbles-outline" size={20} color="#94a3b8" />
                                 {unreadMessages > 0 && (
@@ -685,209 +626,6 @@ Cualquier duda me escribes. Vamos a por tus objetivos!`;
                 onComplete={handleOnboardingComplete}
                 onSkip={handleOnboardingSkip}
             />
-
-            {/* Modal Lista de Mensajes - PANTALLA COMPLETA */}
-            <Modal
-                visible={messagesModalVisible}
-                animationType="slide"
-                transparent={false}
-                onRequestClose={() => setMessagesModalVisible(false)}
-            >
-                <SafeAreaView style={styles.fullScreenModal}>
-                    {/* Header */}
-                    <View style={styles.fullModalHeader}>
-                        <TouchableOpacity
-                            onPress={() => setMessagesModalVisible(false)}
-                            style={styles.fullModalBackBtn}
-                        >
-                            <Ionicons name="arrow-back" size={24} color="#1e293b" />
-                        </TouchableOpacity>
-                        <Text style={styles.fullModalTitle}>💬 Centro de Mensajes</Text>
-                        <TouchableOpacity
-                            style={styles.broadcastBtn}
-                            onPress={() => {
-                                setMessagesModalVisible(false);
-                                setBroadcastModalVisible(true);
-                            }}
-                        >
-                            <Ionicons name="megaphone" size={20} color="#8b5cf6" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Stats Bar */}
-                    <View style={styles.statsBar}>
-                        <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>{clientsList.length}</Text>
-                            <Text style={styles.statLabel}>Clientes</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Text style={[styles.statNumber, { color: '#3b82f6' }]}>{unreadMessages}</Text>
-                            <Text style={styles.statLabel}>Pendientes</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Text style={[styles.statNumber, { color: '#10b981' }]}>
-                                {clientsList.filter(c => {
-                                    const s = feedbackSummary[c._id];
-                                    return s && s.unreadMessages === 0 && s.totalMessages > 0;
-                                }).length}
-                            </Text>
-                            <Text style={styles.statLabel}>Al día</Text>
-                        </View>
-                    </View>
-
-                    {/* Search Bar */}
-                    <View style={styles.searchContainer}>
-                        <Ionicons name="search" size={20} color="#94a3b8" />
-                        <TextInput
-                            style={styles.searchInput}
-                            placeholder="Buscar cliente..."
-                            placeholderTextColor="#94a3b8"
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                        />
-                        {searchQuery.length > 0 && (
-                            <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                <Ionicons name="close-circle" size={20} color="#94a3b8" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    {/* Filter Tabs */}
-                    <View style={styles.filterTabs}>
-                        {[
-                            { id: 'all', label: 'Todos', icon: 'people' },
-                            { id: 'unread', label: 'Pendientes', icon: 'mail-unread' },
-                            { id: 'replied', label: 'Respondidos', icon: 'checkmark-done' }
-                        ].map(tab => (
-                            <TouchableOpacity
-                                key={tab.id}
-                                style={[styles.filterTab, activeFilter === tab.id && styles.filterTabActive]}
-                                onPress={() => setActiveFilter(tab.id)}
-                            >
-                                <Ionicons
-                                    name={tab.icon}
-                                    size={16}
-                                    color={activeFilter === tab.id ? '#fff' : '#64748b'}
-                                />
-                                <Text style={[
-                                    styles.filterTabText,
-                                    activeFilter === tab.id && styles.filterTabTextActive
-                                ]}>
-                                    {tab.label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-
-                    {/* Clients List */}
-                    {loadingClients ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color="#3b82f6" />
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={clientsList
-                                .filter(client => {
-                                    const matchesSearch = client.nombre?.toLowerCase().includes(searchQuery.toLowerCase());
-                                    const summary = feedbackSummary[client._id] || {};
-                                    if (activeFilter === 'unread') {
-                                        return matchesSearch && summary.unreadMessages > 0;
-                                    } else if (activeFilter === 'replied') {
-                                        return matchesSearch && summary.unreadMessages === 0 && summary.totalMessages > 0;
-                                    }
-                                    return matchesSearch;
-                                })
-                                .sort((a, b) => {
-                                    const aUnread = feedbackSummary[a._id]?.unreadMessages || 0;
-                                    const bUnread = feedbackSummary[b._id]?.unreadMessages || 0;
-                                    return bUnread - aUnread;
-                                })
-                            }
-                            keyExtractor={item => item._id}
-                            numColumns={1}
-                            contentContainerStyle={styles.clientsListContent}
-                            renderItem={({ item }) => {
-                                const summary = feedbackSummary[item._id] || {};
-                                const hasUnread = summary.unreadMessages > 0;
-                                const totalMsgs = summary.totalMessages || 0;
-
-                                let statusColor = '#6b7280';
-                                let statusLabel = 'Sin contacto';
-                                if (summary.lastFeedbackDate) {
-                                    const daysSince = Math.floor(
-                                        (new Date() - new Date(summary.lastFeedbackDate)) / (1000 * 60 * 60 * 24)
-                                    );
-                                    if (daysSince < 7) {
-                                        statusColor = '#10b981';
-                                        statusLabel = 'Activo';
-                                    } else if (daysSince < 14) {
-                                        statusColor = '#f59e0b';
-                                        statusLabel = 'Atención';
-                                    } else {
-                                        statusColor = '#ef4444';
-                                        statusLabel = 'Urgente';
-                                    }
-                                }
-
-                                return (
-                                    <TouchableOpacity
-                                        style={[styles.clientCard, hasUnread && styles.clientCardUnread]}
-                                        onPress={() => openClientChat(item)}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={styles.clientCardLeft}>
-                                            <View style={{ position: 'relative', marginRight: 12 }}>
-                                                <AvatarWithInitials
-                                                    avatarUrl={item.avatarUrl}
-                                                    name={item.nombre}
-                                                    size={48}
-                                                />
-                                                <View style={[
-                                                    styles.statusDot,
-                                                    { backgroundColor: statusColor }
-                                                ]} />
-                                            </View>
-                                            <View style={styles.clientCardInfo}>
-                                                <Text style={styles.clientCardName}>{item.nombre}</Text>
-                                                <Text style={styles.clientCardMeta}>
-                                                    {totalMsgs > 0
-                                                        ? `${totalMsgs} msgs • ${statusLabel}`
-                                                        : 'Sin conversación aún'
-                                                    }
-                                                </Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.clientCardRight}>
-                                            {hasUnread && (
-                                                <View style={styles.unreadBadgeLarge}>
-                                                    <Text style={styles.unreadBadgeText}>{summary.unreadMessages}</Text>
-                                                </View>
-                                            )}
-                                            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            }}
-                            ListEmptyComponent={
-                                <View style={styles.emptyFullScreen}>
-                                    <Ionicons name="chatbubbles-outline" size={64} color="#cbd5e1" />
-                                    <Text style={styles.emptyTitle}>
-                                        {activeFilter === 'unread' ? 'Sin mensajes pendientes' :
-                                            activeFilter === 'replied' ? 'Sin conversaciones respondidas' :
-                                                searchQuery ? 'Sin resultados' : 'Sin clientes'}
-                                    </Text>
-                                    <Text style={styles.emptySubtitle}>
-                                        {activeFilter === 'unread' ? '¡Excelente! Estás al día con todos' :
-                                            searchQuery ? 'Intenta con otro nombre' : ''}
-                                    </Text>
-                                </View>
-                            }
-                        />
-                    )}
-                </SafeAreaView>
-            </Modal>
 
             {/* Broadcast Modal */}
             <BroadcastModal

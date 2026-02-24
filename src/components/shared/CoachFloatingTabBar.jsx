@@ -17,7 +17,6 @@ import {
     Animated,
     Pressable,
     Platform,
-    useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +24,7 @@ import { useRouter, usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../../context/ThemeContext';
 import { useFloatingTabBar } from '../../../context/FloatingTabBarContext';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 
 // Configuración de tabs Coach
 const COACH_TABS = [
@@ -69,7 +69,7 @@ function CoachFloatingTabBar() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const { theme, isDark } = useTheme();
     const { isVisible, slideAnim, setActiveTab, activeTab } = useFloatingTabBar();
 

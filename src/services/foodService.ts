@@ -61,6 +61,10 @@ export const invalidateTokenCache = () => {
     _tokenTs = 0;
 };
 
+export const clearSearchCache = () => {
+    searchCache.clear();
+};
+
 // ─────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────
@@ -145,13 +149,13 @@ export const searchFoods = async (
     // ───────────────────────────────────────────────────────
     // 2. CLOUD LAYER (Backend MongoDB)
     // ───────────────────────────────────────────────────────
-    if ((layer === 'ALL' || layer === 'CLOUD' || layer === 'RECIPE') && USE_BACKEND) {
+    if ((layer === 'ALL' || layer === 'CLOUD' || layer === 'RECIPE' || layer === 'RAW') && USE_BACKEND) {
         try {
             const params = new URLSearchParams();
             if (normalizedQuery) params.append('q', normalizedQuery);
             if (tag) params.append('tag', tag);
             if (layer !== 'ALL') params.append('layer', layer);
-            params.append('limit', '15');
+            params.append('limit', '50');
 
             const token = await getToken();
 
@@ -261,6 +265,11 @@ export const importToCloud = async (food: FoodItem): Promise<FoodItem> => {
         body: JSON.stringify(food)
     });
 
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Error importando alimento (${response.status})`);
+    }
+
     return response.json();
 };
 
@@ -309,6 +318,10 @@ export const saveFood = async (foodData: Partial<FoodItem>): Promise<FoodItem> =
     }
 
     const data = await response.json();
+
+    // Invalidate search cache so lists show the new/updated food immediately
+    searchCache.clear();
+
     return data.food || data;
 };
 
@@ -382,6 +395,24 @@ export const toggleFavorite = async (food: FoodItem): Promise<{ food: FoodItem |
         throw new Error(errorData.error || 'Error al marcar favorito');
     }
 
+    searchCache.clear();
+    return response.json();
+};
+
+// ─────────────────────────────────────────────────────────
+// GET FOOD BY ID
+// ─────────────────────────────────────────────────────────
+export const getFoodById = async (id: string): Promise<FoodItem | null> => {
+    if (!USE_BACKEND || !id) return null;
+
+    const token = await getToken();
+    if (!token) return null;
+
+    const response = await fetch(`${API_BASE_URL}/foods/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!response.ok) return null;
     return response.json();
 };
 
@@ -407,6 +438,7 @@ export const deleteFood = async (id: string): Promise<boolean> => {
         throw new Error(errorData.error || 'Error al eliminar alimento');
     }
 
+    searchCache.clear();
     return true;
 };
 

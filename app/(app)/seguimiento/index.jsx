@@ -7,12 +7,12 @@ import {
     StyleSheet,
     Modal,
     Platform,
-    useWindowDimensions,
     Alert,
     ActivityIndicator,
     Animated,
     Image,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +34,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect } from 'expo-router';
 import PhotoTaggingModal from '../../../src/components/shared/PhotoTaggingModal';
+import StoryShareModal from '../../../src/components/shared/StoryShareModal';
+import { useTrainer } from '../../../context/TrainerContext';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -488,7 +491,18 @@ export default function SeguimientoScreen() {
     const { theme, isDark } = useTheme();
     const { unreadChat: unreadFeedback, unreadFeedbackReports, refreshNotifications } = useNotifications();
     const { processDailyCheckin, processWeeklyCheckin } = useAchievements();
+    const { trainer } = useTrainer();
+    const { activeTheme: activeCoachTheme } = useCoachBranding();
     const router = useRouter();
+
+    // Coach info para Story Share
+    const segCoachName = trainer?.profile?.brandName || trainer?.nombre || 'mi entrenador';
+    const segCoachLogoUrl = trainer?.profile?.logoUrl || null;
+    const segCoachColor = activeCoachTheme?.colors?.primary || '#60a5fa';
+
+    // 📱 Story Share State
+    const [storyModalVisible, setStoryModalVisible] = useState(false);
+    const [storyPhotoUri, setStoryPhotoUri] = useState(null);
 
     // Estados de secciones expandidas
     const [diarioExpanded, setDiarioExpanded] = useState(false);
@@ -534,24 +548,24 @@ export default function SeguimientoScreen() {
                 Animated.timing(pulseAnim, {
                     toValue: 1.2,
                     duration: 150,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.timing(pulseAnim, {
                     toValue: 1,
                     duration: 150,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
             ]),
             Animated.sequence([
                 Animated.timing(rotateAnim, {
                     toValue: 1,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.timing(rotateAnim, {
                     toValue: 0,
                     duration: 0,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
             ]),
         ]).start();
@@ -694,22 +708,29 @@ export default function SeguimientoScreen() {
     // Animar si hay feedback no leído (sombra dorada)
     useEffect(() => {
         const totalUnread = unreadFeedback + unreadFeedbackReports;
+        let animation = null;
         if (totalUnread > 0) {
-            Animated.loop(
+            animation = Animated.loop(
                 Animated.sequence([
                     Animated.timing(feedbackGlowAnim, {
                         toValue: 1.05,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: Platform.OS !== 'web',
                     }),
                     Animated.timing(feedbackGlowAnim, {
                         toValue: 1,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: Platform.OS !== 'web',
                     }),
                 ])
-            ).start();
+            );
+            animation.start();
+        } else {
+            feedbackGlowAnim.setValue(1);
         }
+        return () => {
+            if (animation) animation.stop();
+        };
     }, [unreadFeedback, unreadFeedbackReports]);
 
     // 🔄 Refrescar usuario al cargar para obtener currentTrainerId actualizado
@@ -1289,6 +1310,12 @@ export default function SeguimientoScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     const handlePickPhotos = async () => {
         try {
+            if (Platform.OS === 'ios') {
+                // iOS: Modal debe cerrarse completamente antes de presentar el picker
+                setCameraModalVisible(false);
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
             // En iOS 14+, PHPickerViewController no requiere permisos explícitos.
             // Solo pedimos permisos en Android para compatibilidad.
             if (Platform.OS === 'android') {
@@ -1328,6 +1355,12 @@ export default function SeguimientoScreen() {
 
             // Empezar a etiquetar la primera foto
             setCurrentPhotoToTag(newPhotos[0]);
+
+            // iOS necesita tiempo para completar la transición del PHPicker
+            // antes de poder presentar otro modal (UIKit ignora presentaciones simultáneas)
+            if (Platform.OS === 'ios') {
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
             setTaggingModalVisible(true);
         } catch (err) {
             console.error('[Seguimiento] Error picking photos:', err);
@@ -1385,8 +1418,12 @@ export default function SeguimientoScreen() {
         setProgressPhotos(prev => prev.filter((_, i) => i !== index));
     };
 
-    const handleOpenCamera = () => {
+    const handleOpenCamera = async () => {
         setCameraModalVisible(false);
+        if (Platform.OS === 'ios') {
+            // iOS: Modal debe cerrarse completamente antes de navegar
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         // Navegar a la pantalla de cámara para fotos de progreso
         router.push({
             pathname: '/(app)/video-feedback/progress-photo',
@@ -1573,11 +1610,18 @@ export default function SeguimientoScreen() {
 
             // 📸 Subir fotos de progreso si hay (para todos los usuarios con token)
             if (progressPhotos.length > 0 && token) {
+                // Capturar URI de la primera foto ANTES de limpiar el array
+                const firstPhotoUri = progressPhotos[0]?.uri || null;
                 try {
                     console.log('[Seguimiento] Uploading progress photos...');
                     await uploadProgressPhotosToBackend(progressPhotos);
                     setProgressPhotos([]); // Limpiar después de subir
                     console.log('[Seguimiento] Photos uploaded successfully');
+                    // 📱 Mostrar story modal con la primera foto subida
+                    if (firstPhotoUri) {
+                        setStoryPhotoUri(firstPhotoUri);
+                        setStoryModalVisible(true);
+                    }
                 } catch (photoErr) {
                     console.error('[Seguimiento] Error uploading photos:', photoErr);
                     // No fallar el guardado por las fotos
@@ -2266,6 +2310,23 @@ export default function SeguimientoScreen() {
                 onClose={handleTaggingClose}
                 onSave={handlePhotoTagged}
             />
+
+            {/* 📱 Story Share Modal tras subir fotos de progreso */}
+            <StoryShareModal
+                visible={storyModalVisible}
+                onClose={() => {
+                    setStoryModalVisible(false);
+                    setStoryPhotoUri(null);
+                }}
+                photoUri={storyPhotoUri}
+                mediaType="photo"
+                badgeText="📸 Mi progreso"
+                mainText="Siguiendo mi progreso con"
+                coachName={segCoachName}
+                coachLogoUrl={segCoachLogoUrl}
+                coachColor={segCoachColor}
+                theme={theme}
+            />
         </View>
     );
 }
@@ -2288,7 +2349,7 @@ const styles = StyleSheet.create({
         borderRadius: 160,
         opacity: Platform.OS === 'android' ? 0.12 : 0.25,
         backgroundColor: '#3B82F6',
-        filter: Platform.OS === 'web' ? 'blur(70px)' : undefined,
+        filter: Platform.OS === 'web' ? 'blur(40px)' : undefined,
         // En Android, simular difuminado con bordes suaves
         ...(Platform.OS === 'android' && {
             borderWidth: 40,
@@ -3363,7 +3424,7 @@ const styles = StyleSheet.create({
     },
     calendarDayCell: {
         width: '14.28%',
-        aspectRatio: 1,
+        ...(Platform.OS === 'web' ? { height: 40, maxWidth: 50 } : { aspectRatio: 1 }),
         padding: 2,
     },
     calendarDay: {

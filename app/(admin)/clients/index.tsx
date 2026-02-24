@@ -21,10 +21,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { useAuth } from '../../../context/AuthContext';
 import { useImpersonation } from '../../../context/ImpersonationContext';
 import { usePathname } from 'expo-router';
-import moment from 'moment';
-import 'moment/locale/es';
-
-moment.locale('es');
+const dateFormatter = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short', year: 'numeric' });
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -41,6 +38,7 @@ interface Client {
     subscriptionStatus: string | null;
     createdAt: string;
     updatedAt: string;
+    _formattedDate?: string;
 }
 
 type SortOption = 'DATE_DESC' | 'DATE_ASC' | 'SPENT_DESC' | 'PAYMENTS_DESC';
@@ -298,7 +296,10 @@ export default function ClientsScreen() {
             }
         });
 
-        return result;
+        return result.map(client => ({
+            ...client,
+            _formattedDate: dateFormatter.format(new Date(client.createdAt)),
+        }));
     }, [clients, searchQuery, selectedRole, selectedStatus, sortBy]);
 
     const getRoleColor = (role: string) => {
@@ -397,7 +398,7 @@ export default function ClientsScreen() {
                         {item.subscriptionStatus === 'active' ? 'Suscripción Activa' : 'Sin Suscripción Activa'}
                     </Text>
                     <Text style={[styles.dateText, { color: isDark ? '#6b7280' : '#9ca3af' }]}>
-                        • {moment(item.createdAt).format('D MMM YYYY')}
+                        • {item._formattedDate}
                     </Text>
                 </View>
             </View>

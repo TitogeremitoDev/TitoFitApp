@@ -19,6 +19,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { File, Paths } from 'expo-file-system';
 
 // Solo importar VisionCamera en native (no web)
 let Camera, useCameraDevice, useCameraPermission;
@@ -71,7 +72,17 @@ export default function ProgressPhotoCaptureScreen() {
                 flash: flash,
                 qualityPrioritization: 'balanced'
             });
-            setPhotoUri(`file://${photo.path}`);
+            const uri = `file://${photo.path}`;
+            setPhotoUri(uri);
+            // Guardar en galería local del dispositivo
+            if (Platform.OS !== 'web') {
+                try {
+                    const MediaLibrary = require('expo-media-library');
+                    await MediaLibrary.saveToLibraryAsync(uri);
+                } catch (e) {
+                    console.warn('[ProgressPhoto] No se pudo guardar en galería:', e.message);
+                }
+            }
         } catch (error) {
             console.error('[ProgressPhoto] Error capturando foto:', error);
             Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
@@ -94,8 +105,15 @@ export default function ProgressPhotoCaptureScreen() {
         if (!photoUri) return;
 
         try {
+            // Copiar de /tmp/ a cacheDirectory para que iOS no borre el archivo temporal
+            const fileName = `progress_${Date.now()}.jpg`;
+            const srcFile = new File(photoUri);
+            const destFile = new File(Paths.cache, fileName);
+            srcFile.copy(destFile);
+            const persistentUri = destFile.uri;
+
             await AsyncStorage.setItem('pending_progress_photo', JSON.stringify({
-                photoUri
+                photoUri: persistentUri
             }));
             router.back();
         } catch (err) {

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, useWindowDimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from 'react-native';
+import { useStableWindowDimensions } from '../../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 
 const MarketingControls = ({
@@ -8,7 +9,7 @@ const MarketingControls = ({
     onExport,
     isExporting
 }) => {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isMobile = width < 600;
 
     const updateConfig = (key, value) => {

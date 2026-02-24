@@ -84,7 +84,8 @@ export default function PhotoCaptureScreen() {
                 qualityPrioritization: 'balanced'
             });
             console.log('[Photo] Foto capturada:', photo.path);
-            setPhotoUri(`file://${photo.path}`);
+            const uri = `file://${photo.path}`;
+            setPhotoUri(uri);
         } catch (error) {
             console.error('[Photo] Error capturando foto:', error);
             Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');

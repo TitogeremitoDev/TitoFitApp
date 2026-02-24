@@ -5,7 +5,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { Line } from 'react-native-svg';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
 import { useRouter } from 'expo-router';
-import { useWindowDimensions } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useAuth } from '../../../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -152,7 +152,7 @@ const formatPaymentDate = (dateStr) => {
 // ═══════════════════════════════════════════════════════════════════════════
 const ClientListRow = ({ client, onPress, onAction, isExpanded, onToggleExpand }) => {
     const router = useRouter();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isMobile = width < 768;
 
     // ── Identity Data ──

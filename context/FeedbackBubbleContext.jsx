@@ -16,7 +16,6 @@ import {
     Dimensions,
     ScrollView,
     Platform,
-    useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../components/ui';
@@ -24,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConfirmModal from '../components/ConfirmModal';
+import { useStableWindowDimensions } from '../src/hooks/useStableBreakpoint';
 
 // Valores por defecto iniciales (se actualizan dinámicamente)
 const { width: INITIAL_WIDTH, height: INITIAL_HEIGHT } = Dimensions.get('window');
@@ -57,7 +57,7 @@ export function FeedbackBubbleProvider({ children }) {
     const router = useRouter();
 
     // Dimensiones dinámicas de la pantalla
-    const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+    const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useStableWindowDimensions();
     const EXPANDED_WIDTH = Math.min(340, SCREEN_WIDTH - 32);
     const EXPANDED_HEIGHT = Math.min(480, SCREEN_HEIGHT - 200);
 

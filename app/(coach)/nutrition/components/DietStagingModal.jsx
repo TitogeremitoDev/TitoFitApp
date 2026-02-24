@@ -1,17 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, ActivityIndicator, SafeAreaView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, ActivityIndicator, SafeAreaView } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StagingIdentityCard from './StagingIdentityCard';
 import FoodCreatorModal from '../../../../components/FoodCreatorModal';
 import { useAlert } from '../../../../src/hooks/useAlert';
+import { useStableWindowDimensions } from '../../../../src/hooks/useStableBreakpoint';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
 export default function DietStagingModal({ visible, onClose, plan, onConfirm, isSaving }) {
     if (!plan) return null;
 
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isWeb = width > 768;
     const { showAlert } = useAlert();
 

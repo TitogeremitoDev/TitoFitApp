@@ -9,10 +9,10 @@ import {
   Platform,
   Modal,
   Pressable,
-  useWindowDimensions,
   SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../src/hooks/useStableBreakpoint';
 import { EnhancedScrollView } from '../../components/ui';
 import { Link, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -54,16 +54,15 @@ const FRASES = [
 ];
 
 // Forzar la versión actual ya que Constants puede estar cacheando un valor antiguo
-const APP_VERSION = '1.1.5';
+const APP_VERSION = '1.1.10';
 
 const CAMBIOS_112 = [
-  '🍎 Sistema Integral de Nutrición: Control total de dietas y macros.',
-  '📲 Importación Automática: Base de datos de alimentos mejorada.',
-  '🧑‍🍳 Creador Pro & IA: Recetas inteligentes con importación artificial.',
-  '💊 Suplementación Avanzada: Nuevo módulo de gestión de suplementos.',
-  '🛒 Lista Inteligente: Genera tu compra automáticamente.',
-  '👥 Nuevo Panel de Clientes: Gestión visual y eficiente.',
-  '✨ UI/UX Renovado: Mejor experiencia en nutrición y entrenos.',
+  '👥 Panel de Supervisores: Nuevo sistema de coordinadores para gestionar equipos de entrenadores.',
+  '🤖 IA en Segundo Plano: Importación de rutinas y dietas con IA mucho más rápida y sin bloqueos.',
+  '⚡ Rendimiento Optimizado: Eliminados re-renders y bucles de API para una app más fluida.',
+  '⌨️ Inputs Mejorados: Nueva experiencia de escritura en toda la app.',
+  '🏋️ Creador de Entrenos: Mejoras en la creación y edición de rutinas.',
+  '🔒 Estabilidad General: Correcciones de errores y mejoras de seguridad.',
 ];
 
 const SUBTITULO_CHANGELOG = `Estas son las principales novedades y mejoras de la versión ${APP_VERSION}.`;
@@ -283,7 +282,7 @@ export default function HomeScreen() {
     user?.tipoUsuario === 'ADMINISTRADOR' ||
     user?.tipoUsuario === 'PREMIUM';
 
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useStableWindowDimensions();
   const isWeb = Platform.OS === 'web';
   // "Pequeño" si es < 700px de alto (iPhone SE/8/Mini y similares)
   const isSmallHeight = height < 700 && !isWeb;

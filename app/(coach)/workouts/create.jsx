@@ -400,6 +400,11 @@ export default function CreateRoutineScreen() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState(null);
 
+  // Estado para modal "Guardar rutina como template"
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportName, setExportName] = useState('');
+  const [exporting, setExporting] = useState(false);
+
   // 🆕 Estados para vista previa de ejercicio
   const [techModal, setTechModal] = useState({ visible: false, title: '', tips: [] });
   const [videoModal, setVideoModal] = useState({ visible: false, videoId: null, playing: false, title: '' });
@@ -1123,6 +1128,53 @@ export default function CreateRoutineScreen() {
     }
   };
 
+  /* ───────── Exportar como template ───────── */
+  const handleExportAsTemplate = async () => {
+    if (!exportName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la rutina');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const entries = Object.entries(rutina);
+      const daysArray = entries.map(([_, list]) => list || []);
+
+      const payload = {
+        nombre: exportName.trim(),
+        dias: entries.length,
+        diasArr: daysArray,
+        division: 'Personalizada',
+        enfoque: 'General',
+        nivel: 'Intermedio'
+      };
+
+      const response = await fetch(`${API_URL}/api/routines`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setShowExportModal(false);
+        setExportName('');
+        Alert.alert('Rutina guardada en tu biblioteca');
+      } else {
+        Alert.alert('Error', data.message || 'Error al exportar la rutina');
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Error al exportar la rutina');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /* ───────── Sections ───────── */
   const sections = useMemo(() => {
     return Object.entries(rutina).map(([key, list], idx) => ({
@@ -1300,8 +1352,22 @@ export default function CreateRoutineScreen() {
                   </Text>
                 </View>
               )}
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Rutina</Text>}
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Activar Rutina</Text>}
             </TouchableOpacity>
+
+            {editingCurrentRoutineId && (
+              <TouchableOpacity
+                style={styles.exportButton}
+                onPress={() => {
+                  setExportName(routineName || '');
+                  setShowExportModal(true);
+                }}
+                disabled={saving || exporting}
+              >
+                <Ionicons name="download-outline" size={18} color="#3b82f6" />
+                <Text style={styles.exportButtonText}>Guardar en Biblioteca</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -1480,6 +1546,58 @@ export default function CreateRoutineScreen() {
                 Imagen no disponible
               </Text>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Exportar a Biblioteca */}
+      <Modal
+        visible={showExportModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExportModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="save-outline" size={40} color="#3b82f6" style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>Guardar rutina como</Text>
+            <Text style={styles.modalDescription}>
+              Se guardara una copia de esta rutina en tu biblioteca de rutinas.
+            </Text>
+
+            <TextInput
+              style={styles.exportNameInput}
+              placeholder="Nombre de la rutina"
+              placeholderTextColor="#94a3b8"
+              value={exportName}
+              onChangeText={setExportName}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonKeep]}
+              onPress={handleExportAsTemplate}
+              disabled={exporting}
+            >
+              {exporting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+                  <Text style={styles.modalButtonText}>Guardar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButtonCancel}
+              onPress={() => {
+                setShowExportModal(false);
+                setExportName('');
+              }}
+            >
+              <Text style={styles.modalCancelText}>Cancelar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1838,6 +1956,35 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 10,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1.5,
+    borderColor: '#3b82f6',
+  },
+  exportButtonText: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  exportNameInput: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: '#1e293b',
+    marginTop: 8,
+    marginBottom: 16,
   },
 
   // Selector

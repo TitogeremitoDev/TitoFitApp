@@ -14,21 +14,21 @@ import {
     TouchableOpacity,
     Platform,
     Modal,
-    useWindowDimensions,
-    Image, // Added Image
     ActivityIndicator,
     Alert,
     Dimensions,
 } from 'react-native';
 import { EnhancedTextInput } from '../../../../../components/ui';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import MealCard, { ImageSelectionModal } from './MealCard';
+import { useStableWindowDimensions } from '../../../../../src/hooks/useStableBreakpoint';
 import MacroSummaryFooter from './MacroSummaryFooter';
 import SmartFoodDrawer from '../SmartFoodDrawer';
 import ActionsFooter from './ActionsFooter'; // Import Footer
 import axios from 'axios'; // Import Axios
 import FoodCreatorModal from '../../../../../components/FoodCreatorModal'; // 🟢 Import Creator
-import { saveFood, getFavorites, toggleFavorite } from '../../../../../src/services/foodService'; // 🟢 Import Save Service + Favorites
+import { saveFood, getFoodById, getFavorites, toggleFavorite } from '../../../../../src/services/foodService'; // 🟢 Import Save Service + Favorites
 
 // Helper: UUID Generator (Lightweight)
 const uuidv4 = () => {
@@ -153,7 +153,7 @@ const createDefaultPlan = () => {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 export default function WeeklyMealPlanner({ initialData, onDataChange, showFooter = true, clientId }) {
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
 
     // State
     // 🛑 INITIALIZATION FIX: Always hydrate initialData to prevent shared reference bugs
@@ -197,6 +197,11 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     const [smartEditData, setSmartEditData] = useState(null);
     const [showSmartEditModal, setShowSmartEditModal] = useState(false);
 
+    // 🟢 FOOD EDITOR STATE (edit food/recipe/combo from image tap)
+    const [foodEditorData, setFoodEditorData] = useState(null); // FoodItem for FoodCreatorModal
+    const [foodEditorContext, setFoodEditorContext] = useState(null); // { mealId, optionId, foodIdx }
+    const [showFoodEditor, setShowFoodEditor] = useState(false);
+
     // 🟢 GLOBAL IMAGE MODAL (To prevent unmounting issues)
     // Store complete option object to survive ID regeneration
     const [imageModalState, setImageModalState] = useState({ visible: false, option: null });
@@ -204,6 +209,7 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
     // ❤️ FAVORITES STATE
     const [favorites, setFavorites] = useState([]);
     const [favoritesVersion, setFavoritesVersion] = useState(0);
+    const [combosVersion, setCombosVersion] = useState(0);
     // Include both _id AND lowercase name for matching snapshot foods in meal plans
     const favoriteIds = useMemo(() => {
         const set = new Set();
@@ -265,8 +271,6 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             alert("Error: No se ha especificado el cliente (target)");
             throw new Error("Missing target clientId");
         }
-
-        console.log(`📦 Construyendo Payload. ¿Tiene comida? ${hasFood ? 'SI' : 'NO'}`);
 
         return {
             target: targetId,
@@ -351,32 +355,11 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             // 🛑 DEEP CLONE: Evitar transmutación por referencias compartidas durante el envío
             const payload = JSON.parse(JSON.stringify(rawPayload));
 
-            // 🚨 CHIVATO DE SEGURIDAD 🚨
-            const totalFoodsInState = payload.dayTemplates?.reduce((acc, day) =>
-                acc + (day.meals?.reduce((mAcc, meal) =>
-                    mAcc + (meal.options?.reduce((oAcc, opt) => oAcc + (opt.foods?.length || 0), 0) || 0), 0) || 0), 0);
-
-            console.log("-----------------------------------------");
-            console.log("🔥 INTENTO DE ENVÍO AL BACKEND 🔥");
-            console.log("📍 Target (Client ID):", clientId);
-            console.log("🍎 Alimentos detectados en el PAYLOAD:", totalFoodsInState);
-            console.log("📦 PAYLOAD REAL (Copia plana):", payload);
-            console.log("-----------------------------------------");
-
-            // DEBUG: Inspect Payload content before sending
-            // console.log('🐞 DEBUG PAYLOAD BEFORE SEND (Activate):', payload);
-            if (payload.dayTemplates.length === 0) console.error('❌ ERROR: dayTemplates is EMPTY');
-            if (payload.dayTemplates.length === 0) console.error('❌ ERROR: dayTemplates is EMPTY');
-            if (payload.dayTemplates[0]?.meals[0]?.options[0]?.foods?.length === 0) console.warn('⚠️ WARNING: No foods in first meal option');
-
-            console.log('🚀 Enviando Activación...', payload);
-
             // Llamada API Real
             const res = await axios.post('https://consistent-donna-titogeremito-29c943bc.koyeb.app/api/nutrition-plans', payload);
 
             if (res.data.success) {
-                console.log('✅ Plan Activado:', res.data.plan);
-                if (Platform.OS === 'web') window.alert('🚀 Plan activado y enviado al cliente');
+                if (Platform.OS === 'web') window.alert('Plan activado y enviado al cliente');
                 else Alert.alert('Éxito', 'Plan activado correctamente');
 
                 // Opcional: Actualizar estado local si el backend devuelve datos nuevos
@@ -956,6 +939,82 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
         setShowSmartEditModal(true);
     };
 
+    // 🟢 HANDLER: OPEN FOOD EDITOR (from food image tap in MealCard)
+    const handleOpenFoodEditor = async (food, foodIdx, optionId, mealId) => {
+        const sourceId = food.sourceId || food.foodId || food._id;
+        const isValidId = (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id);
+
+        // Save context for updating the plan on save
+        setFoodEditorContext({ mealId, optionId, foodIdx });
+
+        if (isValidId(sourceId)) {
+            // Fetch full food data from backend
+            try {
+                const fullFood = await getFoodById(sourceId);
+                if (fullFood) {
+                    setFoodEditorData(fullFood);
+                    setShowFoodEditor(true);
+                    return;
+                }
+            } catch (e) {
+                console.warn('[FoodEditor] Could not fetch food by ID, using local data');
+            }
+        }
+
+        // Fallback: reconstruct from plan data
+        setFoodEditorData({
+            _id: sourceId || undefined,
+            name: food.name,
+            image: food.image,
+            brand: '',
+            layer: food.sourceType || 'LOCAL',
+            isSystem: false,
+            nutrients: {
+                kcal: food._savedPer100g?.kcal || food.kcal || 0,
+                protein: food._savedPer100g?.protein || food.protein || 0,
+                carbs: food._savedPer100g?.carbs || food.carbs || 0,
+                fat: food._savedPer100g?.fat || food.fat || 0,
+            },
+            isComposite: food.isComposite || false,
+            ingredients: food.ingredients || [],
+        });
+        setShowFoodEditor(true);
+    };
+
+    // 🟢 HANDLER: SAVE FROM FOOD EDITOR (updates library + plan food inline)
+    const handleSaveFoodEditor = async (foodData) => {
+        try {
+            // 1. Save to library
+            const savedFood = await saveFood(foodData);
+
+            // 2. Update the food in the current plan
+            if (foodEditorContext) {
+                const { mealId, optionId, foodIdx } = foodEditorContext;
+                const nutrients = savedFood?.nutrients || foodData.nutrients || {};
+                updateFoodInMeal(mealId, optionId, foodIdx, {
+                    name: savedFood?.name || foodData.name,
+                    image: savedFood?.image || foodData.image,
+                    sourceId: savedFood?._id || foodData._id,
+                    isComposite: savedFood?.isComposite || foodData.isComposite || false,
+                    ingredients: savedFood?.ingredients || foodData.ingredients || [],
+                    _savedPer100g: {
+                        kcal: nutrients.kcal || 0,
+                        protein: nutrients.protein || 0,
+                        carbs: nutrients.carbs || 0,
+                        fat: nutrients.fat || 0,
+                    },
+                });
+            }
+
+            setShowFoodEditor(false);
+            setFoodEditorData(null);
+            setFoodEditorContext(null);
+        } catch (error) {
+            console.error('Error saving food from editor:', error);
+            Alert.alert('Error', 'No se pudo guardar el alimento.');
+        }
+    };
+
     // 🟢 HANDLER: SAVE SMART RECIPE
     const handleSaveSmartRecipe = async (foodData) => {
         try {
@@ -1118,6 +1177,9 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                                 // ❤️ PASS FAVORITE HANDLERS
                                 onToggleFavorite={handleToggleFavorite}
                                 favoriteIds={favoriteIds}
+                                activeOptionId={activeModal?.type === 'food' && activeModal?.mealId === meal.id ? activeModal.optionId : null}
+                                onComboSaved={() => setCombosVersion(v => v + 1)}
+                                onOpenFoodEditor={(food, foodIdx, optionId) => handleOpenFoodEditor(food, foodIdx, optionId, meal.id)}
                             />
                         ))}
                     </View>
@@ -1154,12 +1216,23 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
             <SmartFoodDrawer
                 visible={activeModal?.type === 'food'}
                 favoritesVersion={favoritesVersion}
+                combosVersion={combosVersion}
                 onClose={() => setActiveModal(null)}
                 context={{
                     templateId: selectedTemplateId,
                     mealId: activeModal?.mealId,
                     optionId: activeModal?.optionId,
                     mealName: activeModal?.mealName, // Pass Name explicitly
+                }}
+                onOpenFoodEditor={(food) => {
+                    setFoodEditorData(food);
+                    setFoodEditorContext(null); // No plan context — editing from search drawer
+                    setShowFoodEditor(true);
+                }}
+                onSetOptionImage={(imageUri) => {
+                    if (activeModal?.mealId && activeModal?.optionId) {
+                        updateOptionImage(selectedTemplateId, activeModal.mealId, activeModal.optionId, imageUri);
+                    }
                 }}
                 onAddFoods={(foodsData) => {
                     // Batch add foods to the meal
@@ -1177,7 +1250,8 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                             name: food.name,
                             image: food.image, // Include food photo
                             amount,
-                            unit: UNIT_CONVERSIONS[unit]?.label || 'g',
+                            // 🟢 Recipes use 'ración' as unit (not grams - they are whole portions)
+                            unit: food.isComposite ? 'ración' : (UNIT_CONVERSIONS[unit]?.label || 'g'),
                             kcal: calculatedMacros.kcal,
                             protein: calculatedMacros.protein,
                             carbs: calculatedMacros.carbs,
@@ -1224,6 +1298,15 @@ export default function WeeklyMealPlanner({ initialData, onDataChange, showFoote
                     initialData={smartEditData}
                     onClose={() => setShowSmartEditModal(false)}
                     onSave={handleSaveSmartRecipe}
+                />
+            )}
+            {/* 🟢 FOOD EDITOR MODAL (from food image tap) */}
+            {showFoodEditor && (
+                <FoodCreatorModal
+                    visible={showFoodEditor}
+                    initialData={foodEditorData}
+                    onClose={() => { setShowFoodEditor(false); setFoodEditorData(null); setFoodEditorContext(null); }}
+                    onSave={handleSaveFoodEditor}
                 />
             )}
             {/* 🟢 IMAGE SELECTION MODAL */}
@@ -1621,7 +1704,7 @@ function EditTemplateModal({ visible, template, onClose, onSave }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // BLUEPRINT VIEW (Stacked Timeline Blocks)
 // ═══════════════════════════════════════════════════════════════════════════
-function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood }) { // Added onAddFood prop
+function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood }) {
     return (
         <ScrollView style={styles.structureContainer} contentContainerStyle={styles.structureContent}>
             {plan.dayTemplates.map(template => (
@@ -1705,12 +1788,13 @@ function WeeklyStructureView({ plan, onUpdateOptionName, onBulkRename, onAddFood
                                                                         return (
                                                                             <View key={fIdx} style={styles.richRow}>
                                                                                 {/* Left: Image or Fallback */}
-                                                                                {food.image ? (
+                                                                                {(food.image && !(Platform.OS === 'web' && food.image.startsWith('file://'))) ? (
                                                                                     <View style={{ position: 'relative' }}>
                                                                                         <Image
                                                                                             source={{ uri: food.image }}
                                                                                             style={styles.foodThumb}
-                                                                                            resizeMode="cover"
+                                                                                            contentFit="cover"
+                                                                                            cachePolicy="memory-disk"
                                                                                         />
                                                                                         {isRecipe && (
                                                                                             <View style={styles.recipeBadge}>

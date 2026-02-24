@@ -672,6 +672,23 @@ export default function NutritionClientsScreen() {
                 <Ionicons name="chevron-forward" size={22} color="#fff" />
             </TouchableOpacity>
 
+            {/* Combos Banner */}
+            <TouchableOpacity
+                style={[styles.plansBanner, { backgroundColor: '#d97706', marginTop: 0 }]}
+                onPress={() => router.push('/(coach)/food-library?tab=combos')}
+            >
+                <View style={styles.plansBannerContent}>
+                    <View style={[styles.plansBannerIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                        <Ionicons name="layers" size={22} color="#fff" />
+                    </View>
+                    <View>
+                        <Text style={styles.plansBannerTitle}>Combos de Comida</Text>
+                        <Text style={styles.plansBannerSubtitle}>Opciones guardadas para insertar rápidamente</Text>
+                    </View>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color="#fff" />
+            </TouchableOpacity>
+
             {/* Search and Sort Bar */}
             <View style={styles.searchSortBar}>
                 <View style={styles.listHeader}>

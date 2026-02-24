@@ -22,10 +22,10 @@ import {
     Image,
     KeyboardAvoidingView,
     Platform,
-    useWindowDimensions,
     Animated,
     ActivityIndicator
 } from 'react-native';
+import { useStableWindowDimensions } from '../src/hooks/useStableBreakpoint';
 import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -58,7 +58,7 @@ const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://consistent-don
 // COMPONENT
 // ─────────────────────────────────────────────────────────
 export default function FoodCreatorModal({ visible, onClose, onSave, initialData, onDelete }: FoodCreatorModalProps) {
-    const { width, height: windowHeight } = useWindowDimensions();
+    const { width, height: windowHeight } = useStableWindowDimensions();
     const isLargeScreen = width > 600;
 
     // Form State
@@ -566,9 +566,9 @@ export default function FoodCreatorModal({ visible, onClose, onSave, initialData
             <View style={styles.overlay}>
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={[styles.centeredView, { maxHeight: windowHeight * 0.85 }]}
+                    style={[styles.centeredView, { height: windowHeight * 0.9 }]}
                 >
-                    <View style={[styles.modalCard, isLargeScreen ? { maxWidth: 750, minWidth: 650 } : { flex: 1 }]}>
+                    <View style={[styles.modalCard, isLargeScreen ? { maxWidth: 750, minWidth: 650, flex: 1 } : { flex: 1 }]}>
                         <View style={styles.header}>
                             <View style={styles.headerTitle}>
                                 <Ionicons name="restaurant-outline" size={20} color="#2563eb" />
@@ -1233,11 +1233,13 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(15, 23, 42, 0.6)',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20,
+        paddingHorizontal: 20,
+        paddingVertical: 0,
     },
     centeredView: {
         width: '100%',
         maxWidth: 800,
+        justifyContent: 'center',
     },
     modalCard: {
         backgroundColor: '#fff',

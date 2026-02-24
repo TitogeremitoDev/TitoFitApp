@@ -22,9 +22,10 @@ import {
     FlatList,
     Platform,
     ActionSheetIOS,
-    useWindowDimensions,
+    Alert
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Picker } from '@react-native-picker/picker'
@@ -34,7 +35,11 @@ import MediaFeedbackResponseModal from '../../../src/components/coach/MediaFeedb
 import InlineAudioPlayer from '../../../src/components/coach/InlineAudioPlayer';
 import ActionToast from '../../../src/components/shared/ActionToast';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import LazySection from '../../../src/components/ui/LazySection';
 import { getAccuracyBadgeStyle, getAccuracyTextStyle } from '../../../src/utils/styleHelpers';
+import { useStableBreakpoint } from '../../../src/hooks/useStableBreakpoint';
+
+import { cacheClientAvatars } from '../../../src/utils/avatarCache';
 
 // KPI Utilities
 import {
@@ -56,45 +61,139 @@ import {
 
 const screenWidth = Dimensions.get('window').width;
 
-// Configuración del gráfico
-const chartConfig = {
-    backgroundColor: '#ffffff',
-    backgroundGradientFrom: '#f8fafc',
-    backgroundGradientTo: '#ffffff',
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(71, 85, 105, ${opacity})`,
-    propsForDots: { r: '5', strokeWidth: '2', stroke: '#3b82f6' },
-    fillShadowGradient: '#3b82f6',
-    fillShadowGradientOpacity: 0.3,
+// ═══════════════════════════════════════════════════════════════════════════
+// WEB CHART OPTIMIZATION — downsample data points to reduce SVG DOM nodes
+// ═══════════════════════════════════════════════════════════════════════════
+const MAX_CHART_POINTS = Platform.OS === 'web' ? 15 : 50;
+
+/**
+ * Downsample chart data to MAX_CHART_POINTS on web to prevent DOM overload.
+ * Keeps first and last points, evenly samples the rest.
+ * Works with both single-dataset {labels, datasets} and multi-dataset formats.
+ */
+const downsampleChartData = (chartData) => {
+    if (!chartData || !chartData.labels) return chartData;
+    const len = chartData.labels.length;
+    if (len <= MAX_CHART_POINTS) return chartData;
+
+    // Build indices to keep: first, last, and evenly spaced in between
+    const indices = [0];
+    const step = (len - 1) / (MAX_CHART_POINTS - 1);
+    for (let i = 1; i < MAX_CHART_POINTS - 1; i++) {
+        indices.push(Math.round(i * step));
+    }
+    indices.push(len - 1);
+
+    return {
+        ...chartData,
+        labels: indices.map(i => chartData.labels[i]),
+        datasets: chartData.datasets.map(ds => ({
+            ...ds,
+            data: indices.map(i => ds.data[i]),
+        })),
+    };
 };
 
-// Configuración para BarChart - colores más vibrantes
-const barChartConfig = {
+// ═══════════════════════════════════════════════════════════════════════════
+// RESPONSIVE CHART WRAPPER — measures parent width for react-native-chart-kit
+// ═══════════════════════════════════════════════════════════════════════════
+const MAX_CHART_WIDTH = 900; // Cap chart width to avoid SVG performance issues on wide screens
+const ResponsiveChart = React.memo(({ children, fallbackWidth }) => {
+    const [width, setWidth] = useState(Math.min(fallbackWidth || 300, MAX_CHART_WIDTH));
+    const lastWidthRef = React.useRef(width);
+    const handleLayout = React.useCallback((e) => {
+        const newW = Math.min(Math.floor(e.nativeEvent.layout.width), MAX_CHART_WIDTH);
+        // Only update if changed by more than 2px to prevent oscillation loops
+        if (Math.abs(newW - lastWidthRef.current) > 2) {
+            lastWidthRef.current = newW;
+            setWidth(newW);
+        }
+    }, []);
+    return (
+        <View style={{ width: '100%', maxWidth: MAX_CHART_WIDTH, alignItems: 'center' }} onLayout={handleLayout}>
+            {typeof children === 'function' ? children(width) : children}
+        </View>
+    );
+});
+
+// Configuración del gráfico — transparent background, clean lines
+const chartConfig = {
     backgroundColor: '#ffffff',
-    backgroundGradientFrom: '#f8fafc',
+    backgroundGradientFrom: '#ffffff',
     backgroundGradientTo: '#ffffff',
     decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`, // Indigo más vibrante
-    labelColor: (opacity = 1) => `rgba(71, 85, 105, ${opacity})`,
-    barPercentage: 0.65,
-    fillShadowGradient: '#6366f1',
-    fillShadowGradientOpacity: 1,
+    color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`, // Blue 600
+    labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+    propsForLabels: { fontSize: 11, fontWeight: '500' },
+    propsForDots: { r: '5', strokeWidth: '1.5', stroke: '#fff' },
+    fillShadowGradient: '#2563EB',
+    fillShadowGradientOpacity: 0.45,
     propsForBackgroundLines: {
-        strokeDasharray: '',
+        strokeDasharray: '0',
         stroke: '#e2e8f0',
         strokeWidth: 1,
     },
+    useShadowColorFromDataset: true,
+};
+
+// Configuración para BarChart - Monocromático Azul
+const barChartConfig = {
+    ...chartConfig,
+    fillShadowGradientOpacity: 0.85, // More solid fill for bars
+    useShadowColorFromDataset: false, // BarChart doesn't pass data to renderDefs — causes crash
+};
+
+const HoverTooltip = ({ text, children, align = 'center' }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const ref = React.useRef(null);
+    return (
+        <Pressable
+            ref={ref}
+            onHoverIn={() => setIsHovered(true)}
+            onHoverOut={() => setIsHovered(false)}
+            onPressIn={() => setIsHovered(true)}
+            onPressOut={() => setIsHovered(false)}
+            style={{ position: 'relative', flexDirection: 'row', alignItems: 'center', zIndex: isHovered ? 9999 : 1 }}
+        >
+            {children}
+            {isHovered && (
+                <View style={[{
+                    position: 'absolute',
+                    top: '100%',
+                    marginTop: 8,
+                    width: 250,
+                    backgroundColor: '#1e293b',
+                    padding: 10,
+                    borderRadius: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 12,
+                    elevation: 10,
+                    zIndex: 99999
+                }, align === 'left' ? { left: -8 } : align === 'right' ? { right: 0 } : { left: '50%', transform: [{ translateX: -125 }] }]}>
+                    <Text style={{ color: '#f8fafc', fontSize: 11, textAlign: 'center', lineHeight: 16 }}>{text}</Text>
+                </View>
+            )}
+        </Pressable>
+    );
 };
 
 export default function ClientProgressDetail() {
     const router = useRouter();
-    const { clientId, clientName, feedbackId } = useLocalSearchParams();
+    const params = useLocalSearchParams();
     const { token } = useAuth();
 
-    // 🖥️ Responsive layout - split view on large screens
-    const { width: windowWidth } = useWindowDimensions();
-    const isLargeScreen = windowWidth >= 900; // Tablet/Desktop threshold
+    // 🛡️ Active client managed as state to avoid router.replace screen stacking on web
+    const [activeClientId, setActiveClientId] = useState(params.clientId);
+    const [activeClientName, setActiveClientName] = useState(params.clientName);
+    const clientId = activeClientId;
+    const clientName = activeClientName;
+    const feedbackId = params.feedbackId;
+
+    // 🖥️ Responsive layout (debounced to prevent crash during window resize)
+    const { isWide: isLargeScreen, windowWidth } = useStableBreakpoint(900);
+    const { isWide: isWideScreenStable } = useStableBreakpoint(1024);
 
     const [sessions, setSessions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -116,6 +215,9 @@ export default function ClientProgressDetail() {
     // 📊 Vista: gráfica o tabla detallada
     const [viewMode, setViewMode] = useState('chart'); // 'chart' | 'table' | 'comments' | 'multimedia'
 
+    // 📊 Tabla comparativa colapsable
+    const [showTableComparativa, setShowTableComparativa] = useState(false);
+
     // 📝 Modal de notas del cliente
     const [noteModal, setNoteModal] = useState({ visible: false, note: null });
 
@@ -125,6 +227,12 @@ export default function ClientProgressDetail() {
     const [selectedFeedback, setSelectedFeedback] = useState(null);
     const [loadingVideos, setLoadingVideos] = useState(false);
     const [expandedAiItems, setExpandedAiItems] = useState({}); // 🆕 Track expanded AI items by ID
+
+    // 🤖 Coach AI Insight
+    const [aiInsight, setAiInsight] = useState(null);
+    const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+    const [aiInsightError, setAiInsightError] = useState(false);
+    const hasFetchedInsight = React.useRef(false);
 
     // 🆕 Toast para confirmaciones no intrusivas
     const [toastConfig, setToastConfig] = useState({
@@ -139,27 +247,60 @@ export default function ClientProgressDetail() {
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
+
+
     // 🖥️ SIDEBAR: States for collapsible client list on wide screens
     const [sidebarClients, setSidebarClients] = useState([]);
     const [sidebarLoading, setSidebarLoading] = useState(true);
     const sidebarCollapsedState = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = sidebarCollapsedState;
-    const isWideScreen = windowWidth >= 1024;
+    const isWideScreen = isWideScreenStable;
 
-    // 📊 Calcular ancho dinámico para gráficos
-    const chartWidth = useMemo(() => {
-        let w = windowWidth;
-        // Restar sidebar si está visible
-        if (isWideScreen) {
-            w -= sidebarCollapsed ? 60 : 200;
+    // 📊 Calcular ancho dinámico para gráficos (use raw windowWidth for smooth sizing)
+    const isWeb = Platform.OS === 'web';
+    const sidebarW = isWideScreen ? (sidebarCollapsed ? 60 : 200) : 0;
+    const contentW = windowWidth - sidebarW - (isLargeScreen && selectedFeedback ? 420 : 0);
+    const chartWidth = isWeb ? contentW - 48 : windowWidth - 48;
+    const halfChartWidth = isWideScreen ? Math.floor((contentW - 34) / 2 - 24) : chartWidth;
+
+    // Helper: get chart width based on grid context
+    const getChartW = (inGrid) => inGrid && isWideScreen ? halfChartWidth : chartWidth;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GENERAR INSIGHT DE IA
+    // ═══════════════════════════════════════════════════════════════════════════
+    const generateSmartInsight = async () => {
+        try {
+            setIsLoadingInsight(true);
+            setAiInsightError(false);
+            const res = await fetch(`${API_URL}/api/ai/coach-insights`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(!token?.includes('anonymous') && { Authorization: `Bearer ${token}` })
+                },
+                body: JSON.stringify({
+                    clientName,
+                    volumeData,
+                    intensityData,
+                    complianceData: complianceWeeklyData,
+                    tendenciaGeneral
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setAiInsight(data.insight);
+            } else {
+                setAiInsightError(true);
+                console.warn('[AI Insight] Error from API:', data.message);
+            }
+        } catch (e) {
+            console.error('[AI Insight] Catch error:', e);
+            setAiInsightError(true);
+        } finally {
+            setIsLoadingInsight(false);
         }
-        // Restar panel derecho si está visible
-        if (isLargeScreen && selectedFeedback) {
-            w -= 420;
-        }
-        // Restar padding del contenedor (aprox 32-48px)
-        return Math.max(w - 32, 300);
-    }, [windowWidth, isWideScreen, sidebarCollapsed, isLargeScreen, selectedFeedback]);
+    };
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CARGAR CLIENTES PARA SIDEBAR
@@ -173,7 +314,7 @@ export default function ClientProgressDetail() {
             });
             const data = await res.json();
             if (data.success) {
-                setSidebarClients(data.clients || []);
+                setSidebarClients(cacheClientAvatars(data.clients || []));
             }
         } catch (error) {
             console.error('[Sidebar Progress] Error:', error);
@@ -188,11 +329,28 @@ export default function ClientProgressDetail() {
         }
     }, [isWideScreen, fetchSidebarClients]);
 
-    // Handle sidebar client selection
+    // Handle sidebar client selection — NO router navigation to avoid screen stacking on web
+    // Two-phase: 1) destroy all heavy content, 2) after DOM freed, switch client
     const handleSidebarClientSelect = (client) => {
-        router.push({
-            pathname: '/(coach)/progress/[clientId]',
-            params: { clientId: client._id, clientName: client.nombre }
+        if (client._id === clientId) return;
+        // Phase 1: Kill all heavy content immediately
+        setSessions([]);
+        setVideoFeedbacks([]);
+        setIsLoading(true);
+        setViewMode('chart');
+        setSelectedFeedback(null);
+        setExpandedAiItems({});
+        setAiInsight(null);
+        hasFetchedInsight.current = false;
+        setShowTableComparativa(false);
+        // Phase 2: Wait for React to commit the empty render, THEN switch client
+        // This ensures old charts are fully unmounted before new data starts loading
+        requestAnimationFrame(() => {
+            setActiveClientId(client._id);
+            setActiveClientName(client.nombre);
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                window.history.replaceState(null, '', `/progress/${client._id}?clientName=${encodeURIComponent(client.nombre)}`);
+            }
         });
     };
 
@@ -212,7 +370,10 @@ export default function ClientProgressDetail() {
 
             const data = await response.json();
             if (data.success) {
-                setSessions(data.workouts || []);
+                const workouts = data.workouts || [];
+                const totalExercises = workouts.reduce((sum, s) => sum + (s.exercises?.length || 0), 0);
+                const totalSets = workouts.reduce((sum, s) => sum + s.exercises?.reduce((sum2, ex) => sum2 + (ex.sets?.length || 0), 0) || 0, 0);
+                setSessions(workouts);
             }
         } catch (error) {
             console.error('[ClientProgress] Error:', error);
@@ -240,15 +401,6 @@ export default function ClientProgressDetail() {
             // El backend devuelve { feedbacks, total, pendingCount, page, pages }
             if (data.feedbacks) {
                 setVideoFeedbacks(data.feedbacks);
-                console.log('[ClientProgress] Video feedbacks cargados:', data.feedbacks.length);
-                // 🔍 DEBUG: Log first 3 feedbacks for debugging
-                console.log('[DEBUG] Sample feedbacks:', data.feedbacks.slice(0, 5).map(f => ({
-                    exerciseName: f.exerciseName,
-                    serieKey: f.serieKey,
-                    r2Key: f.r2Key,
-                    createdAt: f.createdAt,
-                    mediaType: f.mediaType
-                })));
             }
         } catch (error) {
             console.error('[ClientProgress] Error loading video feedbacks:', error);
@@ -270,7 +422,6 @@ export default function ClientProgressDetail() {
             // But better stick to explicit 'pending' to avoid unnecessary calls.
             // If transcription is missing and not failed, we treat as pending for polling purposes if user clicked it.
             if (feedback && (feedback.transcriptionStatus === 'pending' || (!feedback.transcription && feedback.transcriptionStatus !== 'failed' && feedback.transcriptionStatus !== 'completed'))) {
-                console.log(`[Polling] Starting poll for ${id}`);
                 intervals[id] = setInterval(async () => {
                     try {
                         const res = await fetch(`${API_URL}/api/video-feedback/${id}`, {
@@ -311,7 +462,6 @@ export default function ClientProgressDetail() {
         if (feedbackId && videoFeedbacks.length > 0 && !videoModalVisible) {
             const feedback = videoFeedbacks.find(f => f._id === feedbackId);
             if (feedback) {
-                console.log('[ClientProgress] Auto-opening feedback from param:', feedbackId);
                 setSelectedFeedback(feedback);
                 setVideoModalVisible(true);
             }
@@ -350,7 +500,6 @@ export default function ClientProgressDetail() {
                         ? { ...f, viewedByCoach: true }
                         : f
                 ));
-                console.log('[ClientProgress] ✅ Feedback marcado como visto:', feedbackId);
             }
         } catch (error) {
             console.error('[ClientProgress] Error marcando como visto:', error);
@@ -380,7 +529,6 @@ export default function ClientProgressDetail() {
         }
 
         if (sessionIds.length > 0) {
-            console.log(`[ClientProgress] ✅ ${sessionIds.length} sesiones marcadas como vistas`);
 
             // Actualizar estado local de sessions para reflejar el cambio
             setSessions(prev => prev.map(s => {
@@ -405,12 +553,25 @@ export default function ClientProgressDetail() {
     // EXTRAER LISTA DE MÚSCULOS Y EJERCICIOS
     // ═══════════════════════════════════════════════════════════════════════════
     const { listaMusculos, mapEjercicios } = useMemo(() => {
+        // Normalize muscle names: strip accents, unify plurals
+        const normalizeMuscle = (name) => {
+            let n = (name || 'SIN GRUPO').toUpperCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // strip accents
+            // Unify common plural/singular variants
+            if (n === 'GEMELOS') n = 'GEMELO';
+            if (n === 'CUADRICEPS' || n === 'CUÁDRICEPS') n = 'CUADRICEPS';
+            if (n === 'BICEPS' || n === 'BÍCEPS') n = 'BICEPS';
+            if (n === 'TRICEPS' || n === 'TRÍCEPS') n = 'TRICEPS';
+            if (n === 'GLUTEOS' || n === 'GLÚTEOS' || n === 'GLUTEO') n = 'GLUTEOS';
+            return n;
+        };
+
         const muscSet = new Set();
         const ejMap = new Map(); // musculo -> Set<ejercicio>
 
         sessions.forEach((session) => {
             session.exercises?.forEach((ej) => {
-                const musc = ej.muscleGroup || 'SIN GRUPO';
+                const musc = normalizeMuscle(ej.muscleGroup);
                 const nombre = ej.exerciseName || 'Sin nombre';
                 muscSet.add(musc);
                 if (!ejMap.has(musc)) ejMap.set(musc, new Set());
@@ -615,6 +776,36 @@ export default function ClientProgressDetail() {
         };
     }, [filteredSessions, selMusculo, selEjercicio]);
 
+    // KPI: Combined Volume + Intensity (dual line chart)
+    const combinedVolIntData = useMemo(() => {
+        if (!volumeData || !intensityData) return null;
+        // Align labels - use the longer set
+        const labels = volumeData.labels.length >= intensityData.labels.length
+            ? volumeData.labels : intensityData.labels;
+        // Pad shorter dataset with 0s
+        const volValues = volumeData.datasets[0].data;
+        const intValues = intensityData.datasets[0].data;
+        const padded = (arr, len) => {
+            if (arr.length >= len) return arr.slice(0, len);
+            return [...Array(len - arr.length).fill(0), ...arr];
+        };
+        return {
+            labels,
+            datasets: [
+                {
+                    data: padded(volValues, labels.length),
+                    color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                    strokeWidth: 3,
+                },
+                {
+                    data: padded(intValues, labels.length),
+                    color: (opacity = 1) => `rgba(71, 85, 105, ${opacity})`, // Slate gray for intensity
+                    strokeWidth: 3,
+                }
+            ]
+        };
+    }, [volumeData, intensityData]);
+
     // KPI: Cumplimiento del Plan (semanal)
     const complianceWeeklyData = useMemo(() => {
         const data = calcPlanComplianceByWeek(filteredSessions);
@@ -650,10 +841,16 @@ export default function ClientProgressDetail() {
     // KPI: Balance Muscular (periodo)
     const muscleBalanceData = useMemo(() => {
         const data = calcMuscleBalance(filteredSessions);
-        if (data.length === 0) return null;
+        if (!data || data.length === 0) {
+            return {
+                labels: ['N/A'],
+                datasets: [{ data: [0] }],
+                fullData: []
+            };
+        }
         return {
             labels: data.map(d => d.muscle.substring(0, 4)),
-            datasets: [{ data: data.map(d => d.share) }],
+            datasets: [{ data: data.map(d => d.share || 0) }],
             fullData: data
         };
     }, [filteredSessions]);
@@ -673,7 +870,18 @@ export default function ClientProgressDetail() {
     // 🆕 KPI: Sensación (Session RPE)
     const sessionRPEData = useMemo(() => {
         const data = calcSessionRPEByDay(filteredSessions);
-        if (data.data.length === 0) return null;
+        if (!data || !data.data || data.data.length === 0) {
+            return {
+                data: [],
+                labels: ['N/A'],
+                datasets: [{ data: [0] }],
+                colors: [() => '#CBD5E1'],
+                average: 0,
+                maxStreak: 0,
+                totalSessions: 0,
+                modoBestaCount: 0
+            };
+        }
         return data;
     }, [filteredSessions]);
 
@@ -708,11 +916,14 @@ export default function ClientProgressDetail() {
     }, [datosAgrupados]);
 
     const tendenciaGeneral = useMemo(() => {
-        if (datosAgrupados.length < 2) return 0;
-        const actual = datosAgrupados[0]?.volumen || 0;
-        const anterior = datosAgrupados[1]?.volumen || 0;
-        return calcularCambio(actual, anterior);
-    }, [datosAgrupados]);
+        if (!volumeData || !intensityData) return 0;
+        const volChange = volumeData.lastValue || 0;
+        const intChange = intensityData.lastValue || 0;
+
+        // Ratio de rendimiento: Se da un mayor peso a la mejora de intensidad (65%) 
+        // respecto al volumen (35%) dado que mover mayor peso absoluto es sistemáticamente más duro.
+        return Math.round((volChange * 0.35) + (intChange * 0.65));
+    }, [volumeData, intensityData]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // 📊 DATOS PARA TABLA DETALLADA DE EJERCICIOS
@@ -730,7 +941,7 @@ export default function ClientProgressDetail() {
     const hasPainKeyword = (text) => text && PAIN_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
 
     // Helper para normalizar nombres de ejercicios (quitar acentos y palabras comunes)
-    const normalizeExerciseName = (name) => {
+    const normalizeExerciseName = useCallback((name) => {
         if (!name) return '';
         return name
             .toLowerCase()
@@ -738,17 +949,24 @@ export default function ClientProgressDetail() {
             .replace(/\b(en|al|el|la|los|las|de|del|con)\b/g, '') // Quitar artículos
             .replace(/\s+/g, ' ') // Normalizar espacios
             .trim();
-    };
+    }, []);
+
+    // Pre-compute normalized names for feedbacks to avoid repeated normalization
+    const normalizedFeedbacks = useMemo(() => {
+        return videoFeedbacks.map(fb => ({
+            ...fb,
+            _normalizedName: normalizeExerciseName(fb.exerciseName),
+        }));
+    }, [videoFeedbacks, normalizeExerciseName]);
 
     // Helper para encontrar TODOS los feedbacks asociados a un set específico
-    const findAllMediaForSet = (exerciseName, setNumber, weekNumber) => {
+    const findAllMediaForSet = useCallback((exerciseName, setNumber, weekNumber) => {
         const normalizedSearch = normalizeExerciseName(exerciseName);
 
-        return videoFeedbacks.filter(fb => {
-            const normalizedFeedback = normalizeExerciseName(fb.exerciseName);
-            const nameMatch = normalizedFeedback === normalizedSearch ||
-                normalizedSearch.includes(normalizedFeedback) ||
-                normalizedFeedback.includes(normalizedSearch);
+        return normalizedFeedbacks.filter(fb => {
+            const nameMatch = fb._normalizedName === normalizedSearch ||
+                normalizedSearch.includes(fb._normalizedName) ||
+                fb._normalizedName.includes(normalizedSearch);
 
             if (!nameMatch) return false;
 
@@ -764,19 +982,19 @@ export default function ClientProgressDetail() {
             }
             return fb.setNumber === setNumber;
         }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    };
+    }, [normalizedFeedbacks, normalizeExerciseName]);
 
     // Helper para encontrar AUDIO asociado a un set (para inline player)
-    const findAudioForSet = (exerciseName, setNumber, weekNumber) => {
+    const findAudioForSet = useCallback((exerciseName, setNumber, weekNumber) => {
         const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
         return allMedia.find(fb => fb.mediaType === 'audio');
-    };
+    }, [findAllMediaForSet]);
 
     // Helper para encontrar VISUAL (foto/video) asociado a un set (para modal)
-    const findVisualForSet = (exerciseName, setNumber, weekNumber) => {
+    const findVisualForSet = useCallback((exerciseName, setNumber, weekNumber) => {
         const allMedia = findAllMediaForSet(exerciseName, setNumber, weekNumber);
         return allMedia.find(fb => fb.mediaType === 'video' || fb.mediaType === 'photo');
-    };
+    }, [findAllMediaForSet]);
 
     // Alias para retrocompatibilidad
     const findVideoForSet = findVisualForSet;
@@ -915,7 +1133,9 @@ export default function ClientProgressDetail() {
         });
 
         // Ordenar por dayIndex
-        return resultado.sort((a, b) => a.dayIndex - b.dayIndex);
+        const sorted = resultado.sort((a, b) => a.dayIndex - b.dayIndex);
+        const totalRenderedSets = sorted.reduce((sum, d) => sum + d.exercises.reduce((sum2, ex) => sum2 + ex.sesiones.reduce((sum3, s) => sum3 + s.sets.length, 0), 0), 0);
+        return sorted;
     }, [sessions, selMusculo, selEjercicio]);
 
     // Estado para días expandidos
@@ -1098,14 +1318,13 @@ export default function ClientProgressDetail() {
     // Ordena de más reciente a más antigua, agrupa por semana
     // ═══════════════════════════════════════════════════════════════════════════
 
-    // Helper para detectar si un set tiene videoFeedback asociado
-    const hasVideoFeedbackForSet = (exerciseName, setNumber, weekNumber) => {
+    // Helper para detectar si un set tiene videoFeedback asociado (usa pre-normalizados)
+    const hasVideoFeedbackForSet = useCallback((exerciseName, setNumber, weekNumber) => {
         const normalizedSearch = normalizeExerciseName(exerciseName);
-        return videoFeedbacks.some(fb => {
-            const normalizedFeedback = normalizeExerciseName(fb.exerciseName);
-            const nameMatch = normalizedFeedback === normalizedSearch ||
-                normalizedSearch.includes(normalizedFeedback) ||
-                normalizedFeedback.includes(normalizedSearch);
+        return normalizedFeedbacks.some(fb => {
+            const nameMatch = fb._normalizedName === normalizedSearch ||
+                normalizedSearch.includes(fb._normalizedName) ||
+                fb._normalizedName.includes(normalizedSearch);
             if (!nameMatch) return false;
 
             if (fb.serieKey) {
@@ -1120,7 +1339,7 @@ export default function ClientProgressDetail() {
             }
             return fb.setNumber === setNumber;
         });
-    };
+    }, [normalizedFeedbacks, normalizeExerciseName]);
 
     const comentariosPorRutina = useMemo(() => {
         if (!sessions || sessions.length === 0) return { current: null, old: [] };
@@ -1245,7 +1464,41 @@ export default function ClientProgressDetail() {
         const old = rutinasArray.slice(1).map(procesarRutina).filter(r => r.totalComentarios > 0);
 
         return { current, old };
-    }, [sessions, videoFeedbacks]);
+    }, [sessions, normalizedFeedbacks]);
+
+    // 🆕 Agrupar semanas por mes/año para vista colapsable
+    const monthGroupedSemanas = useMemo(() => {
+        if (!comentariosPorRutina.current?.semanas?.length) return [];
+
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+        const monthGroups = new Map();
+
+        comentariosPorRutina.current.semanas.forEach(semana => {
+            const latestDay = semana.dias[0]; // dias sorted most recent first
+            if (!latestDay?.dateSort) return;
+
+            const d = latestDay.dateSort;
+            const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+            const monthLabel = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+            if (!monthGroups.has(monthKey)) {
+                monthGroups.set(monthKey, {
+                    key: monthKey,
+                    label: monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1),
+                    semanas: [],
+                    isCurrentMonth: monthKey === currentMonthKey,
+                    totalNotas: 0
+                });
+            }
+            const group = monthGroups.get(monthKey);
+            group.semanas.push(semana);
+            group.totalNotas += semana.dias.reduce((acc, d) =>
+                acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0);
+        });
+
+        return Array.from(monthGroups.values());
+    }, [comentariosPorRutina.current]);
 
     // 🆕 Sesiones con RPE y notas para vista de comentarios (prioritario)
     const sessionRPEComments = useMemo(() => {
@@ -1289,6 +1542,7 @@ export default function ClientProgressDetail() {
 
     // Estado para semanas expandidas en comentarios
     const [expandedWeeks, setExpandedWeeks] = useState({});
+    const [expandedMonths, setExpandedMonths] = useState({});
 
     // 🆕 Expandir por defecto la última semana (la primera en la lista ordenada descendente)
     useEffect(() => {
@@ -1316,21 +1570,42 @@ export default function ClientProgressDetail() {
         setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
+    useEffect(() => {
+        if (!isLoading && volumeData && intensityData && !hasFetchedInsight.current) {
+            hasFetchedInsight.current = true;
+            generateSmartInsight();
+        }
+    }, [isLoading, volumeData, intensityData]);
+
     // ═══════════════════════════════════════════════════════════════════════════
     // RENDER
     // ═══════════════════════════════════════════════════════════════════════════
+    // 🧊 Web: unmount content when screen loses focus (prevents DOM accumulation crash)
+    const isFocused = useIsFocused();
+    if (Platform.OS === 'web' && !isFocused) return <View />;
+
+    // 🛡️ Render guard: if clientId changed but data hasn't loaded yet, show loading
+    // This prevents the heavy DOM from rendering with stale data during transition
     if (isLoading) {
+
         return (
             <SafeAreaView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
-                <View style={styles.header}>
-                    <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#1e293b" />
-                    </Pressable>
-                    <Text style={styles.headerTitle}>Cargando...</Text>
-                </View>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#3b82f6" />
+                <View style={styles.mainLayoutWrapper}>
+                    {isWideScreen && (
+                        <ClientSidebar
+                            clients={sidebarClients}
+                            isLoading={sidebarLoading}
+                            currentClientId={clientId}
+                            onClientSelect={handleSidebarClientSelect}
+                            isCollapsed={sidebarCollapsed}
+                            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            context="progress"
+                        />
+                    )}
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#3b82f6" />
+                    </View>
                 </View>
             </SafeAreaView>
         );
@@ -1340,26 +1615,9 @@ export default function ClientProgressDetail() {
         <SafeAreaView style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
 
-            {/* Header - siempre full width */}
-            <View style={styles.header}>
-                <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#1e293b" />
-                </Pressable>
-                <View style={styles.flex1}>
-                    <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
-                    <Text style={styles.headerSubtitle}>Análisis de progreso</Text>
-                </View>
-                <View style={[styles.tendenciaBadge, { backgroundColor: getCambioStyle(tendenciaGeneral).color + '20' }]}>
-                    <Ionicons name={getCambioStyle(tendenciaGeneral).icon} size={18} color={getCambioStyle(tendenciaGeneral).color} />
-                    <Text style={[styles.tendenciaText, { color: getCambioStyle(tendenciaGeneral).color }]}>
-                        {tendenciaGeneral > 0 ? '+' : ''}{tendenciaGeneral}%
-                    </Text>
-                </View>
-            </View>
-
-            {/* 🖥️ Main layout with Sidebar + Content */}
+            {/* 🖥️ Main layout: Sidebar (full height) + Content */}
             <View style={styles.mainLayoutWrapper}>
-                {/* Sidebar - only on wide screens */}
+                {/* Sidebar - only on wide screens, full height from top */}
                 {isWideScreen && (
                     <ClientSidebar
                         clients={sidebarClients}
@@ -1385,6 +1643,136 @@ export default function ClientProgressDetail() {
                         ]}
                         showsVerticalScrollIndicator={false}
                     >
+                        {/* Header Card — compact hero inside scroll */}
+                        <View style={styles.headerCard}>
+                            {/* Fila 1: Back + Nombre + Tendency badge */}
+                            <View style={styles.headerTopRow}>
+                                <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(coach)')} style={styles.backButton}>
+                                    <Ionicons name="arrow-back" size={22} color="#1e293b" />
+                                </Pressable>
+                                <View style={styles.flex1}>
+                                    <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
+                                    <Text style={styles.headerSubtitle}>Análisis de progreso</Text>
+                                </View>
+                                <HoverTooltip align="right" text="Índice de Progreso Global: Evalúa tu evolución ponderando las subidas de Intensidad (peso extra) frente a fluctuaciones de Volumen. Si levantas más peso, el índice sube aunque hagas menos series.">
+                                    <View style={[styles.tendenciaBadge, { backgroundColor: getCambioStyle(tendenciaGeneral).color + '20', borderColor: getCambioStyle(tendenciaGeneral).color }]}>
+                                        <Ionicons name={getCambioStyle(tendenciaGeneral).icon} size={16} color={getCambioStyle(tendenciaGeneral).color} />
+                                        <Text style={[styles.tendenciaText, { color: getCambioStyle(tendenciaGeneral).color }]}>
+                                            {tendenciaGeneral > 0 ? '+' : ''}{tendenciaGeneral}
+                                        </Text>
+                                        <Ionicons name="help-circle-outline" size={14} color={getCambioStyle(tendenciaGeneral).color} style={{ marginLeft: 4, opacity: 0.8 }} />
+                                    </View>
+                                </HoverTooltip>
+                            </View>
+
+                            {/* Row 2: Executive KPI Scorecards now globally attached to Header */}
+                            <View style={[styles.scorecardGrid, { paddingVertical: 8, paddingHorizontal: 0, marginTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9', zIndex: 99 }]}>
+                                {/* VOLUMEN TOTAL */}
+                                <View style={[styles.scorecardItem, !isWideScreen && { minWidth: '45%', marginBottom: 16 }]}>
+                                    <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                                        <HoverTooltip align="left" text="Total de kilogramos movidos. Fórmula: Series × Repeticiones × Peso, sumando todos los ejercicios.">
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <Text style={styles.scorecardTitle}>VOLUMEN TOTAL</Text>
+                                                <Ionicons name="help-circle-outline" size={12} color="#94a3b8" />
+                                            </View>
+                                        </HoverTooltip>
+                                        {volumeData && (
+                                            <View style={[styles.scorecardTrend, { backgroundColor: volumeData.lastValue >= 0 ? '#dcfce7' : '#fee2e2' }]}>
+                                                <Ionicons name={volumeData.lastValue >= 0 ? 'trending-up' : 'trending-down'} size={12} color={volumeData.lastValue >= 0 ? '#166534' : '#991b1b'} />
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: volumeData.lastValue >= 0 ? '#166534' : '#991b1b', marginLeft: 2 }}>{volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <Text style={styles.scorecardValue}>{volumeData ? `${volumeData.totalVolK}k` : '--'}</Text>
+                                    <Text style={styles.scorecardUnit}>kg levantados</Text>
+                                </View>
+
+                                {/* INTENSIDAD MEDIA */}
+                                <View style={[styles.scorecardItem, { borderLeftWidth: 1, borderLeftColor: '#f1f5f9' }, !isWideScreen && { minWidth: '45%', marginBottom: 16 }]}>
+                                    <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                                        <HoverTooltip text="Peso medio levantado por cada repetición. Fórmula: Volumen Total ÷ Repeticiones Totales.">
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <Text style={styles.scorecardTitle}>INTENS. MEDIA</Text>
+                                                <Ionicons name="help-circle-outline" size={12} color="#94a3b8" />
+                                            </View>
+                                        </HoverTooltip>
+                                        {intensityData && (
+                                            <View style={[styles.scorecardTrend, { backgroundColor: intensityData.lastValue >= 0 ? '#dcfce7' : '#fee2e2' }]}>
+                                                <Ionicons name={intensityData.lastValue >= 0 ? 'trending-up' : 'trending-down'} size={12} color={intensityData.lastValue >= 0 ? '#166534' : '#991b1b'} />
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: intensityData.lastValue >= 0 ? '#166534' : '#991b1b', marginLeft: 2 }}>{intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <Text style={styles.scorecardValue}>{intensityData ? `${intensityData.lastAvgLoad}` : '--'}</Text>
+                                    <Text style={styles.scorecardUnit}>kg / repetición</Text>
+                                </View>
+
+                                {/* CUMPLIMIENTO */}
+                                <View style={[styles.scorecardItem, isWideScreen && { borderLeftWidth: 1, borderLeftColor: '#f1f5f9' }, !isWideScreen && { minWidth: '45%' }]}>
+                                    <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                                        <HoverTooltip text="Porcentaje de series que cumplen con los rangos prescritos de la rutina.">
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <Text style={styles.scorecardTitle}>CUMPLIMIENTO</Text>
+                                                <Ionicons name="help-circle-outline" size={12} color="#94a3b8" />
+                                            </View>
+                                        </HoverTooltip>
+                                        {complianceWeeklyData && (
+                                            <View style={[styles.scorecardTrend, { backgroundColor: complianceWeeklyData.lastValue >= 80 ? '#dcfce7' : '#fee2e2' }]}>
+                                                <Ionicons name="checkmark-circle" size={12} color={complianceWeeklyData.lastValue >= 80 ? '#166534' : '#991b1b'} />
+                                                <Text style={{ fontSize: 10, fontWeight: '700', color: complianceWeeklyData.lastValue >= 80 ? '#166534' : '#991b1b', marginLeft: 2 }}>{complianceWeeklyData.lastValue >= 80 ? 'ÓPTIMO' : 'BAJO'}</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <Text style={styles.scorecardValue}>{complianceWeeklyData ? `${complianceWeeklyData.lastValue}%` : '--'}</Text>
+                                    <Text style={styles.scorecardUnit}>rango óptimo</Text>
+                                </View>
+
+                                {/* SENSACIÓN */}
+                                <View style={[styles.scorecardItem, { borderLeftWidth: 1, borderLeftColor: '#f1f5f9' }, !isWideScreen && { minWidth: '45%' }]}>
+                                    <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                                        <HoverTooltip text="RPE ponderado. Mide la percepción subjetiva de fatiga o esfuerzo enviada por el cliente.">
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <Text style={styles.scorecardTitle}>SENSACIÓN</Text>
+                                                <Ionicons name="help-circle-outline" size={12} color="#94a3b8" />
+                                            </View>
+                                        </HoverTooltip>
+                                        {sessionRPEData && (
+                                            <View style={[styles.scorecardTrend, { backgroundColor: sessionRPEData.average >= 3 ? '#dcfce7' : '#fee2e2' }]}>
+                                                <Ionicons name="flash" size={12} color={sessionRPEData.average >= 3 ? '#166534' : '#991b1b'} />
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: sessionRPEData.average >= 3 ? '#166534' : '#991b1b', marginLeft: 2 }}>{sessionRPEData.average >= 4 ? 'BESTIA' : 'ESTABLE'}</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <Text style={styles.scorecardValue}>{sessionRPEData ? `${sessionRPEData.average}` : '--'}</Text>
+                                    <Text style={styles.scorecardUnit}>RPE promed. / 5</Text>
+                                </View>
+                            </View>
+
+                            {/* 🤖 AUTOMATED AI SMART INSIGHT CARD COMPACT (Inside Header) */}
+                            {(isLoadingInsight || aiInsight || aiInsightError) && (
+                                <View style={{ backgroundColor: '#f0fdfa', paddingVertical: 14, paddingHorizontal: 22, borderRadius: 12, marginTop: 8, borderWidth: 1, borderColor: '#ccfbf1', flexDirection: 'row', alignItems: 'center' }}>
+                                    <View style={{ marginRight: 14, backgroundColor: aiInsightError ? '#fee2e2' : '#ccfbf1', padding: 8, borderRadius: 20 }}>
+                                        <Ionicons name={aiInsightError ? "warning" : "sparkles"} size={22} color={aiInsightError ? "#991b1b" : "#0d9488"} />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        {isLoadingInsight ? (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                <ActivityIndicator size="small" color="#0d9488" />
+                                                <Text style={{ fontSize: 12, color: '#0f766e', fontStyle: 'italic' }}>Analizando progresión del cliente y generando resumen táctico...</Text>
+                                            </View>
+                                        ) : aiInsightError ? (
+                                            <Text style={{ fontSize: 14, color: '#991b1b', lineHeight: 22 }}>
+                                                No se pudo generar el análisis automático de este momento. Reintenta más tarde.
+                                            </Text>
+                                        ) : (
+                                            <Text style={{ fontSize: 15, color: '#134e4a', lineHeight: 24, fontWeight: '500' }} numberOfLines={4} ellipsizeMode="tail">
+                                                {aiInsight}
+                                            </Text>
+                                        )}
+                                    </View>
+                                </View>
+                            )}
+                        </View>
 
                         {/* === TOGGLE GRÁFICA / TABLA === */}
                         <View style={styles.viewModeContainer}>
@@ -1432,317 +1820,182 @@ export default function ClientProgressDetail() {
                    ════════════════════════════════════════════════════════════════ */}
                         {viewMode === 'chart' && (
                             <>
-                                {/* ═══ PERIOD FILTER ═══ */}
-                                <View style={styles.periodFilter}>
-                                    {PERIOD_OPTIONS.map(p => (
-                                        <Pressable
-                                            key={p.id}
-                                            style={[
-                                                styles.periodBtn,
-                                                selectedPeriod === p.id && styles.periodBtnActive
-                                            ]}
-                                            onPress={() => setSelectedPeriod(p.id)}
-                                        >
-                                            <Text style={[
-                                                styles.periodBtnText,
-                                                selectedPeriod === p.id && styles.periodBtnTextActive
-                                            ]}>
-                                                {p.label}
-                                            </Text>
-                                        </Pressable>
-                                    ))}
-                                </View>
-
-                                {/* ═══ KPI SELECTOR ═══ */}
-                                <Pressable
-                                    style={styles.kpiSelector}
-                                    onPress={() => setKpiModalVisible(true)}
-                                >
-                                    <View style={styles.kpiSelectorLeft}>
-                                        <View style={styles.kpiSelectorIconWrap}>
-                                            <Text style={styles.kpiSelectorIcon}>{currentKpi.icon}</Text>
-                                        </View>
-                                        <View style={styles.flex1}>
-                                            <Text style={styles.kpiSelectorTitle}>{currentKpi.name}</Text>
-                                            <Text style={styles.kpiSelectorDesc} numberOfLines={1}>{currentKpi.description}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.kpiSelectorChevron}>
-                                        <Ionicons name="chevron-down" size={18} color="#fff" />
-                                    </View>
-                                </Pressable>
-
-                                {/* ═══ FILTROS MÚSCULO/EJERCICIO (solo para KPIs que lo usen) ═══ */}
-                                {currentKpi.useFilters && (
-                                    <View style={styles.kpiFilters}>
-                                        <View style={styles.kpiFilterRow}>
-                                            <Text style={styles.kpiFilterLabel}>Músculo:</Text>
-                                            {Platform.OS === 'ios' ? (
-                                                <TouchableOpacity
-                                                    style={styles.iosPickerButton}
-                                                    onPress={() => {
-                                                        const options = ['Cancelar', ...listaMusculos.map(m => m === 'TOTAL' ? 'Todos' : m)];
-                                                        ActionSheetIOS.showActionSheetWithOptions(
-                                                            { options, cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
-                                                            (buttonIndex) => {
-                                                                if (buttonIndex > 0) {
-                                                                    handleMusculoChange(listaMusculos[buttonIndex - 1]);
-                                                                }
-                                                            }
-                                                        );
-                                                    }}
+                                {/* ═══ CONTROL BAR: Período + KPIs + Filtros en 1 card ═══ */}
+                                <View style={styles.controlBar}>
+                                    {/* Row 1: Period + Muscle/Exercise inline */}
+                                    <View style={styles.controlTopRow}>
+                                        <View style={styles.periodFilter}>
+                                            {PERIOD_OPTIONS.map(p => (
+                                                <Pressable
+                                                    key={p.id}
+                                                    style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
+                                                    onPress={() => setSelectedPeriod(p.id)}
                                                 >
-                                                    <Text style={styles.iosPickerText}>
-                                                        {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
+                                                    <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
+                                                        {p.label}
                                                     </Text>
-                                                    <Ionicons name="chevron-down" size={18} color="#64748b" />
-                                                </TouchableOpacity>
-                                            ) : (
+                                                </Pressable>
+                                            ))}
+                                        </View>
+                                        <View style={styles.controlFiltersInline}>
+                                            <TouchableOpacity
+                                                style={styles.controlFilterChip}
+                                                onPress={() => Platform.OS === 'ios'
+                                                    ? ActionSheetIOS.showActionSheetWithOptions(
+                                                        { options: ['Cancelar', ...listaMusculos.map(m => m === 'TOTAL' ? 'Todos' : m)], cancelButtonIndex: 0, title: 'Seleccionar Músculo' },
+                                                        (idx) => { if (idx > 0) handleMusculoChange(listaMusculos[idx - 1]); }
+                                                    )
+                                                    : setAndroidMusculoModal(true)
+                                                }
+                                            >
+                                                <Ionicons name="body-outline" size={14} color="#64748b" />
+                                                <Text style={styles.controlFilterChipText}>
+                                                    {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
+                                                </Text>
+                                                <Ionicons name="chevron-down" size={12} color="#94a3b8" />
+                                            </TouchableOpacity>
+                                            {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
                                                 <TouchableOpacity
-                                                    style={styles.iosPickerButton}
-                                                    onPress={() => setAndroidMusculoModal(true)}
+                                                    style={styles.controlFilterChip}
+                                                    onPress={() => Platform.OS === 'ios'
+                                                        ? ActionSheetIOS.showActionSheetWithOptions(
+                                                            { options: ['Cancelar', 'Todos', ...listaEjercicios], cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
+                                                            (idx) => { if (idx === 1) setSelEjercicio(''); else if (idx > 1) setSelEjercicio(listaEjercicios[idx - 2]); }
+                                                        )
+                                                        : setAndroidEjercicioModal(true)
+                                                    }
                                                 >
-                                                    <Text style={styles.iosPickerText}>
-                                                        {selMusculo === 'TOTAL' ? 'Todos' : selMusculo}
-                                                    </Text>
-                                                    <Ionicons name="chevron-down" size={18} color="#64748b" />
+                                                    <Ionicons name="barbell-outline" size={14} color="#64748b" />
+                                                    <Text style={styles.controlFilterChipText}>{selEjercicio || 'Todos'}</Text>
+                                                    <Ionicons name="chevron-down" size={12} color="#94a3b8" />
                                                 </TouchableOpacity>
                                             )}
                                         </View>
-                                        {selMusculo !== 'TOTAL' && listaEjercicios.length > 0 && (
-                                            <View style={styles.kpiFilterRow}>
-                                                <Text style={styles.kpiFilterLabel}>Ejercicio:</Text>
-                                                {Platform.OS === 'ios' ? (
-                                                    <TouchableOpacity
-                                                        style={styles.iosPickerButton}
-                                                        onPress={() => {
-                                                            const options = ['Cancelar', 'Todos', ...listaEjercicios];
-                                                            ActionSheetIOS.showActionSheetWithOptions(
-                                                                { options, cancelButtonIndex: 0, title: 'Seleccionar Ejercicio' },
-                                                                (buttonIndex) => {
-                                                                    if (buttonIndex === 1) {
-                                                                        setSelEjercicio('');
-                                                                    } else if (buttonIndex > 1) {
-                                                                        setSelEjercicio(listaEjercicios[buttonIndex - 2]);
-                                                                    }
-                                                                }
-                                                            );
-                                                        }}
-                                                    >
-                                                        <Text style={styles.iosPickerText}>
-                                                            {selEjercicio || 'Todos'}
-                                                        </Text>
-                                                        <Ionicons name="chevron-down" size={18} color="#64748b" />
-                                                    </TouchableOpacity>
-                                                ) : (
-                                                    <TouchableOpacity
-                                                        style={styles.iosPickerButton}
-                                                        onPress={() => setAndroidEjercicioModal(true)}
-                                                    >
-                                                        <Text style={styles.iosPickerText}>
-                                                            {selEjercicio || 'Todos'}
-                                                        </Text>
-                                                        <Ionicons name="chevron-down" size={18} color="#64748b" />
-                                                    </TouchableOpacity>
-                                                )}
-                                            </View>
-                                        )}
                                     </View>
-                                )}
+                                </View>
 
-                                {/* ═══ CHART RENDERING ═══ */}
-                                <View style={styles.chartContainer}>
-
-                                    {/* KPI: VOLUMEN */}
-                                    {selectedKpi === 'volume' && volumeData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>
-                                                    Volumen {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                                    {selEjercicio ? ` - ${selEjercicio}` : ''}
+                                {/* ═══ HERO: VOLUMEN + INTENSIDAD COMBINADO (full width) ═══ */}
+                                <LazySection height={300}>
+                                {combinedVolIntData && (
+                                    <View style={styles.dashCard}>
+                                        <View style={styles.dashCardHeader}>
+                                            <View style={[styles.dashCardIconWrap, { backgroundColor: '#2563EB18' }]}>
+                                                <Text style={{ fontSize: 16 }}>📊</Text>
+                                            </View>
+                                            <View style={styles.flex1}>
+                                                <Text style={[styles.dashCardTitle, { fontSize: 14 }]}>
+                                                    Volumen e Intensidad {selMusculo !== 'TOTAL' ? `· ${selMusculo}` : ''}
                                                 </Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={[styles.chartSummaryValue, {
-                                                        color: volumeData.lastValue >= 0 ? '#10b981' : '#ef4444'
-                                                    }]}>
-                                                        {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
-                                                </View>
+                                                <Text style={styles.dashCardSub}>Evolución relativa semanal (%)</Text>
                                             </View>
-                                            <LineChart
-                                                data={volumeData}
-                                                width={chartWidth}
-                                                height={220}
-                                                chartConfig={{
-                                                    ...chartConfig,
-                                                    color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                                                }}
-                                                bezier
-                                                style={styles.chart}
-                                                yAxisSuffix="%"
-                                            />
-                                            <Text style={styles.chartSubInfo}>
-                                                Total período: {volumeData.totalVolK}k kg
-                                            </Text>
-                                        </>
-                                    )}
-
-                                    {/* KPI: INTENSIDAD */}
-                                    {selectedKpi === 'intensity' && intensityData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>
-                                                    Intensidad {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                                    {selEjercicio ? ` - ${selEjercicio}` : ''}
-                                                </Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={[styles.chartSummaryValue, {
-                                                        color: intensityData.lastValue >= 0 ? '#3b82f6' : '#ef4444'
-                                                    }]}>
-                                                        {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>vs semana 1</Text>
+                                            {volumeData && (
+                                                <View style={[styles.dashBadge, { backgroundColor: '#2563EB18', marginRight: 4 }]}>
+                                                    <Ionicons name={volumeData.lastValue >= 0 ? 'trending-up' : 'trending-down'} size={12} color="#2563EB" />
+                                                    <Text style={[styles.dashBadgeText, { color: '#2563EB', fontSize: 11 }]}>Vol {volumeData.lastValue >= 0 ? '+' : ''}{volumeData.lastValue}%</Text>
                                                 </View>
-                                            </View>
-                                            <LineChart
-                                                data={intensityData}
-                                                width={chartWidth}
-                                                height={220}
-                                                chartConfig={chartConfig}
-                                                bezier
-                                                style={styles.chart}
-                                                yAxisSuffix="%"
-                                            />
-                                            <Text style={styles.chartSubInfo}>
-                                                Carga media: {intensityData.lastAvgLoad} kg/rep
-                                            </Text>
-                                        </>
-                                    )}
-
-                                    {/* KPI: CUMPLIMIENTO */}
-                                    {selectedKpi === 'compliance' && complianceWeeklyData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>Cumplimiento del Plan</Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={[styles.chartSummaryValue, {
-                                                        color: complianceWeeklyData.lastValue >= 80 ? '#10b981' :
-                                                            complianceWeeklyData.lastValue >= 60 ? '#f59e0b' : '#ef4444'
-                                                    }]}>
-                                                        {complianceWeeklyData.lastValue}%
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>última semana</Text>
+                                            )}
+                                            {intensityData && (
+                                                <View style={[styles.dashBadge, { backgroundColor: '#47556918' }]}>
+                                                    <Ionicons name={intensityData.lastValue >= 0 ? 'trending-up' : 'trending-down'} size={12} color="#475569" />
+                                                    <Text style={[styles.dashBadgeText, { color: '#475569', fontSize: 11 }]}>Int {intensityData.lastValue >= 0 ? '+' : ''}{intensityData.lastValue}%</Text>
                                                 </View>
-                                            </View>
-                                            <LineChart
-                                                data={complianceWeeklyData}
-                                                width={chartWidth}
-                                                height={220}
-                                                chartConfig={{
-                                                    ...chartConfig,
-                                                    color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                                                }}
-                                                bezier
-                                                style={styles.chart}
-                                                yAxisSuffix="%"
-                                            />
-                                            <Text style={styles.chartSubInfo}>
-                                                Media: {complianceWeeklyData.avgValue}% de sets en rango
-                                            </Text>
-                                        </>
-                                    )}
-
-                                    {/* KPI: CARGA ALTA */}
-                                    {selectedKpi === 'heavySets' && heavySetsData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>
-                                                    Carga Alta {selMusculo !== 'TOTAL' ? `(${selMusculo})` : ''}
-                                                    {selEjercicio ? ` - ${selEjercicio}` : ''}
-                                                </Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={styles.chartSummaryValue}>
-                                                        {heavySetsData.lastValue}%
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>última semana</Text>
-                                                </View>
-                                            </View>
-                                            <BarChart
-                                                data={heavySetsData}
-                                                width={screenWidth - 32}
-                                                height={220}
-                                                chartConfig={{
-                                                    ...barChartConfig,
-                                                    color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                                                }}
-                                                style={styles.chart}
-                                                yAxisSuffix="%"
-                                                showValuesOnTopOfBars
-                                            />
-                                            <Text style={styles.chartSubInfo}>
-                                                Media: {heavySetsData.avgValue}% sets con ≥85% del máximo
-                                            </Text>
-                                        </>
-                                    )}
-
-                                    {/* KPI: BALANCE MUSCULAR */}
-                                    {selectedKpi === 'muscleBalance' && muscleBalanceData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>Balance Muscular</Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={styles.chartSummaryValue}>
-                                                        {muscleBalanceData.fullData?.[0]?.share || 0}%
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>
-                                                        {muscleBalanceData.fullData?.[0]?.muscle || '-'}
-                                                    </Text>
-                                                </View>
-                                            </View>
-                                            <ScrollView
-                                                horizontal
-                                                showsHorizontalScrollIndicator={true}
-                                                style={styles.horizontalChartScroll}
-                                            >
-                                                <BarChart
-                                                    data={muscleBalanceData}
-                                                    width={Math.max(screenWidth - 32, muscleBalanceData.labels.length * 60)}
+                                            )}
+                                        </View>
+                                        <ResponsiveChart fallbackWidth={getChartW(false)}>
+                                            {(w) => (
+                                                <LineChart
+                                                    data={downsampleChartData(combinedVolIntData)}
+                                                    width={w}
                                                     height={220}
                                                     chartConfig={{
-                                                        ...barChartConfig,
-                                                        barPercentage: 0.6,
+                                                        ...chartConfig,
+                                                        fillShadowGradientOpacity: 0.1,
                                                     }}
+                                                    bezier
+                                                    withDots={Platform.OS !== 'web'}
                                                     style={styles.chart}
                                                     yAxisSuffix="%"
-                                                    showValuesOnTopOfBars
+                                                    withLegend={false}
+                                                    withShadow={false}
+                                                    useShadowColorFromDataset={true}
                                                 />
-                                            </ScrollView>
-                                            <View style={styles.muscleBalanceLegend}>
-                                                {muscleBalanceData.fullData?.slice(0, 8).map((m, i) => (
-                                                    <View key={i} style={styles.muscleBalanceItem}>
-                                                        <Text style={styles.muscleBalanceShare}>{m.share}%</Text>
-                                                        <Text style={styles.muscleBalanceName}>{m.muscle}</Text>
-                                                    </View>
-                                                ))}
+                                            )}
+                                        </ResponsiveChart>
+                                        {/* Custom legend */}
+                                        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <View style={{ width: 12, height: 3, backgroundColor: '#2563EB', borderRadius: 2 }} />
+                                                <Text style={{ fontSize: 10, color: '#64748b' }}>Volumen {volumeData?.totalVolK}k kg</Text>
                                             </View>
-                                        </>
-                                    )}
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <View style={{ width: 12, height: 3, backgroundColor: '#475569', borderRadius: 2 }} />
+                                                <Text style={{ fontSize: 10, color: '#64748b' }}>Intensidad {intensityData?.lastAvgLoad} kg/rep</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                )}
+                                </LazySection>
 
-                                    {/* 🆕 KPI: Sensación (Session RPE) */}
-                                    {selectedKpi === 'sessionRPE' && sessionRPEData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>Sensación 🔵</Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={[styles.chartSummaryValue, { color: '#3b82f6' }]}>
-                                                        {sessionRPEData.average}/5
+                                {/* ═══ TIER 2: CUMPLIMIENTO + CARGA ALTA ═══ */}
+                                <LazySection height={280}>
+                                <View style={isWideScreen ? styles.tierRow : null}>
+                                    {/* CUMPLIMIENTO */}
+                                    {complianceWeeklyData && (
+                                        <View style={[styles.dashCard, isWideScreen && { flex: 1 }]}>
+                                            <View style={styles.dashCardHeader}>
+                                                <View style={[styles.dashCardIconWrap, { backgroundColor: '#2563EB18' }]}>
+                                                    <Text style={{ fontSize: 16 }}>✅</Text>
+                                                </View>
+                                                <View style={styles.flex1}>
+                                                    <Text style={styles.dashCardTitle}>Cumplimiento</Text>
+                                                    <Text style={styles.dashCardSub}>Sets en rango prescrito</Text>
+                                                </View>
+                                                <View style={[styles.dashBadge, { backgroundColor: complianceWeeklyData.lastValue >= 80 ? '#10b98118' : '#f59e0b18' }]}>
+                                                    <Text style={[styles.dashBadgeText, { color: complianceWeeklyData.lastValue >= 80 ? '#10b981' : '#f59e0b', fontWeight: '800', fontSize: 14 }]}>
+                                                        {complianceWeeklyData.lastValue}%
                                                     </Text>
-                                                    <Text style={styles.chartSummaryLabel}>promedio</Text>
                                                 </View>
                                             </View>
+                                            <ResponsiveChart fallbackWidth={getChartW(true)}>
+                                                {(w) => (
+                                                    <LineChart
+                                                        data={downsampleChartData(complianceWeeklyData)}
+                                                        width={w}
+                                                        height={180}
+                                                        chartConfig={{
+                                                            ...chartConfig,
+                                                            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                                                            fillShadowGradient: '#2563EB',
+                                                            fillShadowGradientOpacity: 0.45,
+                                                        }}
+                                                        bezier
+                                                        withDots={Platform.OS !== 'web'}
+                                                        style={styles.chart}
+                                                        yAxisSuffix="%"
+                                                    />
+                                                )}
+                                            </ResponsiveChart>
+                                            <Text style={styles.dashFooter}>Media: {complianceWeeklyData.avgValue}%</Text>
+                                        </View>
+                                    )}
 
-                                            {/* Streak indicator */}
+                                    {/* SENSACIÓN (RPE) */}
+                                    {sessionRPEData && (
+                                        <View style={[styles.dashCard, isWideScreen && { flex: 1 }]}>
+                                            <View style={styles.dashCardHeader}>
+                                                <View style={[styles.dashCardIconWrap, { backgroundColor: '#2563EB18' }]}>
+                                                    <Text style={{ fontSize: 16 }}>🔵</Text>
+                                                </View>
+                                                <View style={styles.flex1}>
+                                                    <Text style={styles.dashCardTitle}>Sensación</Text>
+                                                    <Text style={styles.dashCardSub}>RPE por sesión</Text>
+                                                </View>
+                                                <View style={[styles.dashBadge, { backgroundColor: '#2563EB18' }]}>
+                                                    <Text style={[styles.dashBadgeText, { color: '#2563EB', fontWeight: '800', fontSize: 14 }]}>
+                                                        {sessionRPEData.average}/5
+                                                    </Text>
+                                                </View>
+                                            </View>
                                             {sessionRPEData.maxStreak >= 3 && (
                                                 <View style={styles.rpeStreakBadge}>
                                                     <Text style={styles.rpeStreakText}>
@@ -1750,38 +2003,31 @@ export default function ClientProgressDetail() {
                                                     </Text>
                                                 </View>
                                             )}
-
-                                            {/* Custom RPE Bar Chart */}
-                                            <ScrollView horizontal showsHorizontalScrollIndicator style={styles.horizontalScroll}>
-                                                <View style={styles.rpeBarContainer}>
-                                                    {sessionRPEData.data.map((item, index) => (
-                                                        <View key={index} style={styles.rpeBarWrapper}>
-                                                            <View
-                                                                style={[
-                                                                    styles.rpeBar,
-                                                                    {
-                                                                        height: (item.value / 5) * 100,
-                                                                        backgroundColor: item.color,
-                                                                        shadowColor: item.value >= 4 ? item.color : 'transparent',
-                                                                        shadowOpacity: item.value >= 4 ? 0.6 : 0,
-                                                                        shadowRadius: item.value >= 4 ? 8 : 0,
-                                                                        elevation: item.value >= 4 ? 4 : 0,
-                                                                    }
-                                                                ]}
-                                                            />
-                                                            {item.hasNote && (
-                                                                <View style={styles.rpeNoteDot} />
-                                                            )}
-                                                            <Text style={styles.rpeBarLabel}>{item.label}</Text>
-                                                            <Text style={[styles.rpeBarValue, { color: item.color }]}>
-                                                                {item.value}
-                                                            </Text>
-                                                        </View>
-                                                    ))}
-                                                </View>
-                                            </ScrollView>
-
-                                            {/* Stats summary */}
+                                            <ResponsiveChart fallbackWidth={getChartW(true)}>
+                                                {(w) => (
+                                                    <LineChart
+                                                        data={downsampleChartData({
+                                                            labels: sessionRPEData.labels.map((l, i) => i % Math.max(1, Math.ceil(sessionRPEData.labels.length / 7)) === 0 ? l : ''),
+                                                            datasets: sessionRPEData.datasets
+                                                        })}
+                                                        width={w}
+                                                        height={180}
+                                                        chartConfig={{
+                                                            ...chartConfig,
+                                                            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+                                                            fillShadowGradient: '#2563EB',
+                                                            fillShadowGradientOpacity: 0.45,
+                                                        }}
+                                                        bezier
+                                                        withDots={Platform.OS !== 'web'}
+                                                        style={styles.chart}
+                                                        fromZero
+                                                        withVerticalLines={false}
+                                                        segments={5}
+                                                        formatYLabel={(y) => Math.round(Number(y)).toString()}
+                                                    />
+                                                )}
+                                            </ResponsiveChart>
                                             <View style={styles.rpeSummaryRow}>
                                                 <View style={styles.rpeSummaryItem}>
                                                     <Text style={styles.rpeSummaryLabel}>Sesiones</Text>
@@ -1789,192 +2035,345 @@ export default function ClientProgressDetail() {
                                                 </View>
                                                 <View style={styles.rpeSummaryItem}>
                                                     <Text style={styles.rpeSummaryLabel}>Modo Bestia</Text>
-                                                    <Text style={[styles.rpeSummaryValue, { color: RPE_COLORS[5] }]}>
-                                                        {sessionRPEData.modoBestaCount}
-                                                    </Text>
+                                                    <Text style={[styles.rpeSummaryValue, { color: '#2563EB' }]}>{sessionRPEData.modoBestaCount}</Text>
                                                 </View>
                                             </View>
-
-                                            <Text style={styles.chartSubInfo}>{currentKpi.description}</Text>
-                                        </>
-                                    )}
-
-                                    {/* KPI: PRs */}
-                                    {selectedKpi === 'prCount' && prCountData && (
-                                        <>
-                                            <View style={styles.chartHeader}>
-                                                <Text style={styles.sectionTitle}>PRs (Récords Personales)</Text>
-                                                <View style={styles.chartSummary}>
-                                                    <Text style={[styles.chartSummaryValue, { color: '#eab308' }]}>
-                                                        {prCountData.totalPRs}
-                                                    </Text>
-                                                    <Text style={styles.chartSummaryLabel}>en el período</Text>
-                                                </View>
-                                            </View>
-                                            <BarChart
-                                                data={prCountData}
-                                                width={screenWidth - 32}
-                                                height={220}
-                                                chartConfig={{
-                                                    ...barChartConfig,
-                                                    color: (opacity = 1) => `rgba(234, 179, 8, ${opacity})`,
-                                                }}
-                                                style={styles.chart}
-                                                showValuesOnTopOfBars
-                                            />
-                                            <Text style={styles.chartSubInfo}>
-                                                {currentKpi.description}
-                                            </Text>
-                                        </>
-                                    )}
-
-                                    {/* No data fallback */}
-                                    {((selectedKpi === 'volume' && !volumeData) ||
-                                        (selectedKpi === 'intensity' && !intensityData) ||
-                                        (selectedKpi === 'compliance' && !complianceWeeklyData) ||
-                                        (selectedKpi === 'heavySets' && !heavySetsData) ||
-                                        (selectedKpi === 'muscleBalance' && !muscleBalanceData) ||
-                                        (selectedKpi === 'sessionRPE' && !sessionRPEData) ||
-                                        (selectedKpi === 'prCount' && !prCountData)) && (
-                                            <View style={styles.noDataContainer}>
-                                                <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
-                                                <Text style={styles.noDataText}>Sin datos para este período</Text>
-                                            </View>
-                                        )}
-                                </View>
-
-                                {/* Selector de agrupación para tabla */}
-                                <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
-                                <View style={styles.selectorContainer}>
-                                    <Pressable
-                                        style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
-                                        onPress={() => setTemporalidad('semanas')}
-                                    >
-                                        <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
-                                            Semanas
-                                        </Text>
-                                    </Pressable>
-                                    <Pressable
-                                        style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
-                                        onPress={() => setTemporalidad('meses')}
-                                    >
-                                        <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
-                                            Meses
-                                        </Text>
-                                    </Pressable>
-                                    <Pressable
-                                        style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
-                                        onPress={() => setTemporalidad('total')}
-                                    >
-                                        <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
-                                            Total
-                                        </Text>
-                                    </Pressable>
-                                </View>
-
-                                {/* Tabla comparativa */}
-                                {datosAgrupados.length > 0 && (
-                                    <View style={styles.tableContainer}>
-
-
-                                        <View style={styles.tableHeader}>
-                                            <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
-                                            <Text style={styles.tableHeaderCell}>Volumen</Text>
-                                            <Text style={styles.tableHeaderCell}>Reps</Text>
-                                            <Text style={styles.tableHeaderCell}>Carga</Text>
-                                            <Text style={styles.tableHeaderCell}>Ses.</Text>
                                         </View>
+                                    )}
+                                </View>
+                                </LazySection>
 
-                                        {datosAgrupados.map((dato, index) => {
-                                            const anterior = datosAgrupados[index + 1];
-                                            const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
-                                            const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
-                                            const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
-                                            const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
-
+                                {/* ═══ TIER 3: BALANCE MUSCULAR (full width) ═══ */}
+                                <LazySection height={250}>
+                                {muscleBalanceData && (
+                                    <View style={styles.dashCard}>
+                                        <View style={styles.dashCardHeader}>
+                                            <View style={[styles.dashCardIconWrap, { backgroundColor: '#2563EB18' }]}>
+                                                <Text style={{ fontSize: 16 }}>⚖️</Text>
+                                            </View>
+                                            <View style={styles.flex1}>
+                                                <Text style={styles.dashCardTitle}>Balance Muscular</Text>
+                                                <Text style={styles.dashCardSub}>Distribución del volumen</Text>
+                                            </View>
+                                        </View>
+                                        {(() => {
+                                            const rawMax = Math.max(...(muscleBalanceData.fullData.map(d => d.share || 0)), 1);
+                                            const yMax = Math.ceil(rawMax / 10) * 10 || 10;
                                             return (
-                                                <View key={dato.periodo} style={styles.tableRow}>
-                                                    <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
-                                                        {dato.periodo}
-                                                    </Text>
-
-                                                    <View style={styles.tableCellValue}>
-                                                        <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
-                                                        {anterior && (
-                                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
-                                                                <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
-                                                                <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
-                                                                    {cambioVol > 0 ? '+' : ''}{cambioVol}%
-                                                                </Text>
+                                                <View style={{ paddingTop: 16, paddingBottom: 8, paddingHorizontal: 12 }}>
+                                                    {muscleBalanceData.fullData?.slice(0, 8).map((m, i) => {
+                                                        const widthPct = Math.max(((m.share || 0) / rawMax) * 100, 2);
+                                                        return (
+                                                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                                                                <View style={{ width: 85, paddingRight: 8 }}>
+                                                                    <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }} numberOfLines={1}>{m.muscle.substring(0, 10)}</Text>
+                                                                </View>
+                                                                <View style={{ flex: 1, height: 18, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden', flexDirection: 'row' }}>
+                                                                    <View style={{ width: `${widthPct}%`, height: '100%', backgroundColor: '#2563EB', opacity: 0.85, borderRadius: 4 }} />
+                                                                </View>
+                                                                <View style={{ width: 45, alignItems: 'flex-end', justifyContent: 'center' }}>
+                                                                    <Text style={{ fontSize: 13, color: '#0f172a', fontWeight: '800' }}>{m.share}%</Text>
+                                                                </View>
                                                             </View>
-                                                        )}
-                                                    </View>
-
-                                                    <View style={styles.tableCellValue}>
-                                                        <Text style={styles.tableValue}>{dato.reps}</Text>
-                                                        {anterior && (
-                                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
-                                                                <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
-                                                            </View>
-                                                        )}
-                                                    </View>
-
-                                                    <View style={styles.tableCellValue}>
-                                                        <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
-                                                        {anterior && (
-                                                            <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
-                                                                <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
-                                                            </View>
-                                                        )}
-                                                    </View>
-
-                                                    <View style={styles.tableCellValue}>
-                                                        <Text style={styles.tableValue}>{dato.numSesiones}</Text>
-                                                        {anterior && cambioSes !== 0 && (
-                                                            <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
-                                                                {cambioSes > 0 ? '+' : ''}{cambioSes}
-                                                            </Text>
-                                                        )}
-                                                    </View>
+                                                        )
+                                                    })}
                                                 </View>
                                             );
-                                        })}
+                                        })()}
+                                    </View>
+                                )}
+                                </LazySection>
+
+                                {/* ═══ TIER 4: RPE + PRs ═══ */}
+                                <LazySection height={250}>
+                                <View style={isWideScreen ? styles.tierRow : null}>
+                                    {/* CARGA ALTA */}
+                                    {heavySetsData && (
+                                        <View style={[styles.dashCard, isWideScreen && { flex: 1 }]}>
+                                            <View style={styles.dashCardHeader}>
+                                                <View style={[styles.dashCardIconWrap, { backgroundColor: '#fca5a520' }]}>
+                                                    <Text style={{ fontSize: 16 }}>🔥</Text>
+                                                </View>
+                                                <View style={styles.flex1}>
+                                                    <Text style={styles.dashCardTitle}>
+                                                        Carga Alta {selMusculo !== 'TOTAL' ? `· ${selMusculo}` : ''}
+                                                    </Text>
+                                                    <Text style={styles.dashCardSub}>≥85% del máximo</Text>
+                                                </View>
+                                                <View style={[styles.dashBadge, { backgroundColor: '#fca5a520' }]}>
+                                                    <Text style={[styles.dashBadgeText, { color: '#ef4444', fontWeight: '800', fontSize: 14 }]}>
+                                                        {heavySetsData.lastValue}%
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            {(() => {
+                                                const rawMax = Math.max(...(heavySetsData.datasets[0].data || []), 1);
+                                                const yMax = Math.ceil(rawMax / 20) * 20 || 100;
+                                                const halfYMax = Math.round(yMax / 2);
+
+                                                return (
+                                                    <View style={{ flexDirection: 'row', paddingTop: 20, paddingBottom: 10, paddingRight: 10 }}>
+                                                        <View style={{ width: 32, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 6, paddingBottom: 22 }}>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>{yMax}%</Text>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>{halfYMax}%</Text>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>0%</Text>
+                                                        </View>
+                                                        <View style={{ flex: 1, position: 'relative' }}>
+                                                            <View style={{ position: 'absolute', top: 5, left: 0, right: 0, bottom: 22, justifyContent: 'space-between', zIndex: -1 }}>
+                                                                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                                                                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                                                                <View style={{ height: 1, backgroundColor: '#e2e8f0' }} />
+                                                            </View>
+                                                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 120, justifyContent: 'space-between' }}>
+                                                                {heavySetsData.labels.map((label, i) => {
+                                                                    const val = heavySetsData.datasets[0].data[i] || 0;
+                                                                    const heightPct = Math.max((val / yMax) * 85, 2);
+                                                                    return (
+                                                                        <View key={i} style={{ alignItems: 'center', flex: 1, height: '100%' }}>
+                                                                            <View style={{ flex: 1 }} />
+                                                                            {val > 0 && <Text style={{ fontSize: 10, color: '#f87171', fontWeight: '800', marginBottom: 4 }}>{val}%</Text>}
+                                                                            <View style={{ width: '80%', minWidth: 16, maxWidth: 40, height: `${heightPct}%`, backgroundColor: '#f87171', borderTopLeftRadius: 4, borderTopRightRadius: 4, opacity: val > 0 ? 0.9 : 0.1 }} />
+                                                                        </View>
+                                                                    )
+                                                                })}
+                                                            </View>
+                                                            <View style={{ height: 1.5, backgroundColor: '#94a3b8' }} />
+                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                                                                {heavySetsData.labels.map((label, i) => (
+                                                                    <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                                                                        <Text style={{ fontSize: 9, color: '#64748b', fontWeight: '600' }} numberOfLines={1}>{label}</Text>
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })()}
+                                            <Text style={styles.dashFooter}>Media: {heavySetsData.avgValue}%</Text>
+                                        </View>
+                                    )}
+
+                                    {/* PRs */}
+                                    {prCountData && (
+                                        <View style={[styles.dashCard, isWideScreen && { flex: 1 }]}>
+                                            <View style={styles.dashCardHeader}>
+                                                <View style={[styles.dashCardIconWrap, { backgroundColor: '#fef3c7' }]}>
+                                                    <Text style={{ fontSize: 16 }}>🏆</Text>
+                                                </View>
+                                                <View style={styles.flex1}>
+                                                    <Text style={styles.dashCardTitle}>PRs</Text>
+                                                    <Text style={styles.dashCardSub}>Récords personales</Text>
+                                                </View>
+                                                <View style={[styles.dashBadge, { backgroundColor: '#fef3c7' }]}>
+                                                    <Text style={[styles.dashBadgeText, { color: '#d97706', fontWeight: '800', fontSize: 14 }]}>
+                                                        {prCountData.totalPRs}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            {(() => {
+                                                const rawMax = Math.max(...(prCountData.datasets[0].data || []), 1);
+                                                const yMax = Math.ceil(rawMax / 5) * 5 || 5;
+                                                const halfYMax = Math.round(yMax / 2);
+
+                                                return (
+                                                    <View style={{ flexDirection: 'row', paddingTop: 20, paddingBottom: 10, paddingRight: 10 }}>
+                                                        <View style={{ width: 28, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 6, paddingBottom: 22 }}>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>{yMax}</Text>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>{halfYMax}</Text>
+                                                            <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>0</Text>
+                                                        </View>
+                                                        <View style={{ flex: 1, position: 'relative' }}>
+                                                            <View style={{ position: 'absolute', top: 5, left: 0, right: 0, bottom: 22, justifyContent: 'space-between', zIndex: -1 }}>
+                                                                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                                                                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                                                                <View style={{ height: 1, backgroundColor: '#e2e8f0' }} />
+                                                            </View>
+                                                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 120, justifyContent: 'space-between' }}>
+                                                                {prCountData.labels.map((label, i) => {
+                                                                    const val = prCountData.datasets[0].data[i] || 0;
+                                                                    const heightPct = Math.max((val / yMax) * 85, 2);
+                                                                    return (
+                                                                        <View key={i} style={{ alignItems: 'center', flex: 1, height: '100%' }}>
+                                                                            <View style={{ flex: 1 }} />
+                                                                            {val > 0 && <Text style={{ fontSize: 10, color: '#d97706', fontWeight: '800', marginBottom: 4 }}>{val}</Text>}
+                                                                            <View style={{ width: '80%', minWidth: 16, maxWidth: 40, height: `${heightPct}%`, backgroundColor: '#f59e0b', borderTopLeftRadius: 4, borderTopRightRadius: 4, opacity: val > 0 ? 0.9 : 0.1 }} />
+                                                                        </View>
+                                                                    )
+                                                                })}
+                                                            </View>
+                                                            <View style={{ height: 1.5, backgroundColor: '#94a3b8' }} />
+                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                                                                {prCountData.labels.map((label, i) => (
+                                                                    <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                                                                        <Text style={{ fontSize: 9, color: '#64748b', fontWeight: '600' }} numberOfLines={1}>{label}</Text>
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })()}
+                                        </View>
+                                    )}
+                                </View>
+                                </LazySection>
+
+                                {/* No data at all */}
+                                {!volumeData && !intensityData && !complianceWeeklyData && !heavySetsData && !muscleBalanceData && !sessionRPEData && !prCountData && (
+                                    <View style={styles.noDataContainer}>
+                                        <Ionicons name="bar-chart-outline" size={48} color="#cbd5e1" />
+                                        <Text style={styles.noDataText}>Sin datos para este período</Text>
                                     </View>
                                 )}
 
-                                {/* Resumen de totales */}
-                                <View style={styles.totalesContainer}>
-                                    <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
-                                    <View style={styles.totalesGrid}>
-                                        <View style={styles.totalItem}>
-                                            <Text style={styles.totalLabel}>Volumen Total</Text>
-                                            <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
-                                        </View>
-                                        <View style={styles.totalItem}>
-                                            <Text style={styles.totalLabel}>Reps Totales</Text>
-                                            <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
-                                        </View>
-                                        <View style={styles.totalItem}>
-                                            <Text style={styles.totalLabel}>Sesiones</Text>
-                                            <Text style={styles.totalValue}>{totales.sesiones}</Text>
-                                        </View>
-                                        <View style={styles.totalItem}>
-                                            <Text style={styles.totalLabel}>Tendencia</Text>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                <Ionicons
-                                                    name={getCambioStyle(tendenciaGeneral).icon}
-                                                    size={20}
-                                                    color={getCambioStyle(tendenciaGeneral).color}
-                                                />
-                                                <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
-                                                    {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
+                                {/* ═══ COLLAPSIBLE: Tabla Comparativa + Resumen ═══ */}
+                                <Pressable
+                                    style={styles.collapsibleToggle}
+                                    onPress={() => setShowTableComparativa(!showTableComparativa)}
+                                >
+                                    <Ionicons name={showTableComparativa ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                                    <Text style={styles.collapsibleToggleText}>
+                                        {showTableComparativa ? 'Ocultar tabla comparativa' : 'Ver tabla comparativa y resumen'}
+                                    </Text>
+                                </Pressable>
+
+                                {showTableComparativa && (
+                                    <>
+                                        {/* Selector de agrupación para tabla */}
+                                        <Text style={styles.sectionTitle}>📊 Tabla Comparativa</Text>
+                                        <View style={styles.selectorContainer}>
+                                            <Pressable
+                                                style={[styles.selectorButton, temporalidad === 'semanas' && styles.selectorActive]}
+                                                onPress={() => setTemporalidad('semanas')}
+                                            >
+                                                <Text style={[styles.selectorText, temporalidad === 'semanas' && styles.selectorTextActive]}>
+                                                    Semanas
                                                 </Text>
+                                            </Pressable>
+                                            <Pressable
+                                                style={[styles.selectorButton, temporalidad === 'meses' && styles.selectorActive]}
+                                                onPress={() => setTemporalidad('meses')}
+                                            >
+                                                <Text style={[styles.selectorText, temporalidad === 'meses' && styles.selectorTextActive]}>
+                                                    Meses
+                                                </Text>
+                                            </Pressable>
+                                            <Pressable
+                                                style={[styles.selectorButton, temporalidad === 'total' && styles.selectorActive]}
+                                                onPress={() => setTemporalidad('total')}
+                                            >
+                                                <Text style={[styles.selectorText, temporalidad === 'total' && styles.selectorTextActive]}>
+                                                    Total
+                                                </Text>
+                                            </Pressable>
+                                        </View>
+
+                                        {/* Tabla comparativa */}
+                                        {datosAgrupados.length > 0 && (
+                                            <View style={styles.tableContainer}>
+
+
+                                                <View style={styles.tableHeader}>
+                                                    <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Período</Text>
+                                                    <Text style={styles.tableHeaderCell}>Volumen</Text>
+                                                    <Text style={styles.tableHeaderCell}>Reps</Text>
+                                                    <Text style={styles.tableHeaderCell}>Carga</Text>
+                                                    <Text style={styles.tableHeaderCell}>Ses.</Text>
+                                                </View>
+
+                                                {datosAgrupados.map((dato, index) => {
+                                                    const anterior = datosAgrupados[index + 1];
+                                                    const cambioVol = anterior ? calcularCambio(dato.volumen, anterior.volumen) : 0;
+                                                    const cambioReps = anterior ? calcularCambio(dato.reps, anterior.reps) : 0;
+                                                    const cambioCarga = anterior ? calcularCambio(dato.cargaMedia, anterior.cargaMedia) : 0;
+                                                    const cambioSes = anterior ? dato.numSesiones - anterior.numSesiones : 0;
+
+                                                    return (
+                                                        <View key={dato.periodo} style={styles.tableRow}>
+                                                            <Text style={[styles.tableCell, styles.tableCellPeriodo, { flex: 1.2 }]}>
+                                                                {dato.periodo}
+                                                            </Text>
+
+                                                            <View style={styles.tableCellValue}>
+                                                                <Text style={styles.tableValue}>{(dato.volumen / 1000).toFixed(1)}k</Text>
+                                                                {anterior && (
+                                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioVol).color + '15' }]}>
+                                                                        <Ionicons name={getCambioStyle(cambioVol).icon} size={10} color={getCambioStyle(cambioVol).color} />
+                                                                        <Text style={[styles.cambioText, { color: getCambioStyle(cambioVol).color }]}>
+                                                                            {cambioVol > 0 ? '+' : ''}{cambioVol}%
+                                                                        </Text>
+                                                                    </View>
+                                                                )}
+                                                            </View>
+
+                                                            <View style={styles.tableCellValue}>
+                                                                <Text style={styles.tableValue}>{dato.reps}</Text>
+                                                                {anterior && (
+                                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioReps).color + '15' }]}>
+                                                                        <Ionicons name={getCambioStyle(cambioReps).icon} size={10} color={getCambioStyle(cambioReps).color} />
+                                                                    </View>
+                                                                )}
+                                                            </View>
+
+                                                            <View style={styles.tableCellValue}>
+                                                                <Text style={styles.tableValue}>{dato.cargaMedia}</Text>
+                                                                {anterior && (
+                                                                    <View style={[styles.cambioTag, { backgroundColor: getCambioStyle(cambioCarga).color + '15' }]}>
+                                                                        <Ionicons name={getCambioStyle(cambioCarga).icon} size={10} color={getCambioStyle(cambioCarga).color} />
+                                                                    </View>
+                                                                )}
+                                                            </View>
+
+                                                            <View style={styles.tableCellValue}>
+                                                                <Text style={styles.tableValue}>{dato.numSesiones}</Text>
+                                                                {anterior && cambioSes !== 0 && (
+                                                                    <Text style={[styles.cambioSmall, { color: getCambioStyle(cambioSes).color }]}>
+                                                                        {cambioSes > 0 ? '+' : ''}{cambioSes}
+                                                                    </Text>
+                                                                )}
+                                                            </View>
+                                                        </View>
+                                                    );
+                                                })}
+                                            </View>
+                                        )}
+
+                                        {/* Resumen de totales */}
+                                        <View style={styles.totalesContainer}>
+                                            <Text style={styles.sectionTitle}>📋 Resumen Total</Text>
+                                            <View style={styles.totalesGrid}>
+                                                <View style={styles.totalItem}>
+                                                    <Text style={styles.totalLabel}>Volumen Total</Text>
+                                                    <Text style={styles.totalValue}>{(totales.volumen / 1000).toFixed(1)}k kg</Text>
+                                                </View>
+                                                <View style={styles.totalItem}>
+                                                    <Text style={styles.totalLabel}>Reps Totales</Text>
+                                                    <Text style={styles.totalValue}>{totales.reps.toLocaleString()}</Text>
+                                                </View>
+                                                <View style={styles.totalItem}>
+                                                    <Text style={styles.totalLabel}>Sesiones</Text>
+                                                    <Text style={styles.totalValue}>{totales.sesiones}</Text>
+                                                </View>
+                                                <View style={styles.totalItem}>
+                                                    <Text style={styles.totalLabel}>Tendencia</Text>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Ionicons
+                                                            name={getCambioStyle(tendenciaGeneral).icon}
+                                                            size={20}
+                                                            color={getCambioStyle(tendenciaGeneral).color}
+                                                        />
+                                                        <Text style={[styles.totalValue, { color: getCambioStyle(tendenciaGeneral).color }]}>
+                                                            {tendenciaGeneral > 0 ? 'Mejorando' : tendenciaGeneral < 0 ? 'Bajando' : 'Estable'}
+                                                        </Text>
+                                                    </View>
+                                                </View>
                                             </View>
                                         </View>
-                                    </View>
-                                </View>
+                                    </>
+                                )}
                             </>
                         )}
+
 
                         {/* ════════════════════════════════════════════════════════════════
                    VISTA TABLA DETALLADA
@@ -2293,320 +2692,354 @@ export default function ClientProgressDetail() {
                                                 </View>
                                                 <Text style={styles.commentsRoutineName}>{comentariosPorRutina.current.routineName}</Text>
 
-                                                {comentariosPorRutina.current.semanas.map((semana) => {
-                                                    // Calcular RPE promedio de la semana
-                                                    const diasConRPE = semana.dias.filter(d => d.sessionRPE);
-                                                    const avgRPE = diasConRPE.length > 0
-                                                        ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
-                                                        : null;
-                                                    const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
-                                                    const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
+                                                {monthGroupedSemanas.map((monthGroup) => {
+                                                    const isMonthExpanded = monthGroup.isCurrentMonth
+                                                        ? expandedMonths[monthGroup.key] !== false
+                                                        : !!expandedMonths[monthGroup.key];
 
                                                     return (
-                                                        <View key={semana.week} style={styles.commentsWeekGroup}>
+                                                        <View key={monthGroup.key} style={styles.commentsMonthGroup}>
                                                             <Pressable
-                                                                onPress={() => toggleWeek('current', semana.week, semana.dias)}
-                                                                style={styles.commentsWeekHeaderPressable}
+                                                                onPress={() => {
+                                                                    setExpandedMonths(prev => {
+                                                                        const wasExpanded = monthGroup.isCurrentMonth
+                                                                            ? prev[monthGroup.key] !== false
+                                                                            : !!prev[monthGroup.key];
+                                                                        return { ...prev, [monthGroup.key]: !wasExpanded };
+                                                                    });
+                                                                }}
+                                                                style={styles.commentsMonthHeaderPressable}
                                                             >
-                                                                <View style={styles.commentsWeekBadge}>
-                                                                    <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
-                                                                </View>
-                                                                <View style={styles.commentsWeekRight}>
-                                                                    {/* 🆕 RPE promedio de la semana */}
-                                                                    {avgRPE && (
-                                                                        <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
-                                                                            <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
-                                                                                {avgRPE} {avgLabel}
-                                                                            </Text>
-                                                                        </View>
-                                                                    )}
-                                                                    <Text style={styles.commentsWeekCount}>
-                                                                        {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
-                                                                    </Text>
+                                                                <Text style={styles.commentsMonthLabel}>📅 {monthGroup.label}</Text>
+                                                                <View style={styles.commentsMonthRight}>
+                                                                    <View style={styles.commentsBadgeSmall}>
+                                                                        <Text style={styles.commentsBadgeSmallText}>{monthGroup.totalNotas}</Text>
+                                                                    </View>
                                                                     <Ionicons
-                                                                        name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
-                                                                        size={18}
+                                                                        name={isMonthExpanded ? 'chevron-up' : 'chevron-down'}
+                                                                        size={16}
                                                                         color="#64748b"
                                                                     />
                                                                 </View>
                                                             </Pressable>
 
-                                                            {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
-                                                                <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
-                                                                    <View style={styles.commentsDayHeaderRow}>
-                                                                        <Text style={styles.commentsDayHeader}>
-                                                                            {dia.dayLabel} • {dia.date}
-                                                                        </Text>
-                                                                        {dia.sessionRPE && (
-                                                                            <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
-                                                                                <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
-                                                                                    {dia.sessionRPE}/5 {dia.rpeLabel}
-                                                                                </Text>
+                                                            {isMonthExpanded && monthGroup.semanas.map((semana) => {
+                                                                // Calcular RPE promedio de la semana
+                                                                const diasConRPE = semana.dias.filter(d => d.sessionRPE);
+                                                                const avgRPE = diasConRPE.length > 0
+                                                                    ? Math.round((diasConRPE.reduce((sum, d) => sum + d.sessionRPE, 0) / diasConRPE.length) * 10) / 10
+                                                                    : null;
+                                                                const avgColor = avgRPE ? RPE_COLORS[Math.round(avgRPE)] || '#64748b' : null;
+                                                                const avgLabel = avgRPE ? RPE_LABELS[Math.round(avgRPE)] || '' : '';
+
+                                                                return (
+                                                                    <View key={semana.week} style={styles.commentsWeekGroup}>
+                                                                        <Pressable
+                                                                            onPress={() => toggleWeek('current', semana.week, semana.dias)}
+                                                                            style={styles.commentsWeekHeaderPressable}
+                                                                        >
+                                                                            <View style={styles.commentsWeekBadge}>
+                                                                                <Text style={styles.commentsWeekBadgeText}>Semana {semana.week}</Text>
                                                                             </View>
-                                                                        )}
-                                                                    </View>
+                                                                            <View style={styles.commentsWeekRight}>
+                                                                                {/* 🆕 RPE promedio de la semana */}
+                                                                                {avgRPE && (
+                                                                                    <View style={[styles.commentsWeekRpeBadge, { backgroundColor: avgColor + '20', borderColor: avgColor }]}>
+                                                                                        <Text style={[styles.commentsWeekRpeText, { color: avgColor }]}>
+                                                                                            {avgRPE} {avgLabel}
+                                                                                        </Text>
+                                                                                    </View>
+                                                                                )}
+                                                                                <Text style={styles.commentsWeekCount}>
+                                                                                    {semana.dias.reduce((acc, d) => acc + d.exercises.reduce((a, e) => a + e.sets.length, 0), 0)} notas
+                                                                                </Text>
+                                                                                <Ionicons
+                                                                                    name={expandedWeeks[`current-${semana.week}`] ? 'chevron-up' : 'chevron-down'}
+                                                                                    size={18}
+                                                                                    color="#64748b"
+                                                                                />
+                                                                            </View>
+                                                                        </Pressable>
 
-                                                                    {/* Session note if exists */}
-                                                                    {dia.sessionNote && (
-                                                                        <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
-                                                                            <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
-                                                                        </View>
-                                                                    )}
-
-                                                                    {dia.exercises.map((exercise, exIdx) => (
-                                                                        <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
-                                                                            <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
-                                                                                <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
-                                                                                {' '}{exercise.exerciseName}
-                                                                            </Text>
-
-                                                                            {exercise.sets.map((set, setIdx) => {
-                                                                                // Buscar media visual (foto/video) y audio por separado
-                                                                                const visualMedia = findVisualForSet(exercise.exerciseName, set.setNumber, semana.week);
-                                                                                const audioMedia = findAudioForSet(exercise.exerciseName, set.setNumber, semana.week);
-                                                                                const hasAnyMedia = visualMedia || audioMedia;
-
-                                                                                return (
-                                                                                    <View
-                                                                                        key={setIdx}
-                                                                                        style={[
-                                                                                            styles.commentCardCompact,
-                                                                                            set.hasPain && styles.commentCardWarning,
-                                                                                            hasAnyMedia && styles.commentCardWithVideo
-                                                                                        ]}
-                                                                                    >
-                                                                                        <View style={styles.commentCardCompactRow}>
-                                                                                            <View style={[
-                                                                                                styles.commentSemaphoreCompact,
-                                                                                                { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
-                                                                                            ]} />
-                                                                                            <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
-                                                                                            <Text style={styles.commentDataCompact}>
-                                                                                                {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                        {expandedWeeks[`current-${semana.week}`] && semana.dias.map((dia, dIdx) => (
+                                                                            <View key={`${dia.dayIndex}-${dIdx}`} style={styles.commentsDaySection}>
+                                                                                <View style={styles.commentsDayHeaderRow}>
+                                                                                    <Text style={styles.commentsDayHeader}>
+                                                                                        {dia.dayLabel} • {dia.date}
+                                                                                    </Text>
+                                                                                    {dia.sessionRPE && (
+                                                                                        <View style={[styles.commentsDayRpeBadge, { backgroundColor: dia.rpeColor + '20', borderColor: dia.rpeColor }]}>
+                                                                                            <Text style={[styles.commentsDayRpeText, { color: dia.rpeColor }]}>
+                                                                                                {dia.sessionRPE}/5 {dia.rpeLabel}
                                                                                             </Text>
-                                                                                            {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
-
-                                                                                            {/* Icono de foto/video a la derecha (abre modal) */}
-                                                                                            {visualMedia && (() => {
-                                                                                                const isPending = !visualMedia.viewedByCoach && !visualMedia.coachResponse?.respondedAt;
-                                                                                                const isPhoto = visualMedia.mediaType === 'photo';
-
-                                                                                                return (
-                                                                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-                                                                                                        <Pressable
-                                                                                                            style={[
-                                                                                                                styles.inlineVideoBtn,
-                                                                                                                isPending && styles.inlineVideoBtnPending
-                                                                                                            ]}
-                                                                                                            onPress={() => {
-                                                                                                                setSelectedFeedback(visualMedia);
-                                                                                                                setVideoModalVisible(true);
-                                                                                                                markFeedbackAsViewed(visualMedia._id);
-                                                                                                            }}
-                                                                                                        >
-                                                                                                            <Ionicons
-                                                                                                                name={isPhoto ? 'image' : 'videocam'}
-                                                                                                                size={14}
-                                                                                                                color={isPending ? '#fff' : '#4361ee'}
-                                                                                                            />
-                                                                                                            {isPending && (
-                                                                                                                <View style={styles.inlineVideoPendingDot} />
-                                                                                                            )}
-                                                                                                        </Pressable>
-                                                                                                    </View>
-                                                                                                );
-                                                                                            })()}
-
-                                                                                            {/* Botón responder a nota de texto (solo si no hay visual NI audio) */}
-                                                                                            {set.noteText && !visualMedia && !audioMedia && (
-                                                                                                <Pressable
-                                                                                                    style={styles.inlineReplyBtn}
-                                                                                                    onPress={() => {
-                                                                                                        // Crear pseudo-feedback para notas de texto
-                                                                                                        const pseudoFeedback = {
-                                                                                                            _id: `note-${dia.sessionId}-${exercise.exerciseName}-${set.setNumber}`,
-                                                                                                            exerciseName: exercise.exerciseName,
-                                                                                                            athleteNote: set.noteText,
-                                                                                                            mediaType: 'text-note',
-                                                                                                            setNumber: set.setNumber,
-                                                                                                            serieKey: `${semana.week}|${dia.dayIndex}|${exIdx}|${set.setNumber - 1}`,
-                                                                                                            createdAt: dia.dateSort,
-                                                                                                            athleteId: clientId,
-                                                                                                        };
-                                                                                                        setSelectedFeedback(pseudoFeedback);
-                                                                                                        setVideoModalVisible(true);
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
-                                                                                                </Pressable>
-                                                                                            )}
                                                                                         </View>
+                                                                                    )}
+                                                                                </View>
 
-                                                                                        {/* Texto de nota */}
-                                                                                        {set.noteText ? (
-                                                                                            <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
-                                                                                        ) : (
-                                                                                            <View>
-                                                                                                {visualMedia?.athleteNote && (
-                                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>
-                                                                                                        {visualMedia.mediaType === 'photo' ? '📷' : '📹'} "{visualMedia.athleteNote}"
-                                                                                                    </Text>
-                                                                                                )}
-                                                                                                {audioMedia?.athleteNote && (
-                                                                                                    <Text style={styles.commentTextCompact} numberOfLines={2}>
-                                                                                                        🎤 "{audioMedia.athleteNote}"
-                                                                                                    </Text>
-                                                                                                )}
-                                                                                            </View>
-                                                                                        )}
-                                                                                        {!set.noteText && !visualMedia?.athleteNote && !audioMedia?.athleteNote && set.hasMediaOnly && !audioMedia && (
-                                                                                            <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
-                                                                                                {visualMedia?.mediaType === 'photo' ? '📷 Foto enviada' : '📹 Video enviado'}
-                                                                                            </Text>
-                                                                                        )}
+                                                                                {/* Session note if exists */}
+                                                                                {dia.sessionNote && (
+                                                                                    <View style={[styles.commentsDaySessionNote, { borderLeftColor: dia.rpeColor }]}>
+                                                                                        <Text style={styles.commentsDaySessionNoteText}>"{dia.sessionNote}"</Text>
+                                                                                    </View>
+                                                                                )}
 
-                                                                                        {/* 🆕 Video Transcription Inline Display - Controlled by expandedAiItems */}
-                                                                                        {visualMedia && visualMedia.mediaType !== 'photo' && expandedAiItems[visualMedia._id] && (
-                                                                                            <View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
-                                                                                                {/* Content Hidden since button is removed, but logic kept for reference or if triggered differently? 
+                                                                                {dia.exercises.map((exercise, exIdx) => (
+                                                                                    <View key={exIdx} style={styles.commentsExerciseBlockCompact}>
+                                                                                        <Text style={styles.commentsExerciseLineCompact} numberOfLines={1}>
+                                                                                            <Text style={styles.commentsExerciseMuscleInline}>{exercise.muscleGroup}</Text>
+                                                                                            {' '}{exercise.exerciseName}
+                                                                                        </Text>
+
+                                                                                        {exercise.sets.map((set, setIdx) => {
+                                                                                            // Buscar media visual (foto/video) y audio por separado
+                                                                                            const visualMedia = findVisualForSet(exercise.exerciseName, set.setNumber, semana.week);
+                                                                                            const audioMedia = findAudioForSet(exercise.exerciseName, set.setNumber, semana.week);
+                                                                                            const hasAnyMedia = visualMedia || audioMedia;
+
+                                                                                            return (
+                                                                                                <View
+                                                                                                    key={setIdx}
+                                                                                                    style={[
+                                                                                                        styles.commentCardCompact,
+                                                                                                        set.hasPain && styles.commentCardWarning,
+                                                                                                        hasAnyMedia && styles.commentCardWithVideo
+                                                                                                    ]}
+                                                                                                >
+                                                                                                    <View style={styles.commentCardCompactRow}>
+                                                                                                        <View style={[
+                                                                                                            styles.commentSemaphoreCompact,
+                                                                                                            { backgroundColor: NOTE_COLORS[set.noteValue] || '#6b7280' }
+                                                                                                        ]} />
+                                                                                                        <Text style={styles.commentSetLabelCompact}>S{set.setNumber}</Text>
+                                                                                                        <Text style={styles.commentDataCompact}>
+                                                                                                            {set.weight ?? '-'}kg × {set.reps ?? '-'}
+                                                                                                        </Text>
+                                                                                                        {set.hasPain && <Text style={styles.commentPainIconCompact}>⚠️</Text>}
+
+                                                                                                        {/* Icono de foto/video a la derecha (abre modal) */}
+                                                                                                        {visualMedia && (() => {
+                                                                                                            const isPending = !visualMedia.viewedByCoach && !visualMedia.coachResponse?.respondedAt;
+                                                                                                            const isPhoto = visualMedia.mediaType === 'photo';
+
+                                                                                                            return (
+                                                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                                                                                                                    <Pressable
+                                                                                                                        style={[
+                                                                                                                            styles.inlineVideoBtn,
+                                                                                                                            isPending && styles.inlineVideoBtnPending
+                                                                                                                        ]}
+                                                                                                                        onPress={() => {
+                                                                                                                            setSelectedFeedback(visualMedia);
+                                                                                                                            setVideoModalVisible(true);
+                                                                                                                            markFeedbackAsViewed(visualMedia._id);
+                                                                                                                        }}
+                                                                                                                    >
+                                                                                                                        <Ionicons
+                                                                                                                            name={isPhoto ? 'image' : 'videocam'}
+                                                                                                                            size={14}
+                                                                                                                            color={isPending ? '#fff' : '#4361ee'}
+                                                                                                                        />
+                                                                                                                        {isPending && (
+                                                                                                                            <View style={styles.inlineVideoPendingDot} />
+                                                                                                                        )}
+                                                                                                                    </Pressable>
+                                                                                                                </View>
+                                                                                                            );
+                                                                                                        })()}
+
+                                                                                                        {/* Botón responder a nota de texto (solo si no hay visual NI audio) */}
+                                                                                                        {set.noteText && !visualMedia && !audioMedia && (
+                                                                                                            <Pressable
+                                                                                                                style={styles.inlineReplyBtn}
+                                                                                                                onPress={() => {
+                                                                                                                    // Crear pseudo-feedback para notas de texto
+                                                                                                                    const pseudoFeedback = {
+                                                                                                                        _id: `note-${dia.sessionId}-${exercise.exerciseName}-${set.setNumber}`,
+                                                                                                                        exerciseName: exercise.exerciseName,
+                                                                                                                        athleteNote: set.noteText,
+                                                                                                                        mediaType: 'text-note',
+                                                                                                                        setNumber: set.setNumber,
+                                                                                                                        serieKey: `${semana.week}|${dia.dayIndex}|${exIdx}|${set.setNumber - 1}`,
+                                                                                                                        createdAt: dia.dateSort,
+                                                                                                                        athleteId: clientId,
+                                                                                                                    };
+                                                                                                                    setSelectedFeedback(pseudoFeedback);
+                                                                                                                    setVideoModalVisible(true);
+                                                                                                                }}
+                                                                                                            >
+                                                                                                                <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
+                                                                                                            </Pressable>
+                                                                                                        )}
+                                                                                                    </View>
+
+                                                                                                    {/* Texto de nota */}
+                                                                                                    {set.noteText ? (
+                                                                                                        <Text style={styles.commentTextCompact} numberOfLines={2}>"{set.noteText}"</Text>
+                                                                                                    ) : (
+                                                                                                        <View>
+                                                                                                            {visualMedia?.athleteNote && (
+                                                                                                                <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                                                    {visualMedia.mediaType === 'photo' ? '📷' : '📹'} "{visualMedia.athleteNote}"
+                                                                                                                </Text>
+                                                                                                            )}
+                                                                                                            {audioMedia?.athleteNote && (
+                                                                                                                <Text style={styles.commentTextCompact} numberOfLines={2}>
+                                                                                                                    🎤 "{audioMedia.athleteNote}"
+                                                                                                                </Text>
+                                                                                                            )}
+                                                                                                        </View>
+                                                                                                    )}
+                                                                                                    {!set.noteText && !visualMedia?.athleteNote && !audioMedia?.athleteNote && set.hasMediaOnly && !audioMedia && (
+                                                                                                        <Text style={[styles.commentTextCompact, { fontStyle: 'italic', color: '#64748b' }]} numberOfLines={1}>
+                                                                                                            {visualMedia?.mediaType === 'photo' ? '📷 Foto enviada' : '📹 Video enviado'}
+                                                                                                        </Text>
+                                                                                                    )}
+
+                                                                                                    {/* 🆕 Video Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                                    {visualMedia && visualMedia.mediaType !== 'photo' && expandedAiItems[visualMedia._id] && (
+                                                                                                        <View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
+                                                                                                            {/* Content Hidden since button is removed, but logic kept for reference or if triggered differently? 
                                                                                                 Actually, since usage is toggled by button, this is now unreachable for video.
                                                                                                 I will keep it here or remove it?
                                                                                                 User said "solo ponglo cuando haya audio".
                                                                                                 I'll remove the entire visualMedia AI display block to be clean.
                                                                                             */}
-                                                                                            </View>
-                                                                                        ) ? null : null}
+                                                                                                        </View>
+                                                                                                    ) ? null : null}
 
-                                                                                        {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
-                                                                                        {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
-                                                                                        {audioMedia && (
-                                                                                            <View style={styles.audioRowContainer}>
-                                                                                                <View style={styles.flex1}>
-                                                                                                    <InlineAudioPlayer
-                                                                                                        feedback={audioMedia}
-                                                                                                        onViewed={markFeedbackAsViewed}
-                                                                                                    />
-                                                                                                </View>
-                                                                                                {/* 🆕 AI Transcription Button (Inline) - Toggles Inline Text */}
-                                                                                                <Pressable
-                                                                                                    style={[styles.inlineReplyBtn, expandedAiItems[audioMedia._id] && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe' }]}
-                                                                                                    onPress={() => {
-                                                                                                        setExpandedAiItems(prev => ({
-                                                                                                            ...prev,
-                                                                                                            [audioMedia._id]: !prev[audioMedia._id]
-                                                                                                        }));
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <Ionicons name="sparkles" size={14} color="#8b5cf6" />
-                                                                                                    <Text style={{ marginLeft: 4, fontSize: 11, fontWeight: '700', color: '#8b5cf6' }}>IA</Text>
-                                                                                                </Pressable>
+                                                                                                    {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
+                                                                                                    {/* Audio inline player (debajo de la nota) + botón responder si no hay visual */}
+                                                                                                    {audioMedia && (
+                                                                                                        <View style={styles.audioRowContainer}>
+                                                                                                            <View style={styles.flex1}>
+                                                                                                                <InlineAudioPlayer
+                                                                                                                    feedback={audioMedia}
+                                                                                                                    onViewed={markFeedbackAsViewed}
+                                                                                                                />
+                                                                                                            </View>
+                                                                                                            {/* 🆕 AI Transcription Button (Inline) - Toggles Inline Text */}
+                                                                                                            <Pressable
+                                                                                                                style={[styles.inlineReplyBtn, expandedAiItems[audioMedia._id] && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe' }]}
+                                                                                                                onPress={() => {
+                                                                                                                    setExpandedAiItems(prev => ({
+                                                                                                                        ...prev,
+                                                                                                                        [audioMedia._id]: !prev[audioMedia._id]
+                                                                                                                    }));
+                                                                                                                }}
+                                                                                                            >
+                                                                                                                <Ionicons name="sparkles" size={14} color="#8b5cf6" />
+                                                                                                                <Text style={{ marginLeft: 4, fontSize: 11, fontWeight: '700', color: '#8b5cf6' }}>IA</Text>
+                                                                                                            </Pressable>
 
-                                                                                                {/* Botón responder a audio (sin visual media) */}
-                                                                                                {!visualMedia && (
-                                                                                                    <Pressable
-                                                                                                        style={styles.inlineReplyBtn}
-                                                                                                        onPress={() => {
-                                                                                                            setSelectedFeedback(audioMedia);
-                                                                                                            setVideoModalVisible(true);
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
-                                                                                                    </Pressable>
-                                                                                                )}
-                                                                                            </View>
-                                                                                        )
-                                                                                        }
+                                                                                                            {/* Botón responder a audio (sin visual media) */}
+                                                                                                            {!visualMedia && (
+                                                                                                                <Pressable
+                                                                                                                    style={styles.inlineReplyBtn}
+                                                                                                                    onPress={() => {
+                                                                                                                        setSelectedFeedback(audioMedia);
+                                                                                                                        setVideoModalVisible(true);
+                                                                                                                    }}
+                                                                                                                >
+                                                                                                                    <Ionicons name="chatbubble-outline" size={14} color="#4361ee" />
+                                                                                                                </Pressable>
+                                                                                                            )}
+                                                                                                        </View>
+                                                                                                    )
+                                                                                                    }
 
-                                                                                        {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
-                                                                                        {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
-                                                                                        {audioMedia && expandedAiItems[audioMedia._id] && (<View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
+                                                                                                    {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                                    {/* 🆕 Transcription Inline Display - Controlled by expandedAiItems */}
+                                                                                                    {audioMedia && expandedAiItems[audioMedia._id] && (<View style={{ marginTop: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#8b5cf6', gap: 6 }}>
 
-                                                                                            {/* LOADING STATE */}
-                                                                                            {(!audioMedia.transcriptionStatus || audioMedia.transcriptionStatus === 'pending' || audioMedia.transcriptionStatus === 'processing') && !audioMedia.transcription && (
-                                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
-                                                                                                    <ActivityIndicator size="small" color="#8b5cf6" />
-                                                                                                    <Text style={{ marginLeft: 6, fontSize: 12, color: '#64748b' }}>Procesando audio con IA...</Text>
-                                                                                                </View>
-                                                                                            )}
+                                                                                                        {/* LOADING STATE */}
+                                                                                                        {(!audioMedia.transcriptionStatus || audioMedia.transcriptionStatus === 'pending' || audioMedia.transcriptionStatus === 'processing') && !audioMedia.transcription && (
+                                                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
+                                                                                                                <ActivityIndicator size="small" color="#8b5cf6" />
+                                                                                                                <Text style={{ marginLeft: 6, fontSize: 12, color: '#64748b' }}>Procesando audio con IA...</Text>
+                                                                                                            </View>
+                                                                                                        )}
 
-                                                                                            {/* FAILED STATE */}
-                                                                                            {audioMedia.transcriptionStatus === 'failed' && (
-                                                                                                <View style={{ gap: 4 }}>
-                                                                                                    <Text style={{ fontSize: 12, color: '#ef4444' }}>Error en la transcripción.</Text>
-                                                                                                    <Pressable
-                                                                                                        style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fee2e2', borderRadius: 4 }}
-                                                                                                        onPress={async () => {
-                                                                                                            try {
-                                                                                                                // Set back to pending visually immediately
-                                                                                                                setVideoFeedbacks(prev => prev.map(f => f._id === audioMedia._id ? { ...f, transcriptionStatus: 'pending' } : f));
-                                                                                                                await fetch(`${API_URL}/api/video-feedback/${audioMedia._id}/retry-transcription`, {
-                                                                                                                    method: 'POST',
-                                                                                                                    headers: { Authorization: `Bearer ${token}` }
-                                                                                                                });
-                                                                                                            } catch (e) {
-                                                                                                                console.error("Retry failed", e);
-                                                                                                            }
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Reintentar</Text>
-                                                                                                    </Pressable>
-                                                                                                </View>
-                                                                                            )}
+                                                                                                        {/* FAILED STATE */}
+                                                                                                        {audioMedia.transcriptionStatus === 'failed' && (
+                                                                                                            <View style={{ gap: 4 }}>
+                                                                                                                <Text style={{ fontSize: 12, color: '#ef4444' }}>Error en la transcripción.</Text>
+                                                                                                                <Pressable
+                                                                                                                    style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fee2e2', borderRadius: 4 }}
+                                                                                                                    onPress={async () => {
+                                                                                                                        try {
+                                                                                                                            // Set back to pending visually immediately
+                                                                                                                            setVideoFeedbacks(prev => prev.map(f => f._id === audioMedia._id ? { ...f, transcriptionStatus: 'pending' } : f));
+                                                                                                                            await fetch(`${API_URL}/api/video-feedback/${audioMedia._id}/retry-transcription`, {
+                                                                                                                                method: 'POST',
+                                                                                                                                headers: { Authorization: `Bearer ${token}` }
+                                                                                                                            });
+                                                                                                                        } catch (e) {
+                                                                                                                            console.error("Retry failed", e);
+                                                                                                                        }
+                                                                                                                    }}
+                                                                                                                >
+                                                                                                                    <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Reintentar</Text>
+                                                                                                                </Pressable>
+                                                                                                            </View>
+                                                                                                        )}
 
-                                                                                            {/* SUCCESS STATE */}
-                                                                                            {(audioMedia.transcription || audioMedia.summary) && (
-                                                                                                <>
-                                                                                                    {/* Transcription Full Text */}
-                                                                                                    {audioMedia.transcription && (
-                                                                                                        <View>
-                                                                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                                                                                                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>
-                                                                                                                    📝 Transcripción:
-                                                                                                                </Text>
-                                                                                                                {/* 🆕 Accuracy Score */}
-                                                                                                                {typeof audioMedia.accuracy === 'number' && (
-                                                                                                                    <View style={getAccuracyBadgeStyle(audioMedia.accuracy)}>
-                                                                                                                        <Text style={[getAccuracyTextStyle(audioMedia.accuracy), { fontSize: 9 }]}>
-                                                                                                                            {audioMedia.accuracy}% Fiabilidad
+                                                                                                        {/* SUCCESS STATE */}
+                                                                                                        {(audioMedia.transcription || audioMedia.summary) && (
+                                                                                                            <>
+                                                                                                                {/* Transcription Full Text */}
+                                                                                                                {audioMedia.transcription && (
+                                                                                                                    <View>
+                                                                                                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                                                                                                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>
+                                                                                                                                📝 Transcripción:
+                                                                                                                            </Text>
+                                                                                                                            {/* 🆕 Accuracy Score */}
+                                                                                                                            {typeof audioMedia.accuracy === 'number' && (
+                                                                                                                                <View style={getAccuracyBadgeStyle(audioMedia.accuracy)}>
+                                                                                                                                    <Text style={[getAccuracyTextStyle(audioMedia.accuracy), { fontSize: 9 }]}>
+                                                                                                                                        {audioMedia.accuracy}% Fiabilidad
+                                                                                                                                    </Text>
+                                                                                                                                </View>
+                                                                                                                            )}
+                                                                                                                        </View>
+                                                                                                                        <Text style={{ fontSize: 13, color: '#1e293b', lineHeight: 18 }}>
+                                                                                                                            {audioMedia.transcription}
                                                                                                                         </Text>
                                                                                                                     </View>
                                                                                                                 )}
-                                                                                                            </View>
-                                                                                                            <Text style={{ fontSize: 13, color: '#1e293b', lineHeight: 18 }}>
-                                                                                                                {audioMedia.transcription}
-                                                                                                            </Text>
-                                                                                                        </View>
-                                                                                                    )}
 
-                                                                                                    {/* Summary */}
-                                                                                                    {audioMedia.summary && (
-                                                                                                        <View>
-                                                                                                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 2 }}>
-                                                                                                                ✨ Resumen IA:
-                                                                                                            </Text>
-                                                                                                            <Text style={{ fontSize: 12, color: '#334155', lineHeight: 16 }}>
-                                                                                                                {audioMedia.summary}
-                                                                                                            </Text>
-                                                                                                        </View>
-                                                                                                    )}
-                                                                                                </>
-                                                                                            )}
+                                                                                                                {/* Summary */}
+                                                                                                                {audioMedia.summary && (
+                                                                                                                    <View>
+                                                                                                                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 2 }}>
+                                                                                                                            ✨ Resumen IA:
+                                                                                                                        </Text>
+                                                                                                                        <Text style={{ fontSize: 12, color: '#334155', lineHeight: 16 }}>
+                                                                                                                            {audioMedia.summary}
+                                                                                                                        </Text>
+                                                                                                                    </View>
+                                                                                                                )}
+                                                                                                            </>
+                                                                                                        )}
 
-                                                                                            {/* FALLBACK STATE: Completed but empty */}
-                                                                                            {audioMedia.transcriptionStatus === 'completed' && !audioMedia.transcription && !audioMedia.summary && (
-                                                                                                <Text style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', paddingVertical: 4 }}>
-                                                                                                    ⚠️ No se detectó contenido inteligible en el audio.
-                                                                                                </Text>
-                                                                                            )}
-                                                                                        </View>
-                                                                                        )}
+                                                                                                        {/* FALLBACK STATE: Completed but empty */}
+                                                                                                        {audioMedia.transcriptionStatus === 'completed' && !audioMedia.transcription && !audioMedia.summary && (
+                                                                                                            <Text style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', paddingVertical: 4 }}>
+                                                                                                                ⚠️ No se detectó contenido inteligible en el audio.
+                                                                                                            </Text>
+                                                                                                        )}
+                                                                                                    </View>
+                                                                                                    )}
+                                                                                                </View>
+                                                                                            );
+                                                                                        })}
                                                                                     </View>
-                                                                                );
-                                                                            })}
-                                                                        </View>
-                                                                    ))}
-                                                                </View>
-                                                            ))}
+                                                                                ))}
+                                                                            </View>
+                                                                        ))}
+                                                                    </View>
+                                                                );
+                                                            })}
                                                         </View>
                                                     );
                                                 })}
@@ -2947,43 +3380,80 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8fafc',
     },
-    header: {
+    // ═══ HEADER CARD (compact hero) ═══
+    headerCard: {
+        backgroundColor: '#fff',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderLeftWidth: 3,
+        borderLeftColor: '#3b82f6',
+        zIndex: 999, // Allow absolute hovers to overlow next sibling cards
+    },
+    headerTopRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
     },
     backButton: {
         padding: 8,
         marginRight: 8,
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: 17,
         fontWeight: '700',
         color: '#1e293b',
     },
     headerSubtitle: {
-        fontSize: 13,
+        fontSize: 12,
         color: '#64748b',
+        marginTop: 1,
     },
     tendenciaBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 10,
-        paddingVertical: 6,
+        paddingVertical: 5,
         borderRadius: 16,
+        borderWidth: 1,
         gap: 4,
     },
     tendenciaText: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '700',
+    },
+    headerKpiRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+    },
+    headerKpiItem: {
+        alignItems: 'center',
+        minWidth: 65,
+    },
+    headerKpiValue: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    headerKpiUnit: {
+        fontSize: 11,
+        fontWeight: '500',
+        color: '#94a3b8',
+    },
+    headerKpiLabel: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 2,
     },
     content: {
         flex: 1,
-        padding: 16,
+        padding: 12,
     },
     loadingContainer: {
         flex: 1,
@@ -3091,7 +3561,204 @@ const styles = StyleSheet.create({
         color: '#1e293b',
     },
 
-    // Gráfico
+    // ═══ CONTROL BAR (consolidated header) ═══
+    controlBar: {
+        backgroundColor: '#fff',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    controlTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+    },
+    controlFiltersInline: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        flex: 1,
+    },
+    controlFilterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        flex: 1,
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    controlFilterChipText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#334155',
+    },
+    scorecardGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+    },
+    scorecardItem: {
+        flex: 1,
+        minWidth: '22%',
+        paddingHorizontal: 8,
+        alignItems: 'flex-start',
+    },
+    scorecardTitle: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#64748b',
+        textTransform: 'uppercase',
+        marginBottom: 2,
+    },
+    scorecardValue: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: '#0f172a',
+    },
+    scorecardUnit: {
+        fontSize: 10,
+        fontWeight: '500',
+        color: '#94a3b8',
+        marginBottom: 6,
+    },
+    scorecardTrend: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+
+    // ═══ KPI STRIP (mini summary cards) ═══
+    kpiStripScroll: {
+        marginBottom: 8,
+    },
+    kpiStripContent: {
+        gap: 5,
+        paddingHorizontal: 2,
+    },
+    kpiStripCard: {
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        alignItems: 'center',
+        minWidth: 70,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    kpiStripCardDisabled: {
+        opacity: 0.35,
+    },
+    kpiStripIcon: {
+        fontSize: 14,
+        marginBottom: 1,
+    },
+    kpiStripValue: {
+        fontSize: 13,
+        fontWeight: '800',
+    },
+    kpiStripLabel: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 1,
+    },
+    kpiFiltersCompact: {
+        marginBottom: 6,
+    },
+    // ═══ DASHBOARD CARD (tier-based chart cards) ═══
+    dashCard: {
+        backgroundColor: '#fff',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    dashCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+        gap: 6,
+    },
+    dashCardIconWrap: {
+        width: 28,
+        height: 28,
+        borderRadius: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dashCardTitle: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    dashCardSub: {
+        fontSize: 11,
+        color: '#94a3b8',
+        marginTop: 1,
+    },
+    dashBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 3,
+    },
+    dashBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    dashFooter: {
+        fontSize: 11,
+        color: '#94a3b8',
+        textAlign: 'center',
+        marginTop: 6,
+        fontWeight: '500',
+    },
+    // ═══ TIER ROW (2-col grid on desktop) ═══
+    tierRow: {
+        flexDirection: 'row',
+        gap: 6,
+        marginBottom: 0,
+    },
+    // ═══ COLLAPSIBLE TOGGLE ═══
+    collapsibleToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        gap: 6,
+        marginTop: 2,
+        marginBottom: 6,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    collapsibleToggleText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    // old chartContainer kept as fallback
     chartContainer: {
         backgroundColor: '#fff',
         borderRadius: 16,
@@ -3101,30 +3768,34 @@ const styles = StyleSheet.create({
         borderColor: '#e2e8f0',
     },
     sectionTitle: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '700',
         color: '#1e293b',
-        marginBottom: 12,
+        marginBottom: 10,
     },
     chart: {
-        borderRadius: 12,
-        marginTop: 8,
+        marginTop: 10,
+        borderRadius: 6,
     },
-
-    // Sin datos
-    noDataContainer: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 32,
-        marginBottom: 20,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
+    chartSubInfo: {
+        fontSize: 11,
+        color: '#94a3b8',
+        textAlign: 'center',
+        marginTop: 6,
     },
     noDataText: {
         fontSize: 14,
         color: '#94a3b8',
         marginTop: 12,
+    },
+    noDataContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 14,
+        padding: 32,
+        marginBottom: 10,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
     },
 
     // Tabla
@@ -3791,24 +4462,24 @@ const styles = StyleSheet.create({
     // Period Filter
     periodFilter: {
         flexDirection: 'row',
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 4,
-        marginBottom: 16,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 6,
+        padding: 2,
+        flex: 1,
         borderWidth: 1,
         borderColor: '#e2e8f0',
     },
     periodBtn: {
         flex: 1,
-        paddingVertical: 10,
+        paddingVertical: 7,
         alignItems: 'center',
-        borderRadius: 8,
+        borderRadius: 6,
     },
     periodBtnActive: {
         backgroundColor: '#3b82f6',
     },
     periodBtnText: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
         color: '#64748b',
     },
@@ -3818,8 +4489,8 @@ const styles = StyleSheet.create({
 
     // Horizontal scrollable chart
     horizontalChartScroll: {
-        marginHorizontal: -16,
-        paddingHorizontal: 16,
+        marginHorizontal: -10,
+        paddingHorizontal: 10,
     },
 
     // Chart Header & Summary
@@ -4339,6 +5010,32 @@ const styles = StyleSheet.create({
         color: '#3b82f6',
         marginBottom: 16,
     },
+    // Month groups
+    commentsMonthGroup: {
+        marginBottom: 8,
+    },
+    commentsMonthHeaderPressable: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        backgroundColor: '#1e293b',
+        borderRadius: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#334155',
+    },
+    commentsMonthLabel: {
+        color: '#e2e8f0',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    commentsMonthRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     commentsWeekGroup: {
         marginBottom: 20,
     },
@@ -4378,7 +5075,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     commentsWeekBadge: {
-        backgroundColor: '#6366f1',
+        backgroundColor: '#2563EB',
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 6,
@@ -4650,7 +5347,7 @@ const styles = StyleSheet.create({
     commentsWeekLabelSmall: {
         fontSize: 12,
         fontWeight: '700',
-        color: '#6366f1',
+        color: '#2563EB',
         marginBottom: 8,
     },
     commentsDayHeaderSmall: {
@@ -4874,4 +5571,5 @@ const styles = StyleSheet.create({
         gap: 8,
     },
 });
+
 

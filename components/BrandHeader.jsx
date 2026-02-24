@@ -19,10 +19,10 @@ import {
     StyleSheet,
     Platform,
     Pressable,
-    useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link } from 'expo-router';
+import { useStableWindowDimensions } from '../src/hooks/useStableBreakpoint';
 
 /**
  * BrandHeader - Encabezado sólido de marca
@@ -42,7 +42,7 @@ export default function BrandHeader({
     showModeSelector = false,
     showPaymentButton = false,
 }) {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
 
     // ═══════════════════════════════════════════════════════════════
     // DATOS DE MARCA

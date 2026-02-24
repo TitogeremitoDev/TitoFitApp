@@ -16,9 +16,9 @@ import {
     ActivityIndicator,
     Platform,
     Image,
-    useWindowDimensions,
     ScrollView
 } from 'react-native';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -96,7 +96,7 @@ const AudioPlayerSection = ({ uri }) => {
 
 export default function UserMediaViewerModal({ visible, onClose, feedback }) {
     const insets = useSafeAreaInsets();
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
     const { token } = useAuth();
     const isWeb = Platform.OS === 'web';
 

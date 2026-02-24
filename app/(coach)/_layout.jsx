@@ -1,6 +1,7 @@
-import { Stack, router, usePathname, useFocusEffect } from 'expo-router';
+import { Stack, router, usePathname, useFocusEffect, useNavigation } from 'expo-router';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Alert, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ScrollView, Image, Dimensions } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView, Image, Dimensions } from 'react-native';
+import { useStableBreakpoint } from '../../src/hooks/useStableBreakpoint';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,7 +12,8 @@ import OverQuotaModal from '../../components/OverQuotaModal';
 import { useOverQuotaInterceptor } from '../../hooks/useOverQuotaInterceptor';
 import { FloatingTabBarProvider } from '../../context/FloatingTabBarContext';
 import CoachFloatingTabBar from '../../src/components/shared/CoachFloatingTabBar';
-import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials'; // Importar Avatar
+import AvatarWithInitials from '../../src/components/shared/AvatarWithInitials';
+
 
 // Configuración de secciones del sidebar (coincide con las cajas temáticas del dashboard)
 const SIDEBAR_SECTIONS = [
@@ -185,9 +187,9 @@ const Sidebar = ({ currentPath, onNavigate, user, trainerProfile }) => {
                         style={[
                             sidebarStyles.quickAccessBtn,
                             isCollapsed && sidebarStyles.quickAccessBtnCollapsed,
-                            currentPath?.includes('/chat') && sidebarStyles.quickAccessBtnActive
+                            currentPath?.includes('/communication') && sidebarStyles.quickAccessBtnActive
                         ]}
-                        onPress={() => onNavigate('/chat')}
+                        onPress={() => onNavigate('/(coach)/communication')}
                     >
                         <Ionicons name="chatbubbles-outline" size={18} color="#94a3b8" />
                         {!isCollapsed && <Text style={sidebarStyles.quickAccessText}>Chat</Text>}
@@ -470,15 +472,23 @@ const MobileClientNavBanner = ({ currentPath, onNavigate, token }) => {
 export default function CoachLayout() {
     const { user, token, refreshUser } = useAuth();
     const insets = useSafeAreaInsets();
-    const { width } = useWindowDimensions();
+    const { isWide: isLayoutWide, windowWidth: width } = useStableBreakpoint(900);
     const pathname = usePathname();
+    const navigation = useNavigation();
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [showOverQuotaModal, setShowOverQuotaModal] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
-    // Mostrar sidebar solo en pantallas grandes (900px+)
-    const showSidebar = Platform.OS === 'web' && width >= 900;
+    // Mostrar sidebar solo en pantallas grandes (900px+) - debounced
+    const showSidebar = Platform.OS === 'web' && isLayoutWide;
+
+    // 🛡️ Blur focused element on route change
+    useEffect(() => {
+        if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            if (document.activeElement) document.activeElement.blur();
+        }
+    }, [pathname]);
 
     // Obtener info de over-quota del usuario
     const overQuota = user?.overQuota;
@@ -550,8 +560,25 @@ export default function CoachLayout() {
         loadTrainerProfile();
     }, [token]);
 
+    // 🧊 Web: transitioning state blanks the Stack to free DOM before mounting new screen
+    const [isTransitioning, setIsTransitioning] = useState(false);
+
     const handleNavigate = (route) => {
-        router.push(route);
+        // Blur focused element before navigation to prevent aria-hidden crash on web
+        if (Platform.OS === 'web' && typeof document !== 'undefined' && document.activeElement) {
+            document.activeElement.blur();
+        }
+        if (Platform.OS === 'web') {
+            // Two-phase navigation: blank first to free DOM, then navigate
+            setIsTransitioning(true);
+            requestAnimationFrame(() => {
+                router.replace(route);
+                // Give React one more frame to mount the new screen before showing
+                requestAnimationFrame(() => setIsTransitioning(false));
+            });
+        } else {
+            router.push(route);
+        }
     };
 
     const handleBannerPress = () => {
@@ -589,19 +616,24 @@ export default function CoachLayout() {
                             onPress={handleBannerPress}
                         />
 
-                        <Stack
-                            screenOptions={{
-                                headerShown: false,
-                                gestureEnabled: true,
-                                fullScreenGestureEnabled: true,
-                                animation: 'slide_from_right',
-                            }}
-                        >
-                            <Stack.Screen name="index" />
-                            <Stack.Screen name="clients_coach/index" />
-                            <Stack.Screen name="workouts/create" />
-                            <Stack.Screen name="feedbacks/index" />
-                        </Stack>
+                        {isTransitioning ? (
+                            <View style={{ flex: 1 }} />
+                        ) : (
+                            <Stack
+                                screenOptions={{
+                                    headerShown: false,
+                                    gestureEnabled: true,
+                                    fullScreenGestureEnabled: true,
+                                    animation: Platform.OS === 'web' ? 'none' : 'slide_from_right',
+                                    freezeOnBlur: Platform.OS === 'web',
+                                }}
+                            >
+                                <Stack.Screen name="index" />
+                                <Stack.Screen name="clients_coach/index" />
+                                <Stack.Screen name="workouts/create" />
+                                <Stack.Screen name="feedbacks/index" />
+                            </Stack>
+                        )}
                     </View>
 
                     {/* Modal de Over-Quota - Renderizado directamente sin wrapper bloqueante */}

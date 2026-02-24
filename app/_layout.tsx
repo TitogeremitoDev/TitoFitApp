@@ -2,6 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+
+// ═══════ Google Fonts para Branding ═══════
+import { Montserrat_700Bold } from '@expo-google-fonts/montserrat';
+import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
+import { Oswald_700Bold } from '@expo-google-fonts/oswald';
+import { Roboto_700Bold } from '@expo-google-fonts/roboto';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
@@ -61,7 +67,7 @@ Sentry.init({
   // Solo enviar errores en producción
   enabled: !__DEV__,
   // Release para tracking de versiones
-  release: 'totalgains@1.1.4',
+  release: 'totalgains@1.1.10',
   environment: __DEV__ ? 'development' : 'production',
   // Configuración de rendimiento
   tracesSampleRate: 1.0,
@@ -209,6 +215,11 @@ function RootLayoutNav() {
   // Cargar fuentes de iconos para web
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
+    // ═══════ Branding Fonts ═══════
+    'Montserrat-Bold': Montserrat_700Bold,
+    'PlayfairDisplay-Bold': PlayfairDisplay_700Bold,
+    'Oswald-Bold': Oswald_700Bold,
+    'Roboto-Bold': Roboto_700Bold,
   });
 
   // ====== IN-APP UPDATES (Android & iOS) ======
@@ -238,7 +249,7 @@ function RootLayoutNav() {
               [
                 {
                   text: 'Actualizar ahora',
-                  onPress: () => {
+                  onPress: async () => {
                     // Intentar usar la URL dinámica que devuelve la librería (trackViewUrl)
                     // @ts-ignore - 'other' puede contener trackViewUrl en iOS
                     const dynamicUrl = result.other?.trackViewUrl;
@@ -250,7 +261,20 @@ function RootLayoutNav() {
                       console.log('[InAppUpdates] Opening URL:', appStoreUrl);
                     }
 
-                    Linking.openURL(appStoreUrl);
+                    try {
+                      const canOpen = await Linking.canOpenURL(appStoreUrl);
+                      if (canOpen) {
+                        await Linking.openURL(appStoreUrl);
+                      } else {
+                        // Fallback: intentar sin parámetros de tracking
+                        const fallbackUrl = 'https://apps.apple.com/app/id6756856683';
+                        await Linking.openURL(fallbackUrl);
+                      }
+                    } catch (e) {
+                      if (__DEV__) {
+                        console.log('[InAppUpdates] Error opening URL:', e);
+                      }
+                    }
                   },
                 },
                 {

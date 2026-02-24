@@ -24,12 +24,18 @@ import { EnhancedTextInput } from '../../components/ui';
 let RNShare, FileSystem;
 if (Platform.OS !== 'web') {
     RNShare = require('react-native-share').default;
-    FileSystem = require('expo-file-system');
+    FileSystem = require('expo-file-system/legacy');
 }
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import StoryShareModal from './shared/StoryShareModal';
+import { useAuth } from '../../context/AuthContext';
+import { useTrainer } from '../../context/TrainerContext';
+import { useCoachBranding } from '../../context/CoachBrandingContext';
+import { getContrastColor } from '../../utils/colors';
+
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -63,6 +69,15 @@ export default function UnifiedFeedbackModal({
 }) {
     const router = useRouter();
 
+    // Coach branding contexts
+    const { user } = useAuth();
+    const { trainer } = useTrainer();
+    const { activeTheme } = useCoachBranding();
+
+    const coachName = trainer?.profile?.brandName || trainer?.nombre || 'mi entrenador';
+    const coachLogoUrl = trainer?.profile?.logoUrl || null;
+    const coachColor = activeTheme?.colors?.primary || '#60a5fa';
+
     // States
     const [importance, setImportance] = useState(initialValue);
     const [noteText, setNoteText] = useState(initialNote);
@@ -74,7 +89,9 @@ export default function UnifiedFeedbackModal({
 
     // Celebration state
     const [isSuccess, setIsSuccess] = useState(false);
+    const [showStoryModal, setShowStoryModal] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [videoThumbnailUri, setVideoThumbnailUri] = useState(null);
 
     // Audio recording logic with expo-audio hooks
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -233,6 +250,7 @@ export default function UnifiedFeedbackModal({
                 setMediaType('video');
                 setTrimStart(0);
                 setTrimEnd(0);
+                setVideoThumbnailUri(null);
             } else {
                 setMediaUri(uri);
                 setMediaType('photo');
@@ -266,12 +284,20 @@ export default function UnifiedFeedbackModal({
     // ═══════════════════════════════════════════════════════════════════════════
     // ENVIAR FEEDBACK (Fire & Forget)
     // ═══════════════════════════════════════════════════════════════════════════
-    const handleSend = async () => {
-        // 1. Guardar nota inmediatamente
-        onSave(serieKey, importance, noteText, audioUri, mediaUri, mediaType, trimStart, trimEnd);
+    const gallerySavePendingRef = useRef(null);
 
-        // 2. Si hay media, mostrar estado de éxito con opción de compartir
+    const handleSend = async () => {
+        // 1. Si hay media, mostrar éxito PRIMERO (animación suave antes de trabajo pesado)
         if (mediaUri) {
+            // Guardar URI para save a galería DESPUÉS de cerrar modal (evita crash Android)
+            if (Platform.OS !== 'web') {
+                let uri = mediaUri;
+                if (!uri.startsWith('file://') && !uri.startsWith('content://')) {
+                    uri = 'file://' + uri;
+                }
+                gallerySavePendingRef.current = uri;
+            }
+
             setIsSuccess(true);
             Animated.spring(successAnim, {
                 toValue: 1,
@@ -279,12 +305,35 @@ export default function UnifiedFeedbackModal({
                 tension: 40,
                 useNativeDriver: true,
             }).start();
-            // SIN auto-cierre - el usuario cierra cuando quiera
+
+            // 2. Guardar DESPUÉS de que la animación arranque (evita jank en Android)
+            requestAnimationFrame(() => {
+                onSave(serieKey, importance, noteText, audioUri, mediaUri, mediaType, trimStart, trimEnd);
+            });
         } else {
-            // Sin media, cerrar directamente
+            // Sin media, guardar y cerrar directamente
+            onSave(serieKey, importance, noteText, audioUri, mediaUri, mediaType, trimStart, trimEnd);
             onClose();
         }
     };
+
+    // Guardar foto/vídeo en galería DESPUÉS de que el modal se cierre (evita crash Android)
+    useEffect(() => {
+        if (!visible && gallerySavePendingRef.current) {
+            const uri = gallerySavePendingRef.current;
+            gallerySavePendingRef.current = null;
+            const timer = setTimeout(async () => {
+                try {
+                    const MediaLibrary = require('expo-media-library');
+                    await MediaLibrary.saveToLibraryAsync(uri);
+                    console.log('[UFM] Guardado en galería OK');
+                } catch (e) {
+                    console.warn('[UFM] No se pudo guardar en galería:', e.message);
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [visible]);
 
     const handleClose = () => {
         setIsSuccess(false);
@@ -297,40 +346,53 @@ export default function UnifiedFeedbackModal({
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // COMPARTIR EN REDES SOCIALES (Abre el sistema de share nativo con el archivo)
+    // COMPARTIR EN REDES SOCIALES
     // ═══════════════════════════════════════════════════════════════════════════
+    const videoSharePendingRef = useRef(null);
+
     const shareToSocial = async () => {
-        if (Platform.OS === 'web' || !RNShare) {
-            Alert.alert('No disponible', 'Compartir solo está disponible en la app móvil');
-            return;
-        }
-
-        if (!mediaUri) {
-            Alert.alert('Sin media', 'No hay foto o video para compartir');
-            return;
-        }
-
-        try {
-            console.log('[UnifiedModal] Sharing - mediaUri:', mediaUri, 'mediaType:', mediaType);
-
-            // Asegurar formato file:// en Android
-            let fileUri = mediaUri;
-            if (Platform.OS === 'android' && !fileUri.startsWith('file://')) {
-                fileUri = `file://${fileUri}`;
+        console.log('[UFM] shareToSocial called. mediaType:', mediaType, 'hasMediaUri:', !!mediaUri);
+        if (mediaType === 'video' && mediaUri) {
+            // Vídeo: cerrar modal primero para evitar crash Android (Intent sobre Modal)
+            let uri = mediaUri;
+            if (!uri.startsWith('file://') && !uri.startsWith('content://')) {
+                uri = 'file://' + uri;
             }
-
-            // Abrir el sistema de share nativo con el archivo incluido
-            await RNShare.open({
-                message: `💪 Set completado: ${exerciseName || 'Mi entreno'}\n#TotalGains #Fitness #Workout`,
-                url: fileUri,
-                type: mediaType === 'video' ? 'video/*' : 'image/*',
-            });
-
-        } catch (err) {
-            console.log('[UnifiedModal] Share cancelled or error:', err);
-            // Si el usuario cancela, no mostramos error
+            console.log('[UFM] Video: closing modal first, then share. URI:', uri.substring(0, 60));
+            gallerySavePendingRef.current = null; // No duplicar: el share ya entrega el archivo
+            videoSharePendingRef.current = uri;
+            setIsSuccess(false);
+            onClose();
+        } else {
+            // Foto: abrir StoryShareModal con overlay de branding
+            // StoryShareModal guarda la imagen branded → limpiar ref para no duplicar
+            gallerySavePendingRef.current = null;
+            console.log('[UFM] Photo: opening embedded StoryShareModal');
+            setShowStoryModal(true);
         }
     };
+
+    // Compartir vídeo DESPUÉS de que el Modal se haya cerrado
+    useEffect(() => {
+        if (!visible && videoSharePendingRef.current) {
+            const uri = videoSharePendingRef.current;
+            videoSharePendingRef.current = null;
+            console.log('[UFM] Modal closed, sharing video after 300ms delay...');
+            const timer = setTimeout(async () => {
+                try {
+                    console.log('[UFM] Calling Sharing.shareAsync for video...');
+                    const Sharing = require('expo-sharing');
+                    const available = await Sharing.isAvailableAsync();
+                    if (!available) { console.log('[UFM] Sharing not available'); return; }
+                    await Sharing.shareAsync(uri, { mimeType: 'video/mp4', dialogTitle: 'Compartir' });
+                    console.log('[UFM] Video share completed OK');
+                } catch (err) {
+                    console.error('[UFM] Video share error:', err.message);
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [visible]);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
@@ -339,7 +401,7 @@ export default function UnifiedFeedbackModal({
     const hasExistingData = initialValue || initialNote || initialAudioUri || initialMediaUri;
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // RENDER: ESTADO DE ÉXITO (Celebración)
+    // RENDER: ESTADO DE ÉXITO (Celebración + Compartir con branding)
     // ═══════════════════════════════════════════════════════════════════════════
     const renderSuccessState = () => {
         const scale = successAnim.interpolate({
@@ -361,7 +423,7 @@ export default function UnifiedFeedbackModal({
                     Tu coach lo verá pronto
                 </Text>
 
-                {/* Botón de compartir (solo si hay media) */}
+                {/* Botón de compartir con branding (solo si hay media) */}
                 {mediaUri && (
                     <TouchableOpacity
                         style={styles.shareBtn}
@@ -369,16 +431,13 @@ export default function UnifiedFeedbackModal({
                         activeOpacity={0.85}
                     >
                         <LinearGradient
-                            colors={['#833ab4', '#fd1d1d', '#fcb045']}
+                            colors={['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={styles.shareGradient}
                         >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Ionicons name="logo-instagram" size={20} color="#fff" />
-                                <Ionicons name="logo-tiktok" size={18} color="#fff" />
-                            </View>
-                            <Text style={styles.shareText}>Presume en tus redes</Text>
+                            <Ionicons name="logo-instagram" size={22} color="#fff" />
+                            <Text style={styles.shareText}>Compartir en Stories</Text>
                         </LinearGradient>
                     </TouchableOpacity>
                 )}
@@ -479,8 +538,8 @@ export default function UnifiedFeedbackModal({
                         onPress={handleRecordVideo}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="videocam" size={24} color={theme?.primary || '#10b981'} />
-                        <Text style={[styles.mediaBtnText, { color: theme?.primary || '#10b981' }]}>
+                        <Ionicons name="videocam" size={24} color={theme?.text || '#10b981'} />
+                        <Text style={[styles.mediaBtnText, { color: theme?.text || '#10b981' }]}>
                             Video
                         </Text>
                     </TouchableOpacity>
@@ -490,8 +549,8 @@ export default function UnifiedFeedbackModal({
                         onPress={handleTakePhoto}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="camera" size={24} color="#22c55e" />
-                        <Text style={[styles.mediaBtnText, { color: '#22c55e' }]}>
+                        <Ionicons name="camera" size={24} color={theme?.text || '#22c55e'} />
+                        <Text style={[styles.mediaBtnText, { color: theme?.text || '#22c55e' }]}>
                             Foto
                         </Text>
                     </TouchableOpacity>
@@ -519,9 +578,9 @@ export default function UnifiedFeedbackModal({
                         {mediaType === 'video' ? (
                             <Ionicons name="checkmark-circle" size={24} color="#fff" />
                         ) : (
-                            <Ionicons name="videocam" size={24} color={theme?.primary || '#10b981'} />
+                            <Ionicons name="videocam" size={24} color={theme?.text || '#10b981'} />
                         )}
-                        <Text style={[styles.mediaBtnText, { color: mediaType === 'video' ? '#fff' : (theme?.primary || '#10b981') }]}>
+                        <Text style={[styles.mediaBtnText, { color: mediaType === 'video' ? '#fff' : (theme?.text || '#10b981') }]}>
                             Video
                         </Text>
                     </TouchableOpacity>
@@ -538,9 +597,9 @@ export default function UnifiedFeedbackModal({
                         {mediaType === 'photo' ? (
                             <Ionicons name="checkmark-circle" size={24} color="#fff" />
                         ) : (
-                            <Ionicons name="camera" size={24} color="#22c55e" />
+                            <Ionicons name="camera" size={24} color={theme?.text || '#22c55e'} />
                         )}
-                        <Text style={[styles.mediaBtnText, { color: mediaType === 'photo' ? '#fff' : '#22c55e' }]}>
+                        <Text style={[styles.mediaBtnText, { color: mediaType === 'photo' ? '#fff' : (theme?.text || '#22c55e') }]}>
                             Foto
                         </Text>
                     </TouchableOpacity>
@@ -580,7 +639,7 @@ export default function UnifiedFeedbackModal({
                         style={[styles.micBtnInline, { backgroundColor: theme?.primary || '#4361ee' }]}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="mic" size={20} color="#fff" />
+                        <Ionicons name="mic" size={20} color={getContrastColor(theme?.primary || '#4361ee')} />
                     </TouchableOpacity>
                 )}
                 {isRecording && (
@@ -589,7 +648,7 @@ export default function UnifiedFeedbackModal({
                         style={[styles.micBtnInline, { backgroundColor: '#ef4444' }]}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="stop" size={18} color="#fff" />
+                        <Ionicons name="stop" size={18} color={getContrastColor('#ef4444')} />
                     </TouchableOpacity>
                 )}
             </View>
@@ -658,16 +717,38 @@ export default function UnifiedFeedbackModal({
     // RENDER PRINCIPAL
     // ═══════════════════════════════════════════════════════════════════════════
     return (
-        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <View style={styles.overlay}>
-                <View style={[styles.card, {
-                    backgroundColor: theme?.backgroundSecondary || '#1a1a2e',
-                    borderColor: theme?.border || '#333'
-                }]}>
-                    {isSuccess ? renderSuccessState() : renderFormState()}
+        <>
+            <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+                <View style={styles.overlay}>
+                    <View style={[styles.card, {
+                        backgroundColor: theme?.backgroundSecondary || '#1a1a2e',
+                        borderColor: theme?.border || '#333'
+                    }]}>
+                        {isSuccess ? renderSuccessState() : renderFormState()}
+                    </View>
                 </View>
-            </View>
-        </Modal>
+
+                {/* Story Share solo para FOTOS (embedded dentro del mismo Modal) */}
+                <StoryShareModal
+                    visible={showStoryModal}
+                    onClose={() => {
+                        setShowStoryModal(false);
+                        setIsSuccess(false);
+                        onClose();
+                    }}
+                    photoUri={mediaUri}
+                    mediaType="photo"
+                    badgeText={`🏋️ ${exerciseName || 'Entrenamiento'}`}
+                    mainText="Entrenando con"
+                    coachName={coachName}
+                    coachLogoUrl={coachLogoUrl}
+                    coachColor={coachColor}
+                    theme={theme}
+                    embedded
+                    onCloseParentModal={onClose}
+                />
+            </Modal>
+        </>
     );
 }
 
@@ -956,3 +1037,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// storyStyles eliminado — ahora usa StoryShareModal compartido

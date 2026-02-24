@@ -18,8 +18,8 @@ import {
     Platform,
     UIManager,
     Modal,
-    useWindowDimensions,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { Stack, useRouter } from 'expo-router';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,7 +56,7 @@ export default function VideosScreen() {
     const { theme, isDark } = useTheme();
 
     // Dynamic dimensions for responsive modal
-    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+    const { width: screenWidth, height: screenHeight } = useStableWindowDimensions();
     const modalWidth = Math.min(screenWidth * 0.95, 600); // maxWidth 600 for web
 
     const [openMuscle, setOpenMuscle] = useState(null);

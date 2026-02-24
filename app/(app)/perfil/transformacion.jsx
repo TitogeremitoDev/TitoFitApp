@@ -16,7 +16,6 @@ import {
     Text,
     StyleSheet,
     ScrollView,
-    useWindowDimensions,
     ActivityIndicator,
     Pressable,
     Alert,
@@ -24,6 +23,7 @@ import {
     Modal,
     TouchableOpacity,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { Stack, useRouter } from 'expo-router';
 import { EnhancedTextInput } from '../../../components/ui';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -151,7 +151,7 @@ export default function TransformacionScreen() {
     const router = useRouter();
     const { user, token, refreshUser } = useAuth();
     const { theme, isDark } = useTheme();
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
 
     const isWeb = Platform.OS === 'web';
     const isLargeScreen = windowWidth > 768;

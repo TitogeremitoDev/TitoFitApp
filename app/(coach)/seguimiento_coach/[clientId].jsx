@@ -10,12 +10,12 @@ import {
     ActivityIndicator,
     RefreshControl,
     TouchableOpacity,
-    useWindowDimensions,
     Platform,
     Image,
     Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import Svg, { Circle as SvgCircle, Rect as SvgRect } from 'react-native-svg';
@@ -25,7 +25,11 @@ import { calculateFullNutrition } from '../../../src/utils/nutritionCalculator';
 import PhotoGalleryTab from '../../../src/components/coach/PhotoGalleryTab';
 import CoachStudioModal from '../../../src/components/coach/CoachStudioModal';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import LazySection from '../../../src/components/ui/LazySection';
+import { useStableBreakpoint } from '../../../src/hooks/useStableBreakpoint';
 import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
+
+import { cacheClientAvatars } from '../../../src/utils/avatarCache';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -55,6 +59,31 @@ const ResponsiveChart = ({ children, fallbackWidth }) => {
             {typeof children === 'function' ? children(width) : children}
         </View>
     );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEB CHART OPTIMIZATION — downsample data points to reduce SVG DOM nodes
+// ═══════════════════════════════════════════════════════════════════════════
+const MAX_CHART_POINTS = Platform.OS === 'web' ? 15 : 50;
+
+const downsampleChartData = (chartData) => {
+    if (!chartData || !chartData.labels) return chartData;
+    const len = chartData.labels.length;
+    if (len <= MAX_CHART_POINTS) return chartData;
+    const indices = [0];
+    const step = (len - 1) / (MAX_CHART_POINTS - 1);
+    for (let i = 1; i < MAX_CHART_POINTS - 1; i++) {
+        indices.push(Math.round(i * step));
+    }
+    indices.push(len - 1);
+    return {
+        ...chartData,
+        labels: indices.map(i => chartData.labels[i]),
+        datasets: chartData.datasets.map(ds => ({
+            ...ds,
+            data: indices.map(i => ds.data[i]),
+        })),
+    };
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,10 +384,16 @@ const NutritionGalleryTab = ({ clientId, token }) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function ClientSeguimientoDetailScreen() {
-    const { clientId, clientName } = useLocalSearchParams();
+    const params = useLocalSearchParams();
     const router = useRouter();
     const { token } = useAuth();
-    const { width: windowWidth } = useWindowDimensions();
+    const { isWide: isWideScreen, windowWidth } = useStableBreakpoint(1024);
+
+    // 🛡️ Active client managed as state to avoid router.replace screen stacking on web
+    const [activeClientId, setActiveClientId] = useState(params.clientId);
+    const [activeClientName, setActiveClientName] = useState(params.clientName);
+    const clientId = activeClientId;
+    const clientName = activeClientName;
 
     // Estados principales
     const [dailyRecords, setDailyRecords] = useState([]);
@@ -401,8 +436,7 @@ export default function ClientSeguimientoDetailScreen() {
     const [sidebarLoading, setSidebarLoading] = useState(true);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-    // Responsive: show sidebar only on wide screens (>1024px)
-    const isWideScreen = windowWidth >= 1024;
+    // isWideScreen already defined by useStableBreakpoint above
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -503,7 +537,7 @@ export default function ClientSeguimientoDetailScreen() {
             const data = await res.json();
 
             if (data.success) {
-                setSidebarClients(data.clients || []);
+                setSidebarClients(cacheClientAvatars(data.clients || []));
             }
         } catch (error) {
             console.error('[Sidebar] Error fetching clients:', error);
@@ -518,11 +552,25 @@ export default function ClientSeguimientoDetailScreen() {
         }
     }, [isWideScreen, fetchSidebarClients]);
 
-    // Handle sidebar client selection
+    // Handle sidebar client selection — NO router navigation to avoid screen stacking on web
+    // Two-phase: 1) destroy all heavy content, 2) after DOM freed, switch client
     const handleSidebarClientSelect = (client) => {
-        router.push({
-            pathname: '/(coach)/seguimiento_coach/[clientId]',
-            params: { clientId: client._id, clientName: client.nombre }
+        if (client._id === clientId) return;
+        // Phase 1: Kill all heavy content immediately
+        setDailyRecords([]);
+        setWeeklyRecords([]);
+        setClientInfo(null);
+        setIsLoading(true);
+        setMainTab('graficos');
+        setExpandedMonths({});
+        setSelectedPhoto(null);
+        // Phase 2: Wait for React to commit the empty render, THEN switch client
+        requestAnimationFrame(() => {
+            setActiveClientId(client._id);
+            setActiveClientName(client.nombre);
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                window.history.replaceState(null, '', `/seguimiento_coach/${client._id}?clientName=${encodeURIComponent(client.nombre)}`);
+            }
         });
     };
 
@@ -1410,6 +1458,7 @@ export default function ClientSeguimientoDetailScreen() {
             }
         >
             {/* ═══════════════════ TIER 2: TENDENCIAS CLAVE ═══════════════════ */}
+            <LazySection height={250}>
             <View style={isWideScreen ? styles.tierRow : null}>
                 {/* EVOLUCIÓN DEL PESO */}
                 <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
@@ -1426,7 +1475,7 @@ export default function ClientSeguimientoDetailScreen() {
                         <ResponsiveChart fallbackWidth={getChartW(true)}>
                             {(w) => (
                                 <LineChart
-                                    data={weightChartData}
+                                    data={downsampleChartData(weightChartData)}
                                     width={w}
                                     height={160}
                                     chartConfig={{
@@ -1434,9 +1483,9 @@ export default function ClientSeguimientoDetailScreen() {
                                         color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
                                         fillShadowGradient: '#10b981',
                                         fillShadowGradientOpacity: 0.1,
-                                        propsForDots: { r: '3', strokeWidth: '1.5', stroke: '#fff', fill: '#10b981' },
                                     }}
                                     bezier
+                                    withDots={Platform.OS !== 'web'}
                                     style={styles.chart}
                                     yAxisSuffix=" kg"
                                 />
@@ -1489,7 +1538,7 @@ export default function ClientSeguimientoDetailScreen() {
                             <ResponsiveChart fallbackWidth={getChartW(true)}>
                                 {(w) => (
                                     <LineChart
-                                        data={wellbeingChartData}
+                                        data={downsampleChartData(wellbeingChartData)}
                                         width={w}
                                         height={160}
                                         chartConfig={{
@@ -1497,6 +1546,7 @@ export default function ClientSeguimientoDetailScreen() {
                                             fillShadowGradientOpacity: 0,
                                         }}
                                         bezier
+                                        withDots={Platform.OS !== 'web'}
                                         style={styles.chart}
                                         fromZero
                                         segments={4}
@@ -1513,7 +1563,9 @@ export default function ClientSeguimientoDetailScreen() {
                 </View>
             </View>
 
+            </LazySection>
             {/* ═══════════════════ TIER 3: PROFUNDIZACIÓN ═══════════════════ */}
+            <LazySection height={300}>
             <View style={isWideScreen ? styles.tierRow : null}>
                 {/* HORAS DE SUEÑO */}
                 <View style={[styles.statsCard, isWideScreen && { flex: 1 }]}>
@@ -1532,7 +1584,7 @@ export default function ClientSeguimientoDetailScreen() {
                         <ResponsiveChart fallbackWidth={getChartW(true)}>
                             {(w) => (
                                 <BarChart
-                                    data={sleepChartData}
+                                    data={downsampleChartData(sleepChartData)}
                                     width={w}
                                     height={200}
                                     chartConfig={barChartConfig}
@@ -1625,6 +1677,7 @@ export default function ClientSeguimientoDetailScreen() {
                                                                     color: () => zone.trendColor,
                                                                 }}
                                                                 bezier
+                                                                withDots={Platform.OS !== 'web'}
                                                                 style={styles.chart}
                                                                 yAxisSuffix=" cm"
                                                             />}
@@ -1695,7 +1748,9 @@ export default function ClientSeguimientoDetailScreen() {
 
             </View>
 
+            </LazySection>
             {/* ═══════════════════ CUMPLIMIENTO DE DIETA (full width, horizontal) ═══════════════════ */}
+            <LazySection height={200}>
             <View style={styles.statsCard}>
                 <View style={styles.statsCardHeader}>
                     <Text style={styles.statsCardIcon}>🍽️</Text>
@@ -1731,6 +1786,7 @@ export default function ClientSeguimientoDetailScreen() {
                 )}
             </View>
 
+            </LazySection>
             {/* ═══════════════════ TIER 4: ANÁLISIS AVANZADO (colapsable) ═══════════════════ */}
             <TouchableOpacity style={styles.advancedToggle} onPress={() => setShowAdvanced(!showAdvanced)}>
                 <Ionicons name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
@@ -1810,18 +1866,30 @@ export default function ClientSeguimientoDetailScreen() {
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
+    // 🧊 Web: unmount content when screen loses focus (prevents DOM accumulation crash)
+    const isFocused = useIsFocused();
+    if (Platform.OS === 'web' && !isFocused) return <View />;
+
+    // 🛡️ Render guard: if clientId changed but data hasn't loaded yet, show loading
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
-                    <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.push('/(coach)/seguimiento_coach')} style={styles.backBtn}>
-                        <Ionicons name="arrow-back" size={22} color="#1e293b" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>{clientName || 'Cliente'}</Text>
-                </View>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#0ea5e9" />
-                    <Text style={styles.loadingText}>Cargando historial...</Text>
+                <View style={styles.mainWrapper}>
+                    {isWideScreen && (
+                        <ClientSidebar
+                            clients={sidebarClients}
+                            isLoading={sidebarLoading}
+                            currentClientId={clientId}
+                            onClientSelect={handleSidebarClientSelect}
+                            isCollapsed={sidebarCollapsed}
+                            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            context="seguimiento"
+                        />
+                    )}
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#0ea5e9" />
+                        <Text style={styles.loadingText}>Cargando historial...</Text>
+                    </View>
                 </View>
             </SafeAreaView>
         );
@@ -2177,7 +2245,6 @@ export default function ClientSeguimientoDetailScreen() {
                                             setPhotoIndex(initialIndex || 0);
                                             setSelectedPhoto(photo);
                                             setStudioVisible(true);
-                                            console.log('[Gallery] Photo group:', photos?.length || 1, 'photos, starting at index', initialIndex);
                                         }}
                                     />
                                 </View>
@@ -3237,3 +3304,4 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
 });
+

@@ -24,6 +24,7 @@ import {
 } from '../../../src/utils/nutritionCalculator';
 import { getContrastColor } from '../../../utils/colors';
 import ActionToast from '../../../src/components/shared/ActionToast';
+import GuideViewerModal from '../../../src/components/shared/GuideViewerModal';
 
 const { width } = Dimensions.get('window');
 
@@ -104,6 +105,8 @@ export default function NutricionScreen() {
     const [planMode, setPlanMode] = useState('auto'); // 'auto' | 'custom'
     const [selectedDayIndex, setSelectedDayIndex] = useState(null); // Para ver otros días
     const [coachInfo, setCoachInfo] = useState(null); // Coach branding for PDF export
+    const [nutritionGuide, setNutritionGuide] = useState(null);
+    const [guideViewVisible, setGuideViewVisible] = useState(false);
 
     const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
@@ -191,8 +194,24 @@ export default function NutricionScreen() {
         loadUserData();
     }, [user?._id, user?.tipoUsuario, token]);
 
-
-
+    // 📋 Cargar guía nutricional del entrenador
+    useEffect(() => {
+        if (!user?.currentTrainerId || !token) return;
+        (async () => {
+            try {
+                const res = await fetch(`${API_URL}/api/coach-guides/my/nutrition`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.success && data.guide && (data.guide.textContent || data.guide.fileKey)) {
+                    setNutritionGuide(data.guide);
+                }
+            } catch (e) {
+                // silently fail
+            }
+        })();
+    }, [user?._id, user?.currentTrainerId]);
 
 
     // Priorizar objetivoPrincipal (ganar_peso/definir/mantener) sobre objetivos (texto libre)
@@ -292,7 +311,20 @@ export default function NutricionScreen() {
                     user={user}
                     clientSettings={clientSettings}
                     coachInfo={coachInfo}
+                    nutritionGuide={nutritionGuide}
+                    onOpenGuide={() => setGuideViewVisible(true)}
                 />
+
+                {guideViewVisible && nutritionGuide && (
+                    <GuideViewerModal
+                        visible={guideViewVisible}
+                        guide={nutritionGuide}
+                        category="nutrition"
+                        title="Guía Nutricional"
+                        token={token}
+                        onClose={() => setGuideViewVisible(false)}
+                    />
+                )}
             </SafeAreaView>
         );
     }
@@ -385,7 +417,16 @@ export default function NutricionScreen() {
                         </View>
                     </View>
 
-                    <View style={styles.headerRight} />
+                    {nutritionGuide ? (
+                        <TouchableOpacity
+                            style={[styles.headerRight, styles.guideBtn, { backgroundColor: theme.primary + '20' }]}
+                            onPress={() => setGuideViewVisible(true)}
+                        >
+                            <Ionicons name="document-text-outline" size={18} color={theme.primary} />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.headerRight} />
+                    )}
                 </View>
 
                 {!hasData ? (
@@ -807,6 +848,17 @@ export default function NutricionScreen() {
                 duration={5000}
                 position="top"
             />
+
+            {guideViewVisible && nutritionGuide && (
+                <GuideViewerModal
+                    visible={guideViewVisible}
+                    guide={nutritionGuide}
+                    category="nutrition"
+                    title="Guía Nutricional"
+                    token={token}
+                    onClose={() => setGuideViewVisible(false)}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -893,6 +945,13 @@ const styles = StyleSheet.create({
     },
     headerRight: {
         width: 36,
+    },
+    guideBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     dataSourceBadge: {
         width: 36,

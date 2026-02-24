@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Modal, Image, ActivityIndicator, Alert, Share, useWindowDimensions, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Modal, Image, ActivityIndicator, Alert, Share, Dimensions } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -197,6 +198,10 @@ export default function PerfilScreen() {
     // 📸 MANEJO DE FOTO DE PERFIL
     const handlePickImage = async () => {
         setShowPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar el picker
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
@@ -222,6 +227,10 @@ export default function PerfilScreen() {
 
     const handleTakePhoto = async () => {
         setShowPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar la cámara
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status !== 'granted') {
@@ -522,7 +531,7 @@ export default function PerfilScreen() {
         }
     };
 
-    const { width: screenWidth } = useWindowDimensions();
+    const { width: screenWidth } = useStableWindowDimensions();
     // Calculate card width for 2-column grid with proper spacing
     const cardPadding = 20; // horizontal padding of container
     const cardGap = 12; // gap between cards

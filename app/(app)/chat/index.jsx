@@ -15,7 +15,8 @@ import {
     Animated,
     Dimensions,
     Alert,
-    Vibration
+    Vibration,
+    Image
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -760,6 +761,7 @@ export default function ChatHomeScreen() {
             params: {
                 conversationId: conv._id,
                 displayName: conv.displayName,
+                displayImage: conv.displayImage || '',
                 isTrainerChat: conv.isTrainerChat ? 'true' : 'false',
                 type: conv.type
             }
@@ -874,11 +876,17 @@ export default function ChatHomeScreen() {
                 {/* Avatar */}
                 <View style={[
                     styles.avatar,
-                    { backgroundColor: chatTheme.textTertiary },
+                    { backgroundColor: chatTheme.textTertiary, overflow: 'hidden' },
                     item.isTrainerChat && { backgroundColor: chatTheme.primary },
                     item.type === 'group' && { backgroundColor: chatTheme.header }
                 ]}>
-                    {item.isTrainerChat ? (
+                    {item.displayImage ? (
+                        <Image
+                            source={{ uri: item.displayImage }}
+                            style={{ width: '100%', height: '100%', borderRadius: 25 }}
+                            resizeMode="cover"
+                        />
+                    ) : item.isTrainerChat ? (
                         <Ionicons name="fitness" size={24} color="#fff" />
                     ) : item.type === 'group' ? (
                         <Ionicons name="people" size={22} color="#fff" />
@@ -1037,9 +1045,15 @@ export default function ChatHomeScreen() {
                         <View style={styles.actionModalHeader}>
                             <View style={[
                                 styles.actionModalAvatar,
-                                { backgroundColor: actionModal.conversation?.isTrainerChat ? chatTheme.primary : chatTheme.textTertiary }
+                                { backgroundColor: actionModal.conversation?.isTrainerChat ? chatTheme.primary : chatTheme.textTertiary, overflow: 'hidden' }
                             ]}>
-                                {actionModal.conversation?.isTrainerChat ? (
+                                {actionModal.conversation?.displayImage ? (
+                                    <Image
+                                        source={{ uri: actionModal.conversation.displayImage }}
+                                        style={{ width: '100%', height: '100%', borderRadius: 25 }}
+                                        resizeMode="cover"
+                                    />
+                                ) : actionModal.conversation?.isTrainerChat ? (
                                     <Ionicons name="fitness" size={24} color="#fff" />
                                 ) : (
                                     <Text style={styles.actionModalAvatarText}>

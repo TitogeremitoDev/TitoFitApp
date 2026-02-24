@@ -9,7 +9,52 @@
 
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
+
+/**
+ * Convert a remote image URL to a base64 data URI.
+ * Returns null if the conversion fails.
+ */
+const imageUrlToBase64 = async (url) => {
+    if (!url) return null;
+    // Already a data URI
+    if (url.startsWith('data:')) return url;
+    try {
+        const localUri = FileSystem.cacheDirectory + 'pdf_logo_' + Date.now() + '.tmp';
+        console.log('[PDF Generator] Downloading logo from:', url.substring(0, 80) + '...');
+        const downloadResult = await FileSystem.downloadAsync(url, localUri);
+        console.log('[PDF Generator] Download result status:', downloadResult.status);
+        if (downloadResult.status !== 200) {
+            console.warn('[PDF Generator] Logo download failed with status:', downloadResult.status);
+            return null;
+        }
+        const base64 = await FileSystem.readAsStringAsync(downloadResult.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        // Clean up temp file
+        FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => {});
+        if (!base64 || base64.length < 100) {
+            console.warn('[PDF Generator] Base64 result too small, likely failed');
+            return null;
+        }
+        // Detect mime type from content (first bytes) or fallback to URL extension
+        let mime = 'image/png';
+        if (base64.startsWith('/9j/')) mime = 'image/jpeg';
+        else if (base64.startsWith('UklGR')) mime = 'image/webp';
+        else if (base64.startsWith('iVBOR')) mime = 'image/png';
+        else {
+            const ext = url.split('?')[0].split('.').pop()?.toLowerCase();
+            if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+            else if (ext === 'webp') mime = 'image/webp';
+        }
+        console.log('[PDF Generator] Logo converted to base64 successfully, mime:', mime, 'size:', base64.length);
+        return `data:${mime};base64,${base64}`;
+    } catch (err) {
+        console.warn('[PDF Generator] Failed to convert logo to base64:', err.message);
+        return null;
+    }
+};
 
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -23,6 +68,24 @@ const hexToRgba = (hex, alpha = 1) => {
     const g = parseInt(cleanHex.substr(2, 2), 16);
     const b = parseInt(cleanHex.substr(4, 2), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+/**
+ * Blend a hex color with white at a given alpha, returning a SOLID hex color.
+ * PDF renderers (expo-print / WebView) often distort RGBA colors,
+ * so we pre-compute the final blended color as a solid hex value.
+ * e.g. blendWithWhite('#8B5A2B', 0.35) → '#d9c4ab' (brown at 35% on white)
+ */
+const blendWithWhite = (hex, alpha = 1) => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substr(0, 2), 16);
+    const g = parseInt(cleanHex.substr(2, 2), 16);
+    const b = parseInt(cleanHex.substr(4, 2), 16);
+    // Blend with white (255): result = color * alpha + 255 * (1 - alpha)
+    const br = Math.round(r * alpha + 255 * (1 - alpha));
+    const bg = Math.round(g * alpha + 255 * (1 - alpha));
+    const bb = Math.round(b * alpha + 255 * (1 - alpha));
+    return `#${br.toString(16).padStart(2, '0')}${bg.toString(16).padStart(2, '0')}${bb.toString(16).padStart(2, '0')}`;
 };
 
 /**
@@ -246,10 +309,15 @@ const generateCellHTML = (option, hideMacros, primaryColor, supplements) => {
         ? generateSupplementsHTML(supplements)
         : '';
 
+    const coachNoteSection = option.coachNote
+        ? `<div class="coach-note"><span class="coach-note-icon">📝</span> ${option.coachNote}</div>`
+        : '';
+
     return `<td class="meal-cell">
         <div class="option-name">${optionName}</div>
         <div class="foods-list">${ingredientsList}</div>
         ${macroSummary}
+        ${coachNoteSection}
         ${supplementsSection}
     </td>`;
 };
@@ -273,11 +341,12 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         ? `'${fontConfig.family}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`
         : `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
 
-    // Pre-compute rgba colors for cell fills
-    const primaryBgLight = hexToRgba(primaryColor, 0.06);
-    const secondaryBgLight = hexToRgba(secondaryColor, 0.06);
-    const primaryBorderColor = hexToRgba(primaryColor, 0.35);
-    const primaryMealLabelBg = hexToRgba(primaryColor, 0.10);
+    // Pre-compute SOLID colors (blended with white) for PDF fidelity
+    // PDF renderers distort RGBA — solid hex colors render identically everywhere
+    const primaryBgLight = blendWithWhite(primaryColor, 0.06);
+    const secondaryBgLight = blendWithWhite(secondaryColor, 0.06);
+    const primaryBorderColor = blendWithWhite(primaryColor, 0.35);
+    const primaryMealLabelBg = blendWithWhite(primaryColor, 0.10);
 
     // Contrast-safe text colors (darkens light colors like gold/yellow/lime)
     const primaryTextColor = ensureTextContrast(primaryColor);
@@ -340,8 +409,8 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             transform: translate(-50%, -50%) rotate(-45deg);
             font-size: 90px;
             font-weight: 900;
-            opacity: 0.05;
-            z-index: -1;
+            opacity: 0.06;
+            z-index: 1;
             color: ${primaryColor};
             white-space: nowrap;
             pointer-events: none;
@@ -349,16 +418,16 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             text-transform: uppercase;
         }
 
-        /* Watermark - LOGO (large centered, very low opacity) */
+        /* Watermark - LOGO (large centered, visible but non-intrusive) */
         .watermark-logo {
             position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 380px;
-            height: 380px;
-            opacity: 0.04;
-            z-index: -1;
+            width: 400px;
+            height: 400px;
+            opacity: 0.12;
+            z-index: 1;
             pointer-events: none;
             object-fit: contain;
         }
@@ -505,7 +574,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             color: ${primaryTextColor};
             margin-bottom: 4px;
             padding-bottom: 3px;
-            border-bottom: 1px solid ${hexToRgba(primaryColor, 0.18)};
+            border-bottom: 1px solid ${blendWithWhite(primaryColor, 0.18)};
         }
         
         .foods-list { margin-bottom: 4px; }
@@ -519,11 +588,11 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         .option-macros {
             margin-top: 4px;
             padding-top: 3px;
-            border-top: 1px dashed ${hexToRgba(primaryColor, 0.18)};
+            border-top: 1px dashed ${blendWithWhite(primaryColor, 0.18)};
         }
         
         .macro-badge {
-            background: ${hexToRgba(primaryColor, 0.12)};
+            background: ${blendWithWhite(primaryColor, 0.12)};
             color: ${primaryTextColor};
             padding: 2px 4px;
             border-radius: 3px;
@@ -568,6 +637,22 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
             font-weight: 500;
         }
 
+        .coach-note {
+            margin-top: 4px;
+            padding: 3px 5px;
+            background: #fffbeb;
+            border-left: 2px solid #f59e0b;
+            border-radius: 0 4px 4px 0;
+            font-size: 7px;
+            color: #92400e;
+            font-style: italic;
+            line-height: 1.3;
+        }
+
+        .coach-note-icon {
+            font-style: normal;
+        }
+
         .footer {
             margin-top: 10px;
             padding-top: 8px;
@@ -581,12 +666,12 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
 </head>
 <body>
     ${watermarkText ? `<div class="watermark">${watermarkText}</div>` : ''}
-    ${logoUrl ? `<img src="${logoUrl}" class="watermark-logo" alt="" />` : ''}
+    ${logoUrl ? `<img src="${logoUrl}" class="watermark-logo" alt="" onerror="this.remove()" />` : ''}
 
     <div class="header">
         <div class="header-left">
             ${logoUrl
-            ? `<img src="${logoUrl}" class="header-logo" alt="Logo" />`
+            ? `<img src="${logoUrl}" class="header-logo" alt="" onerror="var ph=document.createElement('div');ph.className='header-logo-placeholder';ph.textContent='${(coachName || 'C').charAt(0).toUpperCase()}';this.parentNode.replaceChild(ph,this);" />`
             : `<div class="header-logo-placeholder">${(coachName || 'C').charAt(0).toUpperCase()}</div>`
         }
             <div>
@@ -613,7 +698,7 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
         <div>💪 Plan generado por ${coachName || 'Tu Entrenador'}</div>
         <div style="display: flex; align-items: center; gap: 8px;">
             <span>© ${new Date().getFullYear()}</span>
-            ${logoUrl ? `<img src="${logoUrl}" class="footer-logo" alt="Logo" />` : ''}
+            ${logoUrl ? `<img src="${logoUrl}" class="footer-logo" alt="" onerror="this.remove()" />` : ''}
         </div>
     </div>
 </body>
@@ -628,7 +713,16 @@ const generateHTMLTemplate = ({ plan, coachBranding, clientName, hideMacros }) =
  */
 export async function generateNutritionPDF({ plan, coachBranding, clientName, hideMacros = false }) {
     try {
-        const html = generateHTMLTemplate({ plan, coachBranding, clientName, hideMacros });
+        // Convert remote logo URL to base64 data URI so expo-print can render it
+        let brandingWithBase64Logo = coachBranding;
+        if (coachBranding?.logoUrl && Platform.OS !== 'web') {
+            const base64Logo = await imageUrlToBase64(coachBranding.logoUrl);
+            if (base64Logo) {
+                brandingWithBase64Logo = { ...coachBranding, logoUrl: base64Logo };
+            }
+        }
+
+        const html = generateHTMLTemplate({ plan, coachBranding: brandingWithBase64Logo, clientName, hideMacros });
 
         if (Platform.OS === 'web') {
             // Web: open new window with HTML content, then trigger print

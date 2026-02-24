@@ -2,8 +2,8 @@
   "expo": {
     "name": "TotalGains",
     "slug": "TitoFitApp",
-    "version": "1.1.8",
-    "runtimeVersion": "1.1.8",
+    "version": "1.1.10",
+    "runtimeVersion": "1.1.10",
     "sdkVersion": "53.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -23,7 +23,7 @@
       "isTabletOnly": false,
       "requireFullScreen": false,
       "bundleIdentifier": "com.german92.titofitapp",
-      "buildNumber": "35",
+      "buildNumber": "37",
       "usesAppleSignIn": true,
       "icon": "./assets/images/icon-ios.png",
       "entitlements": {
@@ -52,6 +52,7 @@
       }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
         "backgroundColor": "#040811"
@@ -160,7 +161,7 @@
       [
         "expo-updates",
         {
-          "runtimeVersion": "1.1.8"
+          "runtimeVersion": "1.1.10"
         }
       ],
       "expo-iap",

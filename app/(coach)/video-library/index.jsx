@@ -8,8 +8,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, Modal, RefreshControl,
-    Platform, useWindowDimensions, Image, Linking, Dimensions
+    Platform, Image, Linking, Dimensions
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
@@ -21,7 +22,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-tit
 export default function VideoLibraryScreen() {
     const router = useRouter();
     const { token } = useAuth();
-    const { width: screenWidth } = useWindowDimensions();
+    const { width: screenWidth } = useStableWindowDimensions();
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);

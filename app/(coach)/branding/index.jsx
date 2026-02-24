@@ -17,8 +17,8 @@ import {
     Platform,
     Modal,
     Image,
-    useWindowDimensions
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
@@ -36,7 +36,7 @@ export default function BrandingScreen() {
     const router = useRouter();
     const { token, user } = useAuth();
     const { refresh: refreshBranding } = useCoachBranding();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isLargeScreen = width > 720;
 
     // Estados
@@ -154,6 +154,10 @@ export default function BrandingScreen() {
 
     const handlePickOfficialLogo = async () => {
         setShowOfficialPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar el picker
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
@@ -166,6 +170,10 @@ export default function BrandingScreen() {
                 quality: 1,
             });
             if (!result.canceled) {
+                // iOS: esperar a que el picker se cierre antes de presentar el cropper
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
                 setCroppingOfficialLogo(result.assets[0].uri);
             }
         } catch (error) {
@@ -229,6 +237,10 @@ export default function BrandingScreen() {
 
     const handlePickIaImage = async () => {
         setShowIaPhotoOptions(false);
+        // iOS: esperar a que el modal se cierre antes de presentar el picker
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
@@ -241,6 +253,10 @@ export default function BrandingScreen() {
                 quality: 1,
             });
             if (!result.canceled) {
+                // iOS: esperar a que el picker se cierre antes de presentar el cropper
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
                 setCroppingIaImage(result.assets[0].uri);
             }
         } catch (error) {

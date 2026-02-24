@@ -10,8 +10,8 @@ import {
     Text,
     StyleSheet,
     Platform,
-    useWindowDimensions,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../../../src/hooks/useStableBreakpoint';
 
 // Simple donut chart (web only, desktop)
 const DonutChart = ({ current, target, size = 70 }) => {
@@ -70,7 +70,7 @@ const ProgressBar = ({ label, current, target, color }) => {
 };
 
 export default function MacroSummaryFooter({ macros, targets }) {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const { kcal, protein, carbs, fat } = macros;
     const targetKcal = targets?.kcal || 2000;
     const targetProtein = targets?.protein || 150;

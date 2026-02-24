@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, Image, ActivityIndicator, RefreshControl, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl, Platform, Modal } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
@@ -26,7 +27,7 @@ const getFreqLabel = (freq) => FREQ_LABELS[freq] || freq;
 export default function BillingScreen() {
     const router = useRouter();
     const { token } = useAuth();
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isDesktop = width >= 1024;
 
     // View State

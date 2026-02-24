@@ -1,7 +1,7 @@
 {
   "name": "totalgains",
   "main": "expo-router/entry",
-  "version": "1.1.8",
+  "version": "1.1.10",
   "scripts": {
     "start": "expo start --dev-client",
     "reset-project": "node ./scripts/reset-project.js",
@@ -88,7 +88,7 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-share": "^12.2.1",
-    "react-native-svg": "15.12.1",
+    "react-native-svg": "^15.15.3",
     "react-native-video": "^6.18.0",
     "react-native-view-shot": "4.0.3",
     "react-native-vision-camera": "^4.7.3",

@@ -20,6 +20,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import CoachHeader from '../components/CoachHeader';
 import AssignRoutineModal from './assign-modal';
+import CoachGuideModal from '../../../src/components/coach/CoachGuideModal';
 
 export default function WorkoutsClientsScreen() {
     const router = useRouter();
@@ -32,6 +33,9 @@ export default function WorkoutsClientsScreen() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [assignModalVisible, setAssignModalVisible] = useState(false);
     const [selectedClient, setSelectedClient] = useState(null);
+    const [guideModalVisible, setGuideModalVisible] = useState(false);
+    const [guideModalClient, setGuideModalClient] = useState(null);
+    const [guideSummary, setGuideSummary] = useState({}); // { clientId: { training: true } }
 
     // Search and Sort state
     const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +75,15 @@ export default function WorkoutsClientsScreen() {
 
             if (currentRoutinesData.success) {
                 setCurrentRoutines(currentRoutinesData.routines || []);
+            }
+
+            // Fetch guide summary (qué clientes tienen guía)
+            const guidesRes = await fetch(`${API_URL}/api/coach-guides/summary`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const guidesData = await guidesRes.json();
+            if (guidesData.success) {
+                setGuideSummary(guidesData.summary || {});
             }
 
         } catch (error) {
@@ -407,6 +420,30 @@ export default function WorkoutsClientsScreen() {
                             </TouchableOpacity>
                         </View>
                     )}
+
+                    {/* Botón Guía de Entrenamiento */}
+                    {(() => {
+                        const hasGuide = guideSummary[item._id]?.training;
+                        return (
+                            <TouchableOpacity
+                                style={[styles.guideBtn, hasGuide && styles.guideBtnActive]}
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    setGuideModalClient(item);
+                                    setGuideModalVisible(true);
+                                }}
+                            >
+                                <Ionicons
+                                    name={hasGuide ? 'checkmark-circle' : 'document-text-outline'}
+                                    size={15}
+                                    color={hasGuide ? '#22c55e' : '#8b5cf6'}
+                                />
+                                <Text style={[styles.guideBtnText, hasGuide && { color: '#22c55e' }]}>
+                                    Guía Entreno
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })()}
                 </View>
             </View>
         );
@@ -548,6 +585,26 @@ export default function WorkoutsClientsScreen() {
                 routine={null}
                 preselectedClient={selectedClient}
             />
+
+            {guideModalVisible && guideModalClient && (
+                <CoachGuideModal
+                    visible={guideModalVisible}
+                    client={guideModalClient}
+                    category="training"
+                    onClose={() => {
+                        setGuideModalVisible(false);
+                        setGuideModalClient(null);
+                        // Refresh summary para actualizar el check
+                        fetch(`${API_URL}/api/coach-guides/summary`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                            .then(r => r.json())
+                            .then(d => { if (d.success) setGuideSummary(d.summary || {}); })
+                            .catch(() => {});
+                    }}
+                    token={token}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -764,6 +821,25 @@ const styles = StyleSheet.create({
     actionBtnText: {
         fontSize: 12,
         fontWeight: '600',
+    },
+
+    guideBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 5,
+        marginTop: 10,
+        paddingVertical: 7,
+        backgroundColor: '#f5f3ff',
+        borderRadius: 8,
+    },
+    guideBtnActive: {
+        backgroundColor: '#f0fdf4',
+    },
+    guideBtnText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#8b5cf6',
     },
 
     // No Routine

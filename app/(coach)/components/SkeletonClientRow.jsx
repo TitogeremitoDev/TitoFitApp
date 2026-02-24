@@ -1,24 +1,26 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet, Animated, Platform } from 'react-native';
 
 const SkeletonClientRow = () => {
     const opacity = useRef(new Animated.Value(0.3)).current;
 
     useEffect(() => {
-        Animated.loop(
+        const animation = Animated.loop(
             Animated.sequence([
                 Animated.timing(opacity, {
                     toValue: 0.7,
                     duration: 800,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.timing(opacity, {
                     toValue: 0.3,
                     duration: 800,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
             ])
-        ).start();
+        );
+        animation.start();
+        return () => animation.stop();
     }, []);
 
     return (

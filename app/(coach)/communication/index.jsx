@@ -11,7 +11,8 @@ import {
     SafeAreaView,
     TouchableOpacity,
     FlatList,
-    ActivityIndicator
+    ActivityIndicator,
+    Image
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter } from 'expo-router';
@@ -94,6 +95,7 @@ const ChatTab = ({ token }) => {
                     params: {
                         conversationId: data.conversation._id,
                         displayName: client.nombre,
+                        displayImage: client.avatarUrl || '',
                         isTrainerChat: 'true',
                         type: 'trainer',
                     },
@@ -248,14 +250,23 @@ const ChatTab = ({ token }) => {
                             <View style={styles.clientCardLeft}>
                                 <View style={[
                                     styles.clientAvatar,
-                                    hasUnread && styles.clientAvatarUnread
+                                    hasUnread && styles.clientAvatarUnread,
+                                    { overflow: 'hidden' }
                                 ]}>
-                                    <Text style={[
-                                        styles.clientAvatarText,
-                                        hasUnread && { color: '#fff' }
-                                    ]}>
-                                        {item.nombre?.charAt(0)?.toUpperCase() || '?'}
-                                    </Text>
+                                    {item.avatarUrl ? (
+                                        <Image
+                                            source={{ uri: item.avatarUrl }}
+                                            style={{ width: '100%', height: '100%', borderRadius: 24 }}
+                                            resizeMode="cover"
+                                        />
+                                    ) : (
+                                        <Text style={[
+                                            styles.clientAvatarText,
+                                            hasUnread && { color: '#fff' }
+                                        ]}>
+                                            {item.nombre?.charAt(0)?.toUpperCase() || '?'}
+                                        </Text>
+                                    )}
                                     <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
                                 </View>
                                 <View style={styles.clientCardInfo}>

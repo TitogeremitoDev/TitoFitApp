@@ -33,6 +33,7 @@ import {
   Animated,
   Image,
   AppState,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -55,12 +56,16 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useAchievements } from '../../context/AchievementsContext';
 import { useTrainer } from '../../context/TrainerContext';
+import { useCoachBranding } from '../../context/CoachBrandingContext';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
+import * as ImagePicker from 'expo-image-picker';
 import UnifiedFeedbackModal from '../../src/components/UnifiedFeedbackModal';
+import StoryShareModal from '../../src/components/shared/StoryShareModal';
 import { useVideoFeedback } from '../../src/hooks/useVideoFeedback';
 import { getContrastColor } from '../../utils/colors';
 import ActionToast from '../../src/components/shared/ActionToast';
+import GuideViewerModal from '../../src/components/shared/GuideViewerModal';
 import { predefinedRoutines } from '../../src/data/predefinedRoutines';
 
 
@@ -1150,8 +1155,9 @@ const rpeStyles = StyleSheet.create({
 });
 
 /* ───────── 🔥 Modal de Estadísticas ÉPICO 🔥 ───────── */
-function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
+function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit, token: tokenProp, onSessionPhotoReady }) {
   const { theme } = useTheme();
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
   // We use layoutReady to know when the specific view dimensions are set
   const [layoutReady, setLayoutReady] = useState(false);
   const [modalHeight, setModalHeight] = useState(0);
@@ -1161,6 +1167,10 @@ function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
   const [note, setNote] = useState('');
   const [noteExpanded, setNoteExpanded] = useState(false);
 
+  // 📸 Session Photo State
+  const [sessionPhotoUri, setSessionPhotoUri] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
   // Reset state when visibility changes
   useEffect(() => {
     if (!visible) {
@@ -1169,8 +1179,109 @@ function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
       setRpe(null);
       setNote('');
       setNoteExpanded(false);
+      setSessionPhotoUri(null);
+      setUploadingPhoto(false);
     }
   }, [visible]);
+
+  // 📸 Photo capture handlers
+  const handleTakeSessionPhoto = useCallback(async () => {
+    if (Platform.OS === 'ios') {
+      // iOS: Modal debe cerrarse completamente antes de presentar la cámara
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permisos', 'Se necesitan permisos para usar la cámara.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (!result.canceled && result.assets?.length) {
+      const uri = result.assets[0].uri;
+      setSessionPhotoUri(uri);
+      // Guardar en galería local del dispositivo
+      if (Platform.OS !== 'web') {
+        try {
+          const MediaLibrary = require('expo-media-library');
+          await MediaLibrary.saveToLibraryAsync(uri);
+        } catch (e) {
+          console.warn('[StatsModal] No se pudo guardar en galería:', e.message);
+        }
+      }
+    }
+  }, []);
+
+  const handlePickSessionPhoto = useCallback(async () => {
+    if (Platform.OS === 'ios') {
+      // iOS: Modal debe cerrarse completamente antes de presentar el picker
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    if (Platform.OS === 'android') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Se necesitan permisos para acceder a la galería.');
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.length) {
+      setSessionPhotoUri(result.assets[0].uri);
+    }
+  }, []);
+
+  const uploadSessionPhoto = useCallback(async (photoUri) => {
+    if (!tokenProp) return null;
+    try {
+      setUploadingPhoto(true);
+      // Step 1: Prepare
+      const prepRes = await fetch(`${API_URL}/api/progress-photos/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenProp}` },
+        body: JSON.stringify({
+          category: 'training',
+          trainingInfo: { workoutId, sessionRPE: rpe, note: note.trim() },
+          visibility: 'coach_only',
+          tags: [],
+          takenAt: new Date().toISOString(),
+        }),
+      });
+      const prepData = await prepRes.json();
+      if (!prepData.success) throw new Error(prepData.message);
+
+      // Step 2: Upload to R2
+      console.log('[StatsModal] Step 2: fetching blob from', photoUri.substring(0, 60));
+      const blobRes = await fetch(photoUri);
+      if (!blobRes.ok) throw new Error(`Blob fetch failed: ${blobRes.status}`);
+      const blob = await blobRes.blob();
+      console.log('[StatsModal] Step 2: blob size', blob.size, 'uploading to R2...');
+      const r2Res = await fetch(prepData.uploadUrl, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+      console.log('[StatsModal] Step 2: R2 response', r2Res.status);
+
+      // Step 3: Confirm
+      await fetch(`${API_URL}/api/progress-photos/${prepData.photoId}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenProp}` },
+      });
+      console.log('[StatsModal] Step 3: Confirmed OK');
+
+      return prepData.photoId;
+    } catch (err) {
+      console.error('[StatsModal] Photo upload error:', err);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', 'No se pudo subir la foto. Inténtalo de nuevo.');
+      }
+      return null;
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }, [tokenProp, workoutId, rpe, note, API_URL]);
 
   if (!stats) return null;
 
@@ -1279,6 +1390,51 @@ function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
                 />
               </View>
 
+              {/* 📸 Foto de recuerdo del entreno */}
+              <View style={[styles.sessionPhotoSection, { borderColor: theme.border }]}>
+                <Text style={[styles.sessionPhotoTitle, { color: theme.text }]}>
+                  📸 Foto del entreno
+                </Text>
+                {sessionPhotoUri ? (
+                  <View style={styles.sessionPhotoPreview}>
+                    <Image
+                      source={{ uri: sessionPhotoUri }}
+                      style={styles.sessionPhotoThumb}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity
+                      style={styles.sessionPhotoRemove}
+                      onPress={() => setSessionPhotoUri(null)}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.sessionPhotoButtons}>
+                    <TouchableOpacity
+                      style={[styles.sessionPhotoBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' }]}
+                      onPress={handleTakeSessionPhoto}
+                    >
+                      <Ionicons name="camera" size={20} color={theme.text} />
+                      <Text style={[styles.sessionPhotoBtnText, { color: theme.text }]}>Cámara</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sessionPhotoBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' }]}
+                      onPress={handlePickSessionPhoto}
+                    >
+                      <Ionicons name="images" size={20} color={theme.text} />
+                      <Text style={[styles.sessionPhotoBtnText, { color: theme.text }]}>Galería</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {uploadingPhoto && (
+                  <View style={styles.sessionPhotoUploading}>
+                    <ActivityIndicator size="small" color={theme.primary} />
+                    <Text style={[styles.sessionPhotoUploadText, { color: theme.textSecondary }]}>Subiendo...</Text>
+                  </View>
+                )}
+              </View>
+
               {/* 📊 Estadísticas comparativas - LAYOUT COMPACTO */}
               <View style={styles.statsSection}>
                 <Text style={[styles.sectionTitleCompact, { color: theme.text }]}>
@@ -1375,21 +1531,35 @@ function StatsModal({ visible, onClose, stats, workoutId, onRPESubmit }) {
               {/* Botón de cerrar */}
               <TouchableOpacity
                 style={[styles.closeButton, { backgroundColor: theme.primary }]}
-                onPress={() => {
-                  // 🆕 Si hay RPE o nota, enviar feedback antes de cerrar
-                  if ((rpe || note.trim()) && onRPESubmit && workoutId) {
-                    onRPESubmit(workoutId, rpe, note.trim());
+                onPress={async () => {
+                  let photoId = null;
+                  // 📸 Upload photo if captured
+                  if (sessionPhotoUri) {
+                    photoId = await uploadSessionPhoto(sessionPhotoUri);
                   }
+                  // 🆕 Si hay RPE, nota o foto, enviar feedback antes de cerrar
+                  if ((rpe || note.trim() || photoId) && onRPESubmit && workoutId) {
+                    onRPESubmit(workoutId, rpe, note.trim(), photoId);
+                  }
+                  // Notificar foto al padre ANTES de cerrar (para que no navegue a home)
+                  if (sessionPhotoUri && onSessionPhotoReady) {
+                    onSessionPhotoReady(sessionPhotoUri);
+                  }
+                  // Cerrar StatsModal (el padre decidirá si navegar o no)
                   onClose();
                 }}
                 activeOpacity={0.85}
+                disabled={uploadingPhoto}
               >
-                <Text style={styles.closeButtonText}>¡Genial! 🎉</Text>
+                <Text style={[styles.closeButtonText, { color: getContrastColor(theme.primary) }]}>
+                  {uploadingPhoto ? 'Subiendo...' : '¡Genial! 🎉'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           )}
         </View>
       </View>
+
     </Modal>
   );
 }
@@ -2539,6 +2709,9 @@ export default function Entreno() {
 
   // 🔥 NUEVO: Modal de estadísticas
   const [statsModal, setStatsModal] = useState({ visible: false, stats: null, workoutId: null });
+  // 📸 Story share después de StatsModal (fuera del modal para evitar crash Android nested modals)
+  const [sessionStoryPhoto, setSessionStoryPhoto] = useState(null);
+  const hasSessionPhotoRef = useRef(false);
 
   // Modal de Upgrade para FREEUSER
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -2576,6 +2749,15 @@ export default function Entreno() {
   const [exercises, setExercises] = useState([]);
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
   const { token } = useAuth();
+  const { trainer: entrenoTrainer } = useTrainer();
+  const { activeTheme: entrenoCoachTheme } = useCoachBranding();
+  const statsCoachName = entrenoTrainer?.profile?.brandName || entrenoTrainer?.nombre || 'mi entrenador';
+  const statsCoachLogoUrl = entrenoTrainer?.profile?.logoUrl || entrenoTrainer?.logoUrl || null;
+  const statsCoachColor = entrenoCoachTheme?.colors?.primary || '#60a5fa';
+
+  // 📋 Guía del Entrenador
+  const [trainingGuide, setTrainingGuide] = useState(null);
+  const [guideViewVisible, setGuideViewVisible] = useState(false);
 
   // 📹 Hook para subida de media feedback a R2
   const { uploadVideoFeedback, uploadPhotoFeedback, uploadAudioFeedback, uploading: mediaUploading } = useVideoFeedback(API_URL, token);
@@ -3087,6 +3269,24 @@ export default function Entreno() {
     };
     checkFirstTime();
   }, [hydrated, rutina]);
+
+  // 📋 Cargar guía del entrenador (si tiene coach)
+  useEffect(() => {
+    if (!user?.currentTrainerId || !token) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/coach-guides/my/training`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success && data.guide && (data.guide.textContent || data.guide.fileKey)) {
+          setTrainingGuide(data.guide);
+        }
+      } catch (e) {
+        // silently fail — feature is optional
+      }
+    })();
+  }, [user?._id, user?.currentTrainerId]);
 
   // ⚡ Guardar progreso pendiente cuando la app va a background
   useEffect(() => {
@@ -3639,11 +3839,19 @@ export default function Entreno() {
       // Actualizar el estado con los nuevos datos
       setProg(nextProg);
 
+      // 🔄 Auto-avance al día siguiente de la rutina
+      let nextDiaIdx = diaIdx + 1;
+      let nextSemana = semana;
+      if (nextDiaIdx >= diasEj.length) {
+        nextDiaIdx = 0;
+        nextSemana = semana + 1;
+      }
+
       // Guardar en AsyncStorage
       if (activeId) {
         const sessionData = JSON.stringify({
-          lastSemana: semana,
-          lastDiaIdx: diaIdx,
+          lastSemana: nextSemana,
+          lastDiaIdx: nextDiaIdx,
           updatedAt: Date.now(),
         });
 
@@ -4055,14 +4263,27 @@ export default function Entreno() {
           </View>
 
           <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>
-            <TouchableOpacity
-              style={[styles.exportBtn, { backgroundColor: theme.primary }]}
-              onPress={exportWeekToExcel}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="download-outline" size={16} color={getContrastColor(theme.primary)} />
-              <Text style={[styles.exportTxt, { color: getContrastColor(theme.primary) }]}>Excel S</Text>
-            </TouchableOpacity>
+            {user?.currentTrainerId ? (
+              trainingGuide ? (
+                <TouchableOpacity
+                  style={[styles.exportBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => setGuideViewVisible(true)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="document-text-outline" size={16} color={getContrastColor(theme.primary)} />
+                  <Text style={[styles.exportTxt, { color: getContrastColor(theme.primary) }]}>Guía</Text>
+                </TouchableOpacity>
+              ) : null
+            ) : (
+              <TouchableOpacity
+                style={[styles.exportBtn, { backgroundColor: theme.primary }]}
+                onPress={exportWeekToExcel}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="download-outline" size={16} color={getContrastColor(theme.primary)} />
+                <Text style={[styles.exportTxt, { color: getContrastColor(theme.primary) }]}>Excel S</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -4490,22 +4711,31 @@ export default function Entreno() {
         visible={statsModal.visible}
         onClose={() => {
           setStatsModal({ visible: false, stats: null, workoutId: null });
-          // 🏠 Navegar al Home al finalizar el entrenamiento
-          navigation.navigate('home');
+          // Si hay foto pendiente de compartir, NO navegar a home aún
+          if (!hasSessionPhotoRef.current) {
+            navigation.navigate('home');
+          }
         }}
         stats={statsModal.stats}
         workoutId={statsModal.workoutId}
-        onRPESubmit={async (workoutId, sessionRPE, sessionNote) => {
-          // 🆕 PATCH para actualizar solo RPE/nota sin tocar el workout
+        token={token}
+        onSessionPhotoReady={(uri) => {
+          hasSessionPhotoRef.current = true;
+          setSessionStoryPhoto(uri);
+        }}
+        onRPESubmit={async (workoutId, sessionRPE, sessionNote, sessionPhotoId) => {
+          // 🆕 PATCH para actualizar solo RPE/nota/foto sin tocar el workout
           if (!workoutId || !API_URL || !token) return;
           try {
+            const payload = { sessionRPE, sessionNote };
+            if (sessionPhotoId) payload.sessionPhotoId = sessionPhotoId;
             const res = await fetch(`${API_URL}/api/workouts/${workoutId}/feedback`, {
               method: 'PATCH',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
               },
-              body: JSON.stringify({ sessionRPE, sessionNote })
+              body: JSON.stringify(payload)
             });
             if (res.ok) {
               console.log('✅ Feedback RPE guardado');
@@ -4516,6 +4746,23 @@ export default function Entreno() {
             console.error('❌ Error en PATCH feedback:', e);
           }
         }}
+      />
+
+      {/* 📸 Story Share para foto de fin de entreno (FUERA de StatsModal para evitar crash Android) */}
+      <StoryShareModal
+        visible={!!sessionStoryPhoto}
+        onClose={() => {
+          hasSessionPhotoRef.current = false;
+          setSessionStoryPhoto(null);
+          navigation.navigate('home');
+        }}
+        photoUri={sessionStoryPhoto}
+        badgeText={`🏋️ Entrenamiento completado · ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+        mainText="Entrenando con"
+        coachName={statsCoachName}
+        coachLogoUrl={statsCoachLogoUrl}
+        coachColor={statsCoachColor}
+        theme={theme}
       />
 
       {/* 📝 Modal Unificado de Feedback */}
@@ -4935,6 +5182,17 @@ export default function Entreno() {
         duration={5000}
         position="top"
       />
+
+      {guideViewVisible && trainingGuide && (
+        <GuideViewerModal
+          visible={guideViewVisible}
+          guide={trainingGuide}
+          category="training"
+          title="Guía de Entrenamiento"
+          token={token}
+          onClose={() => setGuideViewVisible(false)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -5375,6 +5633,62 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+
+  // 📸 Foto de sesión en StatsModal
+  sessionPhotoSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  sessionPhotoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  sessionPhotoButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  sessionPhotoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  sessionPhotoBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sessionPhotoPreview: {
+    position: 'relative',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  sessionPhotoThumb: {
+    width: '100%',
+    height: 120,
+    borderRadius: 12,
+  },
+  sessionPhotoRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  sessionPhotoUploading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  sessionPhotoUploadText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   // Modales originales

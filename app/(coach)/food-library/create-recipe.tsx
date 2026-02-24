@@ -17,7 +17,7 @@ import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, router } from 'expo-router';
 import CoachHeader from '../components/CoachHeader';
-import { searchFoods, saveFood, FoodItem } from '../../../src/services/foodService';
+import { searchFoods, saveFood, clearSearchCache, FoodItem } from '../../../src/services/foodService';
 import SmartFoodDrawer from '../nutrition/components/SmartFoodDrawer';
 import debounce from 'lodash/debounce';
 import * as ImagePicker from 'expo-image-picker';
@@ -563,6 +563,9 @@ export default function CreateRecipeScreen() {
 
             const savedFood = await saveFood(payload);
             console.log('[Save] Recipe saved successfully:', savedFood?._id || savedFood?.name);
+
+            // Clear search cache so food library refetches fresh data
+            clearSearchCache();
 
             // Success! Show confirmation
             if (Platform.OS === 'web') {

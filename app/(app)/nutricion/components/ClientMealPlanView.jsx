@@ -1,12 +1,10 @@
 /* app/(app)/nutricion/components/ClientMealPlanView.jsx */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Animated, TouchableOpacity, ActivityIndicator, Platform, Alert, Modal, Image, Dimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import ViewShot from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
+import StoryShareModal from '../../../../src/components/shared/StoryShareModal';
 import { useMealTracking } from '../../../../src/context/MealTrackingContext';
 import { useTheme } from '../../../../context/ThemeContext';
 import { useAuth } from '../../../../context/AuthContext';
@@ -25,7 +23,7 @@ import { getContrastColor } from '../../../../utils/colors';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
-const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user, clientSettings, coachInfo }) => {
+const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user, clientSettings, coachInfo, nutritionGuide, onOpenGuide }) => {
     const { isMealCompleted, getDailyProgress, toggleMealCompletion } = useMealTracking();
     const { branding: coachBrandingCtx, activeTheme: activeCoachTheme } = useCoachBranding();
     const [activeTab, setActiveTab] = useState('TODAY'); // TODAY, WEEK, SHOPPING
@@ -48,7 +46,9 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
     const [storyModalVisible, setStoryModalVisible] = useState(false);
     const [storyPhotoUri, setStoryPhotoUri] = useState(null);
     const [storyMealName, setStoryMealName] = useState('');
-    const storyViewRef = useRef(null);
+
+    // 📊 Upload progress
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     const { token } = useAuth();
 
@@ -119,55 +119,10 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
         setStoryModalVisible(true);
     }, []);
 
-    const handleShareToStories = useCallback(async () => {
-        try {
-            if (!storyViewRef.current) return;
-            const uri = await storyViewRef.current.capture();
-
-            const available = await Sharing.isAvailableAsync();
-            if (!available) {
-                Alert.alert('Error', 'Compartir no está disponible en este dispositivo.');
-                return;
-            }
-            await Sharing.shareAsync(uri, {
-                mimeType: 'image/png',
-                dialogTitle: 'Compartir en Stories',
-            });
-            setStoryModalVisible(false);
-        } catch (error) {
-            console.error('[Story] Share error:', error);
-            Alert.alert('Error', 'No se pudo compartir la imagen.');
-        }
-    }, []);
-
-    const handleOpenMealCamera = useCallback(async () => {
-        setMealPhotoModalVisible(false);
-        // Wait for modal to fully dismiss before presenting camera (iOS requirement)
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permisos', 'Se necesitan permisos para usar la cámara.');
-            return;
-        }
-        const result = await ImagePicker.launchCameraAsync({
-            quality: 0.8,
-            allowsEditing: false,
-        });
-        if (result.canceled || !result.assets?.length) return;
-        const photoUri = result.assets[0].uri;
-        setUploadingMealPhoto(true);
-        const ok = await uploadMealPhotoToBackend(photoUri, selectedMealForPhoto);
-        setUploadingMealPhoto(false);
-        if (ok) {
-            showStoryPrompt(photoUri, selectedMealForPhoto?.mealName);
-        } else {
-            Alert.alert('Error', 'No se pudo subir la foto.');
-        }
-    }, [selectedMealForPhoto, uploadMealPhotoToBackend, showStoryPrompt]);
-
     const uploadMealPhotoToBackend = useCallback(async (photoUri, mealInfo) => {
         if (!token) return false;
         try {
+            setUploadProgress(20);
             // Step 1: Prepare upload
             const prepRes = await fetch(`${API_URL}/api/progress-photos/upload`, {
                 method: 'POST',
@@ -185,6 +140,7 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
             });
             const prepData = await prepRes.json();
             if (!prepData.success) throw new Error(prepData.message);
+            setUploadProgress(40);
 
             // Step 2: Upload to R2
             const blob = await fetch(photoUri).then(r => r.blob());
@@ -193,6 +149,7 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                 body: blob,
                 headers: { 'Content-Type': 'image/jpeg' },
             });
+            setUploadProgress(80);
 
             // Step 3: Confirm
             await fetch(`${API_URL}/api/progress-photos/${prepData.photoId}/confirm`, {
@@ -202,17 +159,60 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                     Authorization: `Bearer ${token}`,
                 },
             });
+            setUploadProgress(100);
 
             return true;
         } catch (error) {
             console.error('[MealPhoto] Upload error:', error);
             return false;
+        } finally {
+            setUploadProgress(0);
         }
     }, [token]);
 
+    const handleOpenMealCamera = useCallback(async () => {
+        setMealPhotoModalVisible(false);
+        // iOS: Modal must fully dismiss before presenting camera/picker overlay.
+        // This 500ms delay prevents "Attempt to present on ... which is already presenting" crash on iOS.
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permisos', 'Se necesitan permisos para usar la cámara.');
+            return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+            quality: 0.8,
+            allowsEditing: false,
+        });
+        if (result.canceled || !result.assets?.length) return;
+        const photoUri = result.assets[0].uri;
+        // Guardar en galería local del dispositivo
+        if (Platform.OS !== 'web') {
+            try {
+                const MediaLibrary = require('expo-media-library');
+                await MediaLibrary.saveToLibraryAsync(photoUri);
+            } catch (e) {
+                console.warn('[MealPhoto] No se pudo guardar en galería:', e.message);
+            }
+        }
+        setUploadingMealPhoto(true);
+        const ok = await uploadMealPhotoToBackend(photoUri, selectedMealForPhoto);
+        setUploadingMealPhoto(false);
+        if (ok) {
+            // iOS: esperar a que el picker se cierre antes de presentar otro modal
+            if (Platform.OS === 'ios') {
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
+            showStoryPrompt(photoUri, selectedMealForPhoto?.mealName);
+        } else {
+            Alert.alert('Error', 'No se pudo subir la foto.');
+        }
+    }, [selectedMealForPhoto, uploadMealPhotoToBackend, showStoryPrompt]);
+
     const handlePickMealPhotos = useCallback(async () => {
         setMealPhotoModalVisible(false);
-        // Wait for modal to fully dismiss before presenting picker (iOS requirement)
+        // iOS: Modal must fully dismiss before presenting camera/picker overlay.
+        // This 500ms delay prevents "Attempt to present on ... which is already presenting" crash on iOS.
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Permission check for Android
@@ -244,6 +244,10 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
         setUploadingMealPhoto(false);
 
         if (successCount > 0) {
+            // iOS: esperar a que el picker se cierre antes de presentar otro modal
+            if (Platform.OS === 'ios') {
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
             // Show story prompt with the first photo
             showStoryPrompt(result.assets[0].uri, selectedMealForPhoto?.mealName);
         } else {
@@ -532,7 +536,33 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                             paddingHorizontal: 16,
                             paddingVertical: 8,
                             backgroundColor: theme.background,
+                            gap: 8,
                         }}>
+                            {nutritionGuide && (
+                                <TouchableOpacity
+                                    onPress={onOpenGuide}
+                                    style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        paddingHorizontal: 14,
+                                        paddingVertical: 8,
+                                        backgroundColor: theme.primary + '15',
+                                        borderRadius: 8,
+                                        borderWidth: 1,
+                                        borderColor: theme.primary + '30',
+                                    }}
+                                >
+                                    <Ionicons name="document-text-outline" size={18} color={theme.primary} />
+                                    <Text style={{
+                                        color: theme.primary,
+                                        fontSize: 13,
+                                        fontWeight: '600'
+                                    }}>
+                                        Guía
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                             <TouchableOpacity
                                 onPress={handleExportPDF}
                                 disabled={isExporting}
@@ -624,8 +654,8 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                                 style={[photoStyles.modalBtn, { backgroundColor: theme.primary }]}
                                 onPress={handleOpenMealCamera}
                             >
-                                <Ionicons name="camera-outline" size={20} color="#FFF" />
-                                <Text style={photoStyles.modalBtnText}>Hacer foto</Text>
+                                <Ionicons name="camera-outline" size={20} color={getContrastColor(theme.primary)} />
+                                <Text style={[photoStyles.modalBtnText, { color: getContrastColor(theme.primary) }]}>Hacer foto</Text>
                             </TouchableOpacity>
                         )}
 
@@ -647,127 +677,41 @@ const ClientMealPlanView = ({ plan, todayTarget: initialTodayTarget, theme, user
                 </View>
             </Modal>
 
-            {/* Upload indicator */}
+            {/* Upload indicator with progress bar */}
             {uploadingMealPhoto && (
                 <View style={photoStyles.uploadOverlay}>
-                    <View style={photoStyles.uploadCard}>
-                        <ActivityIndicator size="large" color="#0ea5e9" />
-                        <Text style={photoStyles.uploadText}>Subiendo fotos...</Text>
+                    <View style={[photoStyles.uploadCard, { backgroundColor: theme.cardBackground }]}>
+                        <ActivityIndicator size="large" color={activeCoachTheme?.colors?.primary || '#0ea5e9'} />
+                        <Text style={[photoStyles.uploadText, { color: theme.text }]}>Subiendo fotos...</Text>
+                        {uploadProgress > 0 && (
+                            <View style={photoStyles.progressBarContainer}>
+                                <View style={[photoStyles.progressBar, {
+                                    width: `${uploadProgress}%`,
+                                    backgroundColor: activeCoachTheme?.colors?.primary || '#0ea5e9',
+                                }]} />
+                            </View>
+                        )}
                     </View>
                 </View>
             )}
 
             {/* 📱 STORY SHARE MODAL */}
-            <Modal
+            <StoryShareModal
                 visible={storyModalVisible}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setStoryModalVisible(false)}
-            >
-                <View style={storyStyles.overlay}>
-                    <View style={[storyStyles.container, { backgroundColor: theme.cardBackground }]}>
-                        <TouchableOpacity
-                            style={storyStyles.closeBtn}
-                            onPress={() => setStoryModalVisible(false)}
-                        >
-                            <Ionicons name="close-circle" size={32} color={theme.textSecondary} />
-                        </TouchableOpacity>
-
-                        <Text style={[storyStyles.title, { color: theme.text }]}>
-                            Foto subida correctamente
-                        </Text>
-                        <Text style={[storyStyles.subtitle, { color: theme.textSecondary }]}>
-                            Comparte tu comida en Instagram Stories
-                        </Text>
-
-                        {/* Story Preview (captured by ViewShot) */}
-                        <View style={storyStyles.previewWrapper}>
-                            <ViewShot
-                                ref={storyViewRef}
-                                options={{ format: 'png', quality: 1, width: 1080, height: 1920 }}
-                                style={storyStyles.storyCanvas}
-                            >
-                                {/* Background photo */}
-                                {storyPhotoUri && (
-                                    <Image
-                                        source={{ uri: storyPhotoUri }}
-                                        style={storyStyles.storyPhoto}
-                                        resizeMode="cover"
-                                    />
-                                )}
-
-                                {/* Dark gradient overlay at bottom */}
-                                <LinearGradient
-                                    colors={['transparent', 'rgba(0,0,0,0.85)']}
-                                    style={storyStyles.storyGradient}
-                                />
-
-                                {/* Top badge */}
-                                <View style={storyStyles.storyTopBadge}>
-                                    <Text style={storyStyles.storyTopBadgeText}>
-                                        🍽️ {storyMealName || 'Mi comida'}
-                                    </Text>
-                                </View>
-
-                                {/* Bottom content: message + logo */}
-                                <View style={storyStyles.storyBottomContent}>
-                                    <View style={storyStyles.storyTextBlock}>
-                                        <Text style={storyStyles.storyMainText}>
-                                            Siguiendo mi plan con{'\n'}
-                                            <Text style={[storyStyles.storyCoachName, { color: coachInfo?.brandColor || '#60a5fa' }]}>
-                                                {coachInfo?.nombre || 'mi entrenador'}
-                                            </Text>
-                                        </Text>
-                                        <Text style={storyStyles.storyAppText}>
-                                            Powered by TotalGains 💪
-                                        </Text>
-                                    </View>
-
-                                    {/* Coach logo */}
-                                    {coachInfo?.logoUrl ? (
-                                        <Image
-                                            source={{ uri: coachInfo.logoUrl }}
-                                            style={[storyStyles.storyLogo, { borderColor: coachInfo?.brandColor || '#60a5fa' }]}
-                                            resizeMode="contain"
-                                        />
-                                    ) : (
-                                        <View style={[storyStyles.storyLogoFallback, { backgroundColor: coachInfo?.brandColor || '#60a5fa' }]}>
-                                            <Text style={storyStyles.storyLogoFallbackText}>
-                                                {(coachInfo?.nombre || 'E').charAt(0).toUpperCase()}
-                                            </Text>
-                                        </View>
-                                    )}
-                                </View>
-                            </ViewShot>
-                        </View>
-
-                        {/* Action buttons */}
-                        <TouchableOpacity
-                            style={storyStyles.shareBtn}
-                            onPress={handleShareToStories}
-                        >
-                            <LinearGradient
-                                colors={['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={storyStyles.shareBtnGradient}
-                            >
-                                <Ionicons name="logo-instagram" size={22} color="#FFF" />
-                                <Text style={storyStyles.shareBtnText}>Compartir en Stories</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[storyStyles.skipBtn, { backgroundColor: theme.inputBackground, borderColor: theme.inputBorder }]}
-                            onPress={() => setStoryModalVisible(false)}
-                        >
-                            <Text style={[storyStyles.skipBtnText, { color: theme.textSecondary }]}>
-                                Ahora no
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+                onClose={() => {
+                    setStoryModalVisible(false);
+                    setStoryPhotoUri(null);
+                    setStoryMealName('');
+                }}
+                photoUri={storyPhotoUri}
+                mediaType="photo"
+                badgeText={`🍽️ ${storyMealName || 'Mi comida'}`}
+                mainText="Siguiendo mi plan con"
+                coachName={coachInfo?.nombre || activeCoachTheme?.coachName || 'mi entrenador'}
+                coachLogoUrl={coachInfo?.logoUrl || null}
+                coachColor={coachInfo?.brandColor || activeCoachTheme?.colors?.primary || '#60a5fa'}
+                theme={theme}
+            />
         </View>
     );
 };
@@ -835,7 +779,6 @@ const photoStyles = StyleSheet.create({
         zIndex: 999,
     },
     uploadCard: {
-        backgroundColor: '#fff',
         borderRadius: 16,
         padding: 32,
         alignItems: 'center',
@@ -844,169 +787,18 @@ const photoStyles = StyleSheet.create({
     uploadText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#334155',
     },
-});
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const PREVIEW_WIDTH = SCREEN_WIDTH - 80;
-const PREVIEW_HEIGHT = PREVIEW_WIDTH * (16 / 9);
-
-const storyStyles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 16,
-    },
-    container: {
+    progressBarContainer: {
         width: '100%',
-        maxWidth: 380,
-        borderRadius: 24,
-        padding: 20,
-        alignItems: 'center',
-    },
-    closeBtn: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        zIndex: 10,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '800',
-        marginTop: 8,
-        marginBottom: 4,
-    },
-    subtitle: {
-        fontSize: 13,
-        marginBottom: 16,
-    },
-    previewWrapper: {
-        width: PREVIEW_WIDTH,
-        height: PREVIEW_HEIGHT,
-        borderRadius: 16,
+        height: 6,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        borderRadius: 3,
         overflow: 'hidden',
-        marginBottom: 20,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        marginTop: 4,
     },
-    storyCanvas: {
-        width: PREVIEW_WIDTH,
-        height: PREVIEW_HEIGHT,
-        backgroundColor: '#000',
-    },
-    storyPhoto: {
-        ...StyleSheet.absoluteFillObject,
-        width: '100%',
+    progressBar: {
         height: '100%',
-    },
-    storyGradient: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '45%',
-    },
-    storyTopBadge: {
-        position: 'absolute',
-        top: 16,
-        left: 16,
-        backgroundColor: 'rgba(0,0,0,0.55)',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    storyTopBadgeText: {
-        color: '#FFF',
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    storyBottomContent: {
-        position: 'absolute',
-        bottom: 20,
-        left: 16,
-        right: 16,
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        justifyContent: 'space-between',
-    },
-    storyTextBlock: {
-        flex: 1,
-        marginRight: 12,
-    },
-    storyMainText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '600',
-        lineHeight: 22,
-        textShadowColor: 'rgba(0,0,0,0.7)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 4,
-    },
-    storyCoachName: {
-        fontSize: 20,
-        fontWeight: '900',
-    },
-    storyAppText: {
-        color: 'rgba(255,255,255,0.75)',
-        fontSize: 12,
-        fontWeight: '600',
-        marginTop: 6,
-        textShadowColor: 'rgba(0,0,0,0.7)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 3,
-    },
-    storyLogo: {
-        width: 56,
-        height: 56,
-        borderRadius: 14,
-        borderWidth: 2,
-    },
-    storyLogoFallback: {
-        width: 56,
-        height: 56,
-        borderRadius: 14,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    storyLogoFallbackText: {
-        color: '#FFF',
-        fontSize: 24,
-        fontWeight: '900',
-    },
-    shareBtn: {
-        width: '100%',
-        borderRadius: 14,
-        overflow: 'hidden',
-        marginBottom: 10,
-    },
-    shareBtnGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-        paddingVertical: 16,
-    },
-    shareBtnText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '800',
-    },
-    skipBtn: {
-        width: '100%',
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: 'center',
-        borderWidth: 1,
-    },
-    skipBtnText: {
-        fontSize: 14,
-        fontWeight: '600',
+        borderRadius: 3,
     },
 });
 

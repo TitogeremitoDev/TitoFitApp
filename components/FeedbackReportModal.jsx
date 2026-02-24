@@ -15,7 +15,6 @@ import {
     Alert,
     Dimensions,
     Linking,
-    useWindowDimensions,
     RefreshControl,
     Pressable
 } from 'react-native';

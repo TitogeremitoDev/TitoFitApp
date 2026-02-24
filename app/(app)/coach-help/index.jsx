@@ -8,8 +8,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Platform,
-    useWindowDimensions, Linking
+    Linking
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { useRouter } from 'expo-router';
 import { EnhancedTextInput } from '../../../components/ui';
 import { Feather } from '@expo/vector-icons';
@@ -30,7 +31,7 @@ const CATEGORIES_CONFIG = {
 export default function CoachHelpScreen() {
     const router = useRouter();
     const { token, user } = useAuth();
-    const { width: screenWidth } = useWindowDimensions();
+    const { width: screenWidth } = useStableWindowDimensions();
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);

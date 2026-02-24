@@ -11,8 +11,8 @@ import {
     TouchableOpacity,
     StyleSheet,
     Platform,
-    useWindowDimensions,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedTextInput } from '../../../components/ui';
 
@@ -37,7 +37,7 @@ export default function SmartFeedbackInput({
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [baseTextLength, setBaseTextLength] = useState(0); // Desde dónde buscar
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isLargeScreen = width > 768;
 
     const exerciseWords = useMemo(() => {

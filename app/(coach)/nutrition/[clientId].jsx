@@ -13,12 +13,11 @@ import {
     Modal,
     FlatList,
     Platform,
-    useWindowDimensions,
-    Image,
     Dimensions,
 } from 'react-native';
 import { EnhancedTextInput } from '../../../components/ui';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { useTheme } from '../../../context/ThemeContext';
@@ -26,8 +25,14 @@ import { useCoachBranding } from '../../../context/CoachBrandingContext';
 import { useFeedbackBubble } from '../../../context/FeedbackBubbleContext';
 import { calculateFullNutrition, ACTIVITY_FACTORS } from '../../../src/utils/nutritionCalculator';
 import ClientSidebar from '../../../src/components/coach/ClientSidebar';
+import AvatarWithInitials from '../../../src/components/shared/AvatarWithInitials';
+import LazySection from '../../../src/components/ui/LazySection';
 import WeeklyMealPlanner from './components/WeeklyMealPlanner';
 import { generateAndShareNutritionPDF } from '../../../src/services/pdfGenerator';
+import { useStableBreakpoint } from '../../../src/hooks/useStableBreakpoint';
+import CoachGuideModal from '../../../src/components/coach/CoachGuideModal';
+
+import { cacheClientAvatars } from '../../../src/utils/avatarCache';
 
 const DAYS_OF_WEEK = [
     { key: 'monday', label: 'Lunes', short: 'L' },
@@ -413,19 +418,11 @@ const CoachNutritionTopRightCard = ({ autoNutrition, clientName, clientData, isW
         <View style={styles.headerCardContainer}>
             {/* Left: Profile Mini */}
             <View style={styles.headerCardProfile}>
-                <View style={[styles.headerAvatar, { backgroundColor: goalColor, overflow: 'hidden' }]}>
-                    {clientData?.avatarUrl ? (
-                        <Image
-                            source={{ uri: clientData.avatarUrl }}
-                            style={{ width: '100%', height: '100%' }}
-                            resizeMode="cover"
-                        />
-                    ) : (
-                        <Text style={styles.headerAvatarText}>
-                            {clientName ? clientName.substring(0, 2).toUpperCase() : 'CL'}
-                        </Text>
-                    )}
-                </View>
+                <AvatarWithInitials
+                    name={clientName || 'Cliente'}
+                    avatarUrl={clientData?.avatarUrl}
+                    size={32}
+                />
                 <View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.headerClientName} numberOfLines={1}>{clientName || 'Cliente'}</Text>
@@ -472,8 +469,14 @@ const CoachNutritionTopRightCard = ({ autoNutrition, clientName, clientData, isW
 
 export default function ClientNutritionEditor() {
     const router = useRouter();
-    const { clientId, clientName } = useLocalSearchParams();
+    const params = useLocalSearchParams();
     const { token, user } = useAuth();
+
+    // 🛡️ Active client managed as state to avoid router.replace screen stacking on web
+    const [activeClientId, setActiveClientId] = useState(params.clientId);
+    const [activeClientName, setActiveClientName] = useState(params.clientName);
+    const clientId = activeClientId;
+    const clientName = activeClientName;
     const { theme } = useTheme();
     const { branding: coachBrandingCtx, activeTheme: activeCoachTheme } = useCoachBranding();
 
@@ -492,6 +495,9 @@ export default function ClientNutritionEditor() {
     });
     const [isEditingName, setIsEditingName] = useState(false);
 
+    const [guideModalVisible, setGuideModalVisible] = useState(false);
+    const [hasNutritionGuide, setHasNutritionGuide] = useState(false);
+
     // 🍽️ Meal Plan state (for 'mealplan' mode)
     const [mealPlan, setMealPlan] = useState(null);
 
@@ -506,9 +512,10 @@ export default function ClientNutritionEditor() {
     // Force local connection to ensure we hit the user's local DB
     const API_URL = 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
 
-    // 🖥️ Responsive layout
-    const { width: windowWidth } = useWindowDimensions();
-    const isWideScreen = windowWidth >= 1024;
+    // 🖥️ Responsive layout (debounced to prevent crash during window resize)
+    const { isWide: isWideScreen, windowWidth } = useStableBreakpoint(1024);
+
+
 
     // 🖥️ SIDEBAR: States for collapsible client list
     const [sidebarClients, setSidebarClients] = useState([]);
@@ -525,7 +532,7 @@ export default function ClientNutritionEditor() {
             });
             const data = await res.json();
             if (data.success) {
-                setSidebarClients(data.clients || []);
+                setSidebarClients(cacheClientAvatars(data.clients || []));
             }
         } catch (error) {
             console.error('[Sidebar Nutrition] Error:', error);
@@ -540,16 +547,50 @@ export default function ClientNutritionEditor() {
         }
     }, [isWideScreen, fetchSidebarClients]);
 
-    // Handle sidebar client selection
+    // Handle sidebar client selection — NO router navigation to avoid screen stacking on web
+    // Two-phase: 1) destroy all heavy content, 2) after DOM freed, switch client
     const handleSidebarClientSelect = (client) => {
-        router.push({
-            pathname: '/(coach)/nutrition/[clientId]',
-            params: { clientId: client._id, clientName: client.nombre }
+        if (client._id === clientId) return;
+        // Phase 1: Kill all heavy content immediately
+        setClientData(null);
+        setDayTargets([]);
+        setMealPlan(null);
+        setIsLoading(true);
+        setMode('auto');
+        setPlanName('');
+        setPlanDescription('');
+        setWeekSchedule({
+            monday: null, tuesday: null, wednesday: null, thursday: null,
+            friday: null, saturday: null, sunday: null
+        });
+        // Phase 2: Wait for React to commit the empty render, THEN switch client
+        requestAnimationFrame(() => {
+            setActiveClientId(client._id);
+            setActiveClientName(client.nombre);
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                window.history.replaceState(null, '', `/nutrition/${client._id}?clientName=${encodeURIComponent(client.nombre)}`);
+            }
         });
     };
 
     useEffect(() => {
         fetchClientData();
+    }, [clientId]);
+
+    // Verificar si el cliente tiene guía nutricional (para el check del botón)
+    useEffect(() => {
+        if (!clientId || !token) return;
+        (async () => {
+            try {
+                const res = await fetch(`${API_URL}/api/coach-guides/client/${clientId}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await res.json();
+                setHasNutritionGuide(!!data.nutrition);
+            } catch (e) {
+                // silent
+            }
+        })();
     }, [clientId]);
 
     const fetchClientData = async () => {
@@ -573,6 +614,7 @@ export default function ClientNutritionEditor() {
                     const planData = await planRes.json();
 
                     if (planData.success && planData.plan) {
+                        const totalFoods = (planData.plan.mealPlan?.dayTemplates || planData.plan.dayTemplates || []).reduce((sum, dt) => sum + (dt.meals || []).reduce((sum2, m) => sum2 + (m.options || []).reduce((sum3, opt) => sum3 + (opt.foods?.length || 0), 0), 0), 0);
                         // Force custom mode if planType is flex, otherwise trust mode or default to auto
                         const resolvedMode = (planData.plan.planType === 'flex') ? 'custom' : (planData.plan.mode || 'auto');
 
@@ -813,11 +855,6 @@ export default function ClientNutritionEditor() {
     };
 
     // 🛑 LOG DE CONTROL: Vigilar sincronización con el hijo (WeeklyMealPlanner)
-    useEffect(() => {
-        // Safe access to deep property
-        const foodCount = mealPlan?.dayTemplates?.[0]?.meals?.[0]?.options?.[0]?.foods?.length || 0;
-        console.log("👀 PLAN EN EL PADRE ACTUALIZADO:", foodCount, "alimentos en el primer plato.");
-    }, [mealPlan]);
 
     // Open template modal
     const openTemplateModal = () => {
@@ -1094,21 +1131,6 @@ export default function ClientNutritionEditor() {
             // 🛑 DEEP CLONE: Evitar transmutación por referencias compartidas durante el envío
             const payload = JSON.parse(JSON.stringify(rawPayload));
 
-            // 🚨 CHIVATO DE SEGURIDAD 🚨
-            let totalFoodsInState = 0;
-            if (payload.dayTemplates) {
-                totalFoodsInState = payload.dayTemplates.reduce((acc, day) =>
-                    acc + (day.meals?.reduce((mAcc, meal) =>
-                        mAcc + (meal.options?.reduce((oAcc, opt) => oAcc + (opt.foods?.length || 0), 0) || 0), 0) || 0), 0);
-            }
-
-            console.log("-----------------------------------------");
-            console.log("🔥 INTENTO DE ENVÍO AL BACKEND (PARENT) 🔥");
-            console.log("📍 Target (Client ID):", clientId);
-            console.log("🍎 Alimentos detectados en el PAYLOAD:", totalFoodsInState);
-            console.log("📦 PAYLOAD REAL (Copia plana):", payload);
-            console.log("-----------------------------------------");
-
             const res = await fetch(`${API_URL}/api/nutrition-plans`, {
                 method: 'POST',
                 headers: {
@@ -1153,12 +1175,30 @@ export default function ClientNutritionEditor() {
         }
     };
 
+    // 🧊 Web: unmount content when screen loses focus (prevents DOM accumulation crash)
+    const isFocused = useIsFocused();
+    if (Platform.OS === 'web' && !isFocused) return <View />;
+
+    // 🛡️ Render guard: if clientId changed but data hasn't loaded yet, show loading
     if (isLoading) {
         return (
             <SafeAreaView style={styles.container}>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#22c55e" />
-                    <Text style={styles.loadingText}>Cargando...</Text>
+                <View style={{ flexDirection: 'row', flex: 1 }}>
+                    {isWideScreen && (
+                        <ClientSidebar
+                            clients={sidebarClients}
+                            isLoading={sidebarLoading}
+                            currentClientId={clientId}
+                            onClientSelect={handleSidebarClientSelect}
+                            isCollapsed={sidebarCollapsed}
+                            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            context="nutrition"
+                        />
+                    )}
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#22c55e" />
+                        <Text style={styles.loadingText}>Cargando...</Text>
+                    </View>
                 </View>
             </SafeAreaView>
         );
@@ -1526,6 +1566,17 @@ export default function ClientNutritionEditor() {
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity
+                            style={[styles.draftBtn, { flex: 0.6, backgroundColor: hasNutritionGuide ? '#f0fdf4' : '#f5f3ff' }]}
+                            onPress={() => setGuideModalVisible(true)}
+                        >
+                            <Ionicons
+                                name={hasNutritionGuide ? 'checkmark-circle' : 'document-text-outline'}
+                                size={20}
+                                color={hasNutritionGuide ? '#22c55e' : '#8b5cf6'}
+                            />
+                            <Text style={[styles.draftBtnText, { color: hasNutritionGuide ? '#22c55e' : '#8b5cf6' }]}>Guía</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
                             style={[styles.activateBtn, { flex: 1.2 }]} // Give more space to "Activar"
                             onPress={() => handleSave('active')}
                             disabled={isSaving}
@@ -1603,6 +1654,25 @@ export default function ClientNutritionEditor() {
                     </View>
                 </View>
             </Modal>
+
+            {guideModalVisible && (
+                <CoachGuideModal
+                    visible={guideModalVisible}
+                    client={{ _id: clientId, nombre: clientName }}
+                    category="nutrition"
+                    onClose={() => {
+                        setGuideModalVisible(false);
+                        // Refresh check
+                        fetch(`${API_URL}/api/coach-guides/client/${clientId}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                            .then(r => r.json())
+                            .then(d => setHasNutritionGuide(!!d.nutrition))
+                            .catch(() => {});
+                    }}
+                    token={token}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -2393,3 +2463,4 @@ const styles = StyleSheet.create({
         paddingBottom: Platform.OS === 'ios' ? 0 : 16, // SafeArea handles iOS usually, but extra padding good
     },
 });
+

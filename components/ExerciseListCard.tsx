@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubePlayer from "react-native-youtube-iframe";
 
@@ -37,6 +38,7 @@ const getYouTubeThumb = (id: string) => `https://img.youtube.com/vi/${id}/mqdefa
 
 export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) {
     const isCustom = item.id_trainer && item.id_trainer !== adminTrainerId;
+    const isSystem = !isCustom;
     const videoId = getYouTubeId(item.videoId || '');
     const [isPlaying, setIsPlaying] = useState(false);
 
@@ -47,10 +49,15 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                 <View style={{ flex: 1 }}>
                     <View style={styles.exerciseHeader}>
                         <Text style={styles.exerciseName} numberOfLines={1}>{item.name}</Text>
-                        {isCustom && (
+                        {isCustom ? (
                             <View style={styles.customBadge}>
                                 <Ionicons name="person" size={10} color="#667eea" />
                                 <Text style={styles.customBadgeText}>Tuyo</Text>
+                            </View>
+                        ) : (
+                            <View style={styles.systemBadge}>
+                                <Ionicons name="shield-checkmark" size={10} color="#10B981" />
+                                <Text style={styles.systemBadgeText}>Sistema</Text>
                             </View>
                         )}
                     </View>
@@ -75,11 +82,11 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                 </View>
 
                 {/* Media Column (Technique -> Video -> Image) */}
-                {(item.imagen_ejercicio_ID || videoId) && (
+                {!!(item.imagen_ejercicio_ID || videoId) && (
                     isLargeScreen ? (
                         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
                             {/* Video Player or Thumbnail */}
-                            {videoId && (
+                            {!!videoId && (
                                 <View style={{
                                     width: 270, // 16:9 for 150px height approx
                                     height: 150,
@@ -108,7 +115,7 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                                             <Image
                                                 source={{ uri: getYouTubeThumb(videoId) }}
                                                 style={{ width: '100%', height: '100%' }}
-                                                resizeMode="contain"
+                                                contentFit="contain"
                                             />
                                             <View style={{ position: 'absolute', backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 30, padding: 10 }}>
                                                 <Ionicons name="play" size={32} color="#fff" />
@@ -119,7 +126,7 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                             )}
 
                             {/* Image */}
-                            {item.imagen_ejercicio_ID && (
+                            {!!item.imagen_ejercicio_ID && (
                                 <View style={{
                                     width: 270,
                                     height: 150,
@@ -131,15 +138,14 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                                     <Image
                                         source={{ uri: item.imagen_ejercicio_ID }}
                                         style={{ width: '100%', height: '100%' }}
-                                        resizeMode="contain"
+                                        contentFit="contain"
                                     />
                                 </View>
                             )}
                         </View>
                     ) : (
-                        // Mobile: Stacked
                         <View style={{ gap: 12, marginTop: 12 }}>
-                            {item.imagen_ejercicio_ID && (
+                            {!!item.imagen_ejercicio_ID && (
                                 <Image
                                     source={{ uri: item.imagen_ejercicio_ID }}
                                     style={{
@@ -148,10 +154,10 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                                         borderRadius: 8,
                                         backgroundColor: '#1F2937'
                                     }}
-                                    resizeMode="cover"
+                                    contentFit="cover"
                                 />
                             )}
-                            {videoId && (
+                            {!!videoId && (
                                 <View style={{
                                     width: '100%',
                                     height: 200,
@@ -178,7 +184,7 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
                                             <Image
                                                 source={{ uri: getYouTubeThumb(videoId) }}
                                                 style={{ width: '100%', height: '100%' }}
-                                                resizeMode="contain"
+                                                contentFit="contain"
                                             />
                                             <View style={{ position: 'absolute', backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 30, padding: 10 }}>
                                                 <Ionicons name="play" size={32} color="#fff" />
@@ -261,6 +267,22 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '600',
         color: '#667eea',
+    },
+    systemBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: '#10B98115',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#10B98140',
+    },
+    systemBadgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#10B981',
     },
     exerciseMuscle: {
         fontSize: 14,

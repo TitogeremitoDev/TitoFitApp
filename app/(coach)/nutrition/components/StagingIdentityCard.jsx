@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useStableWindowDimensions } from '../../../../src/hooks/useStableBreakpoint';
 
 // Confidence-based status config (0-1 range)
 const getStatusFromConfidence = (confidence, validationWarning) => {
@@ -31,7 +32,7 @@ const SOURCE_ICONS = {
  */
 export default function StagingIdentityCard({ ingredient, onPress, onUpdate, onDelete, isWeb }) {
     const [expanded, setExpanded] = useState(false);
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const isLargeScreen = isWeb || width > 768;
 
     // Get confidence-based status

@@ -13,8 +13,8 @@ import {
     Image,
     ActivityIndicator,
     RefreshControl,
-    useWindowDimensions,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../hooks/useStableBreakpoint';
 import { Ionicons } from '@expo/vector-icons';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://consistent-donna-titogeremito-29c943bc.koyeb.app';
@@ -42,8 +42,14 @@ const TAG_LABELS = {
  * @param {string} token - Token de autenticación
  * @param {function} onPhotoPress - Callback cuando se presiona una foto (abre CoachStudio)
  */
+// Category labels for filter pills
+const CATEGORY_CONFIG = {
+    body: { label: 'Corporal', icon: 'body' },
+    training: { label: 'Entrenamiento', icon: 'barbell' },
+};
+
 export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
-    const { width } = useWindowDimensions();
+    const { width } = useStableWindowDimensions();
     const numColumns = width > 900 ? 10 : width > 600 ? 7 : width > 400 ? 4 : 3;
     const gap = width < 400 ? 4 : 6;
     const listPadding = width < 400 ? 8 : 16;
@@ -52,6 +58,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
     const [photos, setPhotos] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [categoryFilter, setCategoryFilter] = useState('body');
     const [selectedTags, setSelectedTags] = useState([]);
     const [visibilityFilter, setVisibilityFilter] = useState(null);
     const [groupedPhotos, setGroupedPhotos] = useState([]);
@@ -63,8 +70,8 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
         try {
             if (!isRefresh) setIsLoading(true);
 
-            let url = `${API_URL}/api/progress-photos/client/${clientId}?category=body&limit=100`;
-            if (selectedTags.length > 0) {
+            let url = `${API_URL}/api/progress-photos/client/${clientId}?category=${categoryFilter}&limit=100`;
+            if (selectedTags.length > 0 && categoryFilter === 'body') {
                 url += `&tags=${selectedTags.join(',')}`;
             }
             if (visibilityFilter) {
@@ -86,7 +93,7 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [clientId, token, selectedTags, visibilityFilter]);
+    }, [clientId, token, categoryFilter, selectedTags, visibilityFilter]);
 
     useEffect(() => {
         fetchPhotos();
@@ -264,26 +271,57 @@ export default function PhotoGalleryTab({ clientId, token, onPhotoPress }) {
         <View style={styles.container}>
             {/* Filtros */}
             <View style={styles.filtersContainer}>
-                {/* Tag filters */}
+                {/* Category filter pills */}
                 <View style={styles.filterRow}>
-                    {['front', 'side', 'back'].map(tag => (
+                    {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
                         <TouchableOpacity
-                            key={tag}
+                            key={key}
                             style={[
                                 styles.filterChip,
-                                selectedTags.includes(tag) && styles.filterChipActive
+                                categoryFilter === key && styles.filterChipActive
                             ]}
-                            onPress={() => toggleTag(tag)}
+                            onPress={() => {
+                                setCategoryFilter(key);
+                                if (key === 'training') setSelectedTags([]);
+                            }}
                         >
+                            <Ionicons
+                                name={config.icon}
+                                size={14}
+                                color={categoryFilter === key ? '#fff' : '#64748b'}
+                            />
                             <Text style={[
                                 styles.filterChipText,
-                                selectedTags.includes(tag) && styles.filterChipTextActive
+                                categoryFilter === key && styles.filterChipTextActive
                             ]}>
-                                {TAG_LABELS[tag]}
+                                {config.label}
                             </Text>
                         </TouchableOpacity>
                     ))}
                 </View>
+
+                {/* Tag filters (solo para body) */}
+                {categoryFilter === 'body' && (
+                    <View style={styles.filterRow}>
+                        {['front', 'side', 'back'].map(tag => (
+                            <TouchableOpacity
+                                key={tag}
+                                style={[
+                                    styles.filterChip,
+                                    selectedTags.includes(tag) && styles.filterChipActive
+                                ]}
+                                onPress={() => toggleTag(tag)}
+                            >
+                                <Text style={[
+                                    styles.filterChipText,
+                                    selectedTags.includes(tag) && styles.filterChipTextActive
+                                ]}>
+                                    {TAG_LABELS[tag]}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
 
                 {/* Visibility filter */}
                 <View style={styles.filterRow}>

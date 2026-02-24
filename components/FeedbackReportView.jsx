@@ -16,9 +16,9 @@ import {
     KeyboardAvoidingView,
     Platform,
     Image,
-    useWindowDimensions,
     Dimensions
 } from 'react-native';
+import { useStableWindowDimensions } from '../src/hooks/useStableBreakpoint';
 import { EnhancedTextInput } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -135,7 +135,7 @@ const VideoPlayer = ({ uri, style }) => {
 };
 
 const MediaPreviewModal = ({ visible, onClose, mediaItem }) => {
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth } = useStableWindowDimensions();
     const isWeb = Platform.OS === 'web';
 
     // Audio player for audio type

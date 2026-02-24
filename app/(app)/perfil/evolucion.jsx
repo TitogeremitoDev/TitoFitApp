@@ -13,7 +13,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  useWindowDimensions,
   ActivityIndicator,
   Pressable,
   Alert,
@@ -22,6 +21,7 @@ import {
   FlatList,
   Dimensions,
 } from 'react-native';
+import { useStableWindowDimensions } from '../../../src/hooks/useStableBreakpoint';
 import { Stack, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart, BarChart } from 'react-native-chart-kit';
@@ -214,7 +214,7 @@ export default function EvolucionScreen() {
   const { theme, isDark } = useTheme();
 
   // 📐 Responsive: usar ancho de ventana dinámico
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth } = useStableWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isLargeScreen = windowWidth > 768;
   const isSmallScreen = windowWidth < 400;

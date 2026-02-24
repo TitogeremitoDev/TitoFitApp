@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "697556764112",
+    "project_id": "totalgains-c0d0f",
+    "storage_bucket": "totalgains-c0d0f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:697556764112:android:6f315e361b628efa0125d5",
+        "android_client_info": {
+          "package_name": "com.german92.titofitapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCikxTEPx2roqouG7QzTfYLhLHNXfqwhV8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Easing } from 'react-native';
+import { View, StyleSheet, Animated, Easing, Platform } from 'react-native';
 
 /**
  * ChurnIndicator - Visual risk indicator (dot) on client avatar
- * 
+ *
  * Props:
  * - riskLevel: 'none' | 'medium' | 'high'
  * - size: number (default 12)
@@ -12,26 +12,29 @@ export default function ChurnIndicator({ riskLevel, size = 12 }) {
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
+        let animation = null;
         if (riskLevel === 'high') {
-            Animated.loop(
+            animation = Animated.loop(
                 Animated.sequence([
                     Animated.timing(pulseAnim, {
                         toValue: 1.4,
                         duration: 700,
                         easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
+                        useNativeDriver: Platform.OS !== 'web',
                     }),
                     Animated.timing(pulseAnim, {
                         toValue: 1,
                         duration: 700,
                         easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
+                        useNativeDriver: Platform.OS !== 'web',
                     }),
                 ])
-            ).start();
+            );
+            animation.start();
         } else {
             pulseAnim.setValue(1);
         }
+        return () => { if (animation) animation.stop(); };
     }, [riskLevel]);
 
     if (riskLevel === 'none') return null;

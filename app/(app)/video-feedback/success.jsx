@@ -1,7 +1,8 @@
 // app/(app)/video-feedback/success.jsx
 // ═══════════════════════════════════════════════════════════════════════════
-// PANTALLA DE ÉXITO CON SHARE A INSTAGRAM STORIES
-// Sistema de Tiers: FREEUSER solo guarda, PREMIUM comparte + favoritos
+// PANTALLA DE ÉXITO CON SHARE A INSTAGRAM STORIES / TIKTOK
+// Sistema de BRANDING: Logo del coach + "Powered by TotalGains"
+// Misma estética que el sistema de compartir de Nutrición
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -14,13 +15,19 @@ import {
     Animated,
     Platform,
     Alert,
-    Modal
+    Modal,
+    Dimensions,
+    ScrollView
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '../../../context/AuthContext';
+import { useTrainer } from '../../../context/TrainerContext';
+import { useCoachBranding } from '../../../context/CoachBrandingContext';
 
 // Importar solo en native
 let Share, MediaLibrary;
@@ -29,22 +36,37 @@ if (Platform.OS !== 'web') {
     MediaLibrary = require('expo-media-library');
 }
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const PREVIEW_WIDTH = SCREEN_WIDTH - 80;
+const PREVIEW_HEIGHT = PREVIEW_WIDTH * (16 / 9);
+
 export default function VideoSuccessScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
     const insets = useSafeAreaInsets();
-    const stickerRef = useRef(null);
     const { user, token } = useAuth();
+    const { trainer } = useTrainer();
+    const { branding: coachBranding, activeTheme } = useCoachBranding();
 
-    const { feedbackId, exerciseName, isPR, videoPath } = params;
+    const { feedbackId, exerciseName, isPR, videoPath, thumbnailUri: paramThumbnail } = params;
 
     // Tier del usuario
     const isPremium = user?.tipoUsuario !== 'FREEUSER';
 
+    // Coach info (from TrainerContext — logo in trainerProfile)
+    const coachName = trainer?.profile?.brandName || trainer?.nombre || 'mi entrenador';
+    const coachLogoUrl = trainer?.profile?.logoUrl || null;
+    const coachColor = activeTheme?.colors?.primary || '#60a5fa';
+
     // Estados
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [showStoryModal, setShowStoryModal] = useState(false);
     const [isFavorite, setIsFavorite] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    // Refs
+    const stickerRef = useRef(null);        // Sticker para IG Stories (sobre video)
+    const storyImageRef = useRef(null);     // Story completa para compartir como imagen
 
     // Animaciones
     const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -76,13 +98,6 @@ export default function VideoSuccessScreen() {
         try {
             setSaving(true);
 
-            // Pedir permiso
-            const { status } = await MediaLibrary.requestPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería para guardar el video.');
-                return;
-            }
-
             if (videoPath) {
                 await MediaLibrary.saveToLibraryAsync(videoPath);
                 Alert.alert('¡Guardado!', 'Tu video se ha guardado en la galería.');
@@ -98,70 +113,20 @@ export default function VideoSuccessScreen() {
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // COMPARTIR EN INSTAGRAM STORIES (TODOS LOS USUARIOS - MARKETING)
+    // COMPARTIR EN INSTAGRAM STORIES (Abre modal con branding, como Nutrición)
     // ═══════════════════════════════════════════════════════════════════════════
-    const handleShareToStories = async () => {
-        try {
-            // Capturar el sticker
-            let stickerUri = null;
-            if (stickerRef.current) {
-                stickerUri = await stickerRef.current.capture();
-            }
-
-            // Preparar opciones de share
-            const shareOptions = {
-                social: Share.Social.INSTAGRAM_STORIES,
-                backgroundBottomColor: '#000000',
-                backgroundTopColor: '#1a1a2e',
-                appId: 'com.german92.titofitapp',
-            };
-
-            // AÑADIR VIDEO DE FONDO (CRÍTICO)
-            if (videoPath) {
-                shareOptions.backgroundVideo = videoPath;
-            }
-
-            // Si tenemos sticker, añadirlo correctamente según plataforma
-            if (stickerUri) {
-                if (Platform.OS === 'android') {
-                    // Android requiere Base64 con prefijo
-                    shareOptions.stickerImage = `data:image/png;base64,${stickerUri}`;
-                } else {
-                    // iOS funciona con file path
-                    shareOptions.stickerImage = stickerUri;
-                }
-            }
-
-            await Share.shareSingle(shareOptions);
-
-        } catch (error) {
-            console.log('[Success] Error compartiendo IG:', error);
-            // Si falla IG Stories, ofrecer share normal CON EL VIDEO
-            try {
-                let shareUrl = videoPath;
-                if (Platform.OS === 'android' && !shareUrl?.startsWith('file://')) {
-                    shareUrl = `file://${shareUrl}`;
-                }
-                await Share.open({
-                    message: `💪 Acabo de enviar un video de mi técnica de ${exerciseName} para que mi coach me corrija. #TotalGains`,
-                    url: shareUrl,
-                    type: 'video/*',
-                });
-            } catch (e) {
-                console.log('[Success] Share cancelado');
-            }
-        }
+    const handleShareToStories = () => {
+        // Abrir el modal de story con branding (idéntico al flujo de nutrición)
+        setShowStoryModal(true);
     };
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // COMPARTIR EN TIKTOK (TODOS LOS USUARIOS - MARKETING)
+    // COMPARTIR EN TIKTOK (TODOS LOS USUARIOS)
     // ═══════════════════════════════════════════════════════════════════════════
     const handleShareToTikTok = async () => {
         try {
-            // TikTok requiere el video directamente
             if (videoPath) {
                 let shareUrl = videoPath;
-                // Asegurar formato file:// en Android
                 if (Platform.OS === 'android' && !shareUrl.startsWith('file://')) {
                     shareUrl = `file://${shareUrl}`;
                 }
@@ -172,14 +137,12 @@ export default function VideoSuccessScreen() {
                     title: `${exerciseName || 'Mi entreno'} 💪 #TotalGains #Fitness`,
                 });
             } else {
-                // Fallback: share general
                 await Share.open({
                     message: `💪 Entrenamiento de ${exerciseName || 'hoy'} con TotalGains! #Fitness #GymTok`,
                 });
             }
         } catch (error) {
             console.log('[Success] Error compartiendo TikTok:', error);
-            // Fallback a share general CON EL VIDEO
             try {
                 let shareUrl = videoPath;
                 if (Platform.OS === 'android' && !shareUrl?.startsWith('file://')) {
@@ -193,6 +156,30 @@ export default function VideoSuccessScreen() {
             } catch (e) {
                 console.log('[Success] Share TikTok cancelado');
             }
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMPARTIR IMAGEN CON BRANDING (Estilo idéntico a Nutrición)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const handleShareStoryImage = async () => {
+        try {
+            if (!storyImageRef.current) return;
+            const uri = await storyImageRef.current.capture();
+
+            const available = await Sharing.isAvailableAsync();
+            if (!available) {
+                Alert.alert('Error', 'Compartir no está disponible en este dispositivo.');
+                return;
+            }
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir en Stories',
+            });
+            setShowStoryModal(false);
+        } catch (error) {
+            console.error('[Story] Share error:', error);
+            Alert.alert('Error', 'No se pudo compartir la imagen.');
         }
     };
 
@@ -251,110 +238,140 @@ export default function VideoSuccessScreen() {
     return (
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
 
-            {/* Sticker para captura (oculto) */}
+            {/* ═══════════════════════════════════════════════════════════════
+                STICKER OCULTO PARA IG STORIES (Se superpone al video)
+                Con branding del coach — Estilo consistente con Nutrición
+            ═══════════════════════════════════════════════════════════════ */}
             <ViewShot
                 ref={stickerRef}
                 options={{
                     format: 'png',
-                    quality: 0.8,
-                    // Android requiere base64 para stickerImage en react-native-share
+                    quality: 0.9,
                     result: Platform.OS === 'android' ? 'base64' : 'tmpfile'
                 }}
                 style={styles.stickerCapture}
             >
-                <View style={styles.sticker}>
-                    {/* Logo de la App */}
-                    <Image
-                        source={require('../../../assets/images/logo.png')}
-                        style={styles.stickerLogo}
-                        resizeMode="contain"
-                    />
-                    <View style={styles.stickerBadge}>
-                        <Text style={styles.stickerText}>ENTRENAMIENTO</Text>
+                <View style={[styles.sticker, { borderColor: coachColor }]}>
+                    {/* Ejercicio badge */}
+                    <View style={[styles.stickerExerciseBadge, { backgroundColor: coachColor + '20' }]}>
+                        <Text style={styles.stickerExerciseEmoji}>🏋️</Text>
+                        <Text style={[styles.stickerExerciseText, { color: coachColor }]}>
+                            {(exerciseName || 'ENTRENAMIENTO').toUpperCase()}
+                        </Text>
                     </View>
-                    {exerciseName && (
-                        <Text style={styles.stickerExercise}>{exerciseName.toUpperCase()}</Text>
-                    )}
-                    <Text style={styles.stickerBrand}>TOTALGAINS</Text>
 
-                    {/* Redes Sociales */}
-                    <View style={styles.stickerSocialRow}>
-                        <View style={styles.stickerSocialItem}>
-                            <Ionicons name="logo-instagram" size={12} color="#ccc" />
-                            <Text style={styles.stickerSocialText}>@TotalGainsFitnes</Text>
+                    {/* Coach Logo */}
+                    {coachLogoUrl ? (
+                        <Image
+                            source={{ uri: coachLogoUrl }}
+                            style={[styles.stickerCoachLogo, { borderColor: coachColor }]}
+                            resizeMode="contain"
+                        />
+                    ) : (
+                        <View style={[styles.stickerCoachLogoFallback, { backgroundColor: coachColor }]}>
+                            <Text style={styles.stickerCoachLogoText}>
+                                {coachName.charAt(0).toUpperCase()}
+                            </Text>
                         </View>
-                        <View style={styles.stickerSocialItem}>
-                            <Ionicons name="logo-tiktok" size={12} color="#ccc" />
-                            <Text style={styles.stickerSocialText}>@totalgainsapp</Text>
-                        </View>
+                    )}
+
+                    {/* Coach name */}
+                    <Text style={styles.stickerCoachName} numberOfLines={1}>
+                        {coachName}
+                    </Text>
+
+                    {/* Powered by */}
+                    <View style={styles.stickerPoweredRow}>
+                        <Image
+                            source={require('../../../assets/images/logo.png')}
+                            style={styles.stickerAppLogo}
+                            resizeMode="contain"
+                        />
+                        <Text style={styles.stickerPoweredText}>Powered by TotalGains</Text>
                     </View>
                 </View>
             </ViewShot>
 
-            {/* Contenido visible */}
-            <View style={styles.content}>
-                {/* Animación de éxito */}
-                <Animated.View
-                    style={[
-                        styles.successCircle,
-                        {
-                            transform: [{ scale: scaleAnim }],
-                            opacity: opacityAnim
-                        }
-                    ]}
-                >
-                    <View style={styles.checkCircle}>
-                        <Ionicons name="checkmark" size={60} color="#fff" />
-                    </View>
-                </Animated.View>
-
-                {/* Texto */}
-                <Animated.View style={{ opacity: opacityAnim }}>
-                    <Text style={styles.title}>
-                        {isPR === 'true' ? '🚀 ¡NUEVO PR!' : '¡Video Enviado!'}
-                    </Text>
-                    <Text style={styles.subtitle}>
-                        Tu coach recibirá una notificación y podrá revisar tu técnica
-                    </Text>
-
-                    {exerciseName && (
-                        <View style={styles.exerciseBadge}>
-                            <Ionicons name="barbell" size={18} color="#4361ee" />
-                            <Text style={styles.exerciseText}>{exerciseName}</Text>
-                        </View>
-                    )}
-                </Animated.View>
-
-                {/* Botones */}
-                <View style={styles.buttons}>
-                    {/* Guardar en Galería (TODOS) */}
-                    <TouchableOpacity
-                        style={styles.saveBtn}
-                        onPress={handleSaveToGallery}
-                        disabled={saving}
-                        activeOpacity={0.8}
+            {/* ═══════════════════════════════════════════════════════════════
+                CONTENIDO VISIBLE
+            ═══════════════════════════════════════════════════════════════ */}
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={styles.content}>
+                    {/* Animación de éxito */}
+                    <Animated.View
+                        style={[
+                            styles.successCircle,
+                            {
+                                transform: [{ scale: scaleAnim }],
+                                opacity: opacityAnim
+                            }
+                        ]}
                     >
-                        <Ionicons name="download-outline" size={20} color="#fff" />
-                        <Text style={styles.saveBtnText}>
-                            {saving ? 'Guardando...' : 'Guardar en galería'}
-                        </Text>
-                    </TouchableOpacity>
+                        <View style={styles.checkCircle}>
+                            <Ionicons name="checkmark" size={60} color="#fff" />
+                        </View>
+                    </Animated.View>
 
-                    {/* Redes sociales - horizontal */}
-                    <View style={styles.socialRow}>
-                        {/* Instagram (TODOS - MARKETING) */}
+                    {/* Texto */}
+                    <Animated.View style={{ opacity: opacityAnim }}>
+                        <Text style={styles.title}>
+                            {isPR === 'true' ? '🚀 ¡NUEVO PR!' : '¡Video Enviado!'}
+                        </Text>
+                        <Text style={styles.subtitle}>
+                            Tu coach recibirá una notificación y podrá revisar tu técnica
+                        </Text>
+
+                        {exerciseName && (
+                            <View style={styles.exerciseBadge}>
+                                <Ionicons name="barbell" size={18} color={coachColor} />
+                                <Text style={styles.exerciseText}>{exerciseName}</Text>
+                            </View>
+                        )}
+                    </Animated.View>
+
+                    {/* ═══════════════════════════════════════════════════════
+                        SECCIÓN DE COMPARTIR — Estilo idéntico a Nutrición
+                    ═══════════════════════════════════════════════════════ */}
+                    <View style={styles.shareSection}>
+                        <Text style={styles.shareSectionTitle}>📱 Comparte tu entreno</Text>
+                    </View>
+
+                    {/* Botones */}
+                    <View style={styles.buttons}>
+                        {/* Guardar en Galería (TODOS) */}
                         <TouchableOpacity
-                            style={styles.socialBtn}
+                            style={styles.saveBtn}
+                            onPress={handleSaveToGallery}
+                            disabled={saving}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="download-outline" size={20} color="#fff" />
+                            <Text style={styles.saveBtnText}>
+                                {saving ? 'Guardando...' : 'Guardar en galería'}
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* Instagram Stories — Abre modal con branding (como Nutrición) */}
+                        <TouchableOpacity
+                            style={styles.igStoryBtn}
                             onPress={handleShareToStories}
                             activeOpacity={0.8}
                         >
-                            <View style={styles.instagramGradient}>
+                            <LinearGradient
+                                colors={['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={styles.igStoryBtnGradient}
+                            >
                                 <Ionicons name="logo-instagram" size={22} color="#fff" />
-                                <Text style={styles.socialBtnText}>Stories</Text>
-                            </View>
+                                <Text style={styles.igStoryBtnText}>Compartir en Stories</Text>
+                            </LinearGradient>
                         </TouchableOpacity>
 
-                        {/* TikTok (TODOS - MARKETING) */}
+                        {/* TikTok */}
                         <TouchableOpacity
                             style={styles.socialBtn}
                             onPress={handleShareToTikTok}
@@ -362,48 +379,168 @@ export default function VideoSuccessScreen() {
                         >
                             <View style={styles.tiktokGradient}>
                                 <Ionicons name="musical-notes" size={22} color="#fff" />
-                                <Text style={styles.socialBtnText}>TikTok</Text>
+                                <Text style={styles.socialBtnText}>Compartir en TikTok</Text>
                             </View>
                         </TouchableOpacity>
+
+                        {/* Favorito (SOLO PREMIUM) */}
+                        <TouchableOpacity
+                            style={[styles.favoriteBtn, !isPremium && styles.lockedBtn]}
+                            onPress={handleToggleFavorite}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons
+                                name={isFavorite ? "star" : "star-outline"}
+                                size={20}
+                                color={isFavorite ? "#fbbf24" : "#888"}
+                            />
+                            <Text style={[styles.favoriteBtnText, isFavorite && { color: '#fbbf24' }]}>
+                                {isFavorite ? 'En favoritos' : 'Añadir a favoritos'}
+                            </Text>
+                            {!isPremium && (
+                                <Ionicons name="lock-closed" size={14} color="#666" style={{ marginLeft: 4 }} />
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Continuar entrenando */}
+                        <TouchableOpacity
+                            style={[styles.continueBtn, { backgroundColor: coachColor }]}
+                            onPress={handleContinue}
+                        >
+                            <Ionicons name="barbell-outline" size={20} color="#fff" />
+                            <Text style={styles.continueBtnText}>Seguir entrenando</Text>
+                        </TouchableOpacity>
+
+                        {/* Ir a home */}
+                        <TouchableOpacity
+                            style={styles.homeBtn}
+                            onPress={handleGoHome}
+                        >
+                            <Text style={styles.homeBtnText}>Ir al inicio</Text>
+                        </TouchableOpacity>
                     </View>
-
-                    {/* Favorito (SOLO PREMIUM) */}
-                    <TouchableOpacity
-                        style={[styles.favoriteBtn, !isPremium && styles.lockedBtn]}
-                        onPress={handleToggleFavorite}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons
-                            name={isFavorite ? "star" : "star-outline"}
-                            size={20}
-                            color={isFavorite ? "#fbbf24" : "#888"}
-                        />
-                        <Text style={[styles.favoriteBtnText, isFavorite && { color: '#fbbf24' }]}>
-                            {isFavorite ? 'En favoritos' : 'Añadir a favoritos'}
-                        </Text>
-                        {!isPremium && (
-                            <Ionicons name="lock-closed" size={14} color="#666" style={{ marginLeft: 4 }} />
-                        )}
-                    </TouchableOpacity>
-
-                    {/* Continuar entrenando */}
-                    <TouchableOpacity
-                        style={styles.continueBtn}
-                        onPress={handleContinue}
-                    >
-                        <Ionicons name="barbell-outline" size={20} color="#fff" />
-                        <Text style={styles.continueBtnText}>Seguir entrenando</Text>
-                    </TouchableOpacity>
-
-                    {/* Ir a home */}
-                    <TouchableOpacity
-                        style={styles.homeBtn}
-                        onPress={handleGoHome}
-                    >
-                        <Text style={styles.homeBtnText}>Ir al inicio</Text>
-                    </TouchableOpacity>
                 </View>
-            </View>
+            </ScrollView>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                MODAL: Story con branding — IDÉNTICO A NUTRICIÓN
+                Foto/thumbnail ocupa TODA la pantalla, layout encima
+            ═══════════════════════════════════════════════════════════════ */}
+            <Modal
+                visible={showStoryModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowStoryModal(false)}
+            >
+                <View style={storyStyles.overlay}>
+                    <View style={[storyStyles.container, { backgroundColor: '#1a1a2e' }]}>
+                        <TouchableOpacity
+                            style={storyStyles.closeBtn}
+                            onPress={() => setShowStoryModal(false)}
+                        >
+                            <Ionicons name="close-circle" size={32} color="#888" />
+                        </TouchableOpacity>
+
+                        <Text style={storyStyles.title}>
+                            Comparte tu entreno 💪
+                        </Text>
+                        <Text style={storyStyles.subtitle}>
+                            Comparte tu entrenamiento con branding
+                        </Text>
+
+                        {/* Story Preview (captured by ViewShot) — IDÉNTICO a Nutrición */}
+                        <View style={storyStyles.previewWrapper}>
+                            <ViewShot
+                                ref={storyImageRef}
+                                options={{ format: 'png', quality: 1, width: 1080, height: 1920 }}
+                                style={storyStyles.storyCanvas}
+                            >
+                                {/* Background photo — ocupa TODO como en Nutrición */}
+                                {paramThumbnail ? (
+                                    <Image
+                                        source={{ uri: paramThumbnail }}
+                                        style={storyStyles.storyPhoto}
+                                        resizeMode="cover"
+                                    />
+                                ) : (
+                                    <LinearGradient
+                                        colors={['#1a1a2e', '#16213e', '#0f3460']}
+                                        style={storyStyles.storyPhoto}
+                                    />
+                                )}
+
+                                {/* Dark gradient overlay at bottom */}
+                                <LinearGradient
+                                    colors={['transparent', 'rgba(0,0,0,0.85)']}
+                                    style={storyStyles.storyGradient}
+                                />
+
+                                {/* Top badge: Ejercicio (arriba-izquierda, como Nutrición) */}
+                                <View style={storyStyles.storyTopBadge}>
+                                    <Text style={storyStyles.storyTopBadgeText}>
+                                        🏋️ {exerciseName || 'Entrenamiento'}
+                                    </Text>
+                                </View>
+
+                                {/* Bottom content: message + logo (idéntico a Nutrición) */}
+                                <View style={storyStyles.storyBottomContent}>
+                                    <View style={storyStyles.storyTextBlock}>
+                                        <Text style={storyStyles.storyMainText}>
+                                            Entrenando con{'\n'}
+                                            <Text style={[storyStyles.storyCoachName, { color: coachColor }]}>
+                                                {coachName}
+                                            </Text>
+                                        </Text>
+                                        <Text style={storyStyles.storyAppText}>
+                                            Powered by TotalGains 💪
+                                        </Text>
+                                    </View>
+
+                                    {/* Coach logo */}
+                                    {coachLogoUrl ? (
+                                        <Image
+                                            source={{ uri: coachLogoUrl }}
+                                            style={[storyStyles.storyLogo, { borderColor: coachColor }]}
+                                            resizeMode="contain"
+                                        />
+                                    ) : (
+                                        <View style={[storyStyles.storyLogoFallback, { backgroundColor: coachColor }]}>
+                                            <Text style={storyStyles.storyLogoFallbackText}>
+                                                {coachName.charAt(0).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </ViewShot>
+                        </View>
+
+                        {/* Action buttons */}
+                        <TouchableOpacity
+                            style={storyStyles.shareBtn}
+                            onPress={handleShareStoryImage}
+                        >
+                            <LinearGradient
+                                colors={['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={storyStyles.shareBtnGradient}
+                            >
+                                <Ionicons name="logo-instagram" size={22} color="#FFF" />
+                                <Text style={storyStyles.shareBtnText}>Compartir en Stories</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={storyStyles.skipBtn}
+                            onPress={() => setShowStoryModal(false)}
+                        >
+                            <Text style={storyStyles.skipBtnText}>
+                                Ahora no
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Modal Upgrade */}
             <Modal
@@ -450,10 +587,194 @@ export default function VideoSuccessScreen() {
     );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTILOS - Story Modal (estilo Nutrición)
+// ═══════════════════════════════════════════════════════════════════════════
+const storyStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    container: {
+        width: '100%',
+        maxWidth: 380,
+        borderRadius: 24,
+        padding: 20,
+        alignItems: 'center',
+    },
+    closeBtn: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 10,
+    },
+    title: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#fff',
+        marginTop: 8,
+        marginBottom: 4,
+    },
+    subtitle: {
+        fontSize: 13,
+        color: '#888',
+        marginBottom: 16,
+    },
+    previewWrapper: {
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: 20,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    storyCanvas: {
+        width: PREVIEW_WIDTH,
+        height: PREVIEW_HEIGHT,
+        backgroundColor: '#000',
+    },
+    storyPhoto: {
+        ...StyleSheet.absoluteFillObject,
+        width: '100%',
+        height: '100%',
+    },
+    storyGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '45%',
+    },
+    storyTopBadge: {
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    storyTopBadgeText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    storyBottomContent: {
+        position: 'absolute',
+        bottom: 20,
+        left: 16,
+        right: 16,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+    },
+    storyTextBlock: {
+        flex: 1,
+        marginRight: 12,
+    },
+    storyMainText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '600',
+        lineHeight: 22,
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    storyCoachName: {
+        fontSize: 20,
+        fontWeight: '900',
+    },
+    storyPoweredRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+    },
+    storyAppLogo: {
+        width: 18,
+        height: 18,
+        borderRadius: 4,
+    },
+    storyAppText: {
+        color: 'rgba(255,255,255,0.75)',
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 6,
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+    },
+    storyLogo: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,
+        borderWidth: 2,
+    },
+    storyLogoFallback: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    storyLogoFallbackText: {
+        color: '#FFF',
+        fontSize: 24,
+        fontWeight: '900',
+    },
+    shareBtn: {
+        width: '100%',
+        borderRadius: 14,
+        overflow: 'hidden',
+        marginBottom: 10,
+    },
+    shareBtnGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        paddingVertical: 16,
+    },
+    shareBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    skipBtn: {
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#333',
+        backgroundColor: '#0d0d1a',
+    },
+    skipBtnText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#888',
+    },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTILOS PRINCIPALES
+// ═══════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#0a0a14',
+    },
+    scrollContent: {
+        flexGrow: 1,
+        justifyContent: 'center',
     },
     // Sticker oculto para captura
     stickerCapture: {
@@ -463,94 +784,92 @@ const styles = StyleSheet.create({
     },
     sticker: {
         backgroundColor: '#1a1a2e',
-        padding: 24,
-        borderRadius: 24,
+        padding: 20,
+        borderRadius: 20,
         alignItems: 'center',
-        borderWidth: 3,
-        borderColor: '#4361ee',
-        minWidth: 200,
-        // Sombra para dar profundidad
+        borderWidth: 2,
+        minWidth: 220,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.5,
         shadowRadius: 10,
         elevation: 10,
     },
-    stickerLogo: {
-        width: 80,
-        height: 80,
+    stickerExerciseBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 16,
         marginBottom: 12,
     },
-    stickerBadge: {
-        backgroundColor: '#4361ee',
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 12,
-        marginBottom: 8,
+    stickerExerciseEmoji: {
+        fontSize: 16,
     },
-    stickerEmoji: {
-        fontSize: 40,
-        marginBottom: 8,
-    },
-    stickerText: {
-        color: '#fff',
+    stickerExerciseText: {
         fontSize: 12,
         fontWeight: '800',
-        letterSpacing: 1,
+        letterSpacing: 0.5,
     },
-    stickerBrand: {
-        color: '#4361ee',
+    stickerCoachLogo: {
+        width: 64,
+        height: 64,
+        borderRadius: 16,
+        borderWidth: 2,
+        marginBottom: 8,
+    },
+    stickerCoachLogoFallback: {
+        width: 64,
+        height: 64,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    stickerCoachLogoText: {
+        color: '#FFF',
         fontSize: 28,
         fontWeight: '900',
-        letterSpacing: 1,
-        marginTop: 4,
-        textShadowColor: 'rgba(0, 0, 0, 0.5)',
-        textShadowOffset: { width: 1, height: 1 },
-        textShadowRadius: 2,
     },
-    stickerExercise: {
+    stickerCoachName: {
         color: '#fff',
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: '700',
-        marginTop: 4,
-        letterSpacing: 0.5,
+        marginBottom: 8,
         textAlign: 'center',
     },
-    stickerSocialRow: {
+    stickerPoweredRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 12,
-        marginTop: 12,
+        gap: 6,
         backgroundColor: 'rgba(0,0,0,0.3)',
-        paddingVertical: 4,
+        paddingVertical: 6,
         paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: 10,
     },
-    stickerSocialItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
+    stickerAppLogo: {
+        width: 16,
+        height: 16,
+        borderRadius: 3,
     },
-    stickerSocialText: {
-        color: '#ccc',
+    stickerPoweredText: {
+        color: '#aaa',
         fontSize: 10,
         fontWeight: '600',
     },
     // Contenido principal
     content: {
-        flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 32,
     },
     successCircle: {
-        marginBottom: 32,
+        marginBottom: 24,
     },
     checkCircle: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: 100,
+        height: 100,
+        borderRadius: 50,
         backgroundColor: '#10b981',
         justifyContent: 'center',
         alignItems: 'center',
@@ -562,17 +881,17 @@ const styles = StyleSheet.create({
     },
     title: {
         color: '#fff',
-        fontSize: 28,
+        fontSize: 26,
         fontWeight: '700',
         textAlign: 'center',
-        marginBottom: 12,
+        marginBottom: 8,
     },
     subtitle: {
         color: '#888',
-        fontSize: 16,
+        fontSize: 14,
         textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 20,
+        lineHeight: 22,
+        marginBottom: 16,
     },
     exerciseBadge: {
         flexDirection: 'row',
@@ -589,33 +908,60 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
     },
-    buttons: {
-        marginTop: 48,
+    // Share section
+    shareSection: {
         width: '100%',
-        gap: 12,
+        marginTop: 24,
+        marginBottom: 8,
     },
-    // Nuevo: Botón guardar galería
+    shareSectionTitle: {
+        color: '#ccc',
+        fontSize: 14,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    // Buttons
+    buttons: {
+        marginTop: 16,
+        width: '100%',
+        gap: 10,
+    },
     saveBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        paddingVertical: 16,
+        paddingVertical: 14,
         borderRadius: 14,
         backgroundColor: '#22c55e',
     },
     saveBtnText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
     },
-    // Social row horizontal
-    socialRow: {
-        flexDirection: 'row',
-        gap: 12,
+    // IG Stories button (principal — como Nutrición)
+    igStoryBtn: {
+        width: '100%',
+        borderRadius: 14,
+        overflow: 'hidden',
     },
+    igStoryBtnGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        paddingVertical: 16,
+    },
+    igStoryBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    // TikTok & social buttons
     socialBtn: {
-        flex: 1,
+        width: '100%',
         borderRadius: 14,
         overflow: 'hidden',
     },
@@ -624,42 +970,24 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
     },
-    shareBtn: {
-        borderRadius: 14,
-        overflow: 'hidden',
-    },
-    // Nuevo: Estado bloqueado
-    lockedBtn: {
-        opacity: 0.6,
-    },
-    instagramGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 16,
-        backgroundColor: '#E1306C', // Instagram pink
-    },
     tiktokGradient: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        paddingVertical: 16,
-        backgroundColor: '#000', // TikTok black
+        paddingVertical: 14,
+        backgroundColor: '#000',
+        borderRadius: 14,
     },
-    shareBtnText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '700',
+    lockedBtn: {
+        opacity: 0.6,
     },
-    // Nuevo: Botón favorito
     favoriteBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        paddingVertical: 14,
+        paddingVertical: 12,
         borderRadius: 14,
         backgroundColor: '#1a1a2e',
         borderWidth: 1,
@@ -667,7 +995,7 @@ const styles = StyleSheet.create({
     },
     favoriteBtnText: {
         color: '#888',
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '600',
     },
     continueBtn: {
@@ -675,24 +1003,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        paddingVertical: 16,
+        paddingVertical: 14,
         borderRadius: 14,
-        backgroundColor: '#4361ee',
     },
     continueBtnText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
     },
     homeBtn: {
-        paddingVertical: 14,
+        paddingVertical: 12,
         alignItems: 'center',
     },
     homeBtnText: {
         color: '#666',
-        fontSize: 15,
+        fontSize: 14,
     },
-    // Nuevo: Modal upgrade
+    // Modal upgrade
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.7)',
