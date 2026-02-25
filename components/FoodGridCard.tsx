@@ -5,10 +5,10 @@ import { FoodItem, LAYER_ICONS } from '../src/services/foodService';
 
 interface FoodGridCardProps {
     item: FoodItem;
-    onPress?: () => void;
+    onPress?: (item: FoodItem) => void;
     isFavorite?: boolean;
-    onToggleFavorite?: () => void;
-    onDelete?: () => void;
+    onToggleFavorite?: (item: FoodItem) => void;
+    onDelete?: (item: FoodItem) => void;
     itemType?: 'ingredient' | 'recipe' | 'combo';
 }
 
@@ -17,14 +17,18 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
     const isRecipe = itemType === 'recipe' || (!itemType && item.isComposite);
     const isCombo = itemType === 'combo';
 
+    const handlePress = () => {
+        onPress?.(item);
+    };
+
     const handleFavoritePress = (e: any) => {
         e.stopPropagation?.();
-        onToggleFavorite?.();
+        onToggleFavorite?.(item);
     };
 
     const handleDeletePress = (e: any) => {
         e.stopPropagation?.();
-        onDelete?.();
+        onDelete?.(item);
     };
 
     return (
@@ -34,7 +38,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
                 isRecipe && { borderColor: '#bbf7d0', borderWidth: 1.5 },
                 isCombo && { borderColor: '#fde68a', borderWidth: 1.5 },
             ]}
-            onPress={onPress}
+            onPress={handlePress}
             activeOpacity={0.9}
         >
             {/* Header Image */}

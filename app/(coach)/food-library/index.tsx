@@ -41,6 +41,17 @@ import * as ImagePicker from 'expo-image-picker';
 // ─────────────────────────────────────────────────────────
 // Adapter: Map MealCombo → FoodItem shape for FoodGridCard
 // ─────────────────────────────────────────────────────────
+const getItemType = (item: any): 'ingredient' | 'recipe' | 'combo' => {
+    if (item._itemType === 'combo') return 'combo';
+    if (item.isComposite) return 'recipe';
+    return 'ingredient';
+};
+
+const isItemDeletable = (item: any): boolean => {
+    if (item._itemType === 'combo') return true; // All combos belong to the coach
+    return !item.isSystem; // Only coach-created ingredients/recipes
+};
+
 const comboToGridItem = (combo: any): FoodItem & { _comboSource: any; _itemType: string; _comboFoodCount: number } => ({
     _id: combo._id,
     name: combo.name,
@@ -241,8 +252,8 @@ export default function FoodLibraryScreen() {
     // ─────────────────────────────────────────────────────────
     // Food Handlers
     // ─────────────────────────────────────────────────────────
-    const handleCreateNew = () => { setEditingFood(null); setCreatorVisible(true); };
-    const handleSaveFood = async (foodData: any) => {
+    const handleCreateNew = useCallback(() => { setEditingFood(null); setCreatorVisible(true); }, []);
+    const handleSaveFood = useCallback(async (foodData: any) => {
         setLoading(true);
         try {
             const savedFood = await saveFood(foodData);
@@ -263,9 +274,9 @@ export default function FoodLibraryScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const handleDeleteFood = async (id: string) => {
+    const handleDeleteFood = useCallback(async (id: string) => {
         try {
             await deleteFood(id);
             setFoods(prev => prev.filter(f => f._id !== id));
@@ -274,9 +285,9 @@ export default function FoodLibraryScreen() {
         } catch (error: any) {
             Alert.alert("Error", error.message || "No se pudo eliminar");
         }
-    };
+    }, []);
 
-    const handleToggleFavorite = async (food: FoodItem) => {
+    const handleToggleFavorite = useCallback(async (food: FoodItem) => {
         try {
             const { toggleFavorite } = require('../../../src/services/foodService');
             const result = await toggleFavorite(food);
@@ -295,31 +306,31 @@ export default function FoodLibraryScreen() {
         } catch (error) {
             console.error('Toggle favorite error:', error);
         }
-    };
+    }, []);
 
-    const handleOpenFood = (food: FoodItem) => {
+    const handleOpenFood = useCallback((food: FoodItem) => {
         setEditingFood(food);
         setCreatorVisible(true);
-    };
+    }, []);
 
     // ─────────────────────────────────────────────────────────
     // Combo Handlers
     // ─────────────────────────────────────────────────────────
-    const handleOpenCombo = (gridItem: any) => {
+    const handleOpenCombo = useCallback((gridItem: any) => {
         setEditingCombo(gridItem._comboSource || null);
         setComboCreatorVisible(true);
-    };
+    }, []);
 
-    const handleToggleComboFavorite = async (gridItem: any) => {
+    const handleToggleComboFavorite = useCallback(async (gridItem: any) => {
         const result = await toggleComboFavorite(gridItem._id);
         if (result) {
             setCombos(prev => prev.map(c =>
                 c._id === gridItem._id ? { ...c, isFavorite: result.isFavorite } : c
             ));
         }
-    };
+    }, []);
 
-    const handleDeleteCombo = async (id: string) => {
+    const handleDeleteCombo = useCallback(async (id: string) => {
         const confirmed = Platform.OS === 'web'
             ? window.confirm('¿Eliminar este combo? Esta acción no se puede deshacer.')
             : await new Promise<boolean>(resolve => {
@@ -333,9 +344,9 @@ export default function FoodLibraryScreen() {
             setCombos(prev => prev.filter(c => c._id !== id));
             setComboCreatorVisible(false);
         }
-    };
+    }, []);
 
-    const handleSaveCombo = async (comboData: any) => {
+    const handleSaveCombo = useCallback(async (comboData: any) => {
         try {
             let saved;
             if (comboData._id) {
@@ -358,9 +369,9 @@ export default function FoodLibraryScreen() {
         } catch (error: any) {
             Alert.alert('Error', error.message || 'Error al guardar combo');
         }
-    };
+    }, []);
 
-    const handleDuplicateCombo = async (combo: any) => {
+    const handleDuplicateCombo = useCallback(async (combo: any) => {
         try {
             const duplicated = await createCombo({
                 name: `Copia de ${combo.name}`,
@@ -377,7 +388,7 @@ export default function FoodLibraryScreen() {
         } catch (error: any) {
             Alert.alert('Error', error.message || 'Error al duplicar combo');
         }
-    };
+    }, []);
 
     const getActiveFilterCount = () => {
         let count = 0;
@@ -391,34 +402,24 @@ export default function FoodLibraryScreen() {
     // ─────────────────────────────────────────────────────────
     // Render helpers
     // ─────────────────────────────────────────────────────────
-    const getItemType = (item: any): 'ingredient' | 'recipe' | 'combo' => {
-        if (item._itemType === 'combo') return 'combo';
-        if (item.isComposite) return 'recipe';
-        return 'ingredient';
-    };
 
-    const handleItemPress = (item: any) => {
+    const handleItemPress = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleOpenCombo(item);
         } else {
             handleOpenFood(item);
         }
-    };
+    }, [handleOpenCombo, handleOpenFood]);
 
-    const handleItemFavorite = (item: any) => {
+    const handleItemFavorite = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleToggleComboFavorite(item);
         } else {
             handleToggleFavorite(item);
         }
-    };
+    }, [handleToggleComboFavorite, handleToggleFavorite]);
 
-    const isItemDeletable = (item: any): boolean => {
-        if (item._itemType === 'combo') return true; // All combos belong to the coach
-        return !item.isSystem; // Only coach-created ingredients/recipes
-    };
-
-    const handleItemDelete = async (item: any) => {
+    const handleItemDelete = useCallback(async (item: any) => {
         const name = item.name || 'este elemento';
         const confirmed = Platform.OS === 'web'
             ? window.confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)
@@ -438,7 +439,20 @@ export default function FoodLibraryScreen() {
             setFoods(prev => prev.filter(f => f._id !== item._id));
             setInitialFoods(prev => prev.filter(f => f._id !== item._id));
         }
-    };
+    }, []);
+
+    const renderGridItem = useCallback(({ item }: { item: any }) => (
+        <View style={{ flex: 1, padding: 6, maxWidth: isLargeScreen ? '33.33%' : '50%' }}>
+            <FoodGridCard
+                item={item}
+                itemType={getItemType(item)}
+                onPress={handleItemPress}
+                isFavorite={item.isFavorite}
+                onToggleFavorite={handleItemFavorite}
+                onDelete={isItemDeletable(item) ? handleItemDelete : undefined}
+            />
+        </View>
+    ), [isLargeScreen, handleItemPress, handleItemFavorite, handleItemDelete]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -691,18 +705,7 @@ export default function FoodLibraryScreen() {
                                 )}
                             </>
                         }
-                        renderItem={({ item }) => (
-                            <View style={{ flex: 1, padding: 6, maxWidth: isLargeScreen ? '33.33%' : '50%' }}>
-                                <FoodGridCard
-                                    item={item}
-                                    itemType={getItemType(item)}
-                                    onPress={() => handleItemPress(item)}
-                                    isFavorite={item.isFavorite}
-                                    onToggleFavorite={() => handleItemFavorite(item)}
-                                    onDelete={isItemDeletable(item) ? () => handleItemDelete(item) : undefined}
-                                />
-                            </View>
-                        )}
+                        renderItem={renderGridItem}
                         ListEmptyComponent={
                             searchQuery.length > 0 ? (
                                 <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
