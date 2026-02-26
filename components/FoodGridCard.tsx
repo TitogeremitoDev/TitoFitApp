@@ -5,26 +5,27 @@ import { FoodItem, LAYER_ICONS } from '../src/services/foodService';
 
 interface FoodGridCardProps {
     item: FoodItem;
-    onPress?: () => void;
+    onPress?: (item: FoodItem) => void;
     isFavorite?: boolean;
-    onToggleFavorite?: () => void;
-    onDelete?: () => void;
+    onToggleFavorite?: (item: FoodItem) => void;
+    onDelete?: (item: FoodItem) => void;
+    canDelete?: boolean;
     itemType?: 'ingredient' | 'recipe' | 'combo';
 }
 
-function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, itemType }: FoodGridCardProps) {
+function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, canDelete, itemType }: FoodGridCardProps) {
     const layerIcon = LAYER_ICONS[item.layer] || '📦';
     const isRecipe = itemType === 'recipe' || (!itemType && item.isComposite);
     const isCombo = itemType === 'combo';
 
     const handleFavoritePress = (e: any) => {
         e.stopPropagation?.();
-        onToggleFavorite?.();
+        onToggleFavorite?.(item);
     };
 
     const handleDeletePress = (e: any) => {
         e.stopPropagation?.();
-        onDelete?.();
+        onDelete?.(item);
     };
 
     return (
@@ -34,7 +35,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
                 isRecipe && { borderColor: '#bbf7d0', borderWidth: 1.5 },
                 isCombo && { borderColor: '#fde68a', borderWidth: 1.5 },
             ]}
-            onPress={onPress}
+            onPress={() => onPress?.(item)}
             activeOpacity={0.9}
         >
             {/* Header Image */}
@@ -95,7 +96,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
                 </TouchableOpacity>
 
                 {/* Delete Icon (Overlay - only for coach-owned items) */}
-                {onDelete && (
+                {onDelete && canDelete && (
                     <TouchableOpacity
                         style={styles.deleteIcon}
                         onPress={handleDeletePress}

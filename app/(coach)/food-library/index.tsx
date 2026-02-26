@@ -19,7 +19,6 @@ import { EnhancedTextInput } from '../../../components/ui';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import CoachHeader from '../components/CoachHeader';
-import FoodListCard from '../../../components/FoodListCard';
 import FoodGridCard from '../../../components/FoodGridCard';
 import FoodMiniCard from '../../../components/FoodMiniCard';
 import FoodCreatorModal from '../../../components/FoodCreatorModal';
@@ -64,6 +63,11 @@ const comboToGridItem = (combo: any): FoodItem & { _comboSource: any; _itemType:
     _itemType: 'combo',
     _comboFoodCount: combo.foods?.length || 0,
 });
+
+const isItemDeletable = (item: any): boolean => {
+    if (item._itemType === 'combo') return true; // All combos belong to the coach
+    return !item.isSystem; // Only coach-created ingredients/recipes
+};
 
 export default function FoodLibraryScreen() {
     const { width } = useStableWindowDimensions();
@@ -276,7 +280,7 @@ export default function FoodLibraryScreen() {
         }
     };
 
-    const handleToggleFavorite = async (food: FoodItem) => {
+    const handleToggleFavorite = useCallback(async (food: FoodItem) => {
         try {
             const { toggleFavorite } = require('../../../src/services/foodService');
             const result = await toggleFavorite(food);
@@ -295,29 +299,29 @@ export default function FoodLibraryScreen() {
         } catch (error) {
             console.error('Toggle favorite error:', error);
         }
-    };
+    }, []);
 
-    const handleOpenFood = (food: FoodItem) => {
+    const handleOpenFood = useCallback((food: FoodItem) => {
         setEditingFood(food);
         setCreatorVisible(true);
-    };
+    }, []);
 
     // ─────────────────────────────────────────────────────────
     // Combo Handlers
     // ─────────────────────────────────────────────────────────
-    const handleOpenCombo = (gridItem: any) => {
+    const handleOpenCombo = useCallback((gridItem: any) => {
         setEditingCombo(gridItem._comboSource || null);
         setComboCreatorVisible(true);
-    };
+    }, []);
 
-    const handleToggleComboFavorite = async (gridItem: any) => {
+    const handleToggleComboFavorite = useCallback(async (gridItem: any) => {
         const result = await toggleComboFavorite(gridItem._id);
         if (result) {
             setCombos(prev => prev.map(c =>
                 c._id === gridItem._id ? { ...c, isFavorite: result.isFavorite } : c
             ));
         }
-    };
+    }, []);
 
     const handleDeleteCombo = async (id: string) => {
         const confirmed = Platform.OS === 'web'
@@ -397,28 +401,23 @@ export default function FoodLibraryScreen() {
         return 'ingredient';
     };
 
-    const handleItemPress = (item: any) => {
+    const handleItemPress = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleOpenCombo(item);
         } else {
             handleOpenFood(item);
         }
-    };
+    }, [handleOpenCombo, handleOpenFood]);
 
-    const handleItemFavorite = (item: any) => {
+    const handleItemFavorite = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleToggleComboFavorite(item);
         } else {
             handleToggleFavorite(item);
         }
-    };
+    }, [handleToggleComboFavorite, handleToggleFavorite]);
 
-    const isItemDeletable = (item: any): boolean => {
-        if (item._itemType === 'combo') return true; // All combos belong to the coach
-        return !item.isSystem; // Only coach-created ingredients/recipes
-    };
-
-    const handleItemDelete = async (item: any) => {
+    const handleItemDelete = useCallback(async (item: any) => {
         const name = item.name || 'este elemento';
         const confirmed = Platform.OS === 'web'
             ? window.confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)
@@ -438,7 +437,7 @@ export default function FoodLibraryScreen() {
             setFoods(prev => prev.filter(f => f._id !== item._id));
             setInitialFoods(prev => prev.filter(f => f._id !== item._id));
         }
-    };
+    }, []);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -696,10 +695,11 @@ export default function FoodLibraryScreen() {
                                 <FoodGridCard
                                     item={item}
                                     itemType={getItemType(item)}
-                                    onPress={() => handleItemPress(item)}
+                                    onPress={handleItemPress}
                                     isFavorite={item.isFavorite}
-                                    onToggleFavorite={() => handleItemFavorite(item)}
-                                    onDelete={isItemDeletable(item) ? () => handleItemDelete(item) : undefined}
+                                    onToggleFavorite={handleItemFavorite}
+                                    onDelete={handleItemDelete}
+                                    canDelete={isItemDeletable(item)}
                                 />
                             </View>
                         )}
