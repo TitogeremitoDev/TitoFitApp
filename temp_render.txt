@@ -1,0 +1,11 @@
+
+    // Memoized renderItem to prevent re-creation on every render
+    const renderItem = useCallback(({ item }: { item: Exercise }) => (
+        <ExerciseListCard
+            item={item}
+            isLargeScreen={isLargeScreen}
+            adminTrainerId={ADMIN_TRAINER_ID}
+            onEdit={handleEditExercise}
+            onFork={handleForkExercise}
+        />
+    ), [isLargeScreen, handleEditExercise, handleForkExercise]);

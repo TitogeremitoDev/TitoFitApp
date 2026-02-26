@@ -1,0 +1,20 @@
+    const handleForkExercise = useCallback((exercise: Exercise) => {
+        setIsEditMode(false);
+        setEditingExercise(exercise);
+        setFormName(exercise.name);
+        setFormMuscle(exercise.muscle);
+        setFormTips(exercise.instructions?.join('\n') || '');
+        setFormVideoId('');
+        setYoutubeThumbnail(null);
+        setYoutubeError(null);
+        setFormImageUrl(exercise.imagen_ejercicio_ID || '');
+        setSearchedImages([]);
+        setModalVisible(true);
+    };
+
+    // Save exercise using upsert endpoint
+    const handleSave = async () => {
+        if (!formName.trim() || !formMuscle.trim()) {
+            Alert.alert('Error', 'El nombre y el músculo son obligatorios');
+            return;
+        }
