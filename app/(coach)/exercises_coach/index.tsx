@@ -398,7 +398,7 @@ export default function ExercisesCoach() {
     };
 
     // Open modal for editing own exercise
-    const handleEditExercise = (exercise: Exercise) => {
+    const handleEditExercise = useCallback((exercise: Exercise) => {
         setIsEditMode(true);
         setEditingExercise(exercise);
         setFormName(exercise.name);
@@ -417,10 +417,10 @@ export default function ExercisesCoach() {
         setImageSearchOffset(0);
         setHasMoreImages(false);
         setModalVisible(true);
-    };
+    }, []);
 
     // Open modal for forking official exercise
-    const handleForkExercise = (exercise: Exercise) => {
+    const handleForkExercise = useCallback((exercise: Exercise) => {
         setIsEditMode(false);
         setEditingExercise(exercise);
         setFormName(exercise.name);
@@ -433,7 +433,7 @@ export default function ExercisesCoach() {
         setSearchedImages([]);
         setShowManualImageUrl(false);
         setModalVisible(true);
-    };
+    }, []);
 
     // Save exercise using upsert endpoint
     const handleSave = async () => {
