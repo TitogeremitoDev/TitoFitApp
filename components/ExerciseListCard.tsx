@@ -36,7 +36,7 @@ const getYouTubeId = (urlOrId: string) => {
 
 const getYouTubeThumb = (id: string) => `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
 
-export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) {
+const ExerciseListCard = React.memo(({ item, isLargeScreen, adminTrainerId, onEdit, onFork }: ExerciseListCardProps) => {
     const isCustom = item.id_trainer && item.id_trainer !== adminTrainerId;
     const isSystem = !isCustom;
     const videoId = getYouTubeId(item.videoId || '');
@@ -219,7 +219,9 @@ export default function ExerciseListCard({ item, isLargeScreen, adminTrainerId, 
             </View>
         </View>
     );
-}
+});
+
+ExerciseListCard.displayName = 'ExerciseListCard';
 
 const styles = StyleSheet.create({
     exerciseCard: {
@@ -348,3 +350,5 @@ const styles = StyleSheet.create({
         width: 45,
     },
 });
+
+export default ExerciseListCard;
