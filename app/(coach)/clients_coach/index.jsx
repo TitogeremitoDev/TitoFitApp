@@ -164,6 +164,13 @@ export default function ClientsScreen() {
         }
     };
 
+    const handlePressClient = useCallback((c) => {
+        router.push({
+            pathname: '/(coach)/client-detail/[clientId]',
+            params: { clientId: c._id, clientName: c.nombre }
+        });
+    }, [router]);
+
     const toggleExpand = useCallback((clientId) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setExpandedClients(prev => ({
@@ -172,7 +179,7 @@ export default function ClientsScreen() {
         }));
     }, []);
 
-    const handleAction = async (action, client) => {
+    const handleAction = useCallback(async (action, client) => {
         if (action === 'chat') {
             try {
                 const res = await fetch(`${API_URL}/api/conversations/trainer-chat`, {
@@ -208,7 +215,7 @@ export default function ClientsScreen() {
             setCreateEventModalVisible(true);
         }
         // Handle 'more' with dropdown if needed, or simple alert for now
-    };
+    }, [token, router]);
 
     const onRefresh = () => {
         setIsRefreshing(true);
@@ -421,13 +428,10 @@ export default function ClientsScreen() {
                         renderItem={({ item }) => (
                             <ClientListRow
                                 client={item}
-                                onPress={(c) => router.push({
-                                    pathname: '/(coach)/client-detail/[clientId]',
-                                    params: { clientId: c._id, clientName: c.nombre }
-                                })}
+                                onPress={handlePressClient}
                                 onAction={handleAction}
                                 isExpanded={!!expandedClients[item._id]}
-                                onToggleExpand={() => toggleExpand(item._id)}
+                                onToggleExpand={toggleExpand}
                             />
                         )}
                         contentContainerStyle={styles.listContent}
