@@ -193,7 +193,7 @@ const ClientListRow = ({ client, onPress, onAction, isExpanded, onToggleExpand }
         const idx = findAssignmentIndex(historyDates, assignedAt);
         if (idx < 0) return undefined;
 
-        return () => {
+        const Decorator = () => {
             const paddingLeft = 64;
             const paddingRight = 16;
             const usableWidth = chartWidth - paddingLeft - paddingRight;
@@ -211,6 +211,8 @@ const ClientListRow = ({ client, onPress, onAction, isExpanded, onToggleExpand }
                 />
             );
         };
+        Decorator.displayName = 'LineDecorator';
+        return Decorator;
     };
 
     // ── Tooltip state (web-compatible, no Alert.alert) ──
@@ -228,7 +230,7 @@ const ClientListRow = ({ client, onPress, onAction, isExpanded, onToggleExpand }
                     isMobile && styles.cardMobile,
                     pressed && { opacity: 0.7 }
                 ]}
-                onPress={() => onToggleExpand && onToggleExpand()}
+                onPress={() => onToggleExpand && onToggleExpand(client._id)}
             >
                 {/* ═══════════════════════════════════════════════════════════ */}
                 {/* ZONE 1: IDENTITY                                          */}
@@ -399,7 +401,7 @@ const ClientListRow = ({ client, onPress, onAction, isExpanded, onToggleExpand }
 
                     <TouchableOpacity
                         style={[styles.actionBtn, isExpanded && { backgroundColor: '#2563EB', borderColor: COLORS.primary }]}
-                        onPress={() => onToggleExpand && onToggleExpand()}
+                        onPress={() => onToggleExpand && onToggleExpand(client._id)}
                     >
                         <Ionicons
                             name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -973,4 +975,7 @@ const styles = StyleSheet.create({
     },
 });
 
-export default ClientListRow;
+// Setting displayName for React.memo
+ClientListRow.displayName = 'ClientListRow';
+
+export default React.memo(ClientListRow);
