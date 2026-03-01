@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -391,34 +391,37 @@ export default function FoodLibraryScreen() {
     // ─────────────────────────────────────────────────────────
     // Render helpers
     // ─────────────────────────────────────────────────────────
-    const getItemType = (item: any): 'ingredient' | 'recipe' | 'combo' => {
+
+
+
+    const getItemType = useCallback((item: any): 'ingredient' | 'recipe' | 'combo' => {
         if (item._itemType === 'combo') return 'combo';
         if (item.isComposite) return 'recipe';
         return 'ingredient';
-    };
+    }, []);
 
-    const handleItemPress = (item: any) => {
+    const handleItemPress = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleOpenCombo(item);
         } else {
             handleOpenFood(item);
         }
-    };
+    }, [handleOpenCombo, handleOpenFood]);
 
-    const handleItemFavorite = (item: any) => {
+    const handleItemFavorite = useCallback((item: any) => {
         if (item._itemType === 'combo') {
             handleToggleComboFavorite(item);
         } else {
             handleToggleFavorite(item);
         }
-    };
+    }, [handleToggleComboFavorite, handleToggleFavorite]);
 
-    const isItemDeletable = (item: any): boolean => {
-        if (item._itemType === 'combo') return true; // All combos belong to the coach
-        return !item.isSystem; // Only coach-created ingredients/recipes
-    };
+    const isItemDeletable = useCallback((item: any): boolean => {
+        if (item._itemType === 'combo') return true;
+        return !item.isSystem;
+    }, []);
 
-    const handleItemDelete = async (item: any) => {
+const handleItemDelete = useCallback(async (item: any) => {
         const name = item.name || 'este elemento';
         const confirmed = Platform.OS === 'web'
             ? window.confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)
@@ -438,7 +441,21 @@ export default function FoodLibraryScreen() {
             setFoods(prev => prev.filter(f => f._id !== item._id));
             setInitialFoods(prev => prev.filter(f => f._id !== item._id));
         }
-    };
+    }, []);
+
+        const renderFoodItem = useCallback(({ item }: any) => (
+        <View style={{ flex: 1, padding: 6, maxWidth: isLargeScreen ? '33.33%' : '50%' }}>
+            <FoodGridCard
+                item={item}
+                itemType={getItemType(item)}
+                onPress={handleItemPress}
+                isFavorite={item.isFavorite}
+                onToggleFavorite={handleItemFavorite}
+                onDelete={handleItemDelete}
+                isDeletable={isItemDeletable(item)}
+            />
+        </View>
+    ), [isLargeScreen, getItemType, handleItemPress, handleItemFavorite, handleItemDelete, isItemDeletable]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -691,18 +708,7 @@ export default function FoodLibraryScreen() {
                                 )}
                             </>
                         }
-                        renderItem={({ item }) => (
-                            <View style={{ flex: 1, padding: 6, maxWidth: isLargeScreen ? '33.33%' : '50%' }}>
-                                <FoodGridCard
-                                    item={item}
-                                    itemType={getItemType(item)}
-                                    onPress={() => handleItemPress(item)}
-                                    isFavorite={item.isFavorite}
-                                    onToggleFavorite={() => handleItemFavorite(item)}
-                                    onDelete={isItemDeletable(item) ? () => handleItemDelete(item) : undefined}
-                                />
-                            </View>
-                        )}
+                        renderItem={renderFoodItem}
                         ListEmptyComponent={
                             searchQuery.length > 0 ? (
                                 <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>

@@ -4,27 +4,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { FoodItem, LAYER_ICONS } from '../src/services/foodService';
 
 interface FoodGridCardProps {
-    item: FoodItem;
-    onPress?: () => void;
+    item: FoodItem | any;
+    onPress?: (item: FoodItem | any) => void;
     isFavorite?: boolean;
-    onToggleFavorite?: () => void;
-    onDelete?: () => void;
+    onToggleFavorite?: (item: FoodItem | any) => void;
+    onDelete?: (item: FoodItem | any) => void;
     itemType?: 'ingredient' | 'recipe' | 'combo';
+    isDeletable?: boolean;
 }
 
 function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, itemType }: FoodGridCardProps) {
-    const layerIcon = LAYER_ICONS[item.layer] || '📦';
+    const layerIcon = LAYER_ICONS[item.layer as keyof typeof LAYER_ICONS] || '📦';
     const isRecipe = itemType === 'recipe' || (!itemType && item.isComposite);
     const isCombo = itemType === 'combo';
 
     const handleFavoritePress = (e: any) => {
         e.stopPropagation?.();
-        onToggleFavorite?.();
+        onToggleFavorite?.(item);
     };
 
     const handleDeletePress = (e: any) => {
         e.stopPropagation?.();
-        onDelete?.();
+        onDelete?.(item);
+    };
+
+    const handleMainPress = () => {
+        onPress?.(item);
     };
 
     return (
@@ -34,7 +39,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
                 isRecipe && { borderColor: '#bbf7d0', borderWidth: 1.5 },
                 isCombo && { borderColor: '#fde68a', borderWidth: 1.5 },
             ]}
-            onPress={onPress}
+            onPress={handleMainPress}
             activeOpacity={0.9}
         >
             {/* Header Image */}
@@ -75,7 +80,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
 
                 {/* Tags Overlay */}
                 <View style={styles.badgesContainer}>
-                    {item.tags?.slice(0, 2).map((tag, index) => (
+                    {item.tags?.slice(0, 2).map((tag: string, index: number) => (
                         <View key={index} style={styles.tagBadge}>
                             <Text style={styles.tagText}>{tag}</Text>
                         </View>
@@ -95,7 +100,7 @@ function FoodGridCard({ item, onPress, isFavorite, onToggleFavorite, onDelete, i
                 </TouchableOpacity>
 
                 {/* Delete Icon (Overlay - only for coach-owned items) */}
-                {onDelete && (
+                {onDelete && isDeletable && (
                     <TouchableOpacity
                         style={styles.deleteIcon}
                         onPress={handleDeletePress}
