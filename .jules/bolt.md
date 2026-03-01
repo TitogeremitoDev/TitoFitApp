@@ -1,0 +1,3 @@
+## 2024-05-18 - [FlatList Re-rendering due to inline callbacks]
+**Learning:** In React Native, `FlatList` component rendering performance can drop drastically when `renderItem` uses inline arrow functions. `React.memo` inside the list item component gets broken because callbacks are recreated on every render.
+**Action:** Extract list item actions into `useCallback` functions and update the child list item components to pass their own `item` argument to these callbacks, allowing `renderItem` to accept stable references instead of inline arrow functions wrapping the item context. Ensure dependencies are strictly stable to prevent frequent recreations.
